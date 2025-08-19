@@ -1,8 +1,11 @@
 import time
 import os
+import threading
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Callable, List
+
+_log_lock = threading.Lock()
 
 @dataclass
 class Sender:
@@ -114,49 +117,52 @@ class UserQueue:
         self._trigger_callbacks(message)
 
     def _log_message(self, message: Message):
-        """Logs a message to the appropriate files."""
-        os.makedirs('log', exist_ok=True)
+        """
+        Logs a message to the appropriate files. This method is thread-safe.
+        """
+        with _log_lock:
+            os.makedirs('log', exist_ok=True)
 
-        originating_time_str = str(message.originating_time) if message.originating_time is not None else 'None'
+            originating_time_str = str(message.originating_time) if message.originating_time is not None else 'None'
 
-        sender_str = f"{message.sender.display_name} ({message.sender.identifier})"
-        group_str = f"::[group={message.group.display_name} ({message.group.identifier})]" if message.group else ""
+            sender_str = f"{message.sender.display_name} ({message.sender.identifier})"
+            group_str = f"::[group={message.group.display_name} ({message.group.identifier})]" if message.group else ""
 
-        log_line_parts = [
-            f"[originating_time={originating_time_str}]",
-            f"[accepted_time={message.accepted_time}]",
-            f"[message_id={message.id}]",
-            f"[sending_user={sender_str}]"
-        ]
-        if group_str:
-            log_line_parts.append(group_str)
-        log_line_parts.append(f":: {message.content}\n")
+            log_line_parts = [
+                f"[originating_time={originating_time_str}]",
+                f"[accepted_time={message.accepted_time}]",
+                f"[message_id={message.id}]",
+                f"[sending_user={sender_str}]"
+            ]
+            if group_str:
+                log_line_parts.append(group_str)
+            log_line_parts.append(f":: {message.content}\n")
 
-        user_log_line = "::".join(log_line_parts)
+            user_log_line = "::".join(log_line_parts)
 
-        # User-specific log
-        user_log_path = os.path.join('log', f"{self.vendor_name}_{self.user_id}.log")
-        with open(user_log_path, 'a') as f:
-            f.write(user_log_line)
+            # User-specific log
+            user_log_path = os.path.join('log', f"{self.vendor_name}_{self.user_id}.log")
+            with open(user_log_path, 'a') as f:
+                f.write(user_log_line)
 
-        # Global log
-        global_log_path = os.path.join('log', "all_vendors.log")
-        global_log_line_parts = [
-            f"[originating_time={originating_time_str}]",
-            f"[accepted_time={message.accepted_time}]",
-            f"[vendor_name={self.vendor_name}]",
-            f"[user_id={self.user_id}]",
-            f"[message_id={message.id}]",
-            f"[sending_user={sender_str}]"
-        ]
-        if group_str:
-            global_log_line_parts.append(group_str)
-        global_log_line_parts.append(f":: {message.content}\n")
+            # Global log
+            global_log_path = os.path.join('log', "all_vendors.log")
+            global_log_line_parts = [
+                f"[originating_time={originating_time_str}]",
+                f"[accepted_time={message.accepted_time}]",
+                f"[vendor_name={self.vendor_name}]",
+                f"[user_id={self.user_id}]",
+                f"[message_id={message.id}]",
+                f"[sending_user={sender_str}]"
+            ]
+            if group_str:
+                global_log_line_parts.append(group_str)
+            global_log_line_parts.append(f":: {message.content}\n")
 
-        global_log_line = "::".join(global_log_line_parts)
+            global_log_line = "::".join(global_log_line_parts)
 
-        with open(global_log_path, 'a') as f:
-            f.write(global_log_line)
+            with open(global_log_path, 'a') as f:
+                f.write(global_log_line)
 
     def get_messages(self) -> List[Message]:
         return list(self._messages)
