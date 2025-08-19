@@ -80,6 +80,24 @@ class DummyVendor:
                 "group": None,
                 "originating_time": now - 5000
             },
+            {
+                "message": "another message", "sleep_time": 1000,
+                "sender": Sender(identifier="user3@c.us", display_name="User Three"),
+                "group": None,
+                "originating_time": now - 1000
+            },
+            {
+                "message": "yet another message", "sleep_time": 1000,
+                "sender": Sender(identifier="user3@c.us", display_name="User Three"),
+                "group": None,
+                "originating_time": now - 1000
+            },
+            {
+                "message": "yet yet another message", "sleep_time": 1000,
+                "sender": Sender(identifier="user3@c.us", display_name="User Three"),
+                "group": None,
+                "originating_time": now - 1000
+            },
         ]
         for item in simulated_messages:
             if not self.is_listening:

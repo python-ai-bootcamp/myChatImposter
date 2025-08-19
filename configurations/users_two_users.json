@@ -1,0 +1,26 @@
+[
+  {
+    "user_id": "user_a",
+    "vendor_name": "dummy_vendor",
+    "vendor_config": {
+      "api_key": "dummy_key_for_user_a"
+    },
+    "queue_config": {
+      "max_messages": 5,
+      "max_characters": 100,
+      "max_days": 1
+    }
+  },
+  {
+    "user_id": "user_b",
+    "vendor_name": "dummy_vendor",
+    "vendor_config": {
+      "api_key": "dummy_key_for_user_b"
+    },
+    "queue_config": {
+      "max_messages": 20,
+      "max_characters": 1000,
+      "max_days": 30
+    }
+  }
+]
