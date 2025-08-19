@@ -1,1 +1,5 @@
 __pycache__/
+# Ignore all files in the log directory
+log/*
+# But not the .gitkeep file, so we can track the empty directory
+!log/.gitkeep

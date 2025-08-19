@@ -47,9 +47,11 @@ class Orchestrator:
         # 1. Initialize queues for all users first
         for config in self.user_configs:
             user_id = config['user_id']
+            vendor_name = config['vendor_name']
             q_config = config['queue_config']
             self.user_queues[user_id] = UserQueue(
                 user_id=user_id,
+                vendor_name=vendor_name,
                 max_messages=q_config['max_messages'],
                 max_characters=q_config['max_characters'],
                 max_days=q_config['max_days']
