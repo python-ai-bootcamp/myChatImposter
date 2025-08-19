@@ -1,9 +1,9 @@
 import time
 import threading
-from typing import Dict
+from typing import Dict, Optional
 
 # Assuming queue_manager.py is in the parent directory or accessible
-from queue_manager import UserQueue
+from queue_manager import UserQueue, Sender, Group
 
 class DummyVendor:
     """
@@ -54,22 +54,39 @@ class DummyVendor:
         endpoint for a webhook.
         """
         # This simulation just iterates through a list of predefined messages.
+        now = int(time.time() * 1000)
         simulated_messages = [
-            {"message": "Hello there!", "sleep_time": 1000},
-            {"message": "I have a question about my account.", "sleep_time": 2500},
-            {"message": "Can you tell me a joke?", "sleep_time": 500},
-            {"message": "This is a very long message to test the character limits of the queue and see if it triggers an eviction policy if the limits are set low enough for this user.", "sleep_time": 4000},
-            {"message": "Another message.", "sleep_time": 1500},
-            {"message": "Final message for now.", "sleep_time": 2000}
+            {
+                "message": "Hello there!", "sleep_time": 1000,
+                "sender": Sender(identifier="user1@c.us", display_name="User One"),
+                "group": None,
+                "originating_time": now - 20000
+            },
+            {
+                "message": "I have a question about my account.", "sleep_time": 2500,
+                "sender": Sender(identifier="user2@c.us", display_name="User Two"),
+                "group": Group(identifier="group1@g.us", display_name="Test Group"),
+                "originating_time": now - 15000
+            },
+            {
+                "message": "Can you tell me a joke?", "sleep_time": 500,
+                "sender": Sender(identifier="user1@c.us", display_name="User One"),
+                "group": None,
+                "originating_time": now - 10000
+            },
+            {
+                "message": "This is a very long message to test the character limits of the queue and see if it triggers an eviction policy if the limits are set low enough for this user.", "sleep_time": 4000,
+                "sender": Sender(identifier="user3@c.us", display_name="User Three"),
+                "group": None,
+                "originating_time": now - 5000
+            },
         ]
         for item in simulated_messages:
             if not self.is_listening:
                 break
 
-            msg_content = item["message"]
-            sleep_duration_ms = item["sleep_time"]
-
             # Simulate a network delay.
+            sleep_duration_ms = item["sleep_time"]
             print(f"VENDOR ({self.user_id}): Waiting for {sleep_duration_ms}ms...")
             time.sleep(sleep_duration_ms / 1000.0)
 
@@ -77,8 +94,14 @@ class DummyVendor:
             # queue. This is how the vendor communicates with the orchestrator.
             queue = self.user_queues.get(self.user_id)
             if queue:
-                print(f"VENDOR ({self.user_id}): Received a new message: '{msg_content[:30]}...'")
-                queue.add_message(content=msg_content, sending_user=self.user_id)
+                print(f"VENDOR ({self.user_id}): Received a new message: '{item['message'][:30]}...'")
+                queue.add_message(
+                    content=item["message"],
+                    sender=item["sender"],
+                    source='user',
+                    originating_time=item["originating_time"],
+                    group=item["group"]
+                )
             else:
                 print(f"VENDOR ERROR ({self.user_id}): Could not find a queue for myself.")
 

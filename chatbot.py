@@ -8,7 +8,7 @@ from langchain.chains import ConversationChain
 from langchain.memory import ConversationBufferMemory
 from langchain_community.llms.fake import FakeListLLM
 
-from queue_manager import UserQueue, Message
+from queue_manager import UserQueue, Message, Sender, Group
 
 class ChatbotModel:
     """A wrapper for the LangChain conversation model for a single user."""
@@ -87,20 +87,19 @@ class Orchestrator:
             )
             print(f"ORCHESTRATOR: Initialized vendor '{vendor_name}' for {user_id}.")
 
-    def _message_callback(self, message: Message):
+    def _message_callback(self, user_id: str, message: Message):
         """
         The central callback that processes a new message from any queue.
         This method is the lynchpin connecting the vendor (input) to the
         chatbot (processing) and back to the vendor (output).
         """
-        print(f"ORCHESTRATOR: Callback received for message {message.id} from {message.sendingUser}.")
+        print(f"ORCHESTRATOR: Callback received for message {message.id} for user {user_id}.")
 
         # We only process messages from users, not from the bot itself.
         # The bot's own responses are added to the queue for history, but should not trigger a response.
-        if message.sendingUser.startswith("bot_"):
+        if message.source == 'bot':
             return
 
-        user_id = message.sendingUser
         chatbot = self.chatbot_models.get(user_id)
         vendor = self.vendor_instances.get(user_id)
 
@@ -115,10 +114,14 @@ class Orchestrator:
         vendor.sendMessage(response_text)
 
         # Add the bot's response to the queue for a complete history
-        bot_user_id = f"bot_{user_id}"
+        bot_sender = Sender(identifier=f"bot_{user_id}", display_name=f"Bot ({user_id})")
         user_queue = self.user_queues.get(user_id)
         if user_queue:
-            user_queue.add_message(content=response_text, sending_user=bot_user_id)
+            user_queue.add_message(
+                content=response_text,
+                sender=bot_sender,
+                source='bot'
+            )
 
     def start(self):
         """Initializes, wires up, and starts the whole system."""
