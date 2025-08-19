@@ -120,7 +120,8 @@ class Orchestrator:
             user_queue.add_message(
                 content=response_text,
                 sender=bot_sender,
-                source='bot'
+                source='bot',
+                originating_time=int(time.time() * 1000)
             )
 
     def start(self):
