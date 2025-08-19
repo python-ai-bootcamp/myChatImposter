@@ -77,10 +77,18 @@ class UserQueue:
 
     def add_message(self, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None):
         """Create, add, and process a new message for the queue."""
+        # If a message is larger than the total character limit for the queue,
+        # it gets truncated and all previous messages are cleared.
+        if len(content) > self.max_characters:
+            print(f"QUEUE TRUNCATE ({self.user_id}): Message from {sender.display_name} is larger than the max character limit ({self.max_characters}), truncating.")
+            content = content[:self.max_characters]
+
+            if self._messages:
+                print(f"QUEUE CLEAR ({self.user_id}): Clearing all {len(self._messages)} messages to make room for oversized message.")
+                self._messages.clear()
+                self._total_chars = 0
+
         new_message_size = len(content)
-        if new_message_size > self.max_characters:
-            print(f"QUEUE REJECT ({self.user_id}): Message from {sender.display_name} is larger than the max character limit.")
-            return
 
         self._enforce_limits(new_message_size)
 
