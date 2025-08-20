@@ -4,9 +4,11 @@ import time
 import threading
 from typing import Dict, Any
 
-from langchain.chains import ConversationChain
-from langchain.memory import ConversationBufferMemory
+from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
+from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_community.llms.fake import FakeListLLM
+from langchain_core.output_parsers import StrOutputParser
 
 from queue_manager import UserQueue, Message, Sender, Group
 
@@ -15,6 +17,7 @@ class ChatbotModel:
     def __init__(self, user_id: str):
         self.user_id = user_id
         # Each user gets their own independent conversation chain and memory
+        self.message_history = ChatMessageHistory()
         self.llm = FakeListLLM(responses=[
             f"Hi, I'm the bot for {self.user_id}. How can I help?",
             "That's an interesting question. Let me think...",
@@ -22,11 +25,45 @@ class ChatbotModel:
             "Why don't scientists trust atoms? Because they make up everything!",
             "Is there anything else I can help with?"
         ])
-        self.memory = ConversationBufferMemory()
-        self.conversation = ConversationChain(llm=self.llm, memory=self.memory, verbose=False)
+
+        # 1. Create a chat prompt template. This defines the structure of the messages
+        #    that will be sent to the language model.
+        #    - The "system" message provides initial instructions to the chatbot.
+        #    - `MessagesPlaceholder` is a special placeholder that will be filled with
+        #      the chat history from the `RunnableWithMessageHistory`.
+        #    - The "human" message is the template for the user's actual input.
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                ("system", f"You are a helpful chatbot for {self.user_id}."),
+                MessagesPlaceholder(variable_name="history"),
+                ("human", "{question}"),
+            ]
+        )
+
+        # 2. Create the main "runnable" chain using LangChain Expression Language (LCEL).
+        #    The `|` operator pipes the output of one component into the next.
+        #    - The `prompt` is filled with the user's input and the chat history.
+        #    - The result is passed to the language model (`self.llm`).
+        #    - `StrOutputParser` ensures the final output from the LLM is a simple string.
+        runnable = prompt | self.llm | StrOutputParser()
+
+        # 3. Wrap the runnable chain with `RunnableWithMessageHistory`. This is the
+        #    key component that adds memory to the chatbot.
+        self.conversation = RunnableWithMessageHistory(
+            runnable,
+            # This lambda function tells the history object where to get the chat history.
+            # It receives the `session_id` (which we set to `user_id` in `get_response`)
+            # and returns the corresponding message history object.
+            lambda session_id: self.message_history,
+            # Specifies that the user's input will be under the "question" key.
+            input_messages_key="question",
+            # Specifies that the chat history should be injected into the "history"
+            # variable in the prompt template.
+            history_messages_key="history",
+        )
 
     def get_response(self, message: str) -> str:
-        return self.conversation.predict(input=message)
+        return self.conversation.invoke({"question": message}, config={"configurable": {"session_id": self.user_id}})
 
 class Orchestrator:
     """Manages all users, queues, vendors, and chatbot models."""
