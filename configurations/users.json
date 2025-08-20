@@ -8,7 +8,8 @@
     "queue_config": {
       "max_messages": 5,
       "max_characters": 100,
-      "max_days": 1
+      "max_days": 1,
+      "max_characters_single_message": 100
     }
   },
   {
@@ -20,7 +21,8 @@
     "queue_config": {
       "max_messages": 20,
       "max_characters": 1000,
-      "max_days": 30
+      "max_days": 30,
+      "max_characters_single_message": 1000
     }
   }
 ]
