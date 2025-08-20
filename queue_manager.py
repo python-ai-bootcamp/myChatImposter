@@ -65,18 +65,21 @@ class UserQueue:
         while self._messages and (now - self._messages[0].accepted_time / 1000) > self.max_age_seconds:
             evicted_msg = self._messages.popleft()
             self._total_chars -= evicted_msg.message_size
+            self._log_retention_event(evicted_msg, "age", new_message_size)
             print(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to age.")
 
         # Evict by total characters
         while self._messages and (self._total_chars + new_message_size) > self.max_characters:
             evicted_msg = self._messages.popleft()
             self._total_chars -= evicted_msg.message_size
+            self._log_retention_event(evicted_msg, "total_characters", new_message_size)
             print(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to total characters limit.")
 
         # Evict by total message count
         while len(self._messages) >= self.max_messages:
             evicted_msg = self._messages.popleft()
             self._total_chars -= evicted_msg.message_size
+            self._log_retention_event(evicted_msg, "message_count", new_message_size)
             print(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to message count limit.")
 
     def add_message(self, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None):
@@ -161,3 +164,27 @@ class UserQueue:
 
     def get_messages(self) -> List[Message]:
         return list(self._messages)
+
+    def _log_retention_event(self, evicted_message: Message, reason: str, new_message_size: int = 0):
+        """
+        Logs a retention event to the user-specific log file. This method is thread-safe.
+        """
+        with _log_lock:
+            os.makedirs('log', exist_ok=True)
+            user_log_path = os.path.join('log', f"{self.vendor_name}_{self.user_id}.log")
+
+            log_line = f"[retention_event_time={int(time.time() * 1000)}]::" \
+                       f"[event_type=EVICT]::" \
+                       f"[reason={reason}]::" \
+                       f"[evicted_message_id={evicted_message.id}]::" \
+                       f"[evicted_message_accepted_time={evicted_message.accepted_time}]::" \
+                       f"[evicted_message_size={evicted_message.message_size}]::" \
+                       f"[queue_max_messages={self.max_messages}]::" \
+                       f"[queue_max_chars={self.max_characters}]::" \
+                       f"[queue_max_days={self.max_age_seconds / (24 * 60 * 60)}]::" \
+                       f"[current_messages={len(self._messages) + 1}]::" \
+                       f"[current_chars={self._total_chars + evicted_message.message_size}]::" \
+                       f"[new_message_size={new_message_size}]\n"
+
+            with open(user_log_path, 'a') as f:
+                f.write(log_line)

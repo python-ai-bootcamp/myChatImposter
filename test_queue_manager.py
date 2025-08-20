@@ -1,7 +1,16 @@
 import unittest
+import os
+import re
 from queue_manager import UserQueue, Sender
 
 class TestUserQueueUpdated(unittest.TestCase):
+    def tearDown(self):
+        # Clean up any log files created during tests
+        log_dir = 'log'
+        if os.path.exists(log_dir):
+            for filename in os.listdir(log_dir):
+                if filename.startswith('test_vendor_'):
+                    os.remove(os.path.join(log_dir, filename))
 
     def test_single_message_truncation(self):
         """
@@ -84,6 +93,46 @@ class TestUserQueueUpdated(unittest.TestCase):
         self.assertEqual(len(messages), 3, "Queue should still have 3 messages")
         self.assertEqual(messages[0].content, "Message 1", "Oldest message should have been evicted")
         self.assertEqual(messages[2].content, "Message 3", "Newest message should be at the end")
+
+    def test_retention_event_logging(self):
+        """
+        Test that retention events (evictions) are logged correctly.
+        """
+        user_id = 'test_user_log'
+        vendor_name = 'test_vendor'
+        log_path = os.path.join('log', f"{vendor_name}_{user_id}.log")
+
+        # Ensure log file does not exist before test
+        if os.path.exists(log_path):
+            os.remove(log_path)
+
+        user_queue = UserQueue(
+            user_id=user_id,
+            vendor_name=vendor_name,
+            max_messages=2,
+            max_characters=100,
+            max_days=1,
+            max_characters_single_message=100
+        )
+        sender = Sender(identifier='test_sender', display_name='Test Sender')
+
+        # Add messages to fill the queue
+        user_queue.add_message("Message 1", sender, 'user')
+        user_queue.add_message("Message 2", sender, 'user')
+
+        # This message should trigger an eviction
+        user_queue.add_message("Message 3", sender, 'user')
+
+        # Verify the log file was created and contains the eviction event
+        self.assertTrue(os.path.exists(log_path))
+
+        with open(log_path, 'r') as f:
+            log_content = f.read()
+
+        # Check for the retention event log entry
+        self.assertIn("[event_type=EVICT]", log_content)
+        self.assertIn("[reason=message_count]", log_content)
+        self.assertIn("[evicted_message_id=1]", log_content)
 
 if __name__ == '__main__':
     unittest.main()
