@@ -7,9 +7,9 @@
     },
     "queue_config": {
       "max_messages": 5,
-      "max_characters": 100,
-      "max_days": 1,
-      "max_characters_single_message": 100
+      "max_characters": 10000,
+      "max_days": 30,
+      "max_characters_single_message": 10000
     }
   },
   {
@@ -19,10 +19,36 @@
       "api_key": "dummy_key_for_user_b"
     },
     "queue_config": {
-      "max_messages": 20,
-      "max_characters": 1000,
+      "max_messages": 1000,
+      "max_characters": 250,
       "max_days": 30,
-      "max_characters_single_message": 1000
+      "max_characters_single_message": 10000
+    }
+  },
+  {
+    "user_id": "user_c",
+    "vendor_name": "dummy_vendor",
+    "vendor_config": {
+      "api_key": "dummy_key_for_user_b"
+    },
+    "queue_config": {
+      "max_messages": 1000,
+      "max_characters": 10000,
+      "max_days": 30,
+      "max_characters_single_message": 100
+    }
+  },
+  {
+    "user_id": "user_d",
+    "vendor_name": "dummy_vendor",
+    "vendor_config": {
+      "api_key": "dummy_key_for_user_b"
+    },
+    "queue_config": {
+      "max_messages": 1000,
+      "max_characters": 10000,
+      "max_days": 1,
+      "max_characters_single_message": 100
     }
   }
 ]
