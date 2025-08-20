@@ -54,7 +54,8 @@ class Orchestrator:
                 vendor_name=vendor_name,
                 max_messages=q_config['max_messages'],
                 max_characters=q_config['max_characters'],
-                max_days=q_config['max_days']
+                max_days=q_config['max_days'],
+                max_characters_single_message=q_config.get('max_characters_single_message', q_config['max_characters'])
             )
             print(f"ORCHESTRATOR: Initialized queue for {user_id}.")
 

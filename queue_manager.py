@@ -32,11 +32,12 @@ class Message:
         self.message_size = len(self.content)
 
 class UserQueue:
-    def __init__(self, user_id: str, vendor_name: str, max_messages: int, max_characters: int, max_days: int):
+    def __init__(self, user_id: str, vendor_name: str, max_messages: int, max_characters: int, max_days: int, max_characters_single_message: int):
         self.user_id = user_id
         self.vendor_name = vendor_name
         self.max_messages = max_messages
         self.max_characters = max_characters
+        self.max_characters_single_message = max_characters_single_message
         self.max_age_seconds = max_days * 24 * 60 * 60
 
         self._messages: deque[Message] = deque()
@@ -80,16 +81,10 @@ class UserQueue:
 
     def add_message(self, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None):
         """Create, add, and process a new message for the queue."""
-        # If a message is larger than the total character limit for the queue,
-        # it gets truncated and all previous messages are cleared.
-        if len(content) > self.max_characters:
-            print(f"QUEUE TRUNCATE ({self.user_id}): Message from {sender.display_name} is larger than the max character limit ({self.max_characters}), truncating.")
-            content = content[:self.max_characters]
-
-            if self._messages:
-                print(f"QUEUE CLEAR ({self.user_id}): Clearing all {len(self._messages)} messages to make room for oversized message.")
-                self._messages.clear()
-                self._total_chars = 0
+        # Truncate the message if it exceeds the single message character limit.
+        if len(content) > self.max_characters_single_message:
+            print(f"QUEUE TRUNCATE ({self.user_id}): Message from {sender.display_name} is larger than the single message character limit ({self.max_characters_single_message}), truncating.")
+            content = content[:self.max_characters_single_message]
 
         new_message_size = len(content)
 
