@@ -3,6 +3,7 @@ import importlib
 import time
 import threading
 from typing import Dict, Any
+import argparse
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
@@ -114,7 +115,7 @@ class Orchestrator:
             # TODO: Future improvement: The class name is currently hardcoded.
             # A better approach would be to have a naming convention (e.g., Vendor)
             # or specify the class name in the configuration file.
-            VendorClass = getattr(vendor_module, 'DummyVendor') # Assuming class name is consistent
+            VendorClass = getattr(vendor_module, 'Vendor') # Convention: vendor class is named 'Vendor'
 
             # Each vendor is initialized with its own config and gets access to the
             # dictionary of all user queues, although it should only use its own.
@@ -149,7 +150,7 @@ class Orchestrator:
         response_text = chatbot.get_response(message.content)
 
         # Send the response back through the vendor
-        vendor.sendMessage(response_text)
+        vendor.sendMessage(message.sender.identifier, response_text)
 
         # Add the bot's response to the queue for a complete history
         bot_sender = Sender(identifier=f"bot_{user_id}", display_name=f"Bot ({user_id})")
@@ -188,6 +189,19 @@ class Orchestrator:
 
         print("\nORCHESTRATOR: All vendor simulations have finished. System shutting down.")
 
-if __name__ == "__main__":
-    orchestrator = Orchestrator(config_path='configurations/users.json')
+def main():
+    """Parses arguments, initializes, and starts the orchestrator."""
+    parser = argparse.ArgumentParser(description="Run the chatbot orchestrator.")
+    parser.add_argument(
+        '--config',
+        type=str,
+        default='configurations/users.json',
+        help='Path to the user configuration JSON file.'
+    )
+    args = parser.parse_args()
+
+    orchestrator = Orchestrator(config_path=args.config)
     orchestrator.start()
+
+if __name__ == "__main__":
+    main()
