@@ -107,12 +107,17 @@ class Vendor:
                             queue = self.user_queues.get(self.user_id)
                             if queue:
                                 for msg in messages:
-                                    # The message format is { sender, message, timestamp }
-                                    sender = Sender(identifier=msg['sender'], display_name=msg['sender']) # display_name could be improved
+                                    # The message format is { sender, message, timestamp, group? }
+                                    sender = Sender(identifier=msg['sender'], display_name=msg.get('display_name', msg['sender']))
+
+                                    group_info = msg.get('group')
+                                    group = Group(identifier=group_info['id'], display_name=group_info.get('name')) if group_info else None
+
                                     queue.add_message(
                                         content=msg['message'],
                                         sender=sender,
                                         source='user',
+                                        group=group
                                         # originating_time might need parsing from timestamp if needed
                                     )
                             else:
