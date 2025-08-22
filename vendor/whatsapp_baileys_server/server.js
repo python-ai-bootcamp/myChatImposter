@@ -66,10 +66,15 @@ async function connectToWhatsApp() {
 
             const messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
             if (messageContent) {
+                const isGroup = msg.key.remoteJid.endsWith('@g.us');
+                const sender = isGroup ? (msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid;
+                const group = isGroup ? { id: msg.key.remoteJid } : null;
+
                 const incoming = {
-                    sender: msg.key.remoteJid,
+                    sender: sender,
                     message: messageContent,
-                    timestamp: new Date().toISOString()
+                    timestamp: new Date().toISOString(),
+                    group: group
                 };
                 incomingMessages.push(incoming);
             }
@@ -93,10 +98,12 @@ app.post('/send', async (req, res) => {
     }
 
     try {
-        // Ensure recipient is a valid JID
-        const [result] = await sock.onWhatsApp(recipient);
-        if (!result?.exists) {
-           return res.status(400).json({ error: `Recipient ${recipient} is not on WhatsApp.`});
+        // Only check if the JID exists if it's NOT a group
+        if (!recipient.endsWith('@g.us')) {
+            const [result] = await sock.onWhatsApp(recipient);
+            if (!result?.exists) {
+               return res.status(400).json({ error: `Recipient ${recipient} is not on WhatsApp.`});
+            }
         }
 
         await sock.sendMessage(recipient, { text: message });
