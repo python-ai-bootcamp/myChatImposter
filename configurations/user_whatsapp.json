@@ -12,6 +12,19 @@
       "max_characters": 10000,
       "max_days": 7,
       "max_characters_single_message": 3000
+    },
+    "llmConfig": {
+      "vendor": "fakeLlm",
+      "vendorConfig": {
+        "responseArray": [
+          "Hi, I'm the bot for {self_user_id}. How can I help?",
+          "That's an interesting question. Let me think...",
+          "I can answer questions and tell jokes.",
+          "Why don't scientists trust atoms? Because they make up everything!",
+          "Is there anything else I can help with?"
+        ],
+        "system": "You are a helpful chatbot for {self_user_id}."
+      }
     }
   }
 ]
