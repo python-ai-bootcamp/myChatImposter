@@ -28,8 +28,7 @@ async function connectToWhatsApp() {
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
     sock = makeWASocket({
-        auth: state,
-        printQRInTerminal: true // Fallback QR print
+        auth: state
     });
 
     // Event listener for connection updates
@@ -46,10 +45,6 @@ async function connectToWhatsApp() {
                 connectToWhatsApp();
             } else {
                 console.log("Connection closed permanently. Not reconnecting.");
-                // Clean up the auth directory if logged out
-                if (fs.existsSync(authDir)) {
-                    fs.rmdirSync(authDir, { recursive: true });
-                }
             }
         } else if (connection === 'open') {
             console.log(`WhatsApp connection opened for user ${userId}.`);
@@ -131,12 +126,8 @@ server.listen(port, () => {
 // Graceful shutdown
 process.on('SIGINT', async () => {
     console.log('SIGINT received, shutting down gracefully.');
-    if (sock) {
-        await sock.logout();
-    }
-    if (fs.existsSync(authDir)) {
-        fs.rmdirSync(authDir, { recursive: true });
-    }
+    // The socket will close automatically when the process exits.
+    // No need to logout or delete session data.
     server.close(() => {
         console.log('Express server closed.');
         process.exit(0);
