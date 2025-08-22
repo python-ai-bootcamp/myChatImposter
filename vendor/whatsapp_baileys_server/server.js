@@ -64,20 +64,25 @@ async function connectToWhatsApp() {
 
             console.log(`Received message from ${msg.key.remoteJid}`);
 
-            const messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text || '';
-            if (messageContent) {
-                const isGroup = msg.key.remoteJid.endsWith('@g.us');
-                const sender = isGroup ? (msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid;
-                const group = isGroup ? { id: msg.key.remoteJid } : null;
+            let messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text;
 
-                const incoming = {
-                    sender: sender,
-                    message: messageContent,
-                    timestamp: new Date().toISOString(),
-                    group: group
-                };
-                incomingMessages.push(incoming);
+            // If there's no text content, create a placeholder for media or other types
+            if (!messageContent) {
+                const messageType = Object.keys(msg.message)[0] || 'unknown';
+                messageContent = `[User sent a non-text message: ${messageType}]`;
             }
+
+            const isGroup = msg.key.remoteJid.endsWith('@g.us');
+            const sender = isGroup ? (msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid;
+            const group = isGroup ? { id: msg.key.remoteJid } : null;
+
+            const incoming = {
+                sender: sender,
+                message: messageContent,
+                timestamp: new Date().toISOString(),
+                group: group
+            };
+            incomingMessages.push(incoming);
         });
     });
 }
