@@ -8,24 +8,17 @@ import argparse
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
-from langchain_community.llms.fake import FakeListLLM
 from langchain_core.output_parsers import StrOutputParser
 
 from queue_manager import UserQueue, Message, Sender, Group
 
 class ChatbotModel:
     """A wrapper for the LangChain conversation model for a single user."""
-    def __init__(self, user_id: str):
+    def __init__(self, user_id: str, llm: Any, system_prompt: str):
         self.user_id = user_id
+        self.llm = llm
         # Each user gets their own independent conversation chain and memory
         self.message_history = ChatMessageHistory()
-        self.llm = FakeListLLM(responses=[
-            f"Hi, I'm the bot for {self.user_id}. How can I help?",
-            "That's an interesting question. Let me think...",
-            "I can answer questions and tell jokes.",
-            "Why don't scientists trust atoms? Because they make up everything!",
-            "Is there anything else I can help with?"
-        ])
 
         # 1. Create a chat prompt template. This defines the structure of the messages
         #    that will be sent to the language model.
@@ -35,7 +28,7 @@ class ChatbotModel:
         #    - The "human" message is the template for the user's actual input.
         prompt = ChatPromptTemplate.from_messages(
             [
-                ("system", f"You are a helpful chatbot for {self.user_id}."),
+                ("system", system_prompt),
                 MessagesPlaceholder(variable_name="history"),
                 ("human", "{question}"),
             ]
@@ -101,11 +94,34 @@ class Orchestrator:
         for config in self.user_configs:
             user_id = config['user_id']
 
-            # Initialize the chatbot model
-            self.chatbot_models[user_id] = ChatbotModel(user_id)
-            print(f"ORCHESTRATOR: Initialized chatbot model for {user_id}.")
+            # EXTENSIBILITY POINT 1: Dynamically load and initialize the LLM provider.
+            # This allows swapping out the language model based on the user's config.
+            llm_config = config.get('llmConfig')
+            if not llm_config:
+                print(f"ORCHESTRATOR_WARNING: No 'llmConfig' found for user {user_id}. Skipping chatbot model initialization.")
+                # If there's no LLM config, we can't initialize a chatbot.
+                # We also can't initialize a vendor that depends on a message callback.
+                # For now, we'll just skip this user entirely. A more robust solution
+                # might initialize the vendor in a "listen-only" mode.
+                continue
 
-            # EXTENSIBILITY POINT: Dynamically load and initialize the vendor.
+            llm_vendor_name = llm_config['vendor']
+            llm_provider_module = importlib.import_module(f"llmProviders.{llm_vendor_name}")
+            LlmProviderClass = getattr(llm_provider_module, 'LlmProvider') # Convention: class is named 'LlmProvider'
+
+            # The provider is initialized with its specific 'vendorConfig'
+            llm_provider = LlmProviderClass(config=llm_config.get('vendorConfig', {}), user_id=user_id)
+
+            # The provider gives us the actual LLM instance and the system prompt
+            llm_instance = llm_provider.get_llm()
+            system_prompt = llm_provider.get_system_prompt()
+
+            # Initialize the chatbot model with the dynamically loaded LLM
+            self.chatbot_models[user_id] = ChatbotModel(user_id, llm_instance, system_prompt)
+            print(f"ORCHESTRATOR: Initialized chatbot model for {user_id} using LLM provider '{llm_vendor_name}'.")
+
+
+            # EXTENSIBILITY POINT 2: Dynamically load and initialize the vendor.
             # This allows adding new communication platforms without changing this core file.
             # It works by loading the module from the `vendor/` directory that matches
             # the `vendor_name` specified in the user's configuration.
