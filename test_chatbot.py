@@ -97,5 +97,43 @@ class TestOrchestrator(unittest.TestCase):
         # The response should come from the fakeLlm's responseArray
         self.assertEqual(response, "Test response")
 
+
+class TestOpenAIProvider(unittest.TestCase):
+
+    @patch('chatbot.ChatPromptTemplate.from_messages')
+    @patch('llmProviders.openAi.ChatOpenAI')
+    def test_openai_provider_initialization(self, mock_chat_openai, mock_from_messages):
+        """Tests that the OpenAI provider is initialized correctly."""
+
+        # We need a dummy LLM and a dummy runnable to be returned by the mocks
+        mock_chat_openai.return_value = MagicMock()
+        mock_from_messages.return_value = MagicMock()
+
+        orchestrator = chatbot.Orchestrator(config_path='configurations/users_openai.json')
+        orchestrator._initialize_components()
+
+        # Check if the user queue was created
+        self.assertIn('user_openai', orchestrator.user_queues)
+
+        # Check if the chatbot model was created
+        self.assertIn('user_openai', orchestrator.chatbot_models)
+
+        # Check if ChatOpenAI was called with the correct parameters
+        mock_chat_openai.assert_called_once_with(
+            apiKey='OPENAI_API_KEY_PLACEHOLDER',
+            model='gpt-3.5-turbo',
+            temperature=0.7
+        )
+
+        # Check if ChatPromptTemplate.from_messages was called with the correct system prompt
+        expected_prompt_str = "You are an OpenAI assistant for user_openai."
+
+        call_args_list = mock_from_messages.call_args[0][0]
+        system_message_tuple = call_args_list[0]
+
+        self.assertEqual(system_message_tuple[0], "system")
+        self.assertEqual(system_message_tuple[1], expected_prompt_str)
+
+
 if __name__ == '__main__':
     unittest.main()

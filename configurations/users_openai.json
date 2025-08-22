@@ -1,0 +1,22 @@
+[
+  {
+    "user_id": "user_openai",
+    "vendor_name": "dummy",
+    "vendor_config": {},
+    "queue_config": {
+      "max_messages": 10,
+      "max_characters": 1000,
+      "max_days": 1,
+      "max_characters_single_message": 300
+    },
+    "llmConfig": {
+      "vendor": "openAi",
+      "vendorConfig": {
+        "apiKey": "OPENAI_API_KEY_PLACEHOLDER",
+        "model": "gpt-3.5-turbo",
+        "temperature": 0.7,
+        "system": "You are an OpenAI assistant for {user_id}."
+      }
+    }
+  }
+]
