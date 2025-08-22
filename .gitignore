@@ -3,3 +3,5 @@ __pycache__/
 log/*
 # But not the .gitkeep file, so we can track the empty directory
 !log/.gitkeep
+node_modules/
+package-lock.json

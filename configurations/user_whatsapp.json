@@ -1,0 +1,15 @@
+[
+  {
+    "user_id": "user_whatsapp",
+    "vendor_name": "whatsAppBaileyes",
+    "vendor_config": {
+      "port": 8080
+    },
+    "queue_config": {
+      "max_messages": 100,
+      "max_characters": 10000,
+      "max_days": 7,
+      "max_characters_single_message": 3000
+    }
+  }
+]

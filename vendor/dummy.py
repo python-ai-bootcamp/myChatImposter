@@ -5,7 +5,7 @@ from typing import Dict, Optional
 # Assuming queue_manager.py is in the parent directory or accessible
 from queue_manager import UserQueue, Sender, Group
 
-class DummyVendor:
+class Vendor:
     """
     A template and simulation vendor. It demonstrates the required interface
     and simulates receiving messages for a user in a background thread.
@@ -126,10 +126,10 @@ class DummyVendor:
         print(f"VENDOR ({self.user_id}): Finished simulating messages.")
         self.is_listening = False
 
-    def sendMessage(self, message: str):
+    def sendMessage(self, recipient: str, message: str):
         """
         Sends a message back to the user.
         A real vendor would use a client/API call to send the message here.
         """
         # For the simulation, we just print to the console.
-        print(f"VENDOR ({self.user_id}): Sending reply ---> {message}")
+        print(f"VENDOR ({self.user_id}): Sending reply to {recipient} ---> {message}")

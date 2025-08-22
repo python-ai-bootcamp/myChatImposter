@@ -1,0 +1,146 @@
+import time
+import threading
+import subprocess
+import json
+from typing import Dict, Optional
+import urllib.request
+import urllib.error
+
+# Assuming queue_manager.py is in the parent directory or accessible
+from queue_manager import UserQueue, Sender, Group, Message
+
+class Vendor:
+    """
+    A vendor that connects to a Node.js Baileys server to send and receive WhatsApp messages.
+    """
+    def __init__(self, user_id: str, config: Dict, user_queues: Dict[str, UserQueue]):
+        """
+        Initializes the vendor.
+        - user_id: The specific user this vendor instance is for.
+        - config: The 'vendor_config' block from the JSON configuration. Must contain 'port'.
+        - user_queues: A dictionary of all user queues, passed by the Orchestrator.
+        """
+        self.user_id = user_id
+        self.config = config
+        self.user_queues = user_queues
+        self.is_listening = False
+        self.thread = None
+        self.node_process = None
+
+        self.port = self.config.get('port')
+        if not self.port:
+            raise ValueError(f"Port not specified in vendor_config for user {self.user_id}")
+
+        self.base_url = f"http://localhost:{self.port}"
+
+        # Start the Node.js server as a subprocess
+        try:
+            print(f"VENDOR ({self.user_id}): Starting Node.js server on port {self.port}...")
+            # We need to make sure the server script is found relative to the project root
+            server_script = "vendor/whatsapp_baileys_server/server.js"
+            self.node_process = subprocess.Popen(
+                ['node', server_script, str(self.port), self.user_id],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE
+            )
+            # Thread to print server output for debugging
+            threading.Thread(target=self._log_subprocess_output, daemon=True).start()
+            print(f"VENDOR ({self.user_id}): Node.js server process started (PID: {self.node_process.pid}).")
+        except FileNotFoundError:
+            print(f"VENDOR_ERROR ({self.user_id}): 'node' command not found. Please ensure Node.js is installed and in your PATH.")
+            raise
+        except Exception as e:
+            print(f"VENDOR_ERROR ({self.user_id}): Failed to start Node.js server: {e}")
+            raise
+
+    def _log_subprocess_output(self):
+        """
+        Logs stdout and stderr from the Node.js subprocess for debugging.
+        Decodes the output as UTF-8 to handle special characters like QR codes.
+        """
+        if self.node_process.stdout:
+            for line in iter(self.node_process.stdout.readline, b''):
+                print(f"NODE_SERVER ({self.user_id}): {line.decode('utf-8').strip()}")
+        if self.node_process.stderr:
+            for line in iter(self.node_process.stderr.readline, b''):
+                print(f"NODE_SERVER_ERR ({self.user_id}): {line.decode('utf-8').strip()}")
+
+    def start_listening(self):
+        """Starts the message listening loop in a background thread."""
+        if self.is_listening:
+            print(f"VENDOR ({self.user_id}): Already listening.")
+            return
+
+        self.is_listening = True
+        self.thread = threading.Thread(target=self._listen, daemon=True)
+        self.thread.start()
+        print(f"VENDOR ({self.user_id}): Started polling for messages from Node.js server.")
+
+    def stop_listening(self):
+        """Stops the message listening loop and terminates the Node.js server."""
+        print(f"VENDOR ({self.user_id}): Stopping...")
+        self.is_listening = False
+        if self.thread:
+            # The thread will exit on its own since it checks `is_listening`
+            self.thread.join() # Wait for the listening thread to finish
+            print(f"VENDOR ({self.user_id}): Polling thread stopped.")
+
+        if self.node_process:
+            print(f"VENDOR ({self.user_id}): Terminating Node.js server process (PID: {self.node_process.pid})...")
+            self.node_process.terminate()
+            self.node_process.wait()
+            print(f"VENDOR ({self.user_id}): Node.js server process terminated.")
+
+    def _listen(self):
+        """
+        The actual listening loop. It polls the Node.js server's /messages
+        endpoint to fetch incoming WhatsApp messages.
+        """
+        while self.is_listening:
+            try:
+                with urllib.request.urlopen(f"{self.base_url}/messages") as response:
+                    if response.status == 200:
+                        messages = json.loads(response.read().decode('utf-8'))
+                        if messages:
+                            print(f"VENDOR ({self.user_id}): Fetched {len(messages)} new message(s).")
+                            queue = self.user_queues.get(self.user_id)
+                            if queue:
+                                for msg in messages:
+                                    # The message format is { sender, message, timestamp }
+                                    sender = Sender(identifier=msg['sender'], display_name=msg['sender']) # display_name could be improved
+                                    queue.add_message(
+                                        content=msg['message'],
+                                        sender=sender,
+                                        source='user',
+                                        # originating_time might need parsing from timestamp if needed
+                                    )
+                            else:
+                                print(f"VENDOR_ERROR ({self.user_id}): Could not find a queue for myself.")
+                    else:
+                        print(f"VENDOR_ERROR ({self.user_id}): Error polling for messages. Status: {response.status}")
+            except urllib.error.URLError as e:
+                # This is expected if the server is not up yet, so don't spam the log
+                time.sleep(2) # Wait a bit longer if server is not reachable
+                continue
+            except Exception as e:
+                print(f"VENDOR_ERROR ({self.user_id}): Exception while polling for messages: {e}")
+
+            time.sleep(5) # Poll every 5 seconds
+
+    def sendMessage(self, recipient: str, message: str):
+        """
+        Sends a message back to the user via the Node.js server.
+        """
+        print(f"VENDOR ({self.user_id}): Sending reply to {recipient} ---> {message[:50]}...")
+        try:
+            data = json.dumps({"recipient": recipient, "message": message}).encode('utf-8')
+            req = urllib.request.Request(
+                f"{self.base_url}/send",
+                data=data,
+                headers={'Content-Type': 'application/json'}
+            )
+            with urllib.request.urlopen(req) as response:
+                if response.status != 200:
+                    print(f"VENDOR_ERROR ({self.user_id}): Failed to send message. Status: {response.status}, Body: {response.read().decode()}")
+        except Exception as e:
+            print(f"VENDOR_ERROR ({self.user_id}): Exception while sending message: {e}")
