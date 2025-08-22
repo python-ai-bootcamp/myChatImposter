@@ -189,6 +189,14 @@ class Orchestrator:
 
         print("\nORCHESTRATOR: All vendor simulations have finished. System shutting down.")
 
+    def stop(self):
+        """Stops all vendor listeners gracefully."""
+        print("\nORCHESTRATOR: Shutting down all vendors...")
+        for user_id, vendor in self.vendor_instances.items():
+            print(f"ORCHESTRATOR: Stopping vendor for {user_id}...")
+            vendor.stop_listening()
+        print("ORCHESTRATOR: All vendors stopped.")
+
 def main():
     """Parses arguments, initializes, and starts the orchestrator."""
     parser = argparse.ArgumentParser(description="Run the chatbot orchestrator.")
@@ -201,7 +209,10 @@ def main():
     args = parser.parse_args()
 
     orchestrator = Orchestrator(config_path=args.config)
-    orchestrator.start()
+    try:
+        orchestrator.start()
+    finally:
+        orchestrator.stop()
 
 if __name__ == "__main__":
     main()
