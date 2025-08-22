@@ -120,7 +120,7 @@ class TestOpenAIProvider(unittest.TestCase):
 
         # Check if ChatOpenAI was called with the correct parameters
         mock_chat_openai.assert_called_once_with(
-            apiKey='OPENAI_API_KEY_PLACEHOLDER',
+            api_key='OPENAI_API_KEY_PLACEHOLDER',
             model='gpt-3.5-turbo',
             temperature=0.7
         )

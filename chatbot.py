@@ -96,9 +96,9 @@ class Orchestrator:
 
             # EXTENSIBILITY POINT 1: Dynamically load and initialize the LLM provider.
             # This allows swapping out the language model based on the user's config.
-            llm_config = config.get('llmConfig')
+            llm_config = config.get('llm_config')
             if not llm_config:
-                print(f"ORCHESTRATOR_WARNING: No 'llmConfig' found for user {user_id}. Skipping chatbot model initialization.")
+                print(f"ORCHESTRATOR_WARNING: No 'llm_config' found for user {user_id}. Skipping chatbot model initialization.")
                 # If there's no LLM config, we can't initialize a chatbot.
                 # We also can't initialize a vendor that depends on a message callback.
                 # For now, we'll just skip this user entirely. A more robust solution
@@ -109,8 +109,8 @@ class Orchestrator:
             llm_provider_module = importlib.import_module(f"llmProviders.{llm_vendor_name}")
             LlmProviderClass = getattr(llm_provider_module, 'LlmProvider') # Convention: class is named 'LlmProvider'
 
-            # The provider is initialized with its specific 'vendorConfig'
-            llm_provider = LlmProviderClass(config=llm_config.get('vendorConfig', {}), user_id=user_id)
+            # The provider is initialized with its specific 'vendor_config'
+            llm_provider = LlmProviderClass(config=llm_config.get('vendor_config', {}), user_id=user_id)
 
             # The provider gives us the actual LLM instance and the system prompt
             llm_instance = llm_provider.get_llm()
