@@ -108,9 +108,15 @@ class Vendor:
                             if queue:
                                 for msg in messages:
                                     # The message format is { sender, message, timestamp, group? }
-                                    sender = Sender(identifier=msg['sender'], display_name=msg.get('display_name', msg['sender']))
 
+                                    # Check if group messages are allowed
+                                    allow_groups = self.config.get('allow_group_messages', True)
                                     group_info = msg.get('group')
+                                    if group_info and not allow_groups:
+                                        sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Ignoring message from group {group_info.get('id')} as per configuration.\n".encode('utf-8'))
+                                        continue
+
+                                    sender = Sender(identifier=msg['sender'], display_name=msg.get('display_name', msg['sender']))
                                     group = Group(identifier=group_info['id'], display_name=group_info.get('name')) if group_info else None
 
                                     queue.add_message(
