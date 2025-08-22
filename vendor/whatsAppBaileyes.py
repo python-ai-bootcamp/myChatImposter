@@ -2,6 +2,7 @@ import time
 import threading
 import subprocess
 import json
+import sys
 from typing import Dict, Optional
 import urllib.request
 import urllib.error
@@ -123,7 +124,9 @@ class Vendor:
                 time.sleep(2) # Wait a bit longer if server is not reachable
                 continue
             except Exception as e:
-                print(f"VENDOR_ERROR ({self.user_id}): Exception while polling for messages: {e}")
+                error_message = f"VENDOR_ERROR ({self.user_id}): Exception while polling for messages: {e}\n"
+                # Write directly to the buffer to avoid encoding errors on non-UTF-8 consoles
+                sys.stdout.buffer.write(error_message.encode('utf-8'))
 
             time.sleep(5) # Poll every 5 seconds
 
