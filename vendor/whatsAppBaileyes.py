@@ -99,7 +99,8 @@ class Vendor:
         """
         while self.is_listening:
             try:
-                with urllib.request.urlopen(f"{self.base_url}/messages") as response:
+                # Add a timeout to prevent the thread from blocking indefinitely
+                with urllib.request.urlopen(f"{self.base_url}/messages", timeout=10) as response:
                     if response.status == 200:
                         messages = json.loads(response.read().decode('utf-8'))
                         if messages:

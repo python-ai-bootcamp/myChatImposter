@@ -175,19 +175,7 @@ class Orchestrator:
         for user_id, vendor in self.vendor_instances.items():
             vendor.start_listening()
 
-        print("\nORCHESTRATOR: System is running. Main thread will wait for vendors to complete...")
-
-        # Collect all vendor threads to wait for them
-        threads = []
-        for vendor in self.vendor_instances.values():
-            if vendor.thread and vendor.thread.is_alive():
-                threads.append(vendor.thread)
-
-        # Wait for all threads to complete their execution
-        for thread in threads:
-            thread.join()
-
-        print("\nORCHESTRATOR: All vendor simulations have finished. System shutting down.")
+        print("\nORCHESTRATOR: System is running. Press Ctrl-C to exit.")
 
     def stop(self):
         """Stops all vendor listeners gracefully."""
@@ -209,10 +197,16 @@ def main():
     args = parser.parse_args()
 
     orchestrator = Orchestrator(config_path=args.config)
+    orchestrator.start()
     try:
-        orchestrator.start()
+        # Keep the main thread alive to allow background threads to run
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print("\nORCHESTRATOR: Ctrl-C received. Initiating graceful shutdown...")
     finally:
         orchestrator.stop()
+        print("ORCHESTRATOR: Shutdown complete.")
 
 if __name__ == "__main__":
     main()
