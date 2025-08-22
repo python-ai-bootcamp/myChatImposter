@@ -9,14 +9,29 @@ const http = require('http');
 let sock;
 let incomingMessages = []; // A simple in-memory queue for messages
 
+// --- Globals ---
+const serverStartTime = Date.now();
+
 // --- Command Line Arguments ---
 const args = process.argv.slice(2);
 const port = args[0];
 const userId = args[1];
+const configBase64 = args[2] || '';
+
+let vendorConfig = {};
+try {
+    if (configBase64) {
+        const configJson = Buffer.from(configBase64, 'base64').toString('utf-8');
+        vendorConfig = JSON.parse(configJson);
+    }
+} catch (e) {
+    console.error("Error: Could not parse vendor config from command line.", e);
+    // Continue with default config
+}
 
 if (!port || !userId) {
     console.error("Error: Port and User ID must be provided as command-line arguments.");
-    console.error("Usage: node server.js <PORT> <USER_ID>");
+    console.error("Usage: node server.js <PORT> <USER_ID> [CONFIG_BASE64]");
     process.exit(1);
 }
 
@@ -56,9 +71,18 @@ async function connectToWhatsApp() {
 
     // Event listener for incoming messages
     sock.ev.on('messages.upsert', (m) => {
+        const processOffline = vendorConfig.process_offline_messages === true; // Default to false
+
         m.messages.forEach(msg => {
             // Ignore notifications and messages from self
             if (!msg.message || msg.key.fromMe) {
+                return;
+            }
+
+            // Check if the message is old and should be ignored
+            const messageTimestamp = (typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp * 1000 : msg.messageTimestamp.toNumber() * 1000);
+            if (!processOffline && messageTimestamp < serverStartTime) {
+                console.log(`Ignoring offline message from ${msg.key.remoteJid} (sent before startup)`);
                 return;
             }
 

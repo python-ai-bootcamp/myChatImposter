@@ -4,7 +4,8 @@
     "vendor_name": "whatsAppBaileyes",
     "vendor_config": {
       "port": 8080,
-      "allow_group_messages": false
+      "allow_group_messages": false,
+      "process_offline_messages": false
     },
     "queue_config": {
       "max_messages": 100,

@@ -3,6 +3,7 @@ import threading
 import subprocess
 import json
 import sys
+import base64
 from typing import Dict, Optional
 import urllib.request
 import urllib.error
@@ -37,10 +38,15 @@ class Vendor:
         # Start the Node.js server as a subprocess
         try:
             print(f"VENDOR ({self.user_id}): Starting Node.js server on port {self.port}...")
+
+            # Serialize and encode the config to pass as a command line argument
+            config_json = json.dumps(self.config)
+            config_base64 = base64.b64encode(config_json.encode('utf-8')).decode('utf-8')
+
             # We need to make sure the server script is found relative to the project root
             server_script = "vendor/whatsapp_baileys_server/server.js"
             self.node_process = subprocess.Popen(
-                ['node', server_script, str(self.port), self.user_id],
+                ['node', server_script, str(self.port), self.user_id, config_base64],
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT
             )
