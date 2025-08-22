@@ -9,10 +9,10 @@
       "max_days": 1,
       "max_characters_single_message": 300
     },
-    "llmConfig": {
+    "llm_config": {
       "vendor": "openAi",
-      "vendorConfig": {
-        "apiKey": "OPENAI_API_KEY_PLACEHOLDER",
+      "vendor_config": {
+        "api_key": "OPENAI_API_KEY_PLACEHOLDER",
         "model": "gpt-3.5-turbo",
         "temperature": 0.7,
         "system": "You are an OpenAI assistant for {user_id}."

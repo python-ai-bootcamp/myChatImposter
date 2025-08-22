@@ -9,13 +9,13 @@
       "max_days": 1,
       "max_characters_single_message": 300
     },
-    "llmConfig": {
+    "llm_config": {
       "vendor": "fakeLlm",
-      "vendorConfig": {
-        "responseArray": [
+      "vendor_config": {
+        "response_array": [
           "Test response"
         ],
-        "system": "Test system prompt for {self_user_id}"
+        "system": "Test system prompt for {user_id}"
       }
     }
   }
