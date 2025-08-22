@@ -42,7 +42,7 @@ class Vendor:
             self.node_process = subprocess.Popen(
                 ['node', server_script, str(self.port), self.user_id],
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.STDOUT
             )
             # Thread to print server output for debugging
             threading.Thread(target=self._log_subprocess_output, daemon=True).start()
@@ -56,15 +56,13 @@ class Vendor:
 
     def _log_subprocess_output(self):
         """
-        Logs stdout and stderr from the Node.js subprocess for debugging.
+        Logs the combined stdout and stderr from the Node.js subprocess for debugging.
         Decodes the output as UTF-8 to handle special characters like QR codes.
         """
+        # stdout now contains both the standard output and the standard error
         if self.node_process.stdout:
             for line in iter(self.node_process.stdout.readline, b''):
-                print(f"NODE_SERVER ({self.user_id}): {line.decode('utf-8').strip()}")
-        if self.node_process.stderr:
-            for line in iter(self.node_process.stderr.readline, b''):
-                print(f"NODE_SERVER_ERR ({self.user_id}): {line.decode('utf-8').strip()}")
+                sys.stdout.buffer.write(f"NODE_SERVER ({self.user_id}): ".encode('utf-8') + line)
 
     def start_listening(self):
         """Starts the message listening loop in a background thread."""
