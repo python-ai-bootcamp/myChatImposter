@@ -67,6 +67,7 @@ class Orchestrator:
         self.user_queues: Dict[str, UserQueue] = {}
         self.chatbot_models: Dict[str, ChatbotModel] = {}
         self.vendor_instances: Dict[str, Any] = {}
+        self.whitelists: Dict[str, list] = {}
 
     def _load_config(self, path: str) -> list:
         print(f"ORCHESTRATOR: Loading configuration from {path}...")
@@ -78,6 +79,7 @@ class Orchestrator:
         # 1. Initialize queues for all users first
         for config in self.user_configs:
             user_id = config['user_id']
+            self.whitelists[user_id] = config.get('respond_to_whitelist', [])
             vendor_name = config['vendor_name']
             q_config = config['queue_config']
             self.user_queues[user_id] = UserQueue(
@@ -154,6 +156,15 @@ class Orchestrator:
         # The bot's own responses are added to the queue for history, but should not trigger a response.
         if message.source == 'bot':
             return
+
+        # If a whitelist is defined for this user, check if the sender is in it.
+        whitelist = self.whitelists.get(user_id)
+        if whitelist:
+            # We do a 'partial' match. If the sender's identifier string contains
+            # any of the strings in the whitelist, we consider it a match.
+            if not any(whitelisted_sender in message.sender.identifier for whitelisted_sender in whitelist):
+                print(f"ORCHESTRATOR: Sender '{message.sender.identifier}' not in whitelist for user '{user_id}'. Ignoring message.")
+                return
 
         chatbot = self.chatbot_models.get(user_id)
         vendor = self.vendor_instances.get(user_id)
