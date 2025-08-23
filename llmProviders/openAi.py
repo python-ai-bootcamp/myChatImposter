@@ -12,9 +12,8 @@ class LlmProvider:
 
         # We need to separate the system prompt from the LLM parameters.
         llm_params = self.config.copy()
+        # The 'system' key is for the prompt, not a parameter for the ChatOpenAI constructor.
         llm_params.pop("system", None)
-        llm_params.pop("vendor", None)
-        llm_params.pop("vendor_config", None)
 
         return ChatOpenAI(**llm_params)
 

@@ -1,0 +1,21 @@
+[
+  {
+    "user_id": "test_user",
+    "vendor_name": "dummy",
+    "vendor_config": {},
+    "llm_config": {
+      "vendor": "fakeLlm",
+      "vendor_config": {
+        "system": "Test system prompt for test_user",
+        "response_array": [
+          "Test response"
+        ]
+      }
+    },
+    "queue_config": {
+      "max_messages": 5,
+      "max_characters": 100,
+      "max_days": 1
+    }
+  }
+]

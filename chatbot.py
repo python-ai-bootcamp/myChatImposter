@@ -111,8 +111,8 @@ class Orchestrator:
             llm_provider_module = importlib.import_module(f"llmProviders.{llm_vendor_name}")
             LlmProviderClass = getattr(llm_provider_module, 'LlmProvider') # Convention: class is named 'LlmProvider'
 
-            # The provider is initialized with its config
-            llm_provider = LlmProviderClass(config=llm_config, user_id=user_id)
+            # The provider is initialized with its specific 'vendor_config'
+            llm_provider = LlmProviderClass(config=llm_config.get('vendor_config', {}), user_id=user_id)
 
             # The provider gives us the actual LLM instance and the system prompt
             llm_instance = llm_provider.get_llm()
