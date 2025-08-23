@@ -8,6 +8,8 @@ const http = require('http');
 // --- Globals ---
 let sock;
 let incomingMessages = []; // A simple in-memory queue for messages
+let currentQR = null;
+let connectionStatus = 'waiting'; // 'waiting', 'connecting', 'open', 'close'
 
 // --- Globals ---
 const serverStartTime = Date.now();
@@ -49,20 +51,30 @@ async function connectToWhatsApp() {
     // Event listener for connection updates
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
+        connectionStatus = connection || 'waiting';
+
         if (qr) {
-            console.log("QR code received, please scan:");
+            console.log("QR code received, generating...");
+            currentQR = qr;
+            // We still print to console for debugging, but the API is the primary way to get it
             qrcode.generate(qr, { small: true });
         }
+
+        if (connection === 'open') {
+            console.log(`WhatsApp connection opened for user ${userId}.`);
+            currentQR = null; // QR is no longer needed
+        }
+
         if (connection === 'close') {
+            currentQR = null; // Clear QR on close
             const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
             console.log(`Connection closed due to ${lastDisconnect.error}, reconnecting: ${shouldReconnect}`);
             if (shouldReconnect) {
                 connectToWhatsApp();
             } else {
                 console.log("Connection closed permanently. Not reconnecting.");
+                // Optional: could add a specific status for 'loggedOut'
             }
-        } else if (connection === 'open') {
-            console.log(`WhatsApp connection opened for user ${userId}.`);
         }
     });
 
@@ -150,6 +162,20 @@ app.get('/messages', (req, res) => {
     // Clear the queue after fetching
     incomingMessages = [];
 });
+
+// Endpoint to get the current connection status and QR code
+app.get('/status', (req, res) => {
+    if (connectionStatus === 'open') {
+        return res.status(200).json({ status: 'connected' });
+    }
+    if (currentQR) {
+        // Instead of just 'qr', we can call it 'linking' to be more descriptive
+        return res.status(200).json({ status: 'linking', qr: currentQR });
+    }
+    // For 'connecting', 'close', etc.
+    return res.status(200).json({ status: connectionStatus });
+});
+
 
 const server = http.createServer(app);
 

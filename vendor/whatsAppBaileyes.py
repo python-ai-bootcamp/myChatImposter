@@ -176,3 +176,19 @@ class Vendor:
                     print(f"VENDOR_ERROR ({self.user_id}): Failed to send message. Status: {response.status}, Body: {response.read().decode()}")
         except Exception as e:
             print(f"VENDOR_ERROR ({self.user_id}): Exception while sending message: {e}")
+
+    def get_status(self) -> Dict:
+        """
+        Gets the connection status from the Node.js server.
+        """
+        try:
+            with urllib.request.urlopen(f"{self.base_url}/status", timeout=5) as response:
+                if response.status == 200:
+                    return json.loads(response.read().decode('utf-8'))
+                else:
+                    return {"status": "error", "message": f"Failed to get status, HTTP {response.status}"}
+        except urllib.error.URLError as e:
+            # This can happen if the server is not yet running, which is a valid state
+            return {"status": "initializing", "message": "Node.js server is not reachable yet."}
+        except Exception as e:
+            return {"status": "error", "message": f"Exception while getting status: {e}"}
