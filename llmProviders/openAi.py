@@ -14,6 +14,7 @@ class LlmProvider:
         llm_params = self.config.copy()
         llm_params.pop("system", None)
         llm_params.pop("vendor", None)
+        llm_params.pop("vendor_config", None)
 
         return ChatOpenAI(**llm_params)
 
