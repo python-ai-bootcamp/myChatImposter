@@ -4,12 +4,20 @@ import subprocess
 import json
 import sys
 import base64
+import socket
 from typing import Dict, Optional
 import urllib.request
 import urllib.error
 
 # Assuming queue_manager.py is in the parent directory or accessible
 from queue_manager import UserQueue, Sender, Group, Message
+
+def find_free_port():
+    """Finds a free port on the host machine."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(('', 0))
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        return s.getsockname()[1]
 
 class Vendor:
     """
@@ -19,7 +27,7 @@ class Vendor:
         """
         Initializes the vendor.
         - user_id: The specific user this vendor instance is for.
-        - config: The 'vendor_config' block from the JSON configuration. Must contain 'port'.
+        - config: The 'vendor_config' block from the JSON configuration.
         - user_queues: A dictionary of all user queues, passed by the Orchestrator.
         """
         self.user_id = user_id
@@ -29,10 +37,9 @@ class Vendor:
         self.thread = None
         self.node_process = None
 
-        self.port = self.config.get('port')
-        if not self.port:
-            raise ValueError(f"Port not specified in vendor_config for user {self.user_id}")
-
+        # Dynamically find a free port for the Node.js server to listen on.
+        # This prevents port conflicts when running multiple vendor instances.
+        self.port = find_free_port()
         self.base_url = f"http://localhost:{self.port}"
 
         # Start the Node.js server as a subprocess
