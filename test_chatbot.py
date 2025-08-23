@@ -62,7 +62,7 @@ class TestOrchestrator(unittest.TestCase):
         # that follows `from_messages` will try to pipe it with other runnables.
         mock_from_messages.return_value = MagicMock()
 
-        orchestrator = chatbot.Orchestrator(config_path='configurations/test_config.json')
+        orchestrator = chatbot.Orchestrator(config_path='testConfigurations/test_config.json')
         orchestrator._initialize_components()
 
         # Check if the user queue was created
@@ -87,7 +87,7 @@ class TestOrchestrator(unittest.TestCase):
 
     def test_e2e_response(self):
         """Tests a full message-response cycle."""
-        orchestrator = chatbot.Orchestrator(config_path='configurations/test_config.json')
+        orchestrator = chatbot.Orchestrator(config_path='testConfigurations/test_config.json')
         orchestrator._initialize_components()
         chatbot_model = orchestrator.chatbot_models['test_user']
 
@@ -109,7 +109,7 @@ class TestOpenAIProvider(unittest.TestCase):
         mock_chat_openai.return_value = MagicMock()
         mock_from_messages.return_value = MagicMock()
 
-        orchestrator = chatbot.Orchestrator(config_path='configurations/users_openai.json')
+        orchestrator = chatbot.Orchestrator(config_path='testConfigurations/users_openai.json')
         orchestrator._initialize_components()
 
         # Check if the user queue was created
