@@ -63,12 +63,18 @@ class Vendor:
     def _log_subprocess_output(self):
         """
         Logs the combined stdout and stderr from the Node.js subprocess for debugging.
-        Decodes the output as UTF-8 to handle special characters like QR codes.
+        The output is read byte by byte to prevent buffering issues, especially with QR codes,
+        and then re-assembled into lines to maintain readable log output.
         """
-        # stdout now contains both the standard output and the standard error
         if self.node_process.stdout:
-            for line in iter(self.node_process.stdout.readline, b''):
-                sys.stdout.buffer.write(f"NODE_SERVER ({self.user_id}): ".encode('utf-8') + line)
+            prefix = f"NODE_SERVER ({self.user_id}): ".encode('utf-8')
+            sys.stdout.buffer.write(prefix)
+            for byte in iter(lambda: self.node_process.stdout.read(1), b''):
+                sys.stdout.buffer.write(byte)
+                if byte == b'\n':
+                    sys.stdout.buffer.flush()
+                    sys.stdout.buffer.write(prefix)
+            sys.stdout.buffer.flush()
 
     def start_listening(self):
         """Starts the message listening loop in a background thread."""

@@ -13,6 +13,7 @@ class LlmProvider:
         # We need to separate the system prompt from the LLM parameters.
         llm_params = self.config.copy()
         llm_params.pop("system", None)
+        llm_params.pop("vendor", None)
 
         return ChatOpenAI(**llm_params)
 
