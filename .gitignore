@@ -4,4 +4,7 @@ log/*
 # But not the .gitkeep file, so we can track the empty directory
 !log/.gitkeep
 node_modules/
+auth_info_user_whatsapp/
 package-lock.json
+configurations/*
+!configurations/.gitkeep
