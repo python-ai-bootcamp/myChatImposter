@@ -5,6 +5,8 @@ import json
 import sys
 import base64
 import socket
+import os
+import uuid
 from typing import Dict, Optional
 import urllib.request
 import urllib.error
@@ -43,22 +45,30 @@ class Vendor:
         self.port = find_free_port()
         self.base_url = f"http://localhost:{self.port}"
 
-        # Start the Node.js server as a subprocess
+        # Start the Node.js server as a subprocess in an isolated directory
         try:
+            # Create a unique working directory for this vendor instance to prevent conflicts
+            session_id = str(uuid.uuid4())
+            self.work_dir = os.path.abspath(os.path.join('running_sessions', f'vendor_{self.user_id}_{session_id}'))
+            os.makedirs(self.work_dir, exist_ok=True)
+
             with lock:
-                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Starting Node.js server on port {self.port}...\n".encode('utf-8'))
+                log_message = f"VENDOR ({self.user_id}): Starting Node.js server on port {self.port} in CWD: {self.work_dir}\n"
+                sys.stdout.buffer.write(log_message.encode('utf-8'))
                 sys.stdout.flush()
 
             # Serialize and encode the config to pass as a command line argument
             config_json = json.dumps(self.config)
             config_base64 = base64.b64encode(config_json.encode('utf-8')).decode('utf-8')
 
-            # We need to make sure the server script is found relative to the project root
-            server_script = "vendor/whatsapp_baileys_server/server.js"
+            # The path to server.js must be absolute so it can be found from the new CWD
+            server_script = os.path.abspath("vendor/whatsapp_baileys_server/server.js")
+
             self.node_process = subprocess.Popen(
                 ['node', server_script, str(self.port), self.user_id, config_base64],
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT
+                stderr=subprocess.STDOUT,
+                cwd=self.work_dir  # Set the current working directory for the subprocess
             )
             # Thread to print server output for debugging
             threading.Thread(target=self._log_subprocess_output, daemon=True).start()
