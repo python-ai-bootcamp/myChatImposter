@@ -47,9 +47,8 @@ class Vendor:
 
         # Start the Node.js server as a subprocess in an isolated directory
         try:
-            # Create a unique working directory for this vendor instance to prevent conflicts
-            session_id = str(uuid.uuid4())
-            self.work_dir = os.path.abspath(os.path.join('running_sessions', f'vendor_{self.user_id}_{session_id}'))
+            # Create a deterministic working directory for this vendor instance to allow for session persistence.
+            self.work_dir = os.path.abspath(os.path.join('running_sessions', self.user_id))
             os.makedirs(self.work_dir, exist_ok=True)
 
             with lock:
