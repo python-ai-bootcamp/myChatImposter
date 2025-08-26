@@ -90,19 +90,27 @@ class Vendor:
     def _log_subprocess_output(self):
         """
         Logs the combined stdout and stderr from the Node.js subprocess for debugging.
-        The output is read byte by byte to prevent buffering issues, especially with QR codes,
-        and then re-assembled into lines to maintain readable log output.
+        This method reads the subprocess output line by line to prevent garbled logs,
+        and uses a lock to ensure writes to stdout are atomic.
         """
         if self.node_process.stdout:
             prefix = f"NODE_SERVER ({self.user_id}): ".encode('utf-8')
-            with lock:
-                sys.stdout.buffer.write(prefix)
-                for byte in iter(lambda: self.node_process.stdout.read(1), b''):
-                    sys.stdout.buffer.write(byte)
-                    if byte == b'\n':
-                        sys.stdout.buffer.flush()
+            line_buffer = bytearray()
+            for byte in iter(lambda: self.node_process.stdout.read(1), b''):
+                line_buffer.extend(byte)
+                if byte == b'\n':
+                    with lock:
                         sys.stdout.buffer.write(prefix)
-                sys.stdout.buffer.flush()
+                        sys.stdout.buffer.write(line_buffer)
+                        sys.stdout.buffer.flush()
+                    line_buffer.clear()
+            # If the process exits without a final newline, print remaining buffer
+            if line_buffer:
+                with lock:
+                    sys.stdout.buffer.write(prefix)
+                    sys.stdout.buffer.write(line_buffer)
+                    sys.stdout.buffer.write(b'\n') # Add a newline for clarity
+                    sys.stdout.buffer.flush()
 
     def start_listening(self):
         """Starts the message listening loop in a background thread."""

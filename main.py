@@ -2,6 +2,7 @@ import uuid
 import threading
 import sys
 from fastapi import FastAPI, HTTPException, Body
+from fastapi.concurrency import run_in_threadpool
 from typing import Dict, Any
 
 from chatbot_manager import ChatbotInstance
@@ -28,13 +29,15 @@ async def create_chatbot(config: Dict[str, Any] = Body(...)):
         if 'user_id' not in config:
             raise HTTPException(status_code=400, detail="Configuration must contain a 'user_id'")
 
-        instance = ChatbotInstance(config=config)
-        chatbot_instances[instance_id] = instance
+        def blocking_init_and_start():
+            """This function contains the synchronous, blocking code."""
+            instance = ChatbotInstance(config=config)
+            chatbot_instances[instance_id] = instance
+            # instance.start() begins the listening loops in background threads
+            instance.start()
 
-        # Start the instance in a background thread so we can return the ID immediately
-        thread = threading.Thread(target=instance.start)
-        thread.daemon = True
-        thread.start()
+        # Run the blocking code in a thread pool to avoid blocking the event loop
+        await run_in_threadpool(blocking_init_and_start)
 
         with lock:
             sys.stdout.buffer.write(f"API: Instance {instance_id} for user '{config['user_id']}' is starting in the background.\n".encode('utf-8'))
