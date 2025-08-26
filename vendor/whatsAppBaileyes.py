@@ -11,6 +11,7 @@ import urllib.error
 
 # Assuming queue_manager.py is in the parent directory or accessible
 from queue_manager import UserQueue, Sender, Group, Message
+from logging_lock import lock
 
 def find_free_port():
     """Finds a free port on the host machine."""
@@ -44,7 +45,9 @@ class Vendor:
 
         # Start the Node.js server as a subprocess
         try:
-            print(f"VENDOR ({self.user_id}): Starting Node.js server on port {self.port}...")
+            with lock:
+                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Starting Node.js server on port {self.port}...\n".encode('utf-8'))
+                sys.stdout.flush()
 
             # Serialize and encode the config to pass as a command line argument
             config_json = json.dumps(self.config)
@@ -59,12 +62,19 @@ class Vendor:
             )
             # Thread to print server output for debugging
             threading.Thread(target=self._log_subprocess_output, daemon=True).start()
-            print(f"VENDOR ({self.user_id}): Node.js server process started (PID: {self.node_process.pid}).")
+            with lock:
+                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Node.js server process started (PID: {self.node_process.pid}).\n".encode('utf-8'))
+                sys.stdout.flush()
         except FileNotFoundError:
-            print(f"VENDOR_ERROR ({self.user_id}): 'node' command not found. Please ensure Node.js is installed and in your PATH.")
+            with lock:
+                sys.stdout.buffer.write(f"VENDOR_ERROR ({self.user_id}): 'node' command not found. Please ensure Node.js is installed and in your PATH.\n".encode('utf-8'))
+                sys.stdout.flush()
             raise
         except Exception as e:
-            print(f"VENDOR_ERROR ({self.user_id}): Failed to start Node.js server: {e}")
+            with lock:
+                error_str = f"VENDOR_ERROR ({self.user_id}): Failed to start Node.js server: {e}\n"
+                sys.stdout.buffer.write(error_str.encode('utf-8', 'backslashreplace'))
+                sys.stdout.flush()
             raise
 
     def _log_subprocess_output(self):
@@ -75,39 +85,52 @@ class Vendor:
         """
         if self.node_process.stdout:
             prefix = f"NODE_SERVER ({self.user_id}): ".encode('utf-8')
-            sys.stdout.buffer.write(prefix)
-            for byte in iter(lambda: self.node_process.stdout.read(1), b''):
-                sys.stdout.buffer.write(byte)
-                if byte == b'\n':
-                    sys.stdout.buffer.flush()
-                    sys.stdout.buffer.write(prefix)
-            sys.stdout.buffer.flush()
+            with lock:
+                sys.stdout.buffer.write(prefix)
+                for byte in iter(lambda: self.node_process.stdout.read(1), b''):
+                    sys.stdout.buffer.write(byte)
+                    if byte == b'\n':
+                        sys.stdout.buffer.flush()
+                        sys.stdout.buffer.write(prefix)
+                sys.stdout.buffer.flush()
 
     def start_listening(self):
         """Starts the message listening loop in a background thread."""
         if self.is_listening:
-            print(f"VENDOR ({self.user_id}): Already listening.")
+            with lock:
+                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Already listening.\n".encode('utf-8'))
+                sys.stdout.flush()
             return
 
         self.is_listening = True
         self.thread = threading.Thread(target=self._listen, daemon=True)
         self.thread.start()
-        print(f"VENDOR ({self.user_id}): Started polling for messages from Node.js server.")
+        with lock:
+            sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Started polling for messages from Node.js server.\n".encode('utf-8'))
+            sys.stdout.flush()
 
     def stop_listening(self):
         """Stops the message listening loop and terminates the Node.js server."""
-        print(f"VENDOR ({self.user_id}): Stopping...")
+        with lock:
+            sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Stopping...\n".encode('utf-8'))
+            sys.stdout.flush()
         self.is_listening = False
         if self.thread:
             # The thread will exit on its own since it checks `is_listening`
             self.thread.join() # Wait for the listening thread to finish
-            print(f"VENDOR ({self.user_id}): Polling thread stopped.")
+            with lock:
+                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Polling thread stopped.\n".encode('utf-8'))
+                sys.stdout.flush()
 
         if self.node_process:
-            print(f"VENDOR ({self.user_id}): Terminating Node.js server process (PID: {self.node_process.pid})...")
+            with lock:
+                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Terminating Node.js server process (PID: {self.node_process.pid})...\n".encode('utf-8'))
+                sys.stdout.flush()
             self.node_process.terminate()
             self.node_process.wait()
-            print(f"VENDOR ({self.user_id}): Node.js server process terminated.")
+            with lock:
+                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Node.js server process terminated.\n".encode('utf-8'))
+                sys.stdout.flush()
 
     def _listen(self):
         """
@@ -121,7 +144,9 @@ class Vendor:
                     if response.status == 200:
                         messages = json.loads(response.read().decode('utf-8'))
                         if messages:
-                            print(f"VENDOR ({self.user_id}): Fetched {len(messages)} new message(s).")
+                            with lock:
+                                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Fetched {len(messages)} new message(s).\n".encode('utf-8'))
+                                sys.stdout.flush()
                             queue = self.user_queues.get(self.user_id)
                             if queue:
                                 for msg in messages:
@@ -131,7 +156,9 @@ class Vendor:
                                     allow_groups = self.config.get('allow_group_messages', True)
                                     group_info = msg.get('group')
                                     if group_info and not allow_groups:
-                                        sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Ignoring message from group {group_info.get('id')} as per configuration.\n".encode('utf-8'))
+                                        with lock:
+                                            sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Ignoring message from group {group_info.get('id')} as per configuration.\n".encode('utf-8', 'backslashreplace'))
+                                            sys.stdout.flush()
                                         continue
 
                                     sender = Sender(identifier=msg['sender'], display_name=msg.get('display_name', msg['sender']))
@@ -145,17 +172,23 @@ class Vendor:
                                         # originating_time might need parsing from timestamp if needed
                                     )
                             else:
-                                print(f"VENDOR_ERROR ({self.user_id}): Could not find a queue for myself.")
+                                with lock:
+                                    sys.stdout.buffer.write(f"VENDOR_ERROR ({self.user_id}): Could not find a queue for myself.\n".encode('utf-8'))
+                                    sys.stdout.flush()
                     else:
-                        print(f"VENDOR_ERROR ({self.user_id}): Error polling for messages. Status: {response.status}")
+                        with lock:
+                            sys.stdout.buffer.write(f"VENDOR_ERROR ({self.user_id}): Error polling for messages. Status: {response.status}\n".encode('utf-8'))
+                            sys.stdout.flush()
             except urllib.error.URLError as e:
                 # This is expected if the server is not up yet, so don't spam the log
                 time.sleep(2) # Wait a bit longer if server is not reachable
                 continue
             except Exception as e:
-                error_message = f"VENDOR_ERROR ({self.user_id}): Exception while polling for messages: {e}\n"
-                # Write directly to the buffer to avoid encoding errors on non-UTF-8 consoles
-                sys.stdout.buffer.write(error_message.encode('utf-8'))
+                with lock:
+                    error_message = f"VENDOR_ERROR ({self.user_id}): Exception while polling for messages: {e}\n"
+                    # Write directly to the buffer to avoid encoding errors on non-UTF-8 consoles
+                    sys.stdout.buffer.write(error_message.encode('utf-8', 'backslashreplace'))
+                    sys.stdout.flush()
 
             time.sleep(5) # Poll every 5 seconds
 
@@ -163,7 +196,10 @@ class Vendor:
         """
         Sends a message back to the user via the Node.js server.
         """
-        print(f"VENDOR ({self.user_id}): Sending reply to {recipient} ---> {message[:50]}...")
+        with lock:
+            log_message = f"VENDOR ({self.user_id}): Sending reply to {recipient} ---> {message[:50]}...\n"
+            sys.stdout.buffer.write(log_message.encode('utf-8', 'backslashreplace'))
+            sys.stdout.flush()
         try:
             data = json.dumps({"recipient": recipient, "message": message}).encode('utf-8')
             req = urllib.request.Request(
@@ -173,9 +209,15 @@ class Vendor:
             )
             with urllib.request.urlopen(req) as response:
                 if response.status != 200:
-                    print(f"VENDOR_ERROR ({self.user_id}): Failed to send message. Status: {response.status}, Body: {response.read().decode()}")
+                    with lock:
+                        body = response.read().decode('utf-8', 'backslashreplace')
+                        sys.stdout.buffer.write(f"VENDOR_ERROR ({self.user_id}): Failed to send message. Status: {response.status}, Body: {body}\n".encode('utf-8'))
+                        sys.stdout.flush()
         except Exception as e:
-            print(f"VENDOR_ERROR ({self.user_id}): Exception while sending message: {e}")
+            with lock:
+                error_str = f"VENDOR_ERROR ({self.user_id}): Exception while sending message: {e}\n"
+                sys.stdout.buffer.write(error_str.encode('utf-8', 'backslashreplace'))
+                sys.stdout.flush()
 
     def get_status(self) -> Dict:
         """
