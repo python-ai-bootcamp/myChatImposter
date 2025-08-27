@@ -50,6 +50,7 @@ async function connectToWhatsApp() {
     sock = makeWASocket({
         auth: state,
         logger: logger,
+        syncFullHistory: true,
     });
 
     // Event listener for connection updates
@@ -88,11 +89,19 @@ async function connectToWhatsApp() {
     // Event listener for incoming messages
     sock.ev.on('messages.upsert', (m) => {
         const processOffline = vendorConfig.process_offline_messages === true; // Default to false
+        const allowGroups = vendorConfig.allow_group_messages === true; // Default to false
 
         m.messages.forEach(msg => {
             // Ignore notifications and messages from self
             if (!msg.message || msg.key.fromMe) {
                 return;
+            }
+
+            const isGroup = msg.key.remoteJid.endsWith('@g.us');
+            if (isGroup && !allowGroups) {
+                // Do not console.log here, as it creates noise when the user *wants* to ignore groups.
+                // The Python layer will log the ignore event if needed.
+                return; // Skip this message entirely
             }
 
             // Check if the message is old and should be ignored
