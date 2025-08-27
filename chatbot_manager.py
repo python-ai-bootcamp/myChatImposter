@@ -58,7 +58,8 @@ class ChatbotInstance:
 
         # 1. Initialize queue
         self.whitelist = self.config.get('respond_to_whitelist', [])
-        vendor_name = self.config['vendor_name']
+        chat_vendor_config = self.config['chat_vendor_config']
+        vendor_name = chat_vendor_config['vendor_name']
         q_config = self.config['queue_config']
         self.user_queue = UserQueue(
             user_id=self.user_id,
@@ -73,17 +74,17 @@ class ChatbotInstance:
             sys.stdout.flush()
 
         # 2. Initialize chatbot model
-        llm_config = self.config.get('llm_config')
-        if not llm_config:
+        llm_vendor_config = self.config.get('llm_vendor_config')
+        if not llm_vendor_config:
             with lock:
-                sys.stdout.buffer.write(f"INSTANCE_WARNING ({self.user_id}): No 'llm_config' found. Chatbot model will not be available.\n".encode('utf-8'))
+                sys.stdout.buffer.write(f"INSTANCE_WARNING ({self.user_id}): No 'llm_vendor_config' found. Chatbot model will not be available.\n".encode('utf-8'))
                 sys.stdout.flush()
             return # Cannot proceed without an LLM
 
-        llm_vendor_name = llm_config['vendor']
+        llm_vendor_name = llm_vendor_config['vendor_name']
         llm_provider_module = importlib.import_module(f"llmProviders.{llm_vendor_name}")
         LlmProviderClass = getattr(llm_provider_module, 'LlmProvider')
-        llm_provider = LlmProviderClass(config=llm_config.get('vendor_config', {}), user_id=self.user_id)
+        llm_provider = LlmProviderClass(config=llm_vendor_config.get('vendor_config', {}), user_id=self.user_id)
         llm_instance = llm_provider.get_llm()
         system_prompt = llm_provider.get_system_prompt()
         self.chatbot_model = ChatbotModel(self.user_id, llm_instance, system_prompt)
@@ -96,7 +97,7 @@ class ChatbotInstance:
         VendorClass = getattr(vendor_module, 'Vendor')
         self.vendor_instance = VendorClass(
             user_id=self.user_id,
-            config=self.config['vendor_config'],
+            config=chat_vendor_config.get('vendor_config', {}),
             user_queues={self.user_id: self.user_queue} # The vendor only needs its own queue
         )
         with lock:
