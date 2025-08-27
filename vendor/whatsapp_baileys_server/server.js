@@ -4,6 +4,7 @@ const express = require('express');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const http = require('http');
+const pino = require('pino');
 
 // --- Globals ---
 let sock;
@@ -44,8 +45,11 @@ async function connectToWhatsApp() {
     // useMultiFileAuthState will use the directory to store and manage auth state
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
+    const logger = pino({ level: 'debug' });
+
     sock = makeWASocket({
-        auth: state
+        auth: state,
+        logger: logger,
     });
 
     // Event listener for connection updates
@@ -84,18 +88,11 @@ async function connectToWhatsApp() {
     // Event listener for incoming messages
     sock.ev.on('messages.upsert', (m) => {
         const processOffline = vendorConfig.process_offline_messages === true; // Default to false
-        const allowGroups = vendorConfig.allow_group_messages === true; // Default to false
 
         m.messages.forEach(msg => {
             // Ignore notifications and messages from self
             if (!msg.message || msg.key.fromMe) {
                 return;
-            }
-
-            const isGroup = msg.key.remoteJid.endsWith('@g.us');
-            if (isGroup && !allowGroups) {
-                console.log(`Ignoring message from group ${msg.key.remoteJid} as per configuration.`);
-                return; // Skip this message entirely
             }
 
             // Check if the message is old and should be ignored
