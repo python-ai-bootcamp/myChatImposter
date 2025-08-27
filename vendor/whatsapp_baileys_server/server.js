@@ -84,11 +84,18 @@ async function connectToWhatsApp() {
     // Event listener for incoming messages
     sock.ev.on('messages.upsert', (m) => {
         const processOffline = vendorConfig.process_offline_messages === true; // Default to false
+        const allowGroups = vendorConfig.allow_group_messages === true; // Default to false
 
         m.messages.forEach(msg => {
             // Ignore notifications and messages from self
             if (!msg.message || msg.key.fromMe) {
                 return;
+            }
+
+            const isGroup = msg.key.remoteJid.endsWith('@g.us');
+            if (isGroup && !allowGroups) {
+                console.log(`Ignoring message from group ${msg.key.remoteJid} as per configuration.`);
+                return; // Skip this message entirely
             }
 
             // Check if the message is old and should be ignored
