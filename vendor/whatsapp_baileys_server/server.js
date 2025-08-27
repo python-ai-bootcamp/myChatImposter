@@ -112,6 +112,7 @@ async function connectToWhatsApp() {
                 messageContent = `[User sent a non-text message: ${messageType}]`;
             }
 
+            const isGroup = msg.key.remoteJid.endsWith('@g.us');
             const sender = isGroup ? (msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid;
             const group = isGroup ? { id: msg.key.remoteJid } : null;
 
