@@ -45,7 +45,7 @@ class ChatbotInstance:
         self.config = config
         self.user_queue: Optional[UserQueue] = None
         self.chatbot_model: Optional[ChatbotModel] = None
-        self.vendor_instance: Optional[Any] = None
+        self.provider_instance: Optional[Any] = None
         self.whitelist: list = []
 
         self._initialize_components()
@@ -58,12 +58,12 @@ class ChatbotInstance:
 
         # 1. Initialize queue
         self.whitelist = self.config.get('respond_to_whitelist', [])
-        chat_vendor_config = self.config['chat_vendor_config']
-        vendor_name = chat_vendor_config['vendor_name']
+        chat_provider_config = self.config['chat_provider_config']
+        provider_name = chat_provider_config['provider_name']
         q_config = self.config['queue_config']
         self.user_queue = UserQueue(
             user_id=self.user_id,
-            vendor_name=vendor_name,
+            provider_name=provider_name,
             max_messages=q_config['max_messages'],
             max_characters=q_config['max_characters'],
             max_days=q_config['max_days'],
@@ -74,34 +74,34 @@ class ChatbotInstance:
             sys.stdout.flush()
 
         # 2. Initialize chatbot model
-        llm_vendor_config = self.config.get('llm_vendor_config')
-        if not llm_vendor_config:
+        llm_provider_config = self.config.get('llm_provider_config')
+        if not llm_provider_config:
             with lock:
-                sys.stdout.buffer.write(f"INSTANCE_WARNING ({self.user_id}): No 'llm_vendor_config' found. Chatbot model will not be available.\n".encode('utf-8'))
+                sys.stdout.buffer.write(f"INSTANCE_WARNING ({self.user_id}): No 'llm_provider_config' found. Chatbot model will not be available.\n".encode('utf-8'))
                 sys.stdout.flush()
             return # Cannot proceed without an LLM
 
-        llm_vendor_name = llm_vendor_config['vendor_name']
-        llm_provider_module = importlib.import_module(f"llm_providers.{llm_vendor_name}")
+        llm_provider_name = llm_provider_config['provider_name']
+        llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
         LlmProviderClass = getattr(llm_provider_module, 'LlmProvider')
-        llm_provider = LlmProviderClass(config=llm_vendor_config.get('vendor_config', {}), user_id=self.user_id)
+        llm_provider = LlmProviderClass(config=llm_provider_config.get('provider_config', {}), user_id=self.user_id)
         llm_instance = llm_provider.get_llm()
         system_prompt = llm_provider.get_system_prompt()
         self.chatbot_model = ChatbotModel(self.user_id, llm_instance, system_prompt)
         with lock:
-            sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_vendor_name}'.\n".encode('utf-8'))
+            sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.\n".encode('utf-8'))
             sys.stdout.flush()
 
-        # 3. Initialize vendor
-        vendor_module = importlib.import_module(f"chat_vendors.{vendor_name}")
-        VendorClass = getattr(vendor_module, 'Vendor')
-        self.vendor_instance = VendorClass(
+        # 3. Initialize Chat Provider
+        provider_module = importlib.import_module(f"chat_providers.{provider_name}")
+        ProviderClass = getattr(provider_module, 'Provider')
+        self.provider_instance = ProviderClass(
             user_id=self.user_id,
-            config=chat_vendor_config.get('vendor_config', {}),
-            user_queues={self.user_id: self.user_queue} # The vendor only needs its own queue
+            config=chat_provider_config.get('provider_config', {}),
+            user_queues={self.user_id: self.user_queue} # The provider only needs its own queue
         )
         with lock:
-            sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initialized vendor '{vendor_name}'.\n".encode('utf-8'))
+            sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initialized chat provider '{provider_name}'.\n".encode('utf-8'))
             sys.stdout.flush()
 
     def _message_callback(self, user_id: str, message: Message):
@@ -120,15 +120,15 @@ class ChatbotInstance:
                     sys.stdout.flush()
                 return
 
-        if not self.chatbot_model or not self.vendor_instance:
+        if not self.chatbot_model or not self.provider_instance:
             with lock:
-                sys.stdout.buffer.write(f"INSTANCE_ERROR ({user_id}): Chatbot or vendor not initialized.\n".encode('utf-8'))
+                sys.stdout.buffer.write(f"INSTANCE_ERROR ({user_id}): Chatbot or provider not initialized.\n".encode('utf-8'))
                 sys.stdout.flush()
             return
 
         try:
             response_text = self.chatbot_model.get_response(message.content)
-            self.vendor_instance.sendMessage(message.sender.identifier, response_text)
+            self.provider_instance.sendMessage(message.sender.identifier, response_text)
 
             bot_sender = Sender(identifier=f"bot_{user_id}", display_name=f"Bot ({user_id})")
             if self.user_queue:
@@ -148,34 +148,34 @@ class ChatbotInstance:
 
     def start(self):
         """Wires up and starts the instance."""
-        if not self.user_queue or not self.vendor_instance:
+        if not self.user_queue or not self.provider_instance:
             with lock:
-                sys.stdout.buffer.write(f"INSTANCE_ERROR ({self.user_id}): Cannot start, queue or vendor not initialized.\n".encode('utf-8'))
+                sys.stdout.buffer.write(f"INSTANCE_ERROR ({self.user_id}): Cannot start, queue or provider not initialized.\n".encode('utf-8'))
                 sys.stdout.flush()
             return
 
         with lock:
-            sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Registering callback and starting vendor listener...\n".encode('utf-8'))
+            sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Registering callback and starting provider listener...\n".encode('utf-8'))
             sys.stdout.flush()
         self.user_queue.register_callback(self._message_callback)
-        self.vendor_instance.start_listening()
+        self.provider_instance.start_listening()
         with lock:
             sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): System is running.\n".encode('utf-8'))
             sys.stdout.flush()
 
     def stop(self):
-        """Stops the vendor listener gracefully."""
-        if self.vendor_instance:
+        """Stops the provider listener gracefully."""
+        if self.provider_instance:
             with lock:
                 sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Shutting down...\n".encode('utf-8'))
                 sys.stdout.flush()
-            self.vendor_instance.stop_listening()
+            self.provider_instance.stop_listening()
             with lock:
                 sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Shutdown complete.\n".encode('utf-8'))
                 sys.stdout.flush()
 
     def get_status(self):
-        """Gets the connection status from the vendor."""
-        if self.vendor_instance and hasattr(self.vendor_instance, 'get_status'):
-            return self.vendor_instance.get_status()
-        return {"status": "unknown", "message": "Vendor does not support status checks."}
+        """Gets the connection status from the provider."""
+        if self.provider_instance and hasattr(self.provider_instance, 'get_status'):
+            return self.provider_instance.get_status()
+        return {"status": "unknown", "message": "Provider does not support status checks."}

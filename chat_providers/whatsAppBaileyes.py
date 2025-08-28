@@ -22,16 +22,16 @@ def find_free_port():
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return s.getsockname()[1]
 
-class Vendor:
+class Provider:
     """
-    A vendor that connects to a Node.js Baileys server to send and receive WhatsApp messages.
+    A provider that connects to a Node.js Baileys server to send and receive WhatsApp messages.
     """
     def __init__(self, user_id: str, config: Dict, user_queues: Dict[str, UserQueue]):
         """
-        Initializes the vendor.
-        - user_id: The specific user this vendor instance is for.
-        - config: The 'vendor_config' block from the JSON configuration.
-        - user_queues: A dictionary of all user queues, passed by the Orchestrator.
+        Initializes the provider.
+        - user_id: The specific user this provider instance is for.
+        - config: The 'provider_config' block from the JSON configuration.
+        - user_queues: A dictionary of all user queues, passed by the main application.
         """
         self.user_id = user_id
         self.config = config
@@ -47,12 +47,12 @@ class Vendor:
 
         # Start the Node.js server as a subprocess in an isolated directory
         try:
-            # Create a deterministic working directory for this vendor instance to allow for session persistence.
+            # Create a deterministic working directory for this provider instance to allow for session persistence.
             self.work_dir = os.path.abspath(os.path.join('running_sessions', self.user_id))
             os.makedirs(self.work_dir, exist_ok=True)
 
             with lock:
-                log_message = f"VENDOR ({self.user_id}): Starting Node.js server on port {self.port} in CWD: {self.work_dir}\n"
+                log_message = f"PROVIDER ({self.user_id}): Starting Node.js server on port {self.port} in CWD: {self.work_dir}\n"
                 sys.stdout.buffer.write(log_message.encode('utf-8'))
                 sys.stdout.flush()
 
@@ -61,7 +61,7 @@ class Vendor:
             config_base64 = base64.b64encode(config_json.encode('utf-8')).decode('utf-8')
 
             # The path to server.js must be absolute so it can be found from the new CWD
-            server_script = os.path.abspath("chat_vendors/whatsapp_baileys_server/server.js")
+            server_script = os.path.abspath("chat_providers/whatsapp_baileys_server/server.js")
 
             self.node_process = subprocess.Popen(
                 ['node', server_script, str(self.port), self.user_id, config_base64],
@@ -72,16 +72,16 @@ class Vendor:
             # Thread to print server output for debugging
             threading.Thread(target=self._log_subprocess_output, daemon=True).start()
             with lock:
-                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Node.js server process started (PID: {self.node_process.pid}).\n".encode('utf-8'))
+                sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Node.js server process started (PID: {self.node_process.pid}).\n".encode('utf-8'))
                 sys.stdout.flush()
         except FileNotFoundError:
             with lock:
-                sys.stdout.buffer.write(f"VENDOR_ERROR ({self.user_id}): 'node' command not found. Please ensure Node.js is installed and in your PATH.\n".encode('utf-8'))
+                sys.stdout.buffer.write(f"PROVIDER_ERROR ({self.user_id}): 'node' command not found. Please ensure Node.js is installed and in your PATH.\n".encode('utf-8'))
                 sys.stdout.flush()
             raise
         except Exception as e:
             with lock:
-                error_str = f"VENDOR_ERROR ({self.user_id}): Failed to start Node.js server: {e}\n"
+                error_str = f"PROVIDER_ERROR ({self.user_id}): Failed to start Node.js server: {e}\n"
                 sys.stdout.buffer.write(error_str.encode('utf-8', 'backslashreplace'))
                 sys.stdout.flush()
             raise
@@ -115,7 +115,7 @@ class Vendor:
         """Starts the message listening loop in a background thread."""
         if self.is_listening:
             with lock:
-                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Already listening.\n".encode('utf-8'))
+                sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Already listening.\n".encode('utf-8'))
                 sys.stdout.flush()
             return
 
@@ -123,30 +123,30 @@ class Vendor:
         self.thread = threading.Thread(target=self._listen, daemon=True)
         self.thread.start()
         with lock:
-            sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Started polling for messages from Node.js server.\n".encode('utf-8'))
+            sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Started polling for messages from Node.js server.\n".encode('utf-8'))
             sys.stdout.flush()
 
     def stop_listening(self):
         """Stops the message listening loop and terminates the Node.js server."""
         with lock:
-            sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Stopping...\n".encode('utf-8'))
+            sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Stopping...\n".encode('utf-8'))
             sys.stdout.flush()
         self.is_listening = False
         if self.thread:
             # The thread will exit on its own since it checks `is_listening`
             self.thread.join() # Wait for the listening thread to finish
             with lock:
-                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Polling thread stopped.\n".encode('utf-8'))
+                sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Polling thread stopped.\n".encode('utf-8'))
                 sys.stdout.flush()
 
         if self.node_process:
             with lock:
-                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Terminating Node.js server process (PID: {self.node_process.pid})...\n".encode('utf-8'))
+                sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Terminating Node.js server process (PID: {self.node_process.pid})...\n".encode('utf-8'))
                 sys.stdout.flush()
             self.node_process.terminate()
             self.node_process.wait()
             with lock:
-                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Node.js server process terminated.\n".encode('utf-8'))
+                sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Node.js server process terminated.\n".encode('utf-8'))
                 sys.stdout.flush()
 
     def _listen(self):
@@ -162,7 +162,7 @@ class Vendor:
                         messages = json.loads(response.read().decode('utf-8'))
                         if messages:
                             with lock:
-                                sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Fetched {len(messages)} new message(s).\n".encode('utf-8'))
+                                sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Fetched {len(messages)} new message(s).\n".encode('utf-8'))
                                 sys.stdout.flush()
                             queue = self.user_queues.get(self.user_id)
                             if queue:
@@ -174,7 +174,7 @@ class Vendor:
                                     group_info = msg.get('group')
                                     if group_info and not allow_groups:
                                         with lock:
-                                            sys.stdout.buffer.write(f"VENDOR ({self.user_id}): Ignoring message from group {group_info.get('id')} as per configuration.\n".encode('utf-8', 'backslashreplace'))
+                                            sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Ignoring message from group {group_info.get('id')} as per configuration.\n".encode('utf-8', 'backslashreplace'))
                                             sys.stdout.flush()
                                         continue
 
@@ -190,11 +190,11 @@ class Vendor:
                                     )
                             else:
                                 with lock:
-                                    sys.stdout.buffer.write(f"VENDOR_ERROR ({self.user_id}): Could not find a queue for myself.\n".encode('utf-8'))
+                                    sys.stdout.buffer.write(f"PROVIDER_ERROR ({self.user_id}): Could not find a queue for myself.\n".encode('utf-8'))
                                     sys.stdout.flush()
                     else:
                         with lock:
-                            sys.stdout.buffer.write(f"VENDOR_ERROR ({self.user_id}): Error polling for messages. Status: {response.status}\n".encode('utf-8'))
+                            sys.stdout.buffer.write(f"PROVIDER_ERROR ({self.user_id}): Error polling for messages. Status: {response.status}\n".encode('utf-8'))
                             sys.stdout.flush()
             except urllib.error.URLError as e:
                 # This is expected if the server is not up yet, so don't spam the log
@@ -202,7 +202,7 @@ class Vendor:
                 continue
             except Exception as e:
                 with lock:
-                    error_message = f"VENDOR_ERROR ({self.user_id}): Exception while polling for messages: {e}\n"
+                    error_message = f"PROVIDER_ERROR ({self.user_id}): Exception while polling for messages: {e}\n"
                     # Write directly to the buffer to avoid encoding errors on non-UTF-8 consoles
                     sys.stdout.buffer.write(error_message.encode('utf-8', 'backslashreplace'))
                     sys.stdout.flush()
@@ -214,7 +214,7 @@ class Vendor:
         Sends a message back to the user via the Node.js server.
         """
         with lock:
-            log_message = f"VENDOR ({self.user_id}): Sending reply to {recipient} ---> {message[:50]}...\n"
+            log_message = f"PROVIDER ({self.user_id}): Sending reply to {recipient} ---> {message[:50]}...\n"
             sys.stdout.buffer.write(log_message.encode('utf-8', 'backslashreplace'))
             sys.stdout.flush()
         try:
@@ -228,11 +228,11 @@ class Vendor:
                 if response.status != 200:
                     with lock:
                         body = response.read().decode('utf-8', 'backslashreplace')
-                        sys.stdout.buffer.write(f"VENDOR_ERROR ({self.user_id}): Failed to send message. Status: {response.status}, Body: {body}\n".encode('utf-8'))
+                        sys.stdout.buffer.write(f"PROVIDER_ERROR ({self.user_id}): Failed to send message. Status: {response.status}, Body: {body}\n".encode('utf-8'))
                         sys.stdout.flush()
         except Exception as e:
             with lock:
-                error_str = f"VENDOR_ERROR ({self.user_id}): Exception while sending message: {e}\n"
+                error_str = f"PROVIDER_ERROR ({self.user_id}): Exception while sending message: {e}\n"
                 sys.stdout.buffer.write(error_str.encode('utf-8', 'backslashreplace'))
                 sys.stdout.flush()
 

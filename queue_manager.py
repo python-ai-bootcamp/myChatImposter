@@ -33,9 +33,9 @@ class Message:
         self.message_size = len(self.content)
 
 class UserQueue:
-    def __init__(self, user_id: str, vendor_name: str, max_messages: int, max_characters: int, max_days: int, max_characters_single_message: int):
+    def __init__(self, user_id: str, provider_name: str, max_messages: int, max_characters: int, max_days: int, max_characters_single_message: int):
         self.user_id = user_id
-        self.vendor_name = vendor_name
+        self.provider_name = provider_name
         self.max_messages = max_messages
         self.max_characters = max_characters
         self.max_characters_single_message = max_characters_single_message
@@ -150,16 +150,16 @@ class UserQueue:
             user_log_line = "::".join(log_line_parts)
 
             # User-specific log
-            user_log_path = os.path.join('log', f"{self.vendor_name}_{self.user_id}.log")
+            user_log_path = os.path.join('log', f"{self.provider_name}_{self.user_id}.log")
             with open(user_log_path, 'a', encoding='utf-8') as f:
                 f.write(user_log_line)
 
             # Global log
-            global_log_path = os.path.join('log', "all_vendors.log")
+            global_log_path = os.path.join('log', "all_providers.log")
             global_log_line_parts = [
                 f"[originating_time={originating_time_str}]",
                 f"[accepted_time={message.accepted_time}]",
-                f"[vendor_name={self.vendor_name}]",
+                f"[provider_name={self.provider_name}]",
                 f"[user_id={self.user_id}]",
                 f"[message_id={message.id}]",
                 f"[sending_user={sender_str}]"
