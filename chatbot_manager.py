@@ -82,7 +82,7 @@ class ChatbotInstance:
             return # Cannot proceed without an LLM
 
         llm_vendor_name = llm_vendor_config['vendor_name']
-        llm_provider_module = importlib.import_module(f"llmProviders.{llm_vendor_name}")
+        llm_provider_module = importlib.import_module(f"llm_providers.{llm_vendor_name}")
         LlmProviderClass = getattr(llm_provider_module, 'LlmProvider')
         llm_provider = LlmProviderClass(config=llm_vendor_config.get('vendor_config', {}), user_id=self.user_id)
         llm_instance = llm_provider.get_llm()
@@ -93,7 +93,7 @@ class ChatbotInstance:
             sys.stdout.flush()
 
         # 3. Initialize vendor
-        vendor_module = importlib.import_module(f"vendor.{vendor_name}")
+        vendor_module = importlib.import_module(f"chat_vendors.{vendor_name}")
         VendorClass = getattr(vendor_module, 'Vendor')
         self.vendor_instance = VendorClass(
             user_id=self.user_id,

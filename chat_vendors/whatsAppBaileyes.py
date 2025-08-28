@@ -61,7 +61,7 @@ class Vendor:
             config_base64 = base64.b64encode(config_json.encode('utf-8')).decode('utf-8')
 
             # The path to server.js must be absolute so it can be found from the new CWD
-            server_script = os.path.abspath("vendor/whatsapp_baileys_server/server.js")
+            server_script = os.path.abspath("chat_vendors/whatsapp_baileys_server/server.js")
 
             self.node_process = subprocess.Popen(
                 ['node', server_script, str(self.port), self.user_id, config_base64],
