@@ -1,5 +1,6 @@
 const makeWASocket = require('@whiskeysockets/baileys').default;
 const { DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const { Boom } = require('@hapi/boom');
 const express = require('express');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
@@ -72,13 +73,24 @@ async function connectToWhatsApp() {
 
         if (connection === 'close') {
             currentQR = null; // Clear QR on close
-            const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log(`Connection closed due to ${lastDisconnect.error}, reconnecting: ${shouldReconnect}`);
+            const lastError = lastDisconnect.error;
+            let shouldReconnect = false;
+
+            if (lastError instanceof Boom) {
+                // Reconnect on all disconnects that are not "logged out"
+                shouldReconnect = lastError.output.statusCode !== DisconnectReason.loggedOut;
+            } else {
+                // If the error is not a Boom error (e.g., generic network error),
+                // we should always try to reconnect.
+                shouldReconnect = true;
+            }
+
+            console.log(`Connection closed due to: ${lastError}, reconnecting: ${shouldReconnect}`);
+
             if (shouldReconnect) {
                 connectToWhatsApp();
             } else {
                 console.log("Connection closed permanently. Not reconnecting.");
-                // Optional: could add a specific status for 'loggedOut'
             }
         }
     });
