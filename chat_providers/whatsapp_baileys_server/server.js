@@ -73,17 +73,11 @@ async function connectToWhatsApp() {
 
         if (connection === 'close') {
             currentQR = null; // Clear QR on close
-
-            // The statusCode determines if a reconnect is necessary
-            const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
-
-            // We will reconnect on all errors, except for when the user is explicitly logged out
-            if (statusCode !== DisconnectReason.loggedOut) {
-                console.log(`Connection closed due to error, reconnecting...`, lastDisconnect.error);
-                connectToWhatsApp();
-            } else {
-                console.log("Connection closed permanently because of logout. Not reconnecting.");
-            }
+            // Always try to reconnect on any disconnection.
+            // If the session is invalid (e.g. logged out), Baileys will handle it
+            // by presenting a new QR code during the connection attempt.
+            console.log(`Connection closed due to:`, lastDisconnect.error, `... Attempting to reconnect.`);
+            connectToWhatsApp();
         }
     });
 
