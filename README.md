@@ -50,6 +50,7 @@ To create a new chatbot instance, send a `PUT` request to the `/chatbot` endpoin
   "llm_provider_config": {
     "provider_name": "openAi",
     "provider_config": {
+      "api_key": "sk-...",
       "model": "gpt-4",
       "temperature": 0.7,
       "system": "You are a helpful assistant."
@@ -100,10 +101,16 @@ if queue:
     ```bash
     npm install --prefix chat_providers/whatsapp_baileys_server
     ```
-3.  Set your OpenAI API key as an environment variable (if using the OpenAI provider):
-    ```bash
-    export OPENAI_API_KEY='your-api-key'
-    ```
+3.  **Provide OpenAI API Key:** You can provide your API key in one of two ways. The JSON method takes precedence.
+    -   **Method 1: Environment Variable (recommended for development)**
+        Set the `OPENAI_API_KEY` environment variable before running the server. The key will be used for any OpenAI session that doesn't have an API key specified in its JSON config.
+        ```bash
+        export OPENAI_API_KEY='your-api-key'
+        uvicorn main:app --host 0.0.0.0 --port 8000
+        ```
+    -   **Method 2: In the JSON request**
+        Include the `api_key` directly in the `provider_config` for the `llm_provider_config` when you create a session via the API. This is useful for production environments where each user might have a different key. See the example in the "API Usage" section.
+
 4.  Run the FastAPI server:
     ```bash
     uvicorn main:app --host 0.0.0.0 --port 8000
