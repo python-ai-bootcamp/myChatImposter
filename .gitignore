@@ -3,8 +3,16 @@ __pycache__/
 log/*
 # But not the .gitkeep file, so we can track the empty directory
 !log/.gitkeep
+
+# Ignore all session data directories created at runtime
+running_sessions/*
+# But not the .gitkeep file
+!running_sessions/.gitkeep
+
 node_modules/
-auth_info_user_whatsapp/
 package-lock.json
 configurations/*
 !configurations/.gitkeep
+
+# Ignore root-level log files
+*.log

@@ -1,13 +1,17 @@
 const makeWASocket = require('@whiskeysockets/baileys').default;
 const { DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const { Boom } = require('@hapi/boom');
 const express = require('express');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
 const http = require('http');
+const pino = require('pino');
 
 // --- Globals ---
 let sock;
 let incomingMessages = []; // A simple in-memory queue for messages
+let currentQR = null;
+let connectionStatus = 'waiting'; // 'waiting', 'connecting', 'open', 'close'
 
 // --- Globals ---
 const serverStartTime = Date.now();
@@ -42,27 +46,49 @@ async function connectToWhatsApp() {
     // useMultiFileAuthState will use the directory to store and manage auth state
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
+    const logger = pino({ level: 'debug' });
+
     sock = makeWASocket({
-        auth: state
+        auth: state,
+        logger: logger,
+        syncFullHistory: true,
     });
 
     // Event listener for connection updates
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
+        connectionStatus = connection || 'waiting';
+
         if (qr) {
-            console.log("QR code received, please scan:");
+            console.log("QR code received, generating...");
+            currentQR = qr;
+            // We still print to console for debugging, but the API is the primary way to get it
             qrcode.generate(qr, { small: true });
         }
-        if (connection === 'close') {
-            const shouldReconnect = (lastDisconnect.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-            console.log(`Connection closed due to ${lastDisconnect.error}, reconnecting: ${shouldReconnect}`);
-            if (shouldReconnect) {
-                connectToWhatsApp();
-            } else {
-                console.log("Connection closed permanently. Not reconnecting.");
-            }
-        } else if (connection === 'open') {
+
+        if (connection === 'open') {
             console.log(`WhatsApp connection opened for user ${userId}.`);
+            currentQR = null; // QR is no longer needed
+        }
+
+        if (connection === 'close') {
+            currentQR = null; // Clear QR on close
+
+            const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
+
+            // if the error is a 401 (Unauthorized), it means the session is invalid.
+            // we need to delete the auth directory to force a new QR code scan.
+            if (statusCode === 401) {
+                console.log("Connection closed due to Unauthorized error. Deleting session and restarting...");
+                // The auth directory is named after the user ID
+                if (fs.existsSync(authDir)) {
+                    fs.rmSync(authDir, { recursive: true, force: true });
+                }
+            }
+
+            // Always try to reconnect on any disconnection.
+            console.log(`Connection closed due to:`, lastDisconnect.error, `... Attempting to reconnect.`);
+            connectToWhatsApp();
         }
     });
 
@@ -72,11 +98,19 @@ async function connectToWhatsApp() {
     // Event listener for incoming messages
     sock.ev.on('messages.upsert', (m) => {
         const processOffline = vendorConfig.process_offline_messages === true; // Default to false
+        const allowGroups = vendorConfig.allow_group_messages === true; // Default to false
 
         m.messages.forEach(msg => {
             // Ignore notifications and messages from self
             if (!msg.message || msg.key.fromMe) {
                 return;
+            }
+
+            const isGroup = msg.key.remoteJid.endsWith('@g.us');
+            if (isGroup && !allowGroups) {
+                // Do not console.log here, as it creates noise when the user *wants* to ignore groups.
+                // The Python layer will log the ignore event if needed.
+                return; // Skip this message entirely
             }
 
             // Check if the message is old and should be ignored
@@ -96,7 +130,6 @@ async function connectToWhatsApp() {
                 messageContent = `[User sent a non-text message: ${messageType}]`;
             }
 
-            const isGroup = msg.key.remoteJid.endsWith('@g.us');
             const sender = isGroup ? (msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid;
             const group = isGroup ? { id: msg.key.remoteJid } : null;
 
@@ -150,6 +183,20 @@ app.get('/messages', (req, res) => {
     // Clear the queue after fetching
     incomingMessages = [];
 });
+
+// Endpoint to get the current connection status and QR code
+app.get('/status', (req, res) => {
+    if (connectionStatus === 'open') {
+        return res.status(200).json({ status: 'connected' });
+    }
+    if (currentQR) {
+        // Instead of just 'qr', we can call it 'linking' to be more descriptive
+        return res.status(200).json({ status: 'linking', qr: currentQR });
+    }
+    // For 'connecting', 'close', etc.
+    return res.status(200).json({ status: connectionStatus });
+});
+
 
 const server = http.createServer(app);
 

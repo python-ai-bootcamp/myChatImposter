@@ -1,6 +1,6 @@
 # My WhatsApp Imposter
 
-This project is a modular chatbot framework designed for easy extension to various messaging platforms. It provides a robust architecture for managing multiple users, each with their own dedicated chatbot instance, message queue, and integration with a specific messaging service (a "vendor").
+This project is a modular chatbot framework designed for easy extension to various messaging platforms. It operates as an API server that dynamically manages multiple users, each with their own dedicated chatbot instance, message queue, and integration with a specific messaging service (a "chat provider").
 
 The core design philosophy is to isolate the chatbot logic from the specifics of the communication platform, allowing developers to add support for new platforms without modifying the core application code.
 
@@ -8,103 +8,145 @@ The core design philosophy is to isolate the chatbot logic from the specifics of
 
 The project is composed of a few key Python modules:
 
--   **`chatbot.py`**: This is the heart of the application. The `Orchestrator` class reads the user configurations, dynamically loads the required "vendor" for each user, and manages the entire lifecycle of the chatbot instances. It wires up the message queues to the chatbot models and vendors.
+-   **`main.py`**: This is the main entry point of the application. It runs a FastAPI web server that exposes endpoints for creating, managing, and polling the status of chatbot instances.
 
--   **`queue_manager.py`**: This module provides a `UserQueue` class that manages a queue of messages for each user. It's designed to be resilient, with configurable limits on the number of messages, total characters, and message age to prevent memory issues.
+-   **`chatbot_manager.py`**: This module provides the `ChatbotInstance` class, which encapsulates all the components for a single user's session (message queue, LLM model, and chat provider connection).
 
--   **`vendor/`**: This directory is the key to the project's extensibility. Each file within this directory is expected to be a self-contained module that provides a connection to a specific messaging platform (like WhatsApp, Slack, etc.).
+-   **`queue_manager.py`**: This module provides a `UserQueue` class that manages a queue of messages for each user. It's designed to be resilient, with configurable limits on the number of messages, total characters, and message age.
 
-## Configuration
+-   **`chat_providers/`**: This directory is the key to the project's extensibility. Each file within this directory is expected to be a self-contained module that provides a connection to a specific messaging platform (like WhatsApp, Slack, etc.).
 
-All user-specific setups are defined in `configurations/users.json`. This file contains a list of user objects, where each object defines:
+-   **`llm_providers/`**: Similar to chat providers, this directory contains modules for different Large Language Model providers (like OpenAI, or a local Fake LLM for testing).
 
--   `user_id`: A unique identifier for the user.
--   `vendor_name`: The name of the vendor module to use for this user (e.g., `dummy_vendor`). This must correspond to a file named `{vendor_name}.py` in the `vendor/` directory.
--   `vendor_config`: A dictionary containing any configuration needed for the vendor, such as API keys or tokens.
--   `queue_config`: A dictionary defining the behavior of the user's message queue (`max_messages`, `max_characters`, `max_days`).
+## API Usage
 
-### Example Configuration:
+The server is controlled via a RESTful API.
 
+### Create Chatbot Instance(s)
+
+To create one or more new chatbot instances, send a `PUT` request to the `/chatbot` endpoint with a JSON array of configuration objects.
+
+**Endpoint:** `PUT /chatbot`
+
+**Body:**
 ```json
 [
   {
-    "user_id": "user_a",
-    "vendor_name": "dummy_vendor",
-    "vendor_config": {
-      "api_key": "dummy_key_for_user_a"
+    "user_id": "user_wa_1",
+    "respond_to_whitelist": [
+      "1234567890"
+    ],
+    "chat_provider_config": {
+      "provider_name": "whatsAppBaileyes",
+      "provider_config": {
+        "allow_group_messages": false
+      }
+    },
+    "queue_config": {
+      "max_messages": 10,
+      "max_characters": 1000,
+      "max_days": 1
+    },
+    "llm_provider_config": {
+      "provider_name": "openAi",
+      "provider_config": {
+        "api_key": "sk-...",
+        "model": "gpt-4",
+        "system": "You are helpful assistant #1."
+      }
+    }
+  },
+  {
+    "user_id": "user_wa_2",
+    "chat_provider_config": {
+      "provider_name": "dummy",
+      "provider_config": {}
     },
     "queue_config": {
       "max_messages": 5,
-      "max_characters": 100,
+      "max_characters": 500,
       "max_days": 1
+    },
+    "llm_provider_config": {
+      "provider_name": "openAi",
+      "provider_config": {
+        "api_key": "sk-...",
+        "model": "gpt-3.5-turbo",
+        "system": "You are helpful assistant #2."
+      }
     }
   }
 ]
 ```
+The server will respond with an array of objects, each containing the `user_id` and a unique `instance_id` for each successfully created instance.
 
-## Extensibility: Adding New Vendors
+**Example Response:**
+```json
+[
+    {
+        "user_id": "user_wa_1",
+        "instance_id": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+    },
+    {
+        "user_id": "user_wa_2",
+        "instance_id": "f6e5d4c3-b2a1-0987-6543-210987fedcba"
+    }
+]
+```
 
-The primary extension point of this project is the **Vendor System**. A "vendor" is a Python class responsible for handling all communication with a specific messaging service. To add support for a new platform, you simply need to create a new vendor file and update the configuration.
+### Poll for Status
 
-Here is a step-by-step guide:
+You can poll the status of an instance (e.g., to get a QR code for linking) by sending a `GET` request.
 
-**1. Create the Vendor File**
+**Endpoint:** `GET /chatbot/{instance_id}/status`
 
-Create a new file in the `vendor/` directory, for example, `vendor/my_new_vendor.py`.
+## Extensibility: Adding New Chat Providers
 
-**2. Create the Vendor Class**
+To add support for a new platform, you simply need to create a new provider file.
 
-Inside your new file, create a class that follows the interface defined by the existing vendors. The `Orchestrator` currently assumes the class is named `DummyVendor`, so for now, it's best to stick to that name or modify the `Orchestrator` to handle different class names.
+**1. Create the Provider File**
+
+Create a new file in the `chat_providers/` directory, for example, `chat_providers/my_new_provider.py`.
+
+**2. Create the Provider Class**
 
 Your class must implement the following methods:
 
--   `__init__(self, user_id: str, config: Dict, user_queues: Dict[str, UserQueue])`:
-    -   The constructor receives the `user_id` it's responsible for, its specific `config` from `users.json`, and a dictionary of *all* user queues in the system.
+-   `__init__(self, user_id: str, config: Dict, user_queues: Dict[str, UserQueue])`: The constructor receives the `user_id`, its specific `provider_config` block, and the user's queue.
+-   `start_listening(self)`: A non-blocking method to start listening for incoming messages.
+-   `sendMessage(self, recipient: str, message: str)`: A method to send an outgoing message.
 
--   `start_listening(self)`:
-    -   This method should start the process of listening for incoming messages from the external platform.
-    -   **Crucially**, this should be a non-blocking operation. The recommended approach is to start a new thread for any long-running tasks like polling an API or maintaining a WebSocket connection.
-
--   `sendMessage(self, message: str)`:
-    -   This method is called by the `Orchestrator` to send a reply back to the user via the vendor's platform.
-
-**3. Implement the Listening Logic**
-
-Inside your `start_listening` method (or the thread it spawns), you will implement the logic to receive messages. When a message is received from the platform, you must add it to this user's queue.
-
+When a message is received, add it to the queue:
 ```python
 # Inside your listening loop:
 queue = self.user_queues.get(self.user_id)
 if queue:
-    queue.add_message(content=received_message_content, sending_user=self.user_id)
-```
-
-Adding a message to the queue will trigger the callback in the `Orchestrator`, which will then process the message with the chatbot and eventually call your `sendMessage` method with the response.
-
-**4. Update the Configuration**
-
-Finally, update `configurations/users.json` to tell a user to use your new vendor.
-
-```json
-{
-  "user_id": "user_c",
-  "vendor_name": "my_new_vendor", // The name of your Python file
-  "vendor_config": {
-    "api_key": "secret_api_key_for_new_vendor",
-    "endpoint": "https://api.newvendor.com"
-  },
-  // ... queue config
-}
+    # ... create sender, group objects
+    queue.add_message(content=received_content, sender=sender, source='user', group=group)
 ```
 
 ## How to Run
 
-1.  Ensure you have the required dependencies installed:
+1.  Install the required Python dependencies:
     ```bash
-    pip install langchain langchain_community
+    pip install -r requirements.txt
     ```
-2.  Run the main chatbot application:
+2.  Install the Node.js dependencies for the WhatsApp provider:
     ```bash
-    python chatbot.py
+    npm install --prefix chat_providers/whatsapp_baileys_server
     ```
-The application will start, initialize all configured users and their vendors, and begin listening for messages. The `dummy_vendor` will simulate receiving messages and print the conversation to the console.
+3.  **Provide OpenAI API Key:** You can provide your API key in one of two ways. The JSON method takes precedence.
+    -   **Method 1: Environment Variable (recommended for development)**
+        Set the `OPENAI_API_KEY` environment variable before running the server. The key will be used for any OpenAI session that doesn't have an API key specified in its JSON config.
+        ```bash
+        export OPENAI_API_KEY='your-api-key'
+        uvicorn main:app --host 0.0.0.0 --port 8000
+        ```
+    -   **Method 2: In the JSON request**
+        Include the `api_key` directly in the `provider_config` for the `llm_provider_config` when you create a session via the API. This is useful for production environments where each user might have a different key. See the example in the "API Usage" section.
+
+4.  Run the FastAPI server:
+    ```bash
+    uvicorn main:app --host 0.0.0.0 --port 8000
+    ```
+The server will start, and you can begin creating chatbot instances via the API.
