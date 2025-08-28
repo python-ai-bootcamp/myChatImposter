@@ -91,11 +91,17 @@ def shutdown_event():
     for instance_id, instance in chatbot_instances.items():
         with lock:
             sys.stdout.buffer.write(f"API: Stopping instance {instance_id}...\n".encode('utf-8'))
-            sys.stdout.flush()
+            try:
+                sys.stdout.flush()
+            except OSError:
+                pass
         instance.stop()
     with lock:
         sys.stdout.buffer.write("API: All instances stopped.\n".encode('utf-8'))
-        sys.stdout.flush()
+        try:
+            sys.stdout.flush()
+        except OSError:
+            pass
 
 if __name__ == "__main__":
     import uvicorn

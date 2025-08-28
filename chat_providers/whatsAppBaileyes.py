@@ -101,7 +101,10 @@ class Provider:
                     with lock:
                         sys.stdout.buffer.write(prefix)
                         sys.stdout.buffer.write(line_buffer)
-                        sys.stdout.buffer.flush()
+                    try:
+                        sys.stdout.flush()
+                    except OSError:
+                        pass
                     line_buffer.clear()
             # If the process exits without a final newline, print remaining buffer
             if line_buffer:
@@ -109,7 +112,10 @@ class Provider:
                     sys.stdout.buffer.write(prefix)
                     sys.stdout.buffer.write(line_buffer)
                     sys.stdout.buffer.write(b'\n') # Add a newline for clarity
-                    sys.stdout.buffer.flush()
+                try:
+                    sys.stdout.flush()
+                except OSError:
+                    pass
 
     def start_listening(self):
         """Starts the message listening loop in a background thread."""

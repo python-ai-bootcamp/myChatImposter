@@ -73,9 +73,20 @@ async function connectToWhatsApp() {
 
         if (connection === 'close') {
             currentQR = null; // Clear QR on close
+
+            const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
+
+            // if the error is a 401 (Unauthorized), it means the session is invalid.
+            // we need to delete the auth directory to force a new QR code scan.
+            if (statusCode === 401) {
+                console.log("Connection closed due to Unauthorized error. Deleting session and restarting...");
+                // The auth directory is named after the user ID
+                if (fs.existsSync(authDir)) {
+                    fs.rmSync(authDir, { recursive: true, force: true });
+                }
+            }
+
             // Always try to reconnect on any disconnection.
-            // If the session is invalid (e.g. logged out), Baileys will handle it
-            // by presenting a new QR code during the connection attempt.
             console.log(`Connection closed due to:`, lastDisconnect.error, `... Attempting to reconnect.`);
             connectToWhatsApp();
         }
