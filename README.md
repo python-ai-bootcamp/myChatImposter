@@ -22,43 +22,77 @@ The project is composed of a few key Python modules:
 
 The server is controlled via a RESTful API.
 
-### Create a Chatbot Instance
+### Create Chatbot Instance(s)
 
-To create a new chatbot instance, send a `PUT` request to the `/chatbot` endpoint with a JSON body containing the user's configuration.
+To create one or more new chatbot instances, send a `PUT` request to the `/chatbot` endpoint with a JSON array of configuration objects.
 
 **Endpoint:** `PUT /chatbot`
 
 **Body:**
 ```json
-{
-  "user_id": "user_wa_1",
-  "respond_to_whitelist": [
-    "1234567890"
-  ],
-  "chat_provider_config": {
-    "provider_name": "whatsAppBaileyes",
-    "provider_config": {
-      "allow_group_messages": false,
-      "process_offline_messages": false
+[
+  {
+    "user_id": "user_wa_1",
+    "respond_to_whitelist": [
+      "1234567890"
+    ],
+    "chat_provider_config": {
+      "provider_name": "whatsAppBaileyes",
+      "provider_config": {
+        "allow_group_messages": false
+      }
+    },
+    "queue_config": {
+      "max_messages": 10,
+      "max_characters": 1000,
+      "max_days": 1
+    },
+    "llm_provider_config": {
+      "provider_name": "openAi",
+      "provider_config": {
+        "api_key": "sk-...",
+        "model": "gpt-4",
+        "system": "You are helpful assistant #1."
+      }
     }
   },
-  "queue_config": {
-    "max_messages": 10,
-    "max_characters": 1000,
-    "max_days": 1
-  },
-  "llm_provider_config": {
-    "provider_name": "openAi",
-    "provider_config": {
-      "api_key": "sk-...",
-      "model": "gpt-4",
-      "temperature": 0.7,
-      "system": "You are a helpful assistant."
+  {
+    "user_id": "user_wa_2",
+    "chat_provider_config": {
+      "provider_name": "dummy",
+      "provider_config": {}
+    },
+    "queue_config": {
+      "max_messages": 5,
+      "max_characters": 500,
+      "max_days": 1
+    },
+    "llm_provider_config": {
+      "provider_name": "openAi",
+      "provider_config": {
+        "api_key": "sk-...",
+        "model": "gpt-3.5-turbo",
+        "system": "You are helpful assistant #2."
+      }
     }
   }
-}
+]
 ```
-The server will respond with a unique `instance_id`.
+The server will respond with an array of objects, each containing the `user_id` and a unique `instance_id` for each successfully created instance.
+
+**Example Response:**
+```json
+[
+    {
+        "user_id": "user_wa_1",
+        "instance_id": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
+    },
+    {
+        "user_id": "user_wa_2",
+        "instance_id": "f6e5d4c3-b2a1-0987-6543-210987fedcba"
+    }
+]
+```
 
 ### Poll for Status
 
