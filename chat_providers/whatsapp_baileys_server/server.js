@@ -73,24 +73,16 @@ async function connectToWhatsApp() {
 
         if (connection === 'close') {
             currentQR = null; // Clear QR on close
-            const lastError = lastDisconnect.error;
-            let shouldReconnect = false;
 
-            if (lastError instanceof Boom) {
-                // Reconnect on all disconnects that are not "logged out"
-                shouldReconnect = lastError.output.statusCode !== DisconnectReason.loggedOut;
-            } else {
-                // If the error is not a Boom error (e.g., generic network error),
-                // we should always try to reconnect.
-                shouldReconnect = true;
-            }
+            // The statusCode determines if a reconnect is necessary
+            const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
 
-            console.log(`Connection closed due to: ${lastError}, reconnecting: ${shouldReconnect}`);
-
-            if (shouldReconnect) {
+            // We will reconnect on all errors, except for when the user is explicitly logged out
+            if (statusCode !== DisconnectReason.loggedOut) {
+                console.log(`Connection closed due to error, reconnecting...`, lastDisconnect.error);
                 connectToWhatsApp();
             } else {
-                console.log("Connection closed permanently. Not reconnecting.");
+                console.log("Connection closed permanently because of logout. Not reconnecting.");
             }
         }
     });
