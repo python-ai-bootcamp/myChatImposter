@@ -185,7 +185,7 @@ class Provider:
                                         continue
 
                                     sender = Sender(identifier=msg['sender'], display_name=msg.get('display_name', msg['sender']))
-                                    group = Group(identifier=group_info['id'], display_name=group_info.get('name')) if group_info else None
+                                    group = Group(identifier=group_info['id'], display_name=group_info.get('name') or group_info['id']) if group_info else None
 
                                     queue.add_message(
                                         content=msg['message'],

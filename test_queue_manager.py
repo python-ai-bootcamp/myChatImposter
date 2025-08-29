@@ -18,7 +18,7 @@ class TestUserQueueUpdated(unittest.TestCase):
         """
         user_queue = UserQueue(
             user_id='test_user_truncate',
-            vendor_name='test_vendor',
+            provider_name='test_vendor',
             max_messages=5,
             max_characters=200,
             max_days=1,
@@ -40,7 +40,7 @@ class TestUserQueueUpdated(unittest.TestCase):
         """
         user_queue = UserQueue(
             user_id='test_user_char_limit',
-            vendor_name='test_vendor',
+            provider_name='test_vendor',
             max_messages=10,
             max_characters=100,
             max_days=1,
@@ -72,7 +72,7 @@ class TestUserQueueUpdated(unittest.TestCase):
         """
         user_queue = UserQueue(
             user_id='test_user_msg_limit',
-            vendor_name='test_vendor',
+            provider_name='test_vendor',
             max_messages=3,
             max_characters=1000,
             max_days=1,
@@ -99,8 +99,8 @@ class TestUserQueueUpdated(unittest.TestCase):
         Test that retention events (evictions) are logged correctly.
         """
         user_id = 'test_user_log'
-        vendor_name = 'test_vendor'
-        log_path = os.path.join('log', f"{vendor_name}_{user_id}.log")
+        provider_name = 'test_vendor'
+        log_path = os.path.join('log', f"{provider_name}_{user_id}.log")
 
         # Ensure log file does not exist before test
         if os.path.exists(log_path):
@@ -108,7 +108,7 @@ class TestUserQueueUpdated(unittest.TestCase):
 
         user_queue = UserQueue(
             user_id=user_id,
-            vendor_name=vendor_name,
+            provider_name=provider_name,
             max_messages=2,
             max_characters=100,
             max_days=1,
