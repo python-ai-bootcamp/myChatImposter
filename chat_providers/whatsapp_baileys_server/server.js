@@ -55,7 +55,7 @@ async function connectToWhatsApp() {
     });
 
     // Event listener for connection updates
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         connectionStatus = connection || 'waiting';
 
@@ -69,6 +69,15 @@ async function connectToWhatsApp() {
         if (connection === 'open') {
             console.log(`WhatsApp connection opened for user ${userId}.`);
             currentQR = null; // QR is no longer needed
+            // --- New Debugging experiment ---
+            try {
+                console.log("Fetching metadata for all participating groups...");
+                const groups = await sock.groupFetchAllParticipating();
+                console.log("GROUP FETCH ALL PARTICIPATING RESULT:", JSON.stringify(groups, null, 2));
+            } catch(e) {
+                console.error("Error fetching all group metadata:", e);
+            }
+            // --- End Debugging experiment ---
         }
 
         if (connection === 'close') {
@@ -135,7 +144,6 @@ async function connectToWhatsApp() {
                 try {
                     // Caching group metadata would be a good optimization, but for now, let's fetch it every time.
                     const metadata = await sock.groupMetadata(msg.key.remoteJid);
-                    console.log("GROUP METADATA PARTICIPANTS:", JSON.stringify(metadata.participants, null, 2));
                     groupInfo = { id: msg.key.remoteJid, name: metadata.subject };
                 } catch (e) {
                     console.error(`Could not fetch group metadata for ${msg.key.remoteJid}:`, e);
