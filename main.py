@@ -60,7 +60,8 @@ async def create_chatbots(configs: List[Dict[str, Any]] = Body(...)):
             successful_creations.append({
                 "user_id": user_id,
                 "instance_id": instance_id,
-                "mode": instance.mode
+                "mode": instance.mode,
+                "warnings": instance.warnings
             })
 
         except Exception as e:

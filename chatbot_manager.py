@@ -38,6 +38,8 @@ class ChatbotModel:
     def get_response(self, message: str) -> str:
         return self.conversation.invoke({"question": message}, config={"configurable": {"session_id": self.user_id}})
 
+from typing import Dict, Any, Optional, List
+
 class ChatbotInstance:
     """Manages all components for a single chatbot instance."""
     def __init__(self, config: Dict[str, Any]):
@@ -48,6 +50,7 @@ class ChatbotInstance:
         self.provider_instance: Optional[Any] = None
         self.whitelist: list = []
         self.mode: str = "fully_functional"  # Default mode
+        self.warnings: List[str] = []
 
         self._initialize_components()
 
@@ -79,11 +82,16 @@ class ChatbotInstance:
             sys.stdout.flush()
 
         # 2. Initialize Chat Provider (Essential)
+        provider_config = chat_provider_config.get('provider_config')
+        if provider_config is None:
+            self.warnings.append("No 'provider_config' section found for chat provider; reverting to default settings.")
+            provider_config = {}
+
         provider_module = importlib.import_module(f"chat_providers.{provider_name}")
         ProviderClass = getattr(provider_module, 'Provider')
         self.provider_instance = ProviderClass(
             user_id=self.user_id,
-            config=chat_provider_config.get('provider_config', {}),
+            config=provider_config,
             user_queues={self.user_id: self.user_queue}
         )
         with lock:
