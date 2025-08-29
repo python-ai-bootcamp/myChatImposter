@@ -1,5 +1,5 @@
 const makeWASocket = require('@whiskeysockets/baileys').default;
-const { DisconnectReason, useMultiFileAuthState, jidNormalizedUser } = require('@whiskeysockets/baileys');
+const { DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const express = require('express');
 const qrcode = require('qrcode-terminal');
@@ -127,11 +127,7 @@ async function connectToWhatsApp() {
                 messageContent = `[User sent a non-text message: ${messageType}]`;
             }
 
-            let rawSenderId = isGroup ? (msg.participant_pn || msg.key.participant) : msg.key.remoteJid;
-            if (!rawSenderId) { // Fallback just in case
-                rawSenderId = msg.key.remoteJid;
-            }
-            const senderId = await resolveJid(rawSenderId, sock);
+            const senderId = isGroup ? (msg.participant_pn || msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid;
             const senderName = msg.notify || msg.pushName || null; // Get sender's name from notify or pushName
 
             let groupInfo = null;
@@ -162,15 +158,6 @@ async function connectToWhatsApp() {
             incomingMessages.push(...newMessages);
         }
     });
-}
-
-async function resolveJid(jid, sock) {
-    if (!jid) return null
-    const norm = jidNormalizedUser(jid)
-    if (norm.endsWith('@s.whatsapp.net')) return norm
-
-    const res = await sock.onWhatsApp(jid)
-    return res?.[0]?.jid || jid
 }
 
 
