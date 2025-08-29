@@ -47,6 +47,7 @@ class ChatbotInstance:
         self.chatbot_model: Optional[ChatbotModel] = None
         self.provider_instance: Optional[Any] = None
         self.whitelist: list = []
+        self.mode: str = "fully_functional"  # Default mode
 
         self._initialize_components()
 
@@ -92,6 +93,7 @@ class ChatbotInstance:
         # 3. Initialize Chatbot Model (Optional)
         llm_provider_config = self.config.get('llm_provider_config')
         if llm_provider_config:
+            self.mode = "fully_functional"
             llm_provider_name = llm_provider_config['provider_name']
             llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
             LlmProviderClass = getattr(llm_provider_module, 'LlmProvider')
@@ -103,6 +105,7 @@ class ChatbotInstance:
                 sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.\n".encode('utf-8'))
                 sys.stdout.flush()
         else:
+            self.mode = "collection_only"
             with lock:
                 sys.stdout.buffer.write(f"INSTANCE_WARNING ({self.user_id}): No 'llm_provider_config' found. Instance will run in collection-only mode.\n".encode('utf-8'))
                 sys.stdout.flush()

@@ -40,20 +40,28 @@ async def create_chatbots(configs: List[Dict[str, Any]] = Body(...)):
         try:
             # The 'user_id' check is now done before this block.
 
-            def blocking_init_and_start(current_config, current_instance_id):
-                """This function contains the synchronous, blocking code."""
+            def blocking_init_and_start(current_config, current_instance_id) -> ChatbotInstance:
+                """
+                This function contains the synchronous, blocking code.
+                It returns the created instance so its mode can be inspected.
+                """
                 instance = ChatbotInstance(config=current_config)
                 chatbot_instances[current_instance_id] = instance
                 instance.start()
+                return instance
 
             # Run the blocking code in a thread pool to avoid blocking the event loop
-            await run_in_threadpool(blocking_init_and_start, config, instance_id)
+            instance = await run_in_threadpool(blocking_init_and_start, config, instance_id)
 
             with lock:
                 sys.stdout.buffer.write(f"API: Instance {instance_id} for user '{user_id}' is starting in the background.\n".encode('utf-8'))
                 sys.stdout.flush()
 
-            successful_creations.append({"user_id": user_id, "instance_id": instance_id})
+            successful_creations.append({
+                "user_id": user_id,
+                "instance_id": instance_id,
+                "mode": instance.mode
+            })
 
         except Exception as e:
             with lock:
