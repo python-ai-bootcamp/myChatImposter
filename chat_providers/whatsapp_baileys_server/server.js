@@ -127,7 +127,7 @@ async function connectToWhatsApp() {
                 messageContent = `[User sent a non-text message: ${messageType}]`;
             }
 
-            const senderId = isGroup ? (msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid;
+            const senderId = isGroup ? (msg.participant_pn || msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid;
             const senderName = msg.notify || msg.pushName || null; // Get sender's name from notify or pushName
 
             let groupInfo = null;
