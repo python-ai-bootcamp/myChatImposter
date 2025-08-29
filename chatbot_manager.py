@@ -38,6 +38,8 @@ class ChatbotModel:
     def get_response(self, message: str) -> str:
         return self.conversation.invoke({"question": message}, config={"configurable": {"session_id": self.user_id}})
 
+from typing import Dict, Any, Optional, List
+
 class ChatbotInstance:
     """Manages all components for a single chatbot instance."""
     def __init__(self, config: Dict[str, Any]):
@@ -47,16 +49,22 @@ class ChatbotInstance:
         self.chatbot_model: Optional[ChatbotModel] = None
         self.provider_instance: Optional[Any] = None
         self.whitelist: list = []
+        self.mode: str = "fully_functional"  # Default mode
+        self.warnings: List[str] = []
 
         self._initialize_components()
 
     def _initialize_components(self):
-        """Initializes all components for this instance based on the config."""
+        """
+        Initializes all components for this instance based on the config.
+        The chat provider is essential. The LLM provider is optional; if not
+        provided, the instance will run in "collection only" mode.
+        """
         with lock:
             sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initializing components...\n".encode('utf-8'))
             sys.stdout.flush()
 
-        # 1. Initialize queue
+        # 1. Initialize Queue (Essential)
         self.whitelist = self.config.get('respond_to_whitelist', [])
         chat_provider_config = self.config['chat_provider_config']
         provider_name = chat_provider_config['provider_name']
@@ -73,36 +81,42 @@ class ChatbotInstance:
             sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initialized queue.\n".encode('utf-8'))
             sys.stdout.flush()
 
-        # 2. Initialize chatbot model
-        llm_provider_config = self.config.get('llm_provider_config')
-        if not llm_provider_config:
-            with lock:
-                sys.stdout.buffer.write(f"INSTANCE_WARNING ({self.user_id}): No 'llm_provider_config' found. Chatbot model will not be available.\n".encode('utf-8'))
-                sys.stdout.flush()
-            return # Cannot proceed without an LLM
+        # 2. Initialize Chat Provider (Essential)
+        provider_config = chat_provider_config.get('provider_config')
+        if provider_config is None:
+            self.warnings.append("No 'provider_config' section found for chat provider; reverting to default settings.")
+            provider_config = {}
 
-        llm_provider_name = llm_provider_config['provider_name']
-        llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
-        LlmProviderClass = getattr(llm_provider_module, 'LlmProvider')
-        llm_provider = LlmProviderClass(config=llm_provider_config.get('provider_config', {}), user_id=self.user_id)
-        llm_instance = llm_provider.get_llm()
-        system_prompt = llm_provider.get_system_prompt()
-        self.chatbot_model = ChatbotModel(self.user_id, llm_instance, system_prompt)
-        with lock:
-            sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.\n".encode('utf-8'))
-            sys.stdout.flush()
-
-        # 3. Initialize Chat Provider
         provider_module = importlib.import_module(f"chat_providers.{provider_name}")
         ProviderClass = getattr(provider_module, 'Provider')
         self.provider_instance = ProviderClass(
             user_id=self.user_id,
-            config=chat_provider_config.get('provider_config', {}),
-            user_queues={self.user_id: self.user_queue} # The provider only needs its own queue
+            config=provider_config,
+            user_queues={self.user_id: self.user_queue}
         )
         with lock:
             sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initialized chat provider '{provider_name}'.\n".encode('utf-8'))
             sys.stdout.flush()
+
+        # 3. Initialize Chatbot Model (Optional)
+        llm_provider_config = self.config.get('llm_provider_config')
+        if llm_provider_config:
+            self.mode = "fully_functional"
+            llm_provider_name = llm_provider_config['provider_name']
+            llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
+            LlmProviderClass = getattr(llm_provider_module, 'LlmProvider')
+            llm_provider = LlmProviderClass(config=llm_provider_config.get('provider_config', {}), user_id=self.user_id)
+            llm_instance = llm_provider.get_llm()
+            system_prompt = llm_provider.get_system_prompt()
+            self.chatbot_model = ChatbotModel(self.user_id, llm_instance, system_prompt)
+            with lock:
+                sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.\n".encode('utf-8'))
+                sys.stdout.flush()
+        else:
+            self.mode = "collection_only"
+            with lock:
+                sys.stdout.buffer.write(f"INSTANCE_WARNING ({self.user_id}): No 'llm_provider_config' found. Instance will run in collection-only mode.\n".encode('utf-8'))
+                sys.stdout.flush()
 
     def _message_callback(self, user_id: str, message: Message):
         """Processes a new message from the queue."""
@@ -147,12 +161,14 @@ class ChatbotInstance:
 
 
     def start(self):
-        """Wires up and starts the instance."""
+        """
+        Wires up and starts the instance.
+        Raises an exception if essential components like the queue or provider are not initialized.
+        """
         if not self.user_queue or not self.provider_instance:
-            with lock:
-                sys.stdout.buffer.write(f"INSTANCE_ERROR ({self.user_id}): Cannot start, queue or provider not initialized.\n".encode('utf-8'))
-                sys.stdout.flush()
-            return
+            # This is a critical error, as the instance cannot function at all without these.
+            # This will be caught by the exception handler in main.py and reported to the user.
+            raise RuntimeError(f"Instance {self.user_id} cannot start: queue or provider not initialized.")
 
         with lock:
             sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Registering callback and starting provider listener...\n".encode('utf-8'))

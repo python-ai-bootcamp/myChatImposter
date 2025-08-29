@@ -17,45 +17,62 @@ chatbot_instances: Dict[str, ChatbotInstance] = {}
 async def create_chatbots(configs: List[Dict[str, Any]] = Body(...)):
     """
     Creates and starts one or more new chatbot instances based on the provided list of configurations.
+    Returns a JSON object with lists of successful and failed creations.
     """
-    created_instances = []
+    successful_creations = []
+    failed_creations = []
 
     for config in configs:
         instance_id = str(uuid.uuid4())
-        user_id = config.get('user_id', 'unknown_user')
+        # Pre-validate that user_id exists to ensure it's available for error reporting
+        user_id = config.get('user_id')
+        if not user_id:
+            failed_creations.append({
+                "user_id": "unknown",
+                "error": "Configuration must contain a 'user_id'"
+            })
+            continue
 
         with lock:
             sys.stdout.buffer.write(f"API: Received request to create instance {instance_id} for user {user_id}\n".encode('utf-8'))
             sys.stdout.flush()
 
         try:
-            if 'user_id' not in config:
-                raise ValueError("Configuration must contain a 'user_id'")
+            # The 'user_id' check is now done before this block.
 
-            def blocking_init_and_start(current_config, current_instance_id):
-                """This function contains the synchronous, blocking code."""
+            def blocking_init_and_start(current_config, current_instance_id) -> ChatbotInstance:
+                """
+                This function contains the synchronous, blocking code.
+                It returns the created instance so its mode can be inspected.
+                """
                 instance = ChatbotInstance(config=current_config)
                 chatbot_instances[current_instance_id] = instance
                 instance.start()
+                return instance
 
             # Run the blocking code in a thread pool to avoid blocking the event loop
-            await run_in_threadpool(blocking_init_and_start, config, instance_id)
+            instance = await run_in_threadpool(blocking_init_and_start, config, instance_id)
 
             with lock:
                 sys.stdout.buffer.write(f"API: Instance {instance_id} for user '{user_id}' is starting in the background.\n".encode('utf-8'))
                 sys.stdout.flush()
 
-            created_instances.append({"user_id": user_id, "instance_id": instance_id})
+            successful_creations.append({
+                "user_id": user_id,
+                "instance_id": instance_id,
+                "mode": instance.mode,
+                "warnings": instance.warnings
+            })
 
         except Exception as e:
             with lock:
+                # Using backslashreplace to handle potential encoding issues in the error message
                 error_message = f"API_ERROR: Failed to create instance for user {user_id}: {e}\n"
                 sys.stdout.buffer.write(error_message.encode('utf-8', 'backslashreplace'))
                 sys.stdout.flush()
-            # Don't re-raise, just skip this one and try the next.
-            # We can add failed instances to a separate list in the response if needed.
+            failed_creations.append({"user_id": user_id, "error": str(e)})
 
-    return created_instances
+    return {"successful": successful_creations, "failed": failed_creations}
 
 @app.get("/chatbot/{instance_id}/status")
 async def get_chatbot_status(instance_id: str):
