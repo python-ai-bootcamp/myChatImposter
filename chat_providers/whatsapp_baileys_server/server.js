@@ -135,6 +135,7 @@ async function connectToWhatsApp() {
                 try {
                     // Caching group metadata would be a good optimization, but for now, let's fetch it every time.
                     const metadata = await sock.groupMetadata(msg.key.remoteJid);
+                    console.log("GROUP METADATA PARTICIPANTS:", JSON.stringify(metadata.participants, null, 2));
                     groupInfo = { id: msg.key.remoteJid, name: metadata.subject };
                 } catch (e) {
                     console.error(`Could not fetch group metadata for ${msg.key.remoteJid}:`, e);
