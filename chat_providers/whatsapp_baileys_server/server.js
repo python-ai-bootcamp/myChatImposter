@@ -1,5 +1,5 @@
 const makeWASocket = require('@whiskeysockets/baileys').default;
-const { DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
+const { DisconnectReason, useMultiFileAuthState, jidNormalizedUser } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const express = require('express');
 const qrcode = require('qrcode-terminal');
@@ -55,7 +55,7 @@ async function connectToWhatsApp() {
     });
 
     // Event listener for connection updates
-    sock.ev.on('connection.update', async (update) => {
+    sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         connectionStatus = connection || 'waiting';
 
@@ -69,15 +69,6 @@ async function connectToWhatsApp() {
         if (connection === 'open') {
             console.log(`WhatsApp connection opened for user ${userId}.`);
             currentQR = null; // QR is no longer needed
-            // --- New Debugging experiment ---
-            try {
-                console.log("Fetching metadata for all participating groups...");
-                const groups = await sock.groupFetchAllParticipating();
-                console.log("GROUP FETCH ALL PARTICIPATING RESULT:", JSON.stringify(groups, null, 2));
-            } catch(e) {
-                console.error("Error fetching all group metadata:", e);
-            }
-            // --- End Debugging experiment ---
         }
 
         if (connection === 'close') {
@@ -136,7 +127,11 @@ async function connectToWhatsApp() {
                 messageContent = `[User sent a non-text message: ${messageType}]`;
             }
 
-            const senderId = isGroup ? (msg.participant_pn || msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid;
+            let rawSenderId = isGroup ? (msg.participant_pn || msg.key.participant) : msg.key.remoteJid;
+            if (!rawSenderId) { // Fallback just in case
+                rawSenderId = msg.key.remoteJid;
+            }
+            const senderId = await resolveJid(rawSenderId, sock);
             const senderName = msg.notify || msg.pushName || null; // Get sender's name from notify or pushName
 
             let groupInfo = null;
@@ -167,6 +162,15 @@ async function connectToWhatsApp() {
             incomingMessages.push(...newMessages);
         }
     });
+}
+
+async function resolveJid(jid, sock) {
+    if (!jid) return null
+    const norm = jidNormalizedUser(jid)
+    if (norm.endsWith('@s.whatsapp.net')) return norm
+
+    const res = await sock.onWhatsApp(jid)
+    return res?.[0]?.jid || jid
 }
 
 
