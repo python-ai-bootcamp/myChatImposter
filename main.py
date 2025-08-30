@@ -21,6 +21,11 @@ class TimestampAccessFormatter(AccessFormatter):
         original_message = super().format(record)
         return f"{get_timestamp()}{original_message}"
 
+# Modify the Uvicorn logging config in place to use our custom formatters
+LOGGING_CONFIG["formatters"]["default"]["()"] = "main.TimestampDefaultFormatter"
+LOGGING_CONFIG["formatters"]["access"]["()"] = "main.TimestampAccessFormatter"
+
+
 app = FastAPI()
 
 # In-memory storage for chatbot instances
@@ -111,9 +116,4 @@ def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
-
-    log_config = LOGGING_CONFIG.copy()
-    log_config["formatters"]["default"]["()"] = "__main__.TimestampDefaultFormatter"
-    log_config["formatters"]["access"]["()"] = "__main__.TimestampAccessFormatter"
-
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_config=log_config)
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_config=LOGGING_CONFIG)
