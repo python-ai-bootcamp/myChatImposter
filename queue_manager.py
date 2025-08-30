@@ -135,7 +135,7 @@ class UserQueue:
             originating_time_str = str(message.originating_time) if message.originating_time is not None else 'None'
 
             sender_str = f"{message.sender.display_name} ({message.sender.identifier})"
-            group_str = f"::[group={message.group.display_name} ({message.group.identifier})]" if message.group else ""
+            group_str = f"[group={message.group.display_name} ({message.group.identifier})]" if message.group else ""
 
             log_line_parts = [
                 f"[originating_time={originating_time_str}]",
@@ -180,9 +180,9 @@ class UserQueue:
         """
         Logs a retention event to the user-specific log file. This method is thread-safe.
         """
-        with _log_lock:
+        with lock:
             os.makedirs('log', exist_ok=True)
-            user_log_path = os.path.join('log', f"{self.vendor_name}_{self.user_id}.log")
+            user_log_path = os.path.join('log', f"{self.provider_name}_{self.user_id}.log")
 
             log_line = f"[retention_event_time={int(time.time() * 1000)}]::" \
                        f"[event_type=EVICT]::" \

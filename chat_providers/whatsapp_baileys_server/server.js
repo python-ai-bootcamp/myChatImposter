@@ -96,51 +96,67 @@ async function connectToWhatsApp() {
     sock.ev.on('creds.update', saveCreds);
 
     // Event listener for incoming messages
-    sock.ev.on('messages.upsert', (m) => {
+    sock.ev.on('messages.upsert', async (m) => { // Make it async
         const processOffline = vendorConfig.process_offline_messages === true; // Default to false
         const allowGroups = vendorConfig.allow_group_messages === true; // Default to false
 
-        m.messages.forEach(msg => {
+        const newMessagesPromises = m.messages.map(async (msg) => { // Use map with async callback
             // Ignore notifications and messages from self
             if (!msg.message || msg.key.fromMe) {
-                return;
+                return null; // Return null for messages to be filtered out
             }
 
             const isGroup = msg.key.remoteJid.endsWith('@g.us');
             if (isGroup && !allowGroups) {
-                // Do not console.log here, as it creates noise when the user *wants* to ignore groups.
-                // The Python layer will log the ignore event if needed.
-                return; // Skip this message entirely
+                return null;
             }
 
             // Check if the message is old and should be ignored
             const messageTimestamp = (typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp * 1000 : msg.messageTimestamp.toNumber() * 1000);
             if (!processOffline && messageTimestamp < serverStartTime) {
                 console.log(`Ignoring offline message from ${msg.key.remoteJid} (sent before startup)`);
-                return;
+                return null;
             }
 
             console.log(`Received message from ${msg.key.remoteJid}`);
 
             let messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text;
 
-            // If there's no text content, create a placeholder for media or other types
             if (!messageContent) {
                 const messageType = Object.keys(msg.message)[0] || 'unknown';
                 messageContent = `[User sent a non-text message: ${messageType}]`;
             }
 
-            const sender = isGroup ? (msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid;
-            const group = isGroup ? { id: msg.key.remoteJid } : null;
+            const senderId = isGroup ? (msg.participant_pn || msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid;
+            const senderName = msg.notify || msg.pushName || null; // Get sender's name from notify or pushName
+
+            let groupInfo = null;
+            if (isGroup) {
+                try {
+                    // Caching group metadata would be a good optimization, but for now, let's fetch it every time.
+                    const metadata = await sock.groupMetadata(msg.key.remoteJid);
+                    groupInfo = { id: msg.key.remoteJid, name: metadata.subject };
+                } catch (e) {
+                    console.error(`Could not fetch group metadata for ${msg.key.remoteJid}:`, e);
+                    groupInfo = { id: msg.key.remoteJid, name: null }; // Fallback
+                }
+            }
 
             const incoming = {
-                sender: sender,
+                sender: senderId,
+                display_name: senderName, // Add display_name to the payload
                 message: messageContent,
                 timestamp: new Date().toISOString(),
-                group: group
+                group: groupInfo
             };
-            incomingMessages.push(incoming);
+            return incoming;
         });
+
+        const newMessages = (await Promise.all(newMessagesPromises)).filter(Boolean); // Await all promises and filter out nulls
+
+        if (newMessages.length > 0) {
+            incomingMessages.push(...newMessages);
+        }
     });
 }
 
