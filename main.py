@@ -2,31 +2,35 @@ import uuid
 import threading
 import sys
 import logging
-from fastapi import FastAPI, HTTPException, Body
+import time
+from fastapi import FastAPI, HTTPException, Body, Request
 from fastapi.concurrency import run_in_threadpool
 from typing import Dict, Any, List
-from uvicorn.logging import DefaultFormatter, AccessFormatter
 from uvicorn.config import LOGGING_CONFIG
 
 from chatbot_manager import ChatbotInstance
-from logging_lock import console_log, get_timestamp
+from logging_lock import console_log
 
-class TimestampDefaultFormatter(DefaultFormatter):
-    def format(self, record: logging.LogRecord) -> str:
-        original_message = super().format(record)
-        return f"{get_timestamp()}{original_message}"
-
-class TimestampAccessFormatter(AccessFormatter):
-    def format(self, record: logging.LogRecord) -> str:
-        original_message = super().format(record)
-        return f"{get_timestamp()}{original_message}"
-
-# Modify the Uvicorn logging config in place to use our custom formatters
-LOGGING_CONFIG["formatters"]["default"]["()"] = "main.TimestampDefaultFormatter"
-LOGGING_CONFIG["formatters"]["access"]["()"] = "main.TimestampAccessFormatter"
-
+# Disable uvicorn's access logger
+LOGGING_CONFIG["loggers"]["uvicorn.access"]["handlers"] = []
 
 app = FastAPI()
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """
+    A middleware to log incoming requests in a format similar to uvicorn's,
+    but using our custom timestamped logger.
+    """
+    start_time = time.time()
+    response = await call_next(request)
+    process_time = (time.time() - start_time) * 1000
+
+    # Recreate a uvicorn-like access log, but with our timestamp
+    console_log(f'INFO:     {request.client.host}:{request.client.port} - "{request.method} {request.url.path} HTTP/{request.scope["http_version"]}" {response.status_code} ({process_time:.2f}ms)')
+
+    return response
+
 
 # In-memory storage for chatbot instances
 chatbot_instances: Dict[str, ChatbotInstance] = {}
@@ -90,7 +94,9 @@ async def get_chatbot_status(instance_id: str):
     Polls for the status of a specific chatbot instance.
     This can return the QR code for linking, success status, or other states.
     """
-    console_log(f"API: Received status request for instance {instance_id}")
+    # This endpoint is polled frequently, so we don't log every request
+    # in the middleware. We can add a specific log here if needed.
+    # console_log(f"API: Received status request for instance {instance_id}")
     instance = chatbot_instances.get(instance_id)
 
     if not instance:
