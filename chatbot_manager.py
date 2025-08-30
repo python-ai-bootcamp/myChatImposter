@@ -168,7 +168,10 @@ class ChatbotInstance:
 
         try:
             response_text = self.chatbot_model.get_response(message.content)
-            self.provider_instance.sendMessage(message.sender.identifier, response_text)
+
+            # If the message is from a group, reply to the group. Otherwise, reply to the sender.
+            recipient = message.group.identifier if message.group else message.sender.identifier
+            self.provider_instance.sendMessage(recipient, response_text)
 
             bot_sender = Sender(identifier=f"bot_{user_id}", display_name=f"Bot ({user_id})")
             if self.user_queue:
