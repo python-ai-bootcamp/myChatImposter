@@ -113,7 +113,7 @@ if __name__ == "__main__":
     import uvicorn
 
     log_config = LOGGING_CONFIG.copy()
-    log_config["formatters"]["default"]["()"] = "main.TimestampDefaultFormatter"
-    log_config["formatters"]["access"]["()"] = "main.TimestampAccessFormatter"
+    log_config["formatters"]["default"]["()"] = "__main__.TimestampDefaultFormatter"
+    log_config["formatters"]["access"]["()"] = "__main__.TimestampAccessFormatter"
 
     uvicorn.run(app, host="0.0.0.0", port=8000, log_config=log_config)

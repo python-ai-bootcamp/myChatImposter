@@ -7,28 +7,6 @@ const fs = require('fs');
 const http = require('http');
 const pino = require('pino');
 
-const getTimestamp = () => {
-    const now = new Date();
-    const year = now.getFullYear();
-    const month = (now.getMonth() + 1).toString().padStart(2, '0');
-    const day = now.getDate().toString().padStart(2, '0');
-    const hours = now.getHours().toString().padStart(2, '0');
-    const minutes = now.getMinutes().toString().padStart(2, '0');
-    const seconds = now.getSeconds().toString().padStart(2, '0');
-    return `[${year}-${month}-${day} ${hours}:${minutes}:${seconds}]::`;
-};
-
-const originalLog = console.log;
-console.log = (...args) => {
-    originalLog(getTimestamp(), ...args);
-};
-
-const originalError = console.error;
-console.error = (...args) => {
-    originalError(getTimestamp(), ...args);
-};
-
-
 // --- Globals ---
 let sock;
 let incomingMessages = []; // A simple in-memory queue for messages
