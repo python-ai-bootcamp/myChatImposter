@@ -146,9 +146,17 @@ class ChatbotInstance:
             return
 
         if self.whitelist:
-            if not any(whitelisted_sender in message.sender.identifier for whitelisted_sender in self.whitelist):
+            sender_identifier = message.sender.identifier
+            sender_display_name = message.sender.display_name
+
+            # Check if any whitelisted string is a substring of either the identifier or display name
+            if not any(
+                whitelisted_sender in sender_identifier or whitelisted_sender in sender_display_name
+                for whitelisted_sender in self.whitelist
+            ):
                 with lock:
-                    sys.stdout.buffer.write(f"INSTANCE ({user_id}): Sender '{message.sender.identifier}' not in whitelist. Ignoring.\n".encode('utf-8'))
+                    log_message = f"INSTANCE ({user_id}): Sender '{sender_identifier}' ('{sender_display_name}') not in whitelist. Ignoring.\n"
+                    sys.stdout.buffer.write(log_message.encode('utf-8', 'backslashreplace'))
                     sys.stdout.flush()
                 return
 
