@@ -1,12 +1,25 @@
 import uuid
 import threading
 import sys
+import logging
 from fastapi import FastAPI, HTTPException, Body
 from fastapi.concurrency import run_in_threadpool
 from typing import Dict, Any, List
+from uvicorn.logging import DefaultFormatter, AccessFormatter
+from uvicorn.config import LOGGING_CONFIG
 
 from chatbot_manager import ChatbotInstance
-from logging_lock import console_log
+from logging_lock import console_log, get_timestamp
+
+class TimestampDefaultFormatter(DefaultFormatter):
+    def format(self, record: logging.LogRecord) -> str:
+        original_message = super().format(record)
+        return f"{get_timestamp()}{original_message}"
+
+class TimestampAccessFormatter(AccessFormatter):
+    def format(self, record: logging.LogRecord) -> str:
+        original_message = super().format(record)
+        return f"{get_timestamp()}{original_message}"
 
 app = FastAPI()
 
@@ -98,6 +111,9 @@ def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
-    # To run this directly for testing: uvicorn main:app --reload
-    # The user will likely run it as per their deployment preference.
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+
+    log_config = LOGGING_CONFIG.copy()
+    log_config["formatters"]["default"]["()"] = "main.TimestampDefaultFormatter"
+    log_config["formatters"]["access"]["()"] = "main.TimestampAccessFormatter"
+
+    uvicorn.run(app, host="0.0.0.0", port=8000, log_config=log_config)
