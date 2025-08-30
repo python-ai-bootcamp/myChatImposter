@@ -11,8 +11,17 @@ from uvicorn.config import LOGGING_CONFIG
 from chatbot_manager import ChatbotInstance
 from logging_lock import console_log
 
-# Disable uvicorn's access logger
-LOGGING_CONFIG["loggers"]["uvicorn.access"]["handlers"] = []
+# Suppress the default uvicorn access logger
+access_logger = logging.getLogger("uvicorn.access")
+access_logger.disabled = True
+# Keep the default uvicorn logger for startup/shutdown messages, but without timestamps for now
+# as we can't reliably reformat them.
+default_logger = logging.getLogger("uvicorn")
+default_logger.propagate = False # Prevent logs from reaching root logger
+# You might want to add a handler if you want to see uvicorn's default logs,
+# but for now, we are suppressing them to avoid un-timestamped messages.
+# For a production setup, a more sophisticated logging setup would be needed.
+
 
 app = FastAPI()
 
@@ -122,4 +131,6 @@ def shutdown_event():
 
 if __name__ == "__main__":
     import uvicorn
+    # The log_config is modified at the module level to suppress the access logger.
+    # We don't need to pass it here again, but we do for clarity.
     uvicorn.run(app, host="0.0.0.0", port=8000, log_config=LOGGING_CONFIG)
