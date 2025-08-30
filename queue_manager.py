@@ -6,7 +6,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Callable, List
 
-from logging_lock import lock
+from logging_lock import lock, get_timestamp, console_log
 
 @dataclass
 class Sender:
@@ -65,36 +65,27 @@ class UserQueue:
             evicted_msg = self._messages.popleft()
             self._total_chars -= evicted_msg.message_size
             self._log_retention_event(evicted_msg, "age", new_message_size)
-            with lock:
-                sys.stdout.buffer.write(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to age.\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to age.")
 
         # Evict by total characters
         while self._messages and (self._total_chars + new_message_size) > self.max_characters:
             evicted_msg = self._messages.popleft()
             self._total_chars -= evicted_msg.message_size
             self._log_retention_event(evicted_msg, "total_characters", new_message_size)
-            with lock:
-                sys.stdout.buffer.write(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to total characters limit.\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to total characters limit.")
 
         # Evict by total message count
         while len(self._messages) >= self.max_messages:
             evicted_msg = self._messages.popleft()
             self._total_chars -= evicted_msg.message_size
             self._log_retention_event(evicted_msg, "message_count", new_message_size)
-            with lock:
-                sys.stdout.buffer.write(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to message count limit.\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to message count limit.")
 
     def add_message(self, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None):
         """Create, add, and process a new message for the queue."""
         # Truncate the message if it exceeds the single message character limit.
         if len(content) > self.max_characters_single_message:
-            with lock:
-                truncate_message = f"QUEUE TRUNCATE ({self.user_id}): Message from {sender.display_name} is larger than the single message character limit ({self.max_characters_single_message}), truncating.\n"
-                sys.stdout.buffer.write(truncate_message.encode('utf-8', 'backslashreplace'))
-                sys.stdout.flush()
+            console_log(f"QUEUE TRUNCATE ({self.user_id}): Message from {sender.display_name} is larger than the single message character limit ({self.max_characters_single_message}), truncating.")
             content = content[:self.max_characters_single_message]
 
         new_message_size = len(content)
@@ -117,11 +108,7 @@ class UserQueue:
         # Log the message
         self._log_message(message)
 
-        with lock:
-            add_message_str = (f"QUEUE ADD ({self.user_id}): Added message {message.id} from {message.sender.display_name}. "
-                               f"Queue stats: {len(self._messages)} msgs, {self._total_chars} chars.\n")
-            sys.stdout.buffer.write(add_message_str.encode('utf-8', 'backslashreplace'))
-            sys.stdout.flush()
+        console_log(f"QUEUE ADD ({self.user_id}): Added message {message.id} from {message.sender.display_name}. Queue stats: {len(self._messages)} msgs, {self._total_chars} chars.")
 
         self._trigger_callbacks(message)
 
@@ -147,7 +134,7 @@ class UserQueue:
                 log_line_parts.append(group_str)
             log_line_parts.append(f":: {message.content}\n")
 
-            user_log_line = "::".join(log_line_parts)
+            user_log_line = get_timestamp() + "::".join(log_line_parts)
 
             # User-specific log
             user_log_path = os.path.join('log', f"{self.provider_name}_{self.user_id}.log")
@@ -168,7 +155,7 @@ class UserQueue:
                 global_log_line_parts.append(group_str)
             global_log_line_parts.append(f":: {message.content}\n")
 
-            global_log_line = "::".join(global_log_line_parts)
+            global_log_line = get_timestamp() + "::".join(global_log_line_parts)
 
             with open(global_log_path, 'a', encoding='utf-8') as f:
                 f.write(global_log_line)
@@ -184,7 +171,7 @@ class UserQueue:
             os.makedirs('log', exist_ok=True)
             user_log_path = os.path.join('log', f"{self.provider_name}_{self.user_id}.log")
 
-            log_line = f"[retention_event_time={int(time.time() * 1000)}]::" \
+            log_line = f"{get_timestamp()}[retention_event_time={int(time.time() * 1000)}]::" \
                        f"[event_type=EVICT]::" \
                        f"[reason={reason}]::" \
                        f"[evicted_message_id={evicted_message.id}]::" \

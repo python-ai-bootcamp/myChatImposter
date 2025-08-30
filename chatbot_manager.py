@@ -5,7 +5,7 @@ import threading
 import sys
 from typing import Dict, Any, Optional
 
-from logging_lock import lock
+from logging_lock import console_log
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
@@ -60,9 +60,7 @@ class ChatbotInstance:
         The chat provider is essential. The LLM provider is optional; if not
         provided, the instance will run in "collection only" mode.
         """
-        with lock:
-            sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initializing components...\n".encode('utf-8'))
-            sys.stdout.flush()
+        console_log(f"INSTANCE ({self.user_id}): Initializing components...")
 
         # 1. Initialize Queue (Essential)
         self.whitelist = self.config.get('respond_to_whitelist', [])
@@ -77,9 +75,7 @@ class ChatbotInstance:
             max_days=q_config['max_days'],
             max_characters_single_message=q_config.get('max_characters_single_message', q_config['max_characters'])
         )
-        with lock:
-            sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initialized queue.\n".encode('utf-8'))
-            sys.stdout.flush()
+        console_log(f"INSTANCE ({self.user_id}): Initialized queue.")
 
         # 2. Initialize Chat Provider (Essential)
         provider_config = chat_provider_config.get('provider_config')
@@ -94,9 +90,7 @@ class ChatbotInstance:
             config=provider_config,
             user_queues={self.user_id: self.user_queue}
         )
-        with lock:
-            sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initialized chat provider '{provider_name}'.\n".encode('utf-8'))
-            sys.stdout.flush()
+        console_log(f"INSTANCE ({self.user_id}): Initialized chat provider '{provider_name}'.")
 
         # 3. Initialize Chatbot Model (Optional)
         llm_provider_config = self.config.get('llm_provider_config')
@@ -109,35 +103,25 @@ class ChatbotInstance:
             llm_instance = llm_provider.get_llm()
             system_prompt = llm_provider.get_system_prompt()
             self.chatbot_model = ChatbotModel(self.user_id, llm_instance, system_prompt)
-            with lock:
-                sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.")
         else:
             self.mode = "collection_only"
-            with lock:
-                sys.stdout.buffer.write(f"INSTANCE_WARNING ({self.user_id}): No 'llm_provider_config' found. Instance will run in collection-only mode.\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"INSTANCE_WARNING ({self.user_id}): No 'llm_provider_config' found. Instance will run in collection-only mode.")
 
     def _message_callback(self, user_id: str, message: Message):
         """Processes a new message from the queue."""
-        with lock:
-            sys.stdout.buffer.write(f"INSTANCE ({user_id}): Callback received for message {message.id}.\n".encode('utf-8'))
-            sys.stdout.flush()
+        console_log(f"INSTANCE ({user_id}): Callback received for message {message.id}.")
 
         if message.source == 'bot':
             return
 
         if self.whitelist:
             if not any(whitelisted_sender in message.sender.identifier for whitelisted_sender in self.whitelist):
-                with lock:
-                    sys.stdout.buffer.write(f"INSTANCE ({user_id}): Sender '{message.sender.identifier}' not in whitelist. Ignoring.\n".encode('utf-8'))
-                    sys.stdout.flush()
+                console_log(f"INSTANCE ({user_id}): Sender '{message.sender.identifier}' not in whitelist. Ignoring.")
                 return
 
         if not self.chatbot_model or not self.provider_instance:
-            with lock:
-                sys.stdout.buffer.write(f"INSTANCE_ERROR ({user_id}): Chatbot or provider not initialized.\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"INSTANCE_ERROR ({user_id}): Chatbot or provider not initialized.")
             return
 
         try:
@@ -153,11 +137,7 @@ class ChatbotInstance:
                     originating_time=int(time.time() * 1000)
                 )
         except Exception as e:
-            with lock:
-                # Using backslashreplace to handle any weird characters in the error message itself
-                error_str = f"Error in callback for user {user_id}: {e}\n"
-                sys.stdout.buffer.write(error_str.encode('utf-8', 'backslashreplace'))
-                sys.stdout.flush()
+            console_log(f"Error in callback for user {user_id}: {e}")
 
 
     def start(self):
@@ -170,25 +150,17 @@ class ChatbotInstance:
             # This will be caught by the exception handler in main.py and reported to the user.
             raise RuntimeError(f"Instance {self.user_id} cannot start: queue or provider not initialized.")
 
-        with lock:
-            sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Registering callback and starting provider listener...\n".encode('utf-8'))
-            sys.stdout.flush()
+        console_log(f"INSTANCE ({self.user_id}): Registering callback and starting provider listener...")
         self.user_queue.register_callback(self._message_callback)
         self.provider_instance.start_listening()
-        with lock:
-            sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): System is running.\n".encode('utf-8'))
-            sys.stdout.flush()
+        console_log(f"INSTANCE ({self.user_id}): System is running.")
 
     def stop(self):
         """Stops the provider listener gracefully."""
         if self.provider_instance:
-            with lock:
-                sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Shutting down...\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"INSTANCE ({self.user_id}): Shutting down...")
             self.provider_instance.stop_listening()
-            with lock:
-                sys.stdout.buffer.write(f"INSTANCE ({self.user_id}): Shutdown complete.\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"INSTANCE ({self.user_id}): Shutdown complete.")
 
     def get_status(self):
         """Gets the connection status from the provider."""
