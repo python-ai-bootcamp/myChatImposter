@@ -1,9 +1,9 @@
 from langchain_community.llms.fake import FakeListLLM
+from .base import BaseLlmProvider
 
-class LlmProvider:
+class FakeLlmProvider(BaseLlmProvider):
     def __init__(self, config: dict, user_id: str):
-        self.config = config
-        self.user_id = user_id
+        super().__init__(config, user_id)
 
     def get_llm(self):
         # The response array can be customized via the 'vendor_config'

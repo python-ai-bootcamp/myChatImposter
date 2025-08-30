@@ -15,6 +15,8 @@ import urllib.error
 from queue_manager import UserQueue, Sender, Group, Message
 from logging_lock import console_log
 
+from .base import BaseChatProvider
+
 def find_free_port():
     """Finds a free port on the host machine."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -22,7 +24,7 @@ def find_free_port():
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         return s.getsockname()[1]
 
-class Provider:
+class WhatsAppBaileysProvider(BaseChatProvider):
     """
     A provider that connects to a Node.js Baileys server to send and receive WhatsApp messages.
     """
@@ -33,9 +35,7 @@ class Provider:
         - config: The 'provider_config' block from the JSON configuration.
         - user_queues: A dictionary of all user queues, passed by the main application.
         """
-        self.user_id = user_id
-        self.config = config
-        self.user_queues = user_queues
+        super().__init__(user_id, config, user_queues)
         self.is_listening = False
         self.thread = None
         self.node_process = None
