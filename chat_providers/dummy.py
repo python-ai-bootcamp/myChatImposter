@@ -1,11 +1,11 @@
 import time
 import threading
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
 
-# Assuming queue_manager.py is in the parent directory or accessible
+from .base import BaseChatProvider
 from queue_manager import UserQueue, Sender, Group
 
-class Provider:
+class DummyProvider(BaseChatProvider):
     """
     A template and simulation provider. It demonstrates the required interface
     and simulates receiving messages for a user in a background thread.
@@ -17,9 +17,7 @@ class Provider:
         - config: The 'provider_config' block from the JSON configuration.
         - user_queues: A dictionary of all user queues, passed by the Orchestrator.
         """
-        self.user_id = user_id
-        self.config = config  # e.g., {'api_key': '...'}
-        self.user_queues = user_queues
+        super().__init__(user_id, config, user_queues)
         self.is_listening = False
         self.thread = None
         print(f"PROVIDER ({self.user_id}): Initialized DummyProvider with key '{self.config.get('api_key')}'")
@@ -133,3 +131,10 @@ class Provider:
         """
         # For the simulation, we just print to the console.
         print(f"PROVIDER ({self.user_id}): Sending reply to {recipient} ---> {message}")
+
+    def get_status(self) -> Dict[str, Any]:
+        """
+        Returns the current status of the provider.
+        For the dummy provider, it always returns a 'connected' status.
+        """
+        return {"status": "connected", "message": "Dummy provider is running."}

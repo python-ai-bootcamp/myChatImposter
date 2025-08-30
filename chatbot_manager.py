@@ -3,7 +3,8 @@ import importlib
 import time
 import threading
 import sys
-from typing import Dict, Any, Optional
+import inspect
+from typing import Dict, Any, Optional, Type, List
 
 from logging_lock import lock
 
@@ -13,6 +14,17 @@ from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.output_parsers import StrOutputParser
 
 from queue_manager import UserQueue, Message, Sender, Group
+from chat_providers.base import BaseChatProvider
+from llm_providers.base import BaseLlmProvider
+
+def _find_provider_class(module, base_class: Type) -> Optional[Type]:
+    """
+    Finds a class in the module that is a subclass of the base_class.
+    """
+    for name, obj in inspect.getmembers(module):
+        if inspect.isclass(obj) and issubclass(obj, base_class) and obj is not base_class:
+            return obj
+    return None
 
 class ChatbotModel:
     """A wrapper for the LangChain conversation model for a single user."""
@@ -88,7 +100,10 @@ class ChatbotInstance:
             provider_config = {}
 
         provider_module = importlib.import_module(f"chat_providers.{provider_name}")
-        ProviderClass = getattr(provider_module, 'Provider')
+        ProviderClass = _find_provider_class(provider_module, BaseChatProvider)
+        if not ProviderClass:
+            raise ImportError(f"Could not find a valid chat provider class in module 'chat_providers.{provider_name}'")
+
         self.provider_instance = ProviderClass(
             user_id=self.user_id,
             config=provider_config,
@@ -104,7 +119,10 @@ class ChatbotInstance:
             self.mode = "fully_functional"
             llm_provider_name = llm_provider_config['provider_name']
             llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
-            LlmProviderClass = getattr(llm_provider_module, 'LlmProvider')
+            LlmProviderClass = _find_provider_class(llm_provider_module, BaseLlmProvider)
+            if not LlmProviderClass:
+                raise ImportError(f"Could not find a valid LLM provider class in module 'llm_providers.{llm_provider_name}'")
+
             llm_provider = LlmProviderClass(config=llm_provider_config.get('provider_config', {}), user_id=self.user_id)
             llm_instance = llm_provider.get_llm()
             system_prompt = llm_provider.get_system_prompt()

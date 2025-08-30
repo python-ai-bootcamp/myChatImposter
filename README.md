@@ -100,30 +100,60 @@ You can poll the status of an instance (e.g., to get a QR code for linking) by s
 
 **Endpoint:** `GET /chatbot/{instance_id}/status`
 
-## Extensibility: Adding New Chat Providers
+## Extensibility: Adding New Providers
 
-To add support for a new platform, you simply need to create a new provider file.
+The application is designed to be easily extensible with new chat and LLM providers.
+
+### Adding a New Chat Provider
+
+To add support for a new messaging platform, you need to create a new provider file in the `chat_providers/` directory.
 
 **1. Create the Provider File**
 
-Create a new file in the `chat_providers/` directory, for example, `chat_providers/my_new_provider.py`.
+Create a new file, for example, `chat_providers/my_new_provider.py`.
 
 **2. Create the Provider Class**
 
-Your class must implement the following methods:
+Inside your new file, create a class that inherits from `chat_providers.base.BaseChatProvider`. This base class ensures your provider implements the required interface.
 
--   `__init__(self, user_id: str, config: Dict, user_queues: Dict[str, UserQueue])`: The constructor receives the `user_id`, its specific `provider_config` block, and the user's queue.
+Your class must implement the following abstract methods:
+
+-   `__init__(self, user_id: str, config: Dict, user_queues: Dict[str, UserQueue])`: The constructor receives the `user_id`, its specific `provider_config` block, and the user's queue. You must call `super().__init__(...)`.
 -   `start_listening(self)`: A non-blocking method to start listening for incoming messages.
+-   `stop_listening(self)`: A method to gracefully stop the listening process.
 -   `sendMessage(self, recipient: str, message: str)`: A method to send an outgoing message.
+-   `get_status(self) -> Dict`: A method to return the current status of the provider (e.g., for connection health checks).
 
-When a message is received, add it to the queue:
+When a message is received, you can add it to the user's queue like this:
 ```python
 # Inside your listening loop:
 queue = self.user_queues.get(self.user_id)
 if queue:
-    # ... create sender, group objects
+    # ... create sender, group objects from the received message
     queue.add_message(content=received_content, sender=sender, source='user', group=group)
 ```
+
+The application will automatically discover your new provider class as long as it's the only class in the file that inherits from `BaseChatProvider`.
+
+### Adding a New LLM Provider
+
+Similarly, you can add a new Large Language Model provider by creating a file in the `llm_providers/` directory.
+
+**1. Create the Provider File**
+
+Create a new file, for example, `llm_providers/my_new_llm.py`.
+
+**2. Create the Provider Class**
+
+Create a class that inherits from `llm_providers.base.BaseLlmProvider`.
+
+Your class must implement the following abstract methods:
+
+-   `__init__(self, config: dict, user_id: str)`: The constructor. Remember to call `super().__init__(...)`.
+-   `get_llm(self)`: This method should return an instance of the LLM client, typically a LangChain-compatible object.
+-   `get_system_prompt(self) -> str`: This method should return the system prompt to be used for the chatbot.
+
+The application will discover your new LLM provider class automatically.
 
 ## How to Run
 

@@ -1,9 +1,9 @@
 from langchain_openai import ChatOpenAI
+from .base import BaseLlmProvider
 
-class LlmProvider:
+class OpenAiLlmProvider(BaseLlmProvider):
     def __init__(self, config: dict, user_id: str):
-        self.config = config
-        self.user_id = user_id
+        super().__init__(config, user_id)
 
     def get_llm(self):
         # The ChatOpenAI client will automatically use the OPENAI_API_KEY environment variable
