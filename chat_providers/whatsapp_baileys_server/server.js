@@ -12,6 +12,7 @@ let sock;
 let incomingMessages = []; // A simple in-memory queue for messages
 let currentQR = null;
 let connectionStatus = 'waiting'; // 'waiting', 'connecting', 'open', 'close'
+let contactsCache = {}; // A cache for contact information
 
 // --- Globals ---
 const serverStartTime = Date.now();
@@ -69,6 +70,22 @@ async function connectToWhatsApp() {
         if (connection === 'open') {
             console.log(`WhatsApp connection opened for user ${userId}.`);
             currentQR = null; // QR is no longer needed
+
+            // Populate contacts cache on connection from the auth state
+            try {
+                console.log('Populating contacts cache from auth state...');
+                const contacts = sock.authState.creds.contacts;
+                if (contacts) {
+                    for (const id in contacts) {
+                        contactsCache[id] = contacts[id];
+                    }
+                    console.log(`Contacts cache populated with ${Object.keys(contactsCache).length} contacts.`);
+                } else {
+                    console.log('No contacts found in auth state to populate cache.');
+                }
+            } catch (e) {
+                console.error('Error populating contacts cache from auth state:', e);
+            }
         }
 
         if (connection === 'close') {
@@ -94,6 +111,16 @@ async function connectToWhatsApp() {
 
     // Event listener for credentials update
     sock.ev.on('creds.update', saveCreds);
+
+    // Event listener for contact updates, to build a cache
+    sock.ev.on('contacts.update', (updates) => {
+        for (const contact of updates) {
+            if (contact.id) {
+                contactsCache[contact.id] = contact;
+            }
+        }
+        console.log(`Contacts cache updated with ${updates.length} contacts.`);
+    });
 
     // Event listener for incoming messages
     sock.ev.on('messages.upsert', async (m) => { // Make it async
@@ -128,7 +155,8 @@ async function connectToWhatsApp() {
             }
 
             const senderId = isGroup ? (msg.participant_pn || msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid;
-            const senderName = msg.notify || msg.pushName || null; // Get sender's name from notify or pushName
+            const cachedContact = contactsCache[senderId];
+            const senderName = msg.notify || msg.pushName || cachedContact?.name || cachedContact?.notify || null;
 
             let groupInfo = null;
             if (isGroup) {
