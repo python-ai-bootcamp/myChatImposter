@@ -13,7 +13,7 @@ import urllib.error
 
 # Assuming queue_manager.py is in the parent directory or accessible
 from queue_manager import UserQueue, Sender, Group, Message
-from logging_lock import lock
+from logging_lock import console_log
 
 def find_free_port():
     """Finds a free port on the host machine."""
@@ -51,10 +51,7 @@ class Provider:
             self.work_dir = os.path.abspath(os.path.join('running_sessions', self.user_id))
             os.makedirs(self.work_dir, exist_ok=True)
 
-            with lock:
-                log_message = f"PROVIDER ({self.user_id}): Starting Node.js server on port {self.port} in CWD: {self.work_dir}\n"
-                sys.stdout.buffer.write(log_message.encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"PROVIDER ({self.user_id}): Starting Node.js server on port {self.port} in CWD: {self.work_dir}")
 
             # Serialize and encode the config to pass as a command line argument
             config_json = json.dumps(self.config)
@@ -71,19 +68,12 @@ class Provider:
             )
             # Thread to print server output for debugging
             threading.Thread(target=self._log_subprocess_output, daemon=True).start()
-            with lock:
-                sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Node.js server process started (PID: {self.node_process.pid}).\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"PROVIDER ({self.user_id}): Node.js server process started (PID: {self.node_process.pid}).")
         except FileNotFoundError:
-            with lock:
-                sys.stdout.buffer.write(f"PROVIDER_ERROR ({self.user_id}): 'node' command not found. Please ensure Node.js is installed and in your PATH.\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"PROVIDER_ERROR ({self.user_id}): 'node' command not found. Please ensure Node.js is installed and in your PATH.")
             raise
         except Exception as e:
-            with lock:
-                error_str = f"PROVIDER_ERROR ({self.user_id}): Failed to start Node.js server: {e}\n"
-                sys.stdout.buffer.write(error_str.encode('utf-8', 'backslashreplace'))
-                sys.stdout.flush()
+            console_log(f"PROVIDER_ERROR ({self.user_id}): Failed to start Node.js server: {e}")
             raise
 
     def _log_subprocess_output(self):
@@ -93,67 +83,37 @@ class Provider:
         and uses a lock to ensure writes to stdout are atomic.
         """
         if self.node_process.stdout:
-            prefix = f"NODE_SERVER ({self.user_id}): ".encode('utf-8')
-            line_buffer = bytearray()
-            for byte in iter(lambda: self.node_process.stdout.read(1), b''):
-                line_buffer.extend(byte)
-                if byte == b'\n':
-                    with lock:
-                        sys.stdout.buffer.write(prefix)
-                        sys.stdout.buffer.write(line_buffer)
-                    try:
-                        sys.stdout.flush()
-                    except OSError:
-                        pass
-                    line_buffer.clear()
-            # If the process exits without a final newline, print remaining buffer
-            if line_buffer:
-                with lock:
-                    sys.stdout.buffer.write(prefix)
-                    sys.stdout.buffer.write(line_buffer)
-                    sys.stdout.buffer.write(b'\n') # Add a newline for clarity
-                try:
-                    sys.stdout.flush()
-                except OSError:
-                    pass
+            for line in iter(self.node_process.stdout.readline, b''):
+                # The line is in bytes, decode it to a string, stripping newline
+                line_str = line.decode('utf-8', 'backslashreplace').rstrip()
+                # Log it using our centralized function
+                console_log(f"NODE_SERVER ({self.user_id}): {line_str}")
 
     def start_listening(self):
         """Starts the message listening loop in a background thread."""
         if self.is_listening:
-            with lock:
-                sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Already listening.\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"PROVIDER ({self.user_id}): Already listening.")
             return
 
         self.is_listening = True
         self.thread = threading.Thread(target=self._listen, daemon=True)
         self.thread.start()
-        with lock:
-            sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Started polling for messages from Node.js server.\n".encode('utf-8'))
-            sys.stdout.flush()
+        console_log(f"PROVIDER ({self.user_id}): Started polling for messages from Node.js server.")
 
     def stop_listening(self):
         """Stops the message listening loop and terminates the Node.js server."""
-        with lock:
-            sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Stopping...\n".encode('utf-8'))
-            sys.stdout.flush()
+        console_log(f"PROVIDER ({self.user_id}): Stopping...")
         self.is_listening = False
         if self.thread:
             # The thread will exit on its own since it checks `is_listening`
             self.thread.join() # Wait for the listening thread to finish
-            with lock:
-                sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Polling thread stopped.\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"PROVIDER ({self.user_id}): Polling thread stopped.")
 
         if self.node_process:
-            with lock:
-                sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Terminating Node.js server process (PID: {self.node_process.pid})...\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"PROVIDER ({self.user_id}): Terminating Node.js server process (PID: {self.node_process.pid})...")
             self.node_process.terminate()
             self.node_process.wait()
-            with lock:
-                sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Node.js server process terminated.\n".encode('utf-8'))
-                sys.stdout.flush()
+            console_log(f"PROVIDER ({self.user_id}): Node.js server process terminated.")
 
     def _listen(self):
         """
@@ -167,9 +127,7 @@ class Provider:
                     if response.status == 200:
                         messages = json.loads(response.read().decode('utf-8'))
                         if messages:
-                            with lock:
-                                sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Fetched {len(messages)} new message(s).\n".encode('utf-8'))
-                                sys.stdout.flush()
+                            console_log(f"PROVIDER ({self.user_id}): Fetched {len(messages)} new message(s).")
                             queue = self.user_queues.get(self.user_id)
                             if queue:
                                 for msg in messages:
@@ -179,9 +137,7 @@ class Provider:
                                     allow_groups = self.config.get('allow_group_messages', True)
                                     group_info = msg.get('group')
                                     if group_info and not allow_groups:
-                                        with lock:
-                                            sys.stdout.buffer.write(f"PROVIDER ({self.user_id}): Ignoring message from group {group_info.get('id')} as per configuration.\n".encode('utf-8', 'backslashreplace'))
-                                            sys.stdout.flush()
+                                        console_log(f"PROVIDER ({self.user_id}): Ignoring message from group {group_info.get('id')} as per configuration.")
                                         continue
 
                                     sender = Sender(identifier=msg['sender'], display_name=msg.get('display_name', msg['sender']))
@@ -195,23 +151,15 @@ class Provider:
                                         # originating_time might need parsing from timestamp if needed
                                     )
                             else:
-                                with lock:
-                                    sys.stdout.buffer.write(f"PROVIDER_ERROR ({self.user_id}): Could not find a queue for myself.\n".encode('utf-8'))
-                                    sys.stdout.flush()
+                                console_log(f"PROVIDER_ERROR ({self.user_id}): Could not find a queue for myself.")
                     else:
-                        with lock:
-                            sys.stdout.buffer.write(f"PROVIDER_ERROR ({self.user_id}): Error polling for messages. Status: {response.status}\n".encode('utf-8'))
-                            sys.stdout.flush()
+                        console_log(f"PROVIDER_ERROR ({self.user_id}): Error polling for messages. Status: {response.status}")
             except urllib.error.URLError as e:
                 # This is expected if the server is not up yet, so don't spam the log
                 time.sleep(2) # Wait a bit longer if server is not reachable
                 continue
             except Exception as e:
-                with lock:
-                    error_message = f"PROVIDER_ERROR ({self.user_id}): Exception while polling for messages: {e}\n"
-                    # Write directly to the buffer to avoid encoding errors on non-UTF-8 consoles
-                    sys.stdout.buffer.write(error_message.encode('utf-8', 'backslashreplace'))
-                    sys.stdout.flush()
+                console_log(f"PROVIDER_ERROR ({self.user_id}): Exception while polling for messages: {e}")
 
             time.sleep(5) # Poll every 5 seconds
 
@@ -219,10 +167,7 @@ class Provider:
         """
         Sends a message back to the user via the Node.js server.
         """
-        with lock:
-            log_message = f"PROVIDER ({self.user_id}): Sending reply to {recipient} ---> {message[:50]}...\n"
-            sys.stdout.buffer.write(log_message.encode('utf-8', 'backslashreplace'))
-            sys.stdout.flush()
+        console_log(f"PROVIDER ({self.user_id}): Sending reply to {recipient} ---> {message[:50]}...")
         try:
             data = json.dumps({"recipient": recipient, "message": message}).encode('utf-8')
             req = urllib.request.Request(
@@ -232,15 +177,10 @@ class Provider:
             )
             with urllib.request.urlopen(req) as response:
                 if response.status != 200:
-                    with lock:
-                        body = response.read().decode('utf-8', 'backslashreplace')
-                        sys.stdout.buffer.write(f"PROVIDER_ERROR ({self.user_id}): Failed to send message. Status: {response.status}, Body: {body}\n".encode('utf-8'))
-                        sys.stdout.flush()
+                    body = response.read().decode('utf-8', 'backslashreplace')
+                    console_log(f"PROVIDER_ERROR ({self.user_id}): Failed to send message. Status: {response.status}, Body: {body}")
         except Exception as e:
-            with lock:
-                error_str = f"PROVIDER_ERROR ({self.user_id}): Exception while sending message: {e}\n"
-                sys.stdout.buffer.write(error_str.encode('utf-8', 'backslashreplace'))
-                sys.stdout.flush()
+            console_log(f"PROVIDER_ERROR ({self.user_id}): Exception while sending message: {e}")
 
     def get_status(self) -> Dict:
         """
