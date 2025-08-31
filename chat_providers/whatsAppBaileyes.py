@@ -88,9 +88,10 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 line_str = line.decode('utf-8', 'backslashreplace').rstrip()
                 console_log(f"NODE_SERVER ({self.user_id}): {line_str}")
 
-                # Check for unrecoverable session-ending errors
-                if "Stream Errored (conflict)" in line_str or "Connection closed" in line_str:
-                    console_log(f"PROVIDER ({self.user_id}): Detected unrecoverable error. Ending session.")
+                # Check for the specific unrecoverable session-ending error.
+                # "restart required" is a recoverable error during pairing, so we ignore it.
+                if "Stream Errored (conflict)" in line_str:
+                    console_log(f"PROVIDER ({self.user_id}): Detected unrecoverable 'conflict' error. Ending session.")
                     self.is_listening = False # Stop the polling loop
                     if self.on_session_end and not self.session_ended:
                         self.session_ended = True
