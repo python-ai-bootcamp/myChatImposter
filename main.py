@@ -165,15 +165,14 @@ async def create_chatbots(configs: List[Dict[str, Any]] = Body(...)):
 
         # Check if a session for this user_id already exists
         if user_id in active_users:
-            console_log(f"API_WARN: Request to create instance for already active user '{user_id}' was rejected.")
-            # This is a client error, as they are trying to create a duplicate session.
-            # We can't easily raise an exception here since we need to process the whole list.
-            # So, we add it to the failed list and the client can check this.
-            # A 409 would be better if the API only handled one creation at a time.
-            failed_creations.append({
-                "user_id": user_id,
-                "error": f"Conflict: An active session for user_id '{user_id}' already exists."
-            })
+            error_message = f"Conflict: An active session for user_id '{user_id}' already exists."
+            console_log(f"API_WARN: {error_message}")
+
+            # If this is a single-item request, raise 409. Otherwise, add to failed list.
+            if len(configs) == 1:
+                raise HTTPException(status_code=409, detail=error_message)
+
+            failed_creations.append({ "user_id": user_id, "error": error_message })
             continue
 
         console_log(f"API: Received request to create instance {instance_id} for user {user_id}")
