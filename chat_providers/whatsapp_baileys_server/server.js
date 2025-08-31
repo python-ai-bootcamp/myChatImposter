@@ -1,6 +1,7 @@
 const { Boom } = require('@hapi/boom');
 const express = require('express');
-const qrcode = require('qrcode-terminal');
+const qrcodeTerminal = require('qrcode-terminal');
+const QRCode = require('qrcode');
 const fs = require('fs');
 const http = require('http');
 const pino = require('pino');
@@ -61,10 +62,17 @@ async function connectToWhatsApp() {
         connectionStatus = connection || 'waiting';
 
         if (qr) {
-            console.log("QR code received, generating...");
-            currentQR = qr;
-            // We still print to console for debugging, but the API is the primary way to get it
-            qrcode.generate(qr, { small: true });
+            console.log("QR code received, generating data URL...");
+            // We still print to console for debugging
+            qrcodeTerminal.generate(qr, { small: true });
+            // Generate a data URL for the frontend
+            QRCode.toDataURL(qr, (err, url) => {
+                if (err) {
+                    console.error("Error generating QR data URL:", err);
+                    return;
+                }
+                currentQR = url;
+            });
         }
 
         if (connection === 'open') {

@@ -28,15 +28,16 @@ class WhatsAppBaileysProvider(BaseChatProvider):
     """
     A provider that connects to a Node.js Baileys server to send and receive WhatsApp messages.
     """
-    def __init__(self, user_id: str, config: Dict, user_queues: Dict[str, UserQueue]):
+    def __init__(self, user_id: str, config: Dict, user_queues: Dict[str, UserQueue], on_session_end=None):
         """
         Initializes the provider.
         - user_id: The specific user this provider instance is for.
         - config: The 'provider_config' block from the JSON configuration.
         - user_queues: A dictionary of all user queues, passed by the main application.
         """
-        super().__init__(user_id, config, user_queues)
+        super().__init__(user_id, config, user_queues, on_session_end)
         self.is_listening = False
+        self.session_ended = False
         self.thread = None
         self.node_process = None
 
@@ -84,10 +85,17 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         """
         if self.node_process.stdout:
             for line in iter(self.node_process.stdout.readline, b''):
-                # The line is in bytes, decode it to a string, stripping newline
                 line_str = line.decode('utf-8', 'backslashreplace').rstrip()
-                # Log it using our centralized function
                 console_log(f"NODE_SERVER ({self.user_id}): {line_str}")
+
+                # Check for the specific unrecoverable session-ending error.
+                # "restart required" is a recoverable error during pairing, so we ignore it.
+                if "Stream Errored (conflict)" in line_str:
+                    console_log(f"PROVIDER ({self.user_id}): Detected unrecoverable 'conflict' error. Ending session.")
+                    self.is_listening = False # Stop the polling loop
+                    if self.on_session_end and not self.session_ended:
+                        self.session_ended = True
+                        self.on_session_end(self.user_id)
 
     def start_listening(self):
         """Starts the message listening loop in a background thread."""
@@ -114,6 +122,11 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             self.node_process.terminate()
             self.node_process.wait()
             console_log(f"PROVIDER ({self.user_id}): Node.js server process terminated.")
+
+        # Call the session end callback to clean up the main application's state
+        if self.on_session_end and not self.session_ended:
+            self.session_ended = True
+            self.on_session_end(self.user_id)
 
     def _listen(self):
         """
