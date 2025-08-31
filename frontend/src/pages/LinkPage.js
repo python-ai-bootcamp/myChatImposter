@@ -22,7 +22,8 @@ function LinkPage() {
         const createResponse = await fetch('/chatbot', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify([configData]), // API expects an array
+          // The config file should contain the full body for the API, which is an array.
+          body: JSON.stringify(configData),
         });
 
         if (!createResponse.ok) {

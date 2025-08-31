@@ -57,20 +57,30 @@ test('shows an error for invalid JSON on save', async () => {
   expect(errorMessage).toBeInTheDocument();
 });
 
-test('shows an error for non-object JSON on save', async () => {
+test('successfully saves a JSON array', async () => {
+  // Mock initial fetch
   fetch.mockResolvedValueOnce({
     ok: true,
     json: async () => ({}),
   });
+
+  // Mock save fetch
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ status: 'success' }),
+  });
+
   renderComponent();
 
   const textArea = await screen.findByRole('textbox');
-  fireEvent.change(textArea, { target: { value: '[1, 2, 3]' } }); // Valid JSON, but an array
+  const arrayContent = JSON.stringify([{ id: 1 }, { id: 2 }], null, 2);
+  fireEvent.change(textArea, { target: { value: arrayContent } });
 
   fireEvent.click(screen.getByRole('button', { name: /Save/i }));
 
-  const errorMessage = await screen.findByText(/Configuration must be a valid JSON object/i);
-  expect(errorMessage).toBeInTheDocument();
+  await waitFor(() => {
+    expect(mockedNavigate).toHaveBeenCalledWith('/');
+  });
 });
 
 test('successfully saves valid JSON object', async () => {

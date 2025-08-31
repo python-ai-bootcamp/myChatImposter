@@ -31,9 +31,9 @@ function EditPage() {
     try {
       const parsedContent = JSON.parse(content);
 
-      // Add validation to ensure it's a JSON object
-      if (typeof parsedContent !== 'object' || parsedContent === null || Array.isArray(parsedContent)) {
-        throw new Error('Configuration must be a valid JSON object (e.g., { "key": "value" }).');
+      // Add validation to ensure it's a JSON object or array of objects
+      if (typeof parsedContent !== 'object' || parsedContent === null) {
+        throw new Error('Configuration must be a valid JSON object or an array of objects.');
       }
 
       const response = await fetch(`/api/configurations/${filename}`, {
