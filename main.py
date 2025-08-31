@@ -3,7 +3,11 @@ import threading
 import sys
 import logging
 import time
+import os
+import json
+from pathlib import Path
 from fastapi import FastAPI, HTTPException, Body, Request
+from fastapi.responses import FileResponse
 from fastapi.concurrency import run_in_threadpool
 from typing import Dict, Any, List
 from uvicorn.config import LOGGING_CONFIG
@@ -43,6 +47,66 @@ async def log_requests(request: Request, call_next):
 
 # In-memory storage for chatbot instances
 chatbot_instances: Dict[str, ChatbotInstance] = {}
+
+CONFIGURATIONS_DIR = Path("configurations")
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    Ensure the configurations directory exists on startup.
+    """
+    if not CONFIGURATIONS_DIR.exists():
+        console_log(f"API: Configurations directory not found at '{CONFIGURATIONS_DIR}'. Creating it.")
+        CONFIGURATIONS_DIR.mkdir(parents=True, exist_ok=True)
+    else:
+        console_log(f"API: Found configurations directory at '{CONFIGURATIONS_DIR}'.")
+
+
+@app.get("/api/configurations")
+async def get_configuration_files():
+    """
+    Returns a list of all .json configuration files in the configurations directory.
+    """
+    try:
+        files = [f for f in os.listdir(CONFIGURATIONS_DIR) if f.endswith('.json') and os.path.isfile(CONFIGURATIONS_DIR / f)]
+        return {"files": files}
+    except Exception as e:
+        console_log(f"API_ERROR: Could not list configuration files: {e}")
+        raise HTTPException(status_code=500, detail="Could not list configuration files.")
+
+
+@app.get("/api/configurations/{filename}")
+async def get_configuration_file(filename: str):
+    """
+    Returns the content of a specific .json configuration file.
+    """
+    if not filename.endswith('.json'):
+        raise HTTPException(status_code=400, detail="Invalid file type. Only .json files are supported.")
+
+    file_path = CONFIGURATIONS_DIR / filename
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Configuration file not found.")
+
+    return FileResponse(path=file_path, media_type='application/json', filename=filename)
+
+
+@app.put("/api/configurations/{filename}")
+async def save_configuration_file(filename: str, content: Dict[str, Any] = Body(...)):
+    """
+    Saves content to a specific .json configuration file.
+    """
+    if not filename.endswith('.json'):
+        raise HTTPException(status_code=400, detail="Invalid file type. Only .json files are supported.")
+
+    file_path = CONFIGURATIONS_DIR / filename
+    try:
+        with open(file_path, 'w') as f:
+            json.dump(content, f, indent=4)
+        console_log(f"API: Successfully saved configuration file '{filename}'")
+        return {"status": "success", "filename": filename}
+    except Exception as e:
+        console_log(f"API_ERROR: Could not save configuration file '{filename}': {e}")
+        raise HTTPException(status_code=500, detail=f"Could not save configuration file: {e}")
 
 @app.put("/chatbot")
 async def create_chatbots(configs: List[Dict[str, Any]] = Body(...)):
