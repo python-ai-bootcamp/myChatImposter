@@ -23,7 +23,12 @@ function LinkPage() {
         }
         const statusData = await statusResponse.json();
         setStatus(statusData.status || 'Polling...');
-        setQrCode(statusData.qr || null); // Update QR code, clear if not present
+
+        if (statusData.qr) {
+          setQrCode(`data:image/png;base64,${statusData.qr}`);
+        } else {
+          setQrCode(null);
+        }
 
         // The 'connected' status indicates a successful, stable connection.
         if (statusData.status?.toLowerCase() === 'connected' || statusData.status === 'ERROR') {
