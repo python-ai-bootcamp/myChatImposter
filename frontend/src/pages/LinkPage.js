@@ -1,14 +1,22 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 
 function LinkPage() {
   const { filename } = useParams();
+  const effectRan = useRef(false);
   const [instanceId, setInstanceId] = useState(null);
   const [status, setStatus] = useState('Initializing...');
   const [qrCode, setQrCode] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
+    if (effectRan.current === true) {
+      return;
+    }
+    effectRan.current = true;
+
+    let pollInterval;
+
     const createAndPoll = async () => {
       try {
         // 1. Fetch the configuration
@@ -22,7 +30,6 @@ function LinkPage() {
         const createResponse = await fetch('/chatbot', {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
-          // The config file should contain the full body for the API, which is an array.
           body: JSON.stringify(configData),
         });
 
@@ -42,22 +49,20 @@ function LinkPage() {
         setStatus('Instance created. Waiting for status...');
 
         // 3. Start polling for status
-        const pollInterval = setInterval(async () => {
+        pollInterval = setInterval(async () => {
           try {
             const statusResponse = await fetch(`/chatbot/${newInstanceId}/status`);
             if (!statusResponse.ok) {
-                // Stop polling if instance is not found (e.g., server restarted)
                 if(statusResponse.status === 404){
                     setError("Instance not found. It might have been terminated or the server restarted.");
                     clearInterval(pollInterval);
                 }
-                return; // Continue polling on other errors
+                return;
             }
             const statusData = await statusResponse.json();
             setStatus(statusData.status || 'Polling...');
             if (statusData.qr) {
               setQrCode(statusData.qr);
-              // Optional: stop polling once we get a QR code or a final status
             }
             if (statusData.status === 'CONNECTED' || statusData.status === 'ERROR') {
                 clearInterval(pollInterval);
@@ -68,16 +73,19 @@ function LinkPage() {
           }
         }, 2000);
 
-        // Cleanup function to stop polling when the component unmounts
-        return () => clearInterval(pollInterval);
-
       } catch (err) {
         setError(err.message);
       }
     };
 
     createAndPoll();
-    // The empty dependency array ensures this effect runs only once on mount.
+
+    // Return the cleanup function for when the component unmounts
+    return () => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    };
   }, [filename]);
 
   return (
