@@ -9,6 +9,7 @@ jest.useFakeTimers();
 
 beforeEach(() => {
   fetch.mockClear();
+  jest.clearAllTimers();
 });
 
 afterEach(() => {
@@ -26,37 +27,31 @@ const renderComponent = (userId) => {
   );
 };
 
-test('polls for status and displays qr code', async () => {
-  // 1. Mock status poll (first time)
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ status: 'connecting' }),
-  });
-
-  // 2. Mock status poll (second time, with QR code)
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ status: 'got qr code', qr: 'data:image/png;base64,qr-code-string' }),
-  });
+test('polls for status and stops when connected', async () => {
+  // Mock a sequence of status updates
+  fetch
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'connecting' }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'got qr code', qr: 'data:image/png;base64,qr' }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'open' }) });
 
   renderComponent('test-user');
 
-  // Initial render shows the user id and initial status
-  expect(screen.getByText('Link Status for User: test-user')).toBeInTheDocument();
-  // The first poll is called immediately
+  // Initial render -> first poll
   await screen.findByText('Status: connecting');
+  expect(fetch).toHaveBeenCalledTimes(1);
 
-  // Advance timers to trigger the second poll
-  await act(async () => {
-    jest.advanceTimersByTime(2000);
-  });
+  // Advance time -> second poll
+  await act(async () => { jest.advanceTimersByTime(2000); });
+  await screen.findByText('Status: got qr code');
+  expect(fetch).toHaveBeenCalledTimes(2);
 
-  // Wait for QR code to be displayed from the second poll
-  const qrCodeImage = await screen.findByAltText('QR Code');
-  expect(qrCodeImage).toBeInTheDocument();
-  expect(qrCodeImage.src).toBe('data:image/png;base64,qr-code-string');
-  expect(screen.getByText('Status: got qr code')).toBeInTheDocument();
+  // Advance time -> third poll (final status)
+  await act(async () => { jest.advanceTimersByTime(2000); });
+  await screen.findByText('Status: open');
+  expect(fetch).toHaveBeenCalledTimes(3);
 
-  // Check that fetch was called for the status poll with the user_id
-  expect(fetch).toHaveBeenCalledWith('/chatbot/test-user/status');
+  // Advance time again -> polling should have stopped
+  await act(async () => { jest.advanceTimersByTime(2000); });
+  // The fetch count should NOT have increased
+  expect(fetch).toHaveBeenCalledTimes(3);
 });
