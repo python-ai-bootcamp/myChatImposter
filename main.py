@@ -47,6 +47,19 @@ async def log_requests(request: Request, call_next):
 
 # In-memory storage for chatbot instances
 chatbot_instances: Dict[str, ChatbotInstance] = {}
+active_users: Dict[str, str] = {} # Maps user_id to instance_id
+
+def remove_active_user(user_id: str):
+    """Callback function to remove a user from the active list."""
+    if user_id in active_users:
+        instance_id = active_users[user_id]
+        console_log(f"API: Session ended for user '{user_id}'. Removing from active list.")
+        del active_users[user_id]
+        if instance_id in chatbot_instances:
+            # Also remove the main instance object to free memory
+            del chatbot_instances[instance_id]
+    else:
+        console_log(f"API_WARN: Tried to remove non-existent user '{user_id}' from active list.")
 
 CONFIGURATIONS_DIR = Path("configurations")
 
@@ -150,6 +163,19 @@ async def create_chatbots(configs: List[Dict[str, Any]] = Body(...)):
             })
             continue
 
+        # Check if a session for this user_id already exists
+        if user_id in active_users:
+            console_log(f"API_WARN: Request to create instance for already active user '{user_id}' was rejected.")
+            # This is a client error, as they are trying to create a duplicate session.
+            # We can't easily raise an exception here since we need to process the whole list.
+            # So, we add it to the failed list and the client can check this.
+            # A 409 would be better if the API only handled one creation at a time.
+            failed_creations.append({
+                "user_id": user_id,
+                "error": f"Conflict: An active session for user_id '{user_id}' already exists."
+            })
+            continue
+
         console_log(f"API: Received request to create instance {instance_id} for user {user_id}")
 
         try:
@@ -160,13 +186,16 @@ async def create_chatbots(configs: List[Dict[str, Any]] = Body(...)):
                 This function contains the synchronous, blocking code.
                 It returns the created instance so its mode can be inspected.
                 """
-                instance = ChatbotInstance(config=current_config)
+                instance = ChatbotInstance(config=current_config, on_session_end=remove_active_user)
                 chatbot_instances[current_instance_id] = instance
                 instance.start()
                 return instance
 
             # Run the blocking code in a thread pool to avoid blocking the event loop
             instance = await run_in_threadpool(blocking_init_and_start, config, instance_id)
+
+            # Add the new instance to our active user tracking
+            active_users[user_id] = instance_id
 
             console_log(f"API: Instance {instance_id} for user '{user_id}' is starting in the background.")
 
@@ -210,10 +239,17 @@ def shutdown_event():
     Gracefully shut down all running chatbot instances when the server is stopped.
     """
     console_log("API: Server is shutting down. Stopping all chatbot instances...")
-    for instance_id, instance in chatbot_instances.items():
-        console_log(f"API: Stopping instance {instance_id}...")
+    # Create a copy of the dictionary to avoid issues with modifying it while iterating
+    for instance_id, instance in list(chatbot_instances.items()):
+        console_log(f"API: Stopping instance {instance_id} for user '{instance.user_id}'...")
         instance.stop()
-    console_log("API: All instances stopped.")
+        # Clean up the dictionaries
+        if instance.user_id in active_users:
+            del active_users[instance.user_id]
+
+    # It's good practice to clear the main dict as well
+    chatbot_instances.clear()
+    console_log("API: All instances stopped and cleaned up.")
 
 if __name__ == "__main__":
     import uvicorn

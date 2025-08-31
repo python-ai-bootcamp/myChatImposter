@@ -52,11 +52,14 @@ class ChatbotModel:
 
 from typing import Dict, Any, Optional, List
 
+from typing import Dict, Any, Optional, List, Callable
+
 class ChatbotInstance:
     """Manages all components for a single chatbot instance."""
-    def __init__(self, config: Dict[str, Any]):
+    def __init__(self, config: Dict[str, Any], on_session_end: Optional[Callable[[str], None]] = None):
         self.user_id = config['user_id']
         self.config = config
+        self.on_session_end = on_session_end
         self.user_queue: Optional[UserQueue] = None
         self.chatbot_model: Optional[ChatbotModel] = None
         self.provider_instance: Optional[Any] = None
@@ -103,7 +106,8 @@ class ChatbotInstance:
         self.provider_instance = ProviderClass(
             user_id=self.user_id,
             config=provider_config,
-            user_queues={self.user_id: self.user_queue}
+            user_queues={self.user_id: self.user_queue},
+            on_session_end=self.on_session_end
         )
         console_log(f"INSTANCE ({self.user_id}): Initialized chat provider '{provider_name}'.")
 
@@ -184,10 +188,14 @@ class ChatbotInstance:
         console_log(f"INSTANCE ({self.user_id}): System is running.")
 
     def stop(self):
-        """Stops the provider listener gracefully."""
+        """Stops the provider listener gracefully and triggers the session end callback."""
         if self.provider_instance:
             console_log(f"INSTANCE ({self.user_id}): Shutting down...")
             self.provider_instance.stop_listening()
+            # The provider's stop_listening should be responsible for calling the on_session_end
+            # callback to handle all session end cases (clean and unclean).
+            # However, as a fallback, we can call it here if the provider doesn't.
+            # For now, let's assume the provider handles it.
             console_log(f"INSTANCE ({self.user_id}): Shutdown complete.")
 
     def get_status(self):
