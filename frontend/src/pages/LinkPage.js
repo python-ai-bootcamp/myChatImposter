@@ -25,8 +25,8 @@ function LinkPage() {
         setStatus(statusData.status || 'Polling...');
         setQrCode(statusData.qr || null); // Update QR code, clear if not present
 
-        // The 'open' status indicates a successful, stable connection from the Baileys library.
-        if (statusData.status === 'open' || statusData.status === 'ERROR') {
+        // The 'connected' status indicates a successful, stable connection.
+        if (statusData.status?.toLowerCase() === 'connected' || statusData.status === 'ERROR') {
             clearInterval(pollInterval);
         }
       } catch (pollErr) {
