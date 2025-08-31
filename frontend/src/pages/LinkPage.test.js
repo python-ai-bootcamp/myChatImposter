@@ -31,7 +31,7 @@ test('polls for status and stops when connected', async () => {
   // Mock a sequence of status updates
   fetch
     .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'connecting' }) })
-    .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'got qr code', qr: 'first-qr,second-qr,third-qr' }) })
+    .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'got qr code', qr: 'data:image/png;base64,full-data-url' }) })
     .mockResolvedValueOnce({ ok: true, json: async () => ({ status: 'connected' }) });
 
   renderComponent('test-user');
@@ -44,7 +44,7 @@ test('polls for status and stops when connected', async () => {
   await act(async () => { jest.advanceTimersByTime(2000); });
   const qrImage = await screen.findByAltText('QR Code');
   expect(qrImage).toBeInTheDocument();
-  expect(qrImage.src).toBe('data:image/png;base64,first-qr'); // Should only use the first part
+  expect(qrImage.src).toBe('data:image/png;base64,full-data-url');
   expect(fetch).toHaveBeenCalledTimes(2);
 
   // Advance time -> third poll (final status)

@@ -23,14 +23,7 @@ function LinkPage() {
         }
         const statusData = await statusResponse.json();
         setStatus(statusData.status || 'Polling...');
-
-        if (statusData.qr) {
-          // The QR string can sometimes be a comma-separated list. We take the first one.
-          const firstQr = statusData.qr.split(',')[0];
-          setQrCode(`data:image/png;base64,${firstQr}`);
-        } else {
-          setQrCode(null);
-        }
+        setQrCode(statusData.qr || null);
 
         // The 'connected' status indicates a successful, stable connection.
         if (statusData.status?.toLowerCase() === 'connected' || statusData.status === 'ERROR') {
