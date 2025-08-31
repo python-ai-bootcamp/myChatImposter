@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 function HomePage() {
   const [files, setFiles] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [isLinking, setIsLinking] = useState(false);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
 
@@ -25,9 +26,47 @@ function HomePage() {
     fetchFiles();
   }, []);
 
-  const handleLink = () => {
-    if (selectedFile) {
-      navigate(`/link/${selectedFile}`);
+  const handleLink = async () => {
+    if (!selectedFile) return;
+
+    setIsLinking(true);
+    setError(null);
+
+    try {
+      // 1. Fetch the configuration content
+      const configResponse = await fetch(`/api/configurations/${selectedFile}`);
+      if (!configResponse.ok) {
+        throw new Error('Failed to fetch configuration file.');
+      }
+      const configData = await configResponse.json();
+
+      // 2. Create the user instance
+      const createResponse = await fetch('/chatbot', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(configData),
+      });
+
+      if (!createResponse.ok) {
+        const errorBody = await createResponse.json();
+        throw new Error(errorBody.detail || `Failed to create session (HTTP ${createResponse.status})`);
+      }
+
+      const createData = await createResponse.json();
+
+      if (createData.failed && createData.failed.length > 0) {
+        throw new Error(`Failed to create instance: ${createData.failed[0].error}`);
+      }
+
+      const userId = createData.successful[0].user_id;
+
+      // 3. Navigate to the link page
+      navigate(`/link/${userId}`);
+
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setIsLinking(false);
     }
   };
 
@@ -123,8 +162,8 @@ function HomePage() {
         <button onClick={handleAdd}>
           Add
         </button>
-        <button onClick={handleLink} disabled={!selectedFile}>
-          Link
+        <button onClick={handleLink} disabled={!selectedFile || isLinking}>
+          {isLinking ? 'Linking...' : 'Link'}
         </button>
         <button onClick={handleEdit} disabled={!selectedFile}>
           Edit

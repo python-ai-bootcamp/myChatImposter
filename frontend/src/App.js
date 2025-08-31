@@ -13,7 +13,7 @@ function App() {
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/edit/:filename" element={<EditPage />} />
-          <Route path="/link/:filename" element={<LinkPage />} />
+          <Route path="/link/:userId" element={<LinkPage />} />
         </Routes>
       </div>
     </Router>

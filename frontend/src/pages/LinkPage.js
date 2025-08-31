@@ -1,84 +1,42 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 
 function LinkPage() {
-  const { filename } = useParams();
-  const effectRan = useRef(false);
-  const [userId, setUserId] = useState(null);
-  const [status, setStatus] = useState('Initializing...');
+  const { userId } = useParams(); // Changed from filename to userId
+  const [status, setStatus] = useState('Checking status...');
   const [qrCode, setQrCode] = useState(null);
   const [error, setError] = useState(null);
 
   useEffect(() => {
-    if (effectRan.current === true) {
-      return;
-    }
-    effectRan.current = true;
-
     let pollInterval;
 
-    const createAndPoll = async () => {
+    const pollStatus = async () => {
       try {
-        // 1. Fetch the configuration
-        const configResponse = await fetch(`/api/configurations/${filename}`);
-        if (!configResponse.ok) {
-          throw new Error('Failed to fetch configuration.');
-        }
-        const configData = await configResponse.json();
-
-        // 2. Create the user instance
-        const createResponse = await fetch('/chatbot', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(configData),
-        });
-
-        if (!createResponse.ok) {
-            const errorBody = await createResponse.json();
-            throw new Error(`Failed to create user: ${errorBody.detail || createResponse.statusText}`);
-        }
-
-        const createData = await createResponse.json();
-
-        if (createData.failed && createData.failed.length > 0) {
-            throw new Error(`Failed to create instance: ${createData.failed[0].error}`);
-        }
-
-        const newUserId = createData.successful[0].user_id;
-        setUserId(newUserId);
-        setStatus('Instance created. Waiting for status...');
-
-        // 3. Start polling for status
-        pollInterval = setInterval(async () => {
-          try {
-            const statusResponse = await fetch(`/chatbot/${newUserId}/status`);
-            if (!statusResponse.ok) {
-                if(statusResponse.status === 404){
-                    setError("Instance not found. It might have been terminated or the server restarted.");
-                    clearInterval(pollInterval);
-                }
-                return;
-            }
-            const statusData = await statusResponse.json();
-            setStatus(statusData.status || 'Polling...');
-            if (statusData.qr) {
-              setQrCode(statusData.qr);
-            }
-            if (statusData.status === 'CONNECTED' || statusData.status === 'ERROR') {
+        const statusResponse = await fetch(`/chatbot/${userId}/status`);
+        if (!statusResponse.ok) {
+            if(statusResponse.status === 404){
+                setError(`No active session found for user "${userId}". It might have been terminated or the server restarted.`);
                 clearInterval(pollInterval);
             }
-          } catch (pollErr) {
-            setError('Error polling for status.');
-            clearInterval(pollInterval);
-          }
-        }, 2000);
+            // For other errors, we can just let it retry
+            return;
+        }
+        const statusData = await statusResponse.json();
+        setStatus(statusData.status || 'Polling...');
+        setQrCode(statusData.qr || null); // Update QR code, clear if not present
 
-      } catch (err) {
-        setError(err.message);
+        if (statusData.status === 'CONNECTED' || statusData.status === 'ERROR') {
+            clearInterval(pollInterval);
+        }
+      } catch (pollErr) {
+        setError('Error polling for status.');
+        clearInterval(pollInterval);
       }
     };
 
-    createAndPoll();
+    // Start polling immediately and then set an interval
+    pollStatus();
+    pollInterval = setInterval(pollStatus, 2000);
 
     // Return the cleanup function for when the component unmounts
     return () => {
@@ -86,13 +44,12 @@ function LinkPage() {
         clearInterval(pollInterval);
       }
     };
-  }, [filename]);
+  }, [userId]); // Effect depends on userId
 
   return (
     <div>
-      <h2>Link Device for: {filename}</h2>
+      <h2>Link Status for User: {userId}</h2>
       {error && <div style={{ color: 'red' }}>Error: {error}</div>}
-      {userId && <p>User ID: {userId}</p>}
       <p>Status: {status}</p>
       {qrCode && <img src={qrCode} alt="QR Code" />}
     </div>

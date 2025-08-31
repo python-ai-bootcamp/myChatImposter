@@ -4,8 +4,17 @@ import App from './App';
 // Mock the global fetch function
 global.fetch = jest.fn();
 
+// Mock useNavigate
+const mockedNavigate = jest.fn();
+jest.mock('react-router-dom', () => ({
+  ...jest.requireActual('react-router-dom'),
+  useNavigate: () => mockedNavigate,
+}));
+
+
 beforeEach(() => {
   fetch.mockClear();
+  mockedNavigate.mockClear();
 });
 
 test('renders home page, allows file selection, and enables buttons', async () => {
@@ -129,4 +138,39 @@ test('successfully deletes a file', async () => {
 
   // Clean up the mock
   window.confirm.mockRestore();
+});
+
+test('clicking Link button fetches config, creates session, and navigates', async () => {
+  // 1. Initial file list
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ files: ['link-test.json'] }),
+  });
+  // 2. Mock the config file fetch
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ([{ user_id: 'linked-user' }]),
+  });
+  // 3. Mock the session creation
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({
+      successful: [{ user_id: 'linked-user', instance_id: 'xyz-789' }],
+      failed: [],
+    }),
+  });
+
+  render(<App />);
+
+  // Select the file
+  const fileToLink = await screen.findByText('link-test.json');
+  fireEvent.click(fileToLink);
+
+  // Click the link button
+  fireEvent.click(screen.getByRole('button', { name: /Link/i }));
+
+  // Wait for navigation to be called with the correct user ID
+  await waitFor(() => {
+    expect(mockedNavigate).toHaveBeenCalledWith('/link/linked-user');
+  });
 });
