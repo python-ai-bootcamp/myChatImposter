@@ -211,19 +211,22 @@ async def create_chatbots(configs: List[Dict[str, Any]] = Body(...)):
 
     return {"successful": successful_creations, "failed": failed_creations}
 
-@app.get("/chatbot/{instance_id}/status")
-async def get_chatbot_status(instance_id: str):
+@app.get("/chatbot/{user_id}/status")
+async def get_chatbot_status(user_id: str):
     """
-    Polls for the status of a specific chatbot instance.
+    Polls for the status of a specific chatbot instance using its user_id.
     This can return the QR code for linking, success status, or other states.
     """
-    # This endpoint is polled frequently, so we don't log every request
-    # in the middleware. We can add a specific log here if needed.
-    # console_log(f"API: Received status request for instance {instance_id}")
+    if user_id not in active_users:
+        raise HTTPException(status_code=404, detail=f"No active session found for user_id '{user_id}'.")
+
+    instance_id = active_users[user_id]
     instance = chatbot_instances.get(instance_id)
 
     if not instance:
-        raise HTTPException(status_code=404, detail="Instance not found")
+        # This case should ideally not happen if active_users is consistent with chatbot_instances
+        console_log(f"API_ERROR: Inconsistency detected. user_id '{user_id}' is in active_users but instance '{instance_id}' not found.")
+        raise HTTPException(status_code=500, detail="Internal server error: instance not found for active user.")
 
     try:
         status = instance.get_status()

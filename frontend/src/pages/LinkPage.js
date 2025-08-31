@@ -4,7 +4,7 @@ import { useParams } from 'react-router-dom';
 function LinkPage() {
   const { filename } = useParams();
   const effectRan = useRef(false);
-  const [instanceId, setInstanceId] = useState(null);
+  const [userId, setUserId] = useState(null);
   const [status, setStatus] = useState('Initializing...');
   const [qrCode, setQrCode] = useState(null);
   const [error, setError] = useState(null);
@@ -44,14 +44,14 @@ function LinkPage() {
             throw new Error(`Failed to create instance: ${createData.failed[0].error}`);
         }
 
-        const newInstanceId = createData.successful[0].instance_id;
-        setInstanceId(newInstanceId);
+        const newUserId = createData.successful[0].user_id;
+        setUserId(newUserId);
         setStatus('Instance created. Waiting for status...');
 
         // 3. Start polling for status
         pollInterval = setInterval(async () => {
           try {
-            const statusResponse = await fetch(`/chatbot/${newInstanceId}/status`);
+            const statusResponse = await fetch(`/chatbot/${newUserId}/status`);
             if (!statusResponse.ok) {
                 if(statusResponse.status === 404){
                     setError("Instance not found. It might have been terminated or the server restarted.");
@@ -92,7 +92,7 @@ function LinkPage() {
     <div>
       <h2>Link Device for: {filename}</h2>
       {error && <div style={{ color: 'red' }}>Error: {error}</div>}
-      {instanceId && <p>Instance ID: {instanceId}</p>}
+      {userId && <p>User ID: {userId}</p>}
       <p>Status: {status}</p>
       {qrCode && <img src={qrCode} alt="QR Code" />}
     </div>
