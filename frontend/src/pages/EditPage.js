@@ -46,16 +46,20 @@ function EditPage() {
 
       if (!response.ok) {
         const errorBody = await response.json();
-        throw new Error(errorBody.detail || 'Failed to save file.');
+        // errorBody.detail can be an object or a string
+        const detail = typeof errorBody.detail === 'object' && errorBody.detail !== null
+            ? JSON.stringify(errorBody.detail, null, 2)
+            : errorBody.detail;
+        throw new Error(detail || 'Failed to save file.');
       }
 
       navigate('/');
     } catch (err) {
-      // Differentiate between JSON parsing errors and fetch errors
-      const errorMessage = err.message.includes('JSON')
-        ? `Invalid JSON: ${err.message}`
-        : `Failed to save: ${err.message}`;
-      setError(errorMessage);
+      if (err instanceof SyntaxError) {
+        setError(`Invalid JSON syntax: ${err.message}`);
+      } else {
+        setError(`Failed to save: ${err.message}`);
+      }
     } finally {
       setIsSaving(false);
     }

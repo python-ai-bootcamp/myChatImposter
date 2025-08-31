@@ -53,7 +53,7 @@ test('shows an error for invalid JSON on save', async () => {
 
   fireEvent.click(screen.getByRole('button', { name: /Save/i }));
 
-  const errorMessage = await screen.findByText(/Invalid JSON/i);
+  const errorMessage = await screen.findByText(/Invalid JSON syntax/i);
   expect(errorMessage).toBeInTheDocument();
 });
 

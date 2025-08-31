@@ -9,7 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException, Body, Request
 from fastapi.responses import FileResponse
 from fastapi.concurrency import run_in_threadpool
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Union
 from uvicorn.config import LOGGING_CONFIG
 
 from chatbot_manager import ChatbotInstance
@@ -91,7 +91,7 @@ async def get_configuration_file(filename: str):
 
 
 @app.put("/api/configurations/{filename}")
-async def save_configuration_file(filename: str, content: Dict[str, Any] = Body(...)):
+async def save_configuration_file(filename: str, content: Union[Dict, List] = Body(...)):
     """
     Saves content to a specific .json configuration file.
     """
