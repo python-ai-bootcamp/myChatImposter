@@ -53,3 +53,52 @@ p {
   font-size: 1.1rem;
   line-height: 1.6;
 }
+
+/* Styles for the new file list */
+.file-list-container {
+  border: 1px solid #ccc;
+  border-radius: 5px;
+  min-height: 150px;
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+  background-color: #f9f9f9;
+}
+
+.file-list {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+  text-align: left;
+}
+
+.file-item {
+  padding: 10px;
+  cursor: pointer;
+  border-bottom: 1px solid #eee;
+}
+
+.file-item:last-child {
+  border-bottom: none;
+}
+
+.file-item:hover {
+  background-color: #e9ecef;
+}
+
+.file-item.selected {
+  background-color: #007bff;
+  color: white;
+  font-weight: bold;
+}
+
+.action-buttons {
+  margin-top: 1rem;
+  display: flex;
+  gap: 10px;
+  justify-content: center;
+}
+
+button:disabled {
+  background-color: #cccccc;
+  cursor: not-allowed;
+}

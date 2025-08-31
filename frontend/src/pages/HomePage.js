@@ -1,9 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 
 function HomePage() {
   const [files, setFiles] = useState([]);
+  const [selectedFile, setSelectedFile] = useState(null);
   const [error, setError] = useState(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const fetchFiles = async () => {
@@ -22,6 +24,18 @@ function HomePage() {
     fetchFiles();
   }, []);
 
+  const handleLink = () => {
+    if (selectedFile) {
+      navigate(`/link/${selectedFile}`);
+    }
+  };
+
+  const handleEdit = () => {
+    if (selectedFile) {
+      navigate(`/edit/${selectedFile}`);
+    }
+  };
+
   if (error) {
     return <div>Error: {error}</div>;
   }
@@ -29,19 +43,31 @@ function HomePage() {
   return (
     <div>
       <h2>Configuration Files</h2>
-      {files.length === 0 ? (
-        <p>No configuration files found.</p>
-      ) : (
-        <ul>
-          {files.map(file => (
-            <li key={file}>
-              {file}
-              <Link to={`/link/${file}`}><button>Link</button></Link>
-              <Link to={`/edit/${file}`}><button>Edit</button></Link>
-            </li>
-          ))}
-        </ul>
-      )}
+      <div className="file-list-container">
+        {files.length === 0 ? (
+          <p>No configuration files found.</p>
+        ) : (
+          <ul className="file-list">
+            {files.map(file => (
+              <li
+                key={file}
+                className={`file-item ${selectedFile === file ? 'selected' : ''}`}
+                onClick={() => setSelectedFile(file)}
+              >
+                {file}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
+      <div className="action-buttons">
+        <button onClick={handleLink} disabled={!selectedFile}>
+          Link
+        </button>
+        <button onClick={handleEdit} disabled={!selectedFile}>
+          Edit
+        </button>
+      </div>
     </div>
   );
 }

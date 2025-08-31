@@ -30,6 +30,12 @@ function EditPage() {
     setError(null);
     try {
       const parsedContent = JSON.parse(content);
+
+      // Add validation to ensure it's a JSON object
+      if (typeof parsedContent !== 'object' || parsedContent === null || Array.isArray(parsedContent)) {
+        throw new Error('Configuration must be a valid JSON object (e.g., { "key": "value" }).');
+      }
+
       const response = await fetch(`/api/configurations/${filename}`, {
         method: 'PUT',
         headers: {
@@ -37,12 +43,19 @@ function EditPage() {
         },
         body: JSON.stringify(parsedContent),
       });
+
       if (!response.ok) {
-        throw new Error('Failed to save file.');
+        const errorBody = await response.json();
+        throw new Error(errorBody.detail || 'Failed to save file.');
       }
+
       navigate('/');
     } catch (err) {
-      setError('Failed to save: ' + err.message);
+      // Differentiate between JSON parsing errors and fetch errors
+      const errorMessage = err.message.includes('JSON')
+        ? `Invalid JSON: ${err.message}`
+        : `Failed to save: ${err.message}`;
+      setError(errorMessage);
     } finally {
       setIsSaving(false);
     }
