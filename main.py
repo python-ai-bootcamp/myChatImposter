@@ -88,6 +88,57 @@ async def get_configuration_files():
         raise HTTPException(status_code=500, detail="Could not list configuration files.")
 
 
+@app.get("/api/configurations/status")
+async def get_all_configurations_status():
+    """
+    Returns a list of all config files along with their current session status.
+    """
+    statuses = []
+    try:
+        files = [f for f in os.listdir(CONFIGURATIONS_DIR) if f.endswith('.json') and os.path.isfile(CONFIGURATIONS_DIR / f)]
+        for filename in files:
+            user_id = None
+            try:
+                with open(CONFIGURATIONS_DIR / filename, 'r') as f:
+                    # Assuming the config is a list with one object, or a single object
+                    config_data = json.load(f)
+                    if isinstance(config_data, list) and config_data:
+                        user_id = config_data[0].get('user_id')
+                    elif isinstance(config_data, dict):
+                         user_id = config_data.get('user_id')
+            except (json.JSONDecodeError, IndexError):
+                # If file is not valid JSON or is empty, we can't get a user_id
+                statuses.append({"filename": filename, "user_id": None, "status": "invalid_config"})
+                continue
+
+            if not user_id:
+                statuses.append({"filename": filename, "user_id": None, "status": "invalid_config"})
+                continue
+
+            # Now check the status for this user_id
+            if user_id in active_users:
+                instance_id = active_users[user_id]
+                instance = chatbot_instances.get(instance_id)
+                if instance:
+                    # Use a thread pool to avoid blocking on network calls
+                    status_info = await run_in_threadpool(instance.get_status)
+                    # The status from the provider can be 'open', which we map to 'connected' for the UI
+                    status = status_info.get('status', 'unknown')
+                    if status == 'open':
+                        status = 'connected'
+                    statuses.append({"filename": filename, "user_id": user_id, "status": status})
+                else:
+                    # Data inconsistency, should not happen
+                    statuses.append({"filename": filename, "user_id": user_id, "status": "error"})
+            else:
+                statuses.append({"filename": filename, "user_id": user_id, "status": "disconnected"})
+
+        return {"configurations": statuses}
+    except Exception as e:
+        console_log(f"API_ERROR: Could not get configuration statuses: {e}")
+        raise HTTPException(status_code=500, detail="Could not get configuration statuses.")
+
+
 @app.get("/api/configurations/{filename}")
 async def get_configuration_file(filename: str):
     """
@@ -234,6 +285,35 @@ async def get_chatbot_status(user_id: str):
     except Exception as e:
         console_log(f"API_ERROR: Failed to get status for instance {instance_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get status: {e}")
+
+
+@app.delete("/chatbot/{user_id}")
+async def unlink_chatbot(user_id: str):
+    """
+    Stops and unlinks a specific chatbot instance using its user_id.
+    """
+    if user_id not in active_users:
+        raise HTTPException(status_code=404, detail=f"No active session found for user_id '{user_id}' to unlink.")
+
+    instance_id = active_users[user_id]
+    instance = chatbot_instances.get(instance_id)
+
+    if not instance:
+        # This case should ideally not happen.
+        console_log(f"API_ERROR: Inconsistency detected. user_id '{user_id}' is in active_users but instance '{instance_id}' not found during unlink.")
+        # Still, we should clean up the active_users entry
+        del active_users[user_id]
+        raise HTTPException(status_code=500, detail="Internal server error: instance not found for active user.")
+
+    try:
+        # The stop() method will trigger the on_session_end callback,
+        # which in turn calls remove_active_user to clean up the state.
+        instance.stop()
+        return {"status": "success", "message": f"Session for user '{user_id}' is being terminated."}
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to stop instance for user '{user_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to stop instance: {e}")
+
 
 @app.on_event("shutdown")
 def shutdown_event():

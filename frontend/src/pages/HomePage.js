@@ -2,28 +2,33 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 function HomePage() {
-  const [files, setFiles] = useState([]);
+  const [configs, setConfigs] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const [isLinking, setIsLinking] = useState(false);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
 
-  const fetchFiles = async () => {
+  const fetchStatuses = async () => {
     try {
-      setError(null);
-      const response = await fetch('/api/configurations');
+      // Don't clear old error, so it persists until next success
+      const response = await fetch('/api/configurations/status');
       if (!response.ok) {
-        throw new Error('Failed to fetch configuration files.');
+        // Don't throw, just show an error and let polling continue
+        setError('Failed to fetch configuration statuses.');
+        return;
       }
       const data = await response.json();
-      setFiles(data.files);
+      setConfigs(data.configurations || []);
+      setError(null); // Clear error on success
     } catch (err) {
       setError(err.message);
     }
   };
 
   useEffect(() => {
-    fetchFiles();
+    fetchStatuses();
+    const interval = setInterval(fetchStatuses, 3000); // Poll every 3 seconds
+    return () => clearInterval(interval);
   }, []);
 
   const handleLink = async () => {
@@ -87,7 +92,7 @@ function HomePage() {
       return;
     }
 
-    if (files.includes(filename)) {
+    if (configs.some(c => c.filename === filename)) {
       alert(`File "${filename}" already exists.`);
       return;
     }
@@ -104,7 +109,7 @@ function HomePage() {
         throw new Error(errorBody.detail || 'Failed to create file.');
       }
 
-      await fetchFiles(); // Refresh the file list
+      await fetchStatuses(); // Refresh the file list immediately
     } catch (err) {
       setError(`Failed to create file: ${err.message}`);
     }
@@ -127,9 +132,29 @@ function HomePage() {
         }
 
         setSelectedFile(null); // Deselect the file
-        await fetchFiles();   // Refresh the list
+        await fetchStatuses();   // Refresh the list
       } catch (err) {
         setError(`Failed to delete file: ${err.message}`);
+      }
+    }
+  };
+
+  const handleUnlink = async () => {
+    const config = configs.find(c => c.filename === selectedFile);
+    if (!config || !config.user_id) return;
+
+    if (window.confirm(`Are you sure you want to unlink user "${config.user_id}"?`)) {
+      try {
+        const response = await fetch(`/chatbot/${config.user_id}`, {
+          method: 'DELETE',
+        });
+        if (!response.ok) {
+          const errorBody = await response.json();
+          throw new Error(errorBody.detail || 'Failed to unlink user.');
+        }
+        await fetchStatuses();
+      } catch (err) {
+        setError(`Failed to unlink: ${err.message}`);
       }
     }
   };
@@ -138,21 +163,41 @@ function HomePage() {
     return <div>Error: {error}</div>;
   }
 
+  const selectedConfig = configs.find(c => c.filename === selectedFile);
+  const status = selectedConfig?.status || 'disconnected';
+
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'connected':
+        return 'green';
+      case 'linking':
+      case 'initializing':
+      case 'got qr code':
+        return 'orange';
+      case 'disconnected':
+      case 'invalid_config':
+        return 'gray';
+      default:
+        return 'gray'; // Default for unknown statuses
+    }
+  };
+
   return (
     <div>
       <h2>Configuration Files</h2>
       <div className="file-list-container">
-        {files.length === 0 ? (
+        {configs.length === 0 ? (
           <p>No configuration files found.</p>
         ) : (
           <ul className="file-list">
-            {files.map(file => (
+            {configs.map(config => (
               <li
-                key={file}
-                className={`file-item ${selectedFile === file ? 'selected' : ''}`}
-                onClick={() => setSelectedFile(file)}
+                key={config.filename}
+                className={`file-item ${selectedFile === config.filename ? 'selected' : ''}`}
+                onClick={() => setSelectedFile(config.filename)}
               >
-                {file}
+                <span className={`status-dot ${getStatusColor(config.status)}`}></span>
+                {config.filename}
               </li>
             ))}
           </ul>
@@ -162,9 +207,17 @@ function HomePage() {
         <button onClick={handleAdd}>
           Add
         </button>
-        <button onClick={handleLink} disabled={!selectedFile || isLinking}>
-          {isLinking ? 'Linking...' : 'Link'}
-        </button>
+
+        {status === 'connected' ? (
+          <button onClick={handleUnlink} disabled={!selectedFile} className="unlink-button">
+            Unlink
+          </button>
+        ) : (
+          <button onClick={handleLink} disabled={!selectedFile || isLinking || status !== 'disconnected'}>
+            {isLinking ? 'Linking...' : 'Link'}
+          </button>
+        )}
+
         <button onClick={handleEdit} disabled={!selectedFile}>
           Edit
         </button>

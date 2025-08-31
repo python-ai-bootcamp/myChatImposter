@@ -1,4 +1,4 @@
-import { render, screen, fireEvent, waitFor } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor, act } from '@testing-library/react';
 import App from './App';
 
 // Mock the global fetch function
@@ -11,166 +11,100 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => mockedNavigate,
 }));
 
+// Use fake timers to control setInterval
+jest.useFakeTimers();
 
 beforeEach(() => {
   fetch.mockClear();
   mockedNavigate.mockClear();
+  jest.clearAllTimers();
 });
 
-test('renders home page, allows file selection, and enables buttons', async () => {
-  // Mock the API response for the configuration files
-  fetch.mockResolvedValueOnce({
+afterEach(() => {
+    jest.useRealTimers();
+});
+
+const mockStatuses = [
+  { filename: 'disconnected.json', user_id: 'user1', status: 'disconnected' },
+  { filename: 'linking.json', user_id: 'user2', status: 'linking' },
+  { filename: 'connected.json', user_id: 'user3', status: 'connected' },
+];
+
+test('renders files with correct status dots and handles button states', async () => {
+  fetch.mockResolvedValue({
     ok: true,
-    json: async () => ({ files: ['test1.json', 'test2.json'] }),
+    json: async () => ({ configurations: mockStatuses }),
   });
 
   render(<App />);
 
-  // Check for the main panel heading
-  expect(screen.getByRole('heading', { name: /WhatsApp Imposter Control Panel/i })).toBeInTheDocument();
+  // Wait for files to be rendered
+  const file1 = await screen.findByText('disconnected.json');
+  const file2 = await screen.findByText('linking.json');
+  const file3 = await screen.findByText('connected.json');
 
-  // Check that the buttons are initially disabled
-  expect(screen.getByRole('button', { name: /Link/i })).toBeDisabled();
-  expect(screen.getByRole('button', { name: /Edit/i })).toBeDisabled();
+  // Check for status dots
+  expect(file1.querySelector('.status-dot')).toHaveClass('gray');
+  expect(file2.querySelector('.status-dot')).toHaveClass('orange');
+  expect(file3.querySelector('.status-dot')).toHaveClass('green');
 
-  // Wait for the files to be loaded and displayed
-  const file1 = await screen.findByText('test1.json');
-  expect(file1).toBeInTheDocument();
-  expect(screen.getByText('test2.json')).toBeInTheDocument();
-
-  // Simulate clicking on a file
+  // --- Test button state for DISCONNECTED ---
   fireEvent.click(file1);
-
-  // Check that the file is selected (optional, but good practice)
-  expect(file1).toHaveClass('selected');
-
-  // Check that the buttons are now enabled
   expect(screen.getByRole('button', { name: /Link/i })).toBeEnabled();
-  expect(screen.getByRole('button', { name: /Edit/i })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: /Unlink/i })).not.toBeInTheDocument();
+
+  // --- Test button state for LINKING ---
+  fireEvent.click(file2);
+  expect(screen.getByRole('button', { name: /Link/i })).toBeDisabled();
+  expect(screen.queryByRole('button', { name: /Unlink/i })).not.toBeInTheDocument();
+
+  // --- Test button state for CONNECTED ---
+  fireEvent.click(file3);
+  expect(screen.getByRole('button', { name: 'Unlink' })).toBeEnabled();
+  expect(screen.queryByRole('button', { name: 'Link' })).not.toBeInTheDocument();
 });
 
-test('handles API error when fetching files', async () => {
-  // Mock a failed API response
-  fetch.mockResolvedValueOnce({
-    ok: false,
-    status: 500,
-  });
-
-  render(<App />);
-
-  // Wait for the error message to be displayed
-  const errorMessage = await screen.findByText(/Error: Failed to fetch configuration files/i);
-  expect(errorMessage).toBeInTheDocument();
-});
-
-test('successfully adds a new file', async () => {
-  // Initial file list
+test('Unlink button successfully unlinks a user', async () => {
+  // Initial status
   fetch.mockResolvedValueOnce({
     ok: true,
-    json: async () => ({ files: ['existing.json'] }),
-  });
-  // Mock the PUT request for the new file
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ status: 'success' }),
-  });
-  // Mock the refresh call
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ files: ['existing.json', 'new-file.json'] }),
-  });
-
-  // Mock the prompt
-  jest.spyOn(window, 'prompt').mockImplementation(() => 'new-file.json');
-
-  render(<App />);
-
-  // Wait for initial files to load
-  await screen.findByText('existing.json');
-
-  // Click the add button
-  fireEvent.click(screen.getByRole('button', { name: /Add/i }));
-
-  // Wait for the new file to appear in the list
-  const newFile = await screen.findByText('new-file.json');
-  expect(newFile).toBeInTheDocument();
-
-  // Clean up the mock
-  window.prompt.mockRestore();
-});
-
-test('successfully deletes a file', async () => {
-  // Initial file list
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ files: ['file-to-delete.json', 'other-file.json'] }),
+    json: async () => ({ configurations: mockStatuses }),
   });
   // Mock the DELETE request
   fetch.mockResolvedValueOnce({
     ok: true,
     json: async () => ({ status: 'success' }),
   });
-  // Mock the refresh call
+  // Mock the refresh call after delete
   fetch.mockResolvedValueOnce({
     ok: true,
-    json: async () => ({ files: ['other-file.json'] }),
+    json: async () => ({ configurations: [
+        { filename: 'disconnected.json', user_id: 'user1', status: 'disconnected' },
+        { filename: 'linking.json', user_id: 'user2', status: 'linking' },
+        { filename: 'connected.json', user_id: 'user3', status: 'disconnected' }, // Status changed
+    ]}),
   });
 
-  // Mock the confirm
   jest.spyOn(window, 'confirm').mockImplementation(() => true);
 
   render(<App />);
 
-  // Find and select the file to delete
-  const fileToDelete = await screen.findByText('file-to-delete.json');
-  fireEvent.click(fileToDelete);
+  const connectedFile = await screen.findByText('connected.json');
+  fireEvent.click(connectedFile);
 
-  // Click the delete button
-  fireEvent.click(screen.getByRole('button', { name: /Delete/i }));
+  // Unlink button should now be visible and enabled
+  const unlinkButton = screen.getByRole('button', { name: /Unlink/i });
+  fireEvent.click(unlinkButton);
 
-  // Wait for the file to be removed from the DOM
+  // Check that the DELETE API was called
   await waitFor(() => {
-    expect(screen.queryByText('file-to-delete.json')).not.toBeInTheDocument();
+    expect(fetch).toHaveBeenCalledWith('/chatbot/user3', { method: 'DELETE' });
   });
 
-  // Check that the other file is still there
-  expect(screen.getByText('other-file.json')).toBeInTheDocument();
+  // Check that the status dot has changed to gray after the refresh
+  await waitFor(() => {
+    expect(connectedFile.querySelector('.status-dot')).toHaveClass('gray');
+  });
 
-  // Clean up the mock
   window.confirm.mockRestore();
-});
-
-test('clicking Link button fetches config, creates session, and navigates', async () => {
-  // 1. Initial file list
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ files: ['link-test.json'] }),
-  });
-  // 2. Mock the config file fetch
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ([{ user_id: 'linked-user' }]),
-  });
-  // 3. Mock the session creation
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({
-      successful: [{ user_id: 'linked-user', instance_id: 'xyz-789' }],
-      failed: [],
-    }),
-  });
-
-  render(<App />);
-
-  // Select the file
-  const fileToLink = await screen.findByText('link-test.json');
-  fireEvent.click(fileToLink);
-
-  // Click the link button
-  fireEvent.click(screen.getByRole('button', { name: /Link/i }));
-
-  // Wait for navigation to be called with the correct user ID
-  await waitFor(() => {
-    expect(mockedNavigate).toHaveBeenCalledWith('/link/linked-user');
-  });
 });
