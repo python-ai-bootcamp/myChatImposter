@@ -108,6 +108,28 @@ async def save_configuration_file(filename: str, content: Union[Dict, List] = Bo
         console_log(f"API_ERROR: Could not save configuration file '{filename}': {e}")
         raise HTTPException(status_code=500, detail=f"Could not save configuration file: {e}")
 
+
+@app.delete("/api/configurations/{filename}")
+async def delete_configuration_file(filename: str):
+    """
+    Deletes a specific .json configuration file.
+    """
+    if not filename.endswith('.json'):
+        raise HTTPException(status_code=400, detail="Invalid file type. Only .json files are supported.")
+
+    file_path = CONFIGURATIONS_DIR / filename
+    if not file_path.exists() or not file_path.is_file():
+        raise HTTPException(status_code=404, detail="Configuration file not found.")
+
+    try:
+        os.remove(file_path)
+        console_log(f"API: Successfully deleted configuration file '{filename}'")
+        return {"status": "success", "filename": filename}
+    except Exception as e:
+        console_log(f"API_ERROR: Could not delete configuration file '{filename}': {e}")
+        raise HTTPException(status_code=500, detail=f"Could not delete configuration file: {e}")
+
+
 @app.put("/chatbot")
 async def create_chatbots(configs: List[Dict[str, Any]] = Body(...)):
     """

@@ -53,3 +53,80 @@ test('handles API error when fetching files', async () => {
   const errorMessage = await screen.findByText(/Error: Failed to fetch configuration files/i);
   expect(errorMessage).toBeInTheDocument();
 });
+
+test('successfully adds a new file', async () => {
+  // Initial file list
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ files: ['existing.json'] }),
+  });
+  // Mock the PUT request for the new file
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ status: 'success' }),
+  });
+  // Mock the refresh call
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ files: ['existing.json', 'new-file.json'] }),
+  });
+
+  // Mock the prompt
+  jest.spyOn(window, 'prompt').mockImplementation(() => 'new-file.json');
+
+  render(<App />);
+
+  // Wait for initial files to load
+  await screen.findByText('existing.json');
+
+  // Click the add button
+  fireEvent.click(screen.getByRole('button', { name: /Add/i }));
+
+  // Wait for the new file to appear in the list
+  const newFile = await screen.findByText('new-file.json');
+  expect(newFile).toBeInTheDocument();
+
+  // Clean up the mock
+  window.prompt.mockRestore();
+});
+
+test('successfully deletes a file', async () => {
+  // Initial file list
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ files: ['file-to-delete.json', 'other-file.json'] }),
+  });
+  // Mock the DELETE request
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ status: 'success' }),
+  });
+  // Mock the refresh call
+  fetch.mockResolvedValueOnce({
+    ok: true,
+    json: async () => ({ files: ['other-file.json'] }),
+  });
+
+  // Mock the confirm
+  jest.spyOn(window, 'confirm').mockImplementation(() => true);
+
+  render(<App />);
+
+  // Find and select the file to delete
+  const fileToDelete = await screen.findByText('file-to-delete.json');
+  fireEvent.click(fileToDelete);
+
+  // Click the delete button
+  fireEvent.click(screen.getByRole('button', { name: /Delete/i }));
+
+  // Wait for the file to be removed from the DOM
+  await waitFor(() => {
+    expect(screen.queryByText('file-to-delete.json')).not.toBeInTheDocument();
+  });
+
+  // Check that the other file is still there
+  expect(screen.getByText('other-file.json')).toBeInTheDocument();
+
+  // Clean up the mock
+  window.confirm.mockRestore();
+});
