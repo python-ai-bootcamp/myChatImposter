@@ -25,7 +25,9 @@ function LinkPage() {
         setStatus(statusData.status || 'Polling...');
 
         if (statusData.qr) {
-          setQrCode(`data:image/png;base64,${statusData.qr}`);
+          // The QR string can sometimes be a comma-separated list. We take the first one.
+          const firstQr = statusData.qr.split(',')[0];
+          setQrCode(`data:image/png;base64,${firstQr}`);
         } else {
           setQrCode(null);
         }
