@@ -1,5 +1,3 @@
-const makeWASocket = require('@whiskeysockets/baileys').default;
-const { DisconnectReason, useMultiFileAuthState } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const express = require('express');
 const qrcode = require('qrcode-terminal');
@@ -44,6 +42,8 @@ const authDir = `auth_info_${userId}`;
 
 // --- Baileys Connection Logic ---
 async function connectToWhatsApp() {
+    const { default: makeWASocket, useMultiFileAuthState } = await import('@whiskeysockets/baileys');
+
     // useMultiFileAuthState will use the directory to store and manage auth state
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
