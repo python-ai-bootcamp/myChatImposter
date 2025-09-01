@@ -46,10 +46,11 @@ function HomePage() {
       const configData = await configResponse.json();
 
       // 2. Create the user instance
+      const payload = Array.isArray(configData) ? configData[0] : configData;
       const createResponse = await fetch('/chatbot', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(configData),
+        body: JSON.stringify(payload),
       });
 
       if (!createResponse.ok) {
