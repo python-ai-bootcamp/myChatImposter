@@ -30,6 +30,7 @@ export function CustomFieldTemplate(props) {
       width: '70%',
       boxSizing: 'border-box',
       paddingTop: '0.5rem',
+      textAlign: 'left',
       // For the LLM selector, we remove padding to counteract its internal indentation.
       paddingLeft: isLlmSelector ? '0' : undefined
   };
