@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget } from '../components/FormTemplates';
 
 function EditPage() {
   const { filename } = useParams();
@@ -95,7 +95,11 @@ function EditPage() {
   const templates = {
     FieldTemplate: CustomFieldTemplate,
     ObjectFieldTemplate: CustomObjectFieldTemplate
-  }
+  };
+
+  const widgets = {
+      CheckboxWidget: CustomCheckboxWidget
+  };
 
   return (
     <div>
@@ -108,6 +112,7 @@ function EditPage() {
         onError={(errors) => console.log('Form validation errors:', errors)}
         disabled={isSaving}
         templates={templates}
+        widgets={widgets}
       >
         <div>
           <button type="submit" disabled={isSaving}>

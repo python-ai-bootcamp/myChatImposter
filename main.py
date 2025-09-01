@@ -92,9 +92,24 @@ async def get_configuration_files():
 @app.get("/api/configurations/schema", response_model=Dict[str, Any])
 async def get_configuration_schema():
     """
-    Returns the JSON Schema for the UserConfiguration model.
+    Returns the JSON Schema for the UserConfiguration model, with modifications
+    for better frontend rendering.
     """
-    return UserConfiguration.model_json_schema()
+    schema = UserConfiguration.model_json_schema()
+
+    # Add descriptive titles to the oneOf choices for llm_provider_config
+    if 'llm_provider_config' in schema['properties']:
+        llm_config_schema = schema['properties']['llm_provider_config']
+        if 'anyOf' in llm_config_schema:
+            for item in llm_config_schema['anyOf']:
+                if '$ref' in item:
+                    # This is the LLMProviderConfig object
+                    item['title'] = "Respond Using Llm"
+                elif item.get('type') == 'null':
+                    # This is the None/null option
+                    item['title'] = "Collection Only"
+
+    return schema
 
 
 @app.get("/api/configurations/status")
