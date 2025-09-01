@@ -125,8 +125,6 @@ async def get_all_configurations_status():
                     if instance:
                         status_info = await run_in_threadpool(instance.get_status)
                         status = status_info.get('status', 'unknown')
-                        if status == 'open':
-                            status = 'connected'
                         statuses.append({"filename": filename, "user_id": user_id, "status": status})
                     else:
                         statuses.append({"filename": filename, "user_id": user_id, "status": "error"})
