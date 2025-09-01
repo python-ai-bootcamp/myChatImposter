@@ -82,11 +82,11 @@ test('renders the form and saves updated data', async () => {
   // Wait for the form to render by finding a field from the schema
   const maxMessagesInput = await screen.findByLabelText('Max Messages');
   expect(maxMessagesInput).toBeInTheDocument();
-  expect(maxMessagesinput.value).toBe('10');
+  expect(maxMessagesInput.value).toBe('10');
 
   // Change a value
   fireEvent.change(maxMessagesInput, { target: { value: '50' } });
-  expect(maxMessagesinput.value).toBe('50');
+  expect(maxMessagesInput.value).toBe('50');
 
   // Submit the form
   const saveButton = screen.getByRole('button', { name: /Save/i });

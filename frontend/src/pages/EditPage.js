@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
+import { CustomFieldTemplate, CustomObjectFieldTemplate } from '../components/FormTemplates';
 
 function EditPage() {
   const { filename } = useParams();
@@ -91,6 +92,11 @@ function EditPage() {
     return <div>Loading form...</div>;
   }
 
+  const templates = {
+    FieldTemplate: CustomFieldTemplate,
+    ObjectFieldTemplate: CustomObjectFieldTemplate
+  }
+
   return (
     <div>
       <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
@@ -101,6 +107,7 @@ function EditPage() {
         onSubmit={handleSave}
         onError={(errors) => console.log('Form validation errors:', errors)}
         disabled={isSaving}
+        templates={templates}
       >
         <div>
           <button type="submit" disabled={isSaving}>
