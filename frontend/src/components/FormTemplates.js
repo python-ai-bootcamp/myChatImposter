@@ -1,5 +1,20 @@
 import React from 'react';
 
+// A custom widget for checkboxes that only renders the input element.
+// The label is handled by the CustomFieldTemplate.
+export function CustomCheckboxWidget(props) {
+    return (
+        <input
+            type="checkbox"
+            id={props.id}
+            checked={typeof props.value === 'undefined' ? false : props.value}
+            required={props.required}
+            onChange={(event) => props.onChange(event.target.checked)}
+            style={{ margin: 0 }}
+        />
+    );
+}
+
 export function CustomFieldTemplate(props) {
   const { id, label, children, required, rawErrors = [], help, description, classNames } = props;
 
@@ -15,7 +30,7 @@ export function CustomFieldTemplate(props) {
       <label htmlFor={id} style={{ width: '30%', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem' }}>
         {label}{required ? '*' : null}
       </label>
-      <div style={{ width: '70%', boxSizing: 'border-box' }}>
+      <div style={{ width: '70%', boxSizing: 'border-box', paddingTop: '0.5rem' }}>
         {description}
         {children}
         {rawErrors.length > 0 && <ul>{rawErrors.map((error, i) => <li key={i} className="text-danger">{error}</li>)}</ul>}
