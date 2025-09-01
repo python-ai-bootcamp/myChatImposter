@@ -8,10 +8,11 @@ export function CustomFieldTemplate(props) {
       return children;
   }
 
-  // Default layout for all fields
+  // A single, consistent layout for all fields.
+  // `align-items: flex-start` ensures that taller fields (like textareas) and their labels are top-aligned.
   return (
     <div className={classNames} style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
-      <label htmlFor={id} style={{ width: '30%', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
+      <label htmlFor={id} style={{ width: '30%', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem' }}>
         {label}{required ? '*' : null}
       </label>
       <div style={{ width: '70%', boxSizing: 'border-box' }}>
@@ -26,7 +27,7 @@ export function CustomFieldTemplate(props) {
 
 export function CustomObjectFieldTemplate(props) {
   return (
-    <fieldset style={{ border: 'none', padding: 0, margin: 0 }}>
+    <fieldset style={{ border: 'none', padding: 0, margin: 0, width: '100%' }}>
       {/* Render the title of the object, aligned with the right column */}
       {props.title && (
          <div style={{ display: 'flex', marginBottom: '1rem', alignItems: 'center' }}>
