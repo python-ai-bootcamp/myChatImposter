@@ -105,8 +105,17 @@ async def get_all_configurations_status():
                 with open(file_path, 'r') as f:
                     config_data = json.load(f)
 
+                # Handle both single object and list-of-one-object formats
+                if isinstance(config_data, list) and config_data:
+                    config_to_validate = config_data[0]
+                elif isinstance(config_data, dict):
+                    config_to_validate = config_data
+                else:
+                    # If the format is neither a list with content nor a dict, it's invalid
+                    raise ValueError("Configuration file is empty or has an unsupported format.")
+
                 # Validate the data using the Pydantic model
-                config = UserConfiguration.model_validate(config_data)
+                config = UserConfiguration.model_validate(config_to_validate)
                 user_id = config.user_id
 
                 # Now check the status for this user_id
