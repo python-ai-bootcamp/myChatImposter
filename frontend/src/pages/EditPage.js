@@ -101,8 +101,7 @@ function EditPage() {
     llm_provider_config: {
       provider_config: {
         api_key: {
-          "ui:widget": "password",
-          "ui:help": "API key will not be displayed after saving."
+          "ui:widget": "password"
         }
       }
     }
