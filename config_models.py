@@ -1,10 +1,16 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any
 
-class ChatProviderConfig(BaseModel):
-    provider_name: str
+class ChatProviderSettings(BaseModel):
     allow_group_messages: bool = False
     process_offline_messages: bool = False
+
+    class Config:
+        extra = 'allow'
+
+class ChatProviderConfig(BaseModel):
+    provider_name: str
+    provider_config: ChatProviderSettings
 
 class QueueConfig(BaseModel):
     max_messages: int = 10

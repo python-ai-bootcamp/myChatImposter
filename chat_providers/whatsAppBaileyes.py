@@ -56,7 +56,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             console_log(f"PROVIDER ({self.user_id}): Starting Node.js server on port {self.port} in CWD: {self.work_dir}")
 
             # Serialize and encode the config to pass as a command line argument
-            config_json = json.dumps(self.config.model_dump())
+            config_json = json.dumps(self.config.provider_config.model_dump())
             config_base64 = base64.b64encode(config_json.encode('utf-8')).decode('utf-8')
 
             # The path to server.js must be absolute so it can be found from the new CWD
@@ -149,7 +149,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
                                     # Check if group messages are allowed
                                     group_info = msg.get('group')
-                                    if group_info and not self.config.allow_group_messages:
+                                    if group_info and not self.config.provider_config.allow_group_messages:
                                         console_log(f"PROVIDER ({self.user_id}): Ignoring message from group {group_info.get('id')} as per configuration.")
                                         continue
 
