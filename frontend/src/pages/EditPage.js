@@ -4,6 +4,23 @@ import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
 import { CustomFieldTemplate, CustomObjectFieldTemplate } from '../components/FormTemplates';
 
+// This is a special FieldTemplate just for the LLM Provider config dropdown.
+// It ensures the dropdown itself has no extra padding/margin causing indentation.
+const LlmProviderFieldTemplate = (props) => {
+    const { id, label, children, required } = props;
+    return (
+      <div style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
+        <label htmlFor={id} style={{ width: '30%', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem' }}>
+          {label}{required ? '*' : null}
+        </label>
+        <div style={{ width: '70%', boxSizing: 'border-box' }}>
+          {children}
+        </div>
+      </div>
+    );
+  };
+
+
 function EditPage() {
   const { filename } = useParams();
   const navigate = useNavigate();
@@ -68,7 +85,7 @@ function EditPage() {
         const errorBody = await response.json();
         const detail = typeof errorBody.detail === 'object' && errorBody.detail !== null
             ? JSON.stringify(errorBody.detail, null, 2)
-            : errorBody.detail;
+            *            : errorBody.detail;
         throw new Error(detail || 'Failed to save file.');
       }
 
@@ -99,6 +116,7 @@ function EditPage() {
 
   const uiSchema = {
     llm_provider_config: {
+      "ui:FieldTemplate": LlmProviderFieldTemplate,
       provider_config: {
         api_key: {
           "ui:widget": "password"
