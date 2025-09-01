@@ -89,6 +89,14 @@ async def get_configuration_files():
         raise HTTPException(status_code=500, detail="Could not list configuration files.")
 
 
+@app.get("/api/configurations/schema", response_model=Dict[str, Any])
+async def get_configuration_schema():
+    """
+    Returns the JSON Schema for the UserConfiguration model.
+    """
+    return UserConfiguration.model_json_schema()
+
+
 @app.get("/api/configurations/status")
 async def get_all_configurations_status():
     """
