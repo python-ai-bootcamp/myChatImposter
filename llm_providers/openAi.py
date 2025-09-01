@@ -12,14 +12,11 @@ class OpenAiLlmProvider(BaseLlmProvider):
         # and let it pick the ones it needs. This makes the provider flexible.
 
         # We need to separate the system prompt from the LLM parameters.
-        llm_params = self.config.model_dump()
+        llm_params = self.config.provider_config.model_dump()
         llm_params.pop("system", None)
-        llm_params.pop("provider_name", None)
-        llm_params.pop("provider_config", None)
-
 
         return ChatOpenAI(**llm_params)
 
     def get_system_prompt(self):
         # The system prompt can also be customized
-        return self.config.system.format(user_id=self.user_id)
+        return self.config.provider_config.system.format(user_id=self.user_id)

@@ -8,10 +8,7 @@ class FakeLlmProvider(BaseLlmProvider):
 
     def get_llm(self):
         # The response array can be customized via the 'provider_config'
-        response_array = self.config.provider_config.get("response_array", [
-            "This is a default response."
-        ])
-
+        response_array = self.config.provider_config.response_array
         # Format any placeholders in the response array
         formatted_responses = [resp.format(user_id=self.user_id) for resp in response_array]
 
@@ -19,4 +16,4 @@ class FakeLlmProvider(BaseLlmProvider):
 
     def get_system_prompt(self):
         # The system prompt can also be customized
-        return self.config.system.format(user_id=self.user_id)
+        return self.config.provider_config.system.format(user_id=self.user_id)

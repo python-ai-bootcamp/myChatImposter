@@ -12,13 +12,19 @@ class QueueConfig(BaseModel):
     max_days: int = 1
     max_characters_single_message: int = 300
 
-class LLMProviderConfig(BaseModel):
-    provider_name: str
+class LLMProviderSettings(BaseModel):
     api_key: Optional[str] = None
     model: str
     temperature: float = 0.7
     system: str = ""
-    provider_config: Dict[str, Any] = Field(default_factory=dict)
+    response_array: List[str] = Field(default_factory=list)
+
+    class Config:
+        extra = 'allow'
+
+class LLMProviderConfig(BaseModel):
+    provider_name: str
+    provider_config: LLMProviderSettings
 
 class UserConfiguration(BaseModel):
     user_id: str
