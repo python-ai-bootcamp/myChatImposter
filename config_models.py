@@ -17,7 +17,6 @@ class LLMProviderSettings(BaseModel):
     model: str
     temperature: float = 0.7
     system: str = ""
-    response_array: List[str] = Field(default_factory=list)
 
     class Config:
         extra = 'allow'
