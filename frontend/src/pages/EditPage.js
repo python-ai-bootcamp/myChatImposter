@@ -4,23 +4,6 @@ import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
 import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget } from '../components/FormTemplates';
 
-// This is a special FieldTemplate just for the LLM Provider config dropdown.
-// It ensures the dropdown itself has no extra padding/margin causing indentation.
-const LlmProviderFieldTemplate = (props) => {
-    const { id, label, children, required } = props;
-    return (
-      <div style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
-        <label htmlFor={id} style={{ width: '30%', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem' }}>
-          {label}{required ? '*' : null}
-        </label>
-        <div style={{ width: '70%', boxSizing: 'border-box', paddingTop: '0.5rem' }}>
-          {children}
-        </div>
-      </div>
-    );
-  };
-
-
 function EditPage() {
   const { filename } = useParams();
   const navigate = useNavigate();
@@ -119,8 +102,9 @@ function EditPage() {
   };
 
   const uiSchema = {
+    "ui:classNames": "form-container",
     llm_provider_config: {
-      "ui:FieldTemplate": LlmProviderFieldTemplate,
+      "ui:classNames": "llm-provider-selector",
       provider_config: {
         api_key: {
           "ui:widget": "password"

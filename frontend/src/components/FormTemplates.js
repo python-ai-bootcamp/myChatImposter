@@ -25,12 +25,21 @@ export function CustomFieldTemplate(props) {
 
   // A single, consistent layout for all fields.
   // `align-items: flex-start` ensures that taller fields (like textareas) and their labels are top-aligned.
+  const isLlmSelector = classNames && classNames.includes('llm-provider-selector');
+  const rightColumnStyle = {
+      width: '70%',
+      boxSizing: 'border-box',
+      paddingTop: '0.5rem',
+      // For the LLM selector, we remove padding to counteract its internal indentation.
+      paddingLeft: isLlmSelector ? '0' : undefined
+  };
+
   return (
     <div className={classNames} style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
       <label htmlFor={id} style={{ width: '30%', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem' }}>
         {label}{required ? '*' : null}
       </label>
-      <div style={{ width: '70%', boxSizing: 'border-box', paddingTop: '0.5rem' }}>
+      <div style={rightColumnStyle}>
         {description}
         {children}
         {rawErrors.length > 0 && <ul>{rawErrors.map((error, i) => <li key={i} className="text-danger">{error}</li>)}</ul>}
