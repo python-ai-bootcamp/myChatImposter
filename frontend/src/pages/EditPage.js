@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
 
 function EditPage() {
   const { filename } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const [content, setContent] = useState('');
   const [error, setError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const isNew = location.state?.isNew;
 
   useEffect(() => {
     const fetchFileContent = async () => {
@@ -22,8 +24,28 @@ function EditPage() {
       }
     };
 
-    fetchFileContent();
-  }, [filename]);
+    if (isNew) {
+      const defaultConfig = {
+        user_id: filename.replace('.json', ''),
+        respond_to_whitelist: [],
+        chat_provider_config: {
+          provider_name: 'dummy',
+          allow_group_messages: false,
+          process_offline_messages: false,
+        },
+        queue_config: {
+          max_messages: 10,
+          max_characters: 1000,
+          max_days: 1,
+          max_characters_single_message: 300,
+        },
+        llm_provider_config: null,
+      };
+      setContent(JSON.stringify(defaultConfig, null, 2));
+    } else {
+      fetchFileContent();
+    }
+  }, [filename, isNew]);
 
   const handleSave = async () => {
     setIsSaving(true);
@@ -70,12 +92,18 @@ function EditPage() {
   };
 
   if (error && !isSaving) {
-    return <div>Error: {error}</div>;
+    // For new files, we don't want to show a "failed to fetch" error initially
+    if (isNew && error && error.includes('Failed to fetch file content')) {
+      // clear error
+        setError(null);
+    } else {
+      return <div>Error: {error}</div>;
+    }
   }
 
   return (
     <div>
-      <h2>Edit: {filename}</h2>
+      <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
       <textarea
         value={content}
         onChange={(e) => setContent(e.target.value)}
