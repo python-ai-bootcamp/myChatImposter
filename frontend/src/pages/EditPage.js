@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate } from '../components/FormTemplates';
 
 function EditPage() {
   const { filename } = useParams();
@@ -97,8 +97,15 @@ function EditPage() {
     ObjectFieldTemplate: CustomObjectFieldTemplate
   };
 
-  const widgets = {
-      CheckboxWidget: CustomCheckboxWidget
+  const uiSchema = {
+    llm_provider_config: {
+      provider_config: {
+        api_key: {
+          "ui:widget": "password",
+          "ui:help": "API key will not be displayed after saving."
+        }
+      }
+    }
   };
 
   return (
@@ -106,13 +113,13 @@ function EditPage() {
       <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
       <Form
         schema={schema}
+        uiSchema={uiSchema}
         formData={formData}
         validator={validator}
         onSubmit={handleSave}
         onError={(errors) => console.log('Form validation errors:', errors)}
         disabled={isSaving}
         templates={templates}
-        widgets={widgets}
       >
         <div>
           <button type="submit" disabled={isSaving}>
