@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { validateConfiguration } from '../configModels';
 
 function EditPage() {
   const { filename } = useParams();
@@ -30,8 +31,10 @@ function EditPage() {
         respond_to_whitelist: [],
         chat_provider_config: {
           provider_name: 'dummy',
-          allow_group_messages: false,
-          process_offline_messages: false,
+          provider_config: {
+            allow_group_messages: false,
+            process_offline_messages: false,
+          }
         },
         queue_config: {
           max_messages: 10,
@@ -53,9 +56,11 @@ function EditPage() {
     try {
       const parsedContent = JSON.parse(content);
 
-      // Add validation to ensure it's a JSON object or array of objects
-      if (typeof parsedContent !== 'object' || parsedContent === null) {
-        throw new Error('Configuration must be a valid JSON object or an array of objects.');
+      // Frontend validation
+      const validationResult = validateConfiguration(parsedContent);
+      if (!validationResult.isValid) {
+        const errorMessages = validationResult.errors.map(e => `Validation error at ${e.path}: ${e.message}`).join('\n');
+        throw new Error(errorMessages);
       }
 
       const response = await fetch(`/api/configurations/${filename}`, {
@@ -68,7 +73,6 @@ function EditPage() {
 
       if (!response.ok) {
         const errorBody = await response.json();
-        // errorBody.detail can be an object or a string
         const detail = typeof errorBody.detail === 'object' && errorBody.detail !== null
             ? JSON.stringify(errorBody.detail, null, 2)
             : errorBody.detail;
@@ -109,7 +113,7 @@ function EditPage() {
         onChange={(e) => setContent(e.target.value)}
         rows="20"
         cols="80"
-        style={{ width: '100%' }}
+        style={{ whiteSpace: 'pre', overflowWrap: 'normal', overflowX: 'scroll', width: '100%' }}
       />
       <div>
         <button onClick={handleSave} disabled={isSaving}>
@@ -117,7 +121,7 @@ function EditPage() {
         </button>
         <button onClick={handleCancel}>Cancel</button>
       </div>
-      {error && isSaving && <p style={{ color: 'red' }}>{error}</p>}
+      {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap' }}>{error}</p>}
     </div>
   );
 }
