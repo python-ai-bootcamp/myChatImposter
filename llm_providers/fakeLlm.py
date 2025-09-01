@@ -1,13 +1,14 @@
 from langchain_community.llms.fake import FakeListLLM
 from .base import BaseLlmProvider
+from config_models import LLMProviderConfig
 
 class FakeLlmProvider(BaseLlmProvider):
-    def __init__(self, config: dict, user_id: str):
+    def __init__(self, config: LLMProviderConfig, user_id: str):
         super().__init__(config, user_id)
 
     def get_llm(self):
-        # The response array can be customized via the 'vendor_config'
-        response_array = self.config.get("response_array", [
+        # The response array can be customized via the 'provider_config'
+        response_array = self.config.provider_config.get("response_array", [
             "This is a default response."
         ])
 
@@ -18,5 +19,4 @@ class FakeLlmProvider(BaseLlmProvider):
 
     def get_system_prompt(self):
         # The system prompt can also be customized
-        system_prompt = self.config.get("system", "You are a helpful assistant.")
-        return system_prompt.format(user_id=self.user_id)
+        return self.config.system.format(user_id=self.user_id)

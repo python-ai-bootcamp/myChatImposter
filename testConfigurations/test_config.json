@@ -1,21 +1,27 @@
-[
-  {
-    "user_id": "test_user",
-    "vendor_name": "dummy",
-    "vendor_config": {},
-    "llm_config": {
-      "vendor": "fakeLlm",
-      "vendor_config": {
-        "system": "Test system prompt for test_user",
-        "response_array": [
-          "Test response"
-        ]
-      }
-    },
-    "queue_config": {
-      "max_messages": 5,
-      "max_characters": 100,
-      "max_days": 1
+{
+  "user_id": "test_user",
+  "respond_to_whitelist": [],
+  "chat_provider_config": {
+    "provider_name": "dummy",
+    "allow_group_messages": false,
+    "process_offline_messages": false
+  },
+  "queue_config": {
+    "max_messages": 5,
+    "max_characters": 100,
+    "max_days": 1,
+    "max_characters_single_message": 300
+  },
+  "llm_provider_config": {
+    "provider_name": "fakeLlm",
+    "api_key": null,
+    "model": "fake",
+    "temperature": 0.7,
+    "system": "Test system prompt for test_user",
+    "provider_config": {
+      "response_array": [
+        "Test response"
+      ]
     }
   }
-]
+}

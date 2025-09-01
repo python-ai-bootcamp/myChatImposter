@@ -4,13 +4,14 @@ from typing import Dict, Optional, Any
 
 from .base import BaseChatProvider
 from queue_manager import UserQueue, Sender, Group
+from config_models import ChatProviderConfig
 
 class DummyProvider(BaseChatProvider):
     """
     A template and simulation provider. It demonstrates the required interface
     and simulates receiving messages for a user in a background thread.
     """
-    def __init__(self, user_id: str, config: Dict, user_queues: Dict[str, UserQueue]):
+    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueue]):
         """
         Initializes the provider.
         - user_id: The specific user this provider instance is for.
@@ -20,7 +21,7 @@ class DummyProvider(BaseChatProvider):
         super().__init__(user_id, config, user_queues)
         self.is_listening = False
         self.thread = None
-        print(f"PROVIDER ({self.user_id}): Initialized DummyProvider with key '{self.config.get('api_key')}'")
+        print(f"PROVIDER ({self.user_id}): Initialized DummyProvider")
 
     def start_listening(self):
         """

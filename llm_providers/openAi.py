@@ -1,8 +1,9 @@
 from langchain_openai import ChatOpenAI
 from .base import BaseLlmProvider
+from config_models import LLMProviderConfig
 
 class OpenAiLlmProvider(BaseLlmProvider):
-    def __init__(self, config: dict, user_id: str):
+    def __init__(self, config: LLMProviderConfig, user_id: str):
         super().__init__(config, user_id)
 
     def get_llm(self):
@@ -11,13 +12,14 @@ class OpenAiLlmProvider(BaseLlmProvider):
         # and let it pick the ones it needs. This makes the provider flexible.
 
         # We need to separate the system prompt from the LLM parameters.
-        llm_params = self.config.copy()
-        # The 'system' key is for the prompt, not a parameter for the ChatOpenAI constructor.
+        llm_params = self.config.model_dump()
         llm_params.pop("system", None)
+        llm_params.pop("provider_name", None)
+        llm_params.pop("provider_config", None)
+
 
         return ChatOpenAI(**llm_params)
 
     def get_system_prompt(self):
-        system_prompt = self.config.get("system", "You are a helpful assistant.")
-        # I will assume a placeholder {user_id} and format it.
-        return system_prompt.format(user_id=self.user_id)
+        # The system prompt can also be customized
+        return self.config.system.format(user_id=self.user_id)

@@ -14,6 +14,7 @@ from uvicorn.config import LOGGING_CONFIG
 
 from chatbot_manager import ChatbotInstance
 from logging_lock import console_log
+from config_models import UserConfiguration
 
 # Suppress the default uvicorn access logger
 access_logger = logging.getLogger("uvicorn.access")
@@ -92,46 +93,42 @@ async def get_configuration_files():
 async def get_all_configurations_status():
     """
     Returns a list of all config files along with their current session status.
+    Validates each config file against the UserConfiguration model.
     """
     statuses = []
     try:
         files = [f for f in os.listdir(CONFIGURATIONS_DIR) if f.endswith('.json') and os.path.isfile(CONFIGURATIONS_DIR / f)]
         for filename in files:
-            user_id = None
+            file_path = CONFIGURATIONS_DIR / filename
             try:
-                with open(CONFIGURATIONS_DIR / filename, 'r') as f:
-                    # Assuming the config is a list with one object, or a single object
+                # Read and parse the JSON file first
+                with open(file_path, 'r') as f:
                     config_data = json.load(f)
-                    if isinstance(config_data, list) and config_data:
-                        user_id = config_data[0].get('user_id')
-                    elif isinstance(config_data, dict):
-                         user_id = config_data.get('user_id')
-            except (json.JSONDecodeError, IndexError):
-                # If file is not valid JSON or is empty, we can't get a user_id
-                statuses.append({"filename": filename, "user_id": None, "status": "invalid_config"})
-                continue
 
-            if not user_id:
-                statuses.append({"filename": filename, "user_id": None, "status": "invalid_config"})
-                continue
+                # Validate the data using the Pydantic model
+                config = UserConfiguration.model_validate(config_data)
+                user_id = config.user_id
 
-            # Now check the status for this user_id
-            if user_id in active_users:
-                instance_id = active_users[user_id]
-                instance = chatbot_instances.get(instance_id)
-                if instance:
-                    # Use a thread pool to avoid blocking on network calls
-                    status_info = await run_in_threadpool(instance.get_status)
-                    # The status from the provider can be 'open', which we map to 'connected' for the UI
-                    status = status_info.get('status', 'unknown')
-                    if status == 'open':
-                        status = 'connected'
-                    statuses.append({"filename": filename, "user_id": user_id, "status": status})
+                # Now check the status for this user_id
+                if user_id in active_users:
+                    instance_id = active_users[user_id]
+                    instance = chatbot_instances.get(instance_id)
+                    if instance:
+                        status_info = await run_in_threadpool(instance.get_status)
+                        status = status_info.get('status', 'unknown')
+                        if status == 'open':
+                            status = 'connected'
+                        statuses.append({"filename": filename, "user_id": user_id, "status": status})
+                    else:
+                        statuses.append({"filename": filename, "user_id": user_id, "status": "error"})
                 else:
-                    # Data inconsistency, should not happen
-                    statuses.append({"filename": filename, "user_id": user_id, "status": "error"})
-            else:
-                statuses.append({"filename": filename, "user_id": user_id, "status": "disconnected"})
+                    statuses.append({"filename": filename, "user_id": user_id, "status": "disconnected"})
+
+            except (json.JSONDecodeError, Exception) as e:
+                # Catches JSON errors and Pydantic validation errors
+                console_log(f"API_WARN: Could not process '{filename}': {e}")
+                statuses.append({"filename": filename, "user_id": None, "status": "invalid_config"})
+                continue
 
         return {"configurations": statuses}
     except Exception as e:
@@ -155,9 +152,9 @@ async def get_configuration_file(filename: str):
 
 
 @app.put("/api/configurations/{filename}")
-async def save_configuration_file(filename: str, content: Union[Dict, List] = Body(...)):
+async def save_configuration_file(filename: str, config: UserConfiguration = Body(...)):
     """
-    Saves content to a specific .json configuration file.
+    Saves a UserConfiguration to a specific .json file.
     """
     if not filename.endswith('.json'):
         raise HTTPException(status_code=400, detail="Invalid file type. Only .json files are supported.")
@@ -165,7 +162,8 @@ async def save_configuration_file(filename: str, content: Union[Dict, List] = Bo
     file_path = CONFIGURATIONS_DIR / filename
     try:
         with open(file_path, 'w') as f:
-            json.dump(content, f, indent=4)
+            # Pydantic's model_dump_json is perfect for this
+            f.write(config.model_dump_json(indent=4))
         console_log(f"API: Successfully saved configuration file '{filename}'")
         return {"status": "success", "filename": filename}
     except Exception as e:
@@ -195,72 +193,53 @@ async def delete_configuration_file(filename: str):
 
 
 @app.put("/chatbot")
-async def create_chatbots(configs: List[Dict[str, Any]] = Body(...)):
+async def create_chatbot(config: UserConfiguration = Body(...)):
     """
-    Creates and starts one or more new chatbot instances based on the provided list of configurations.
-    Returns a JSON object with lists of successful and failed creations.
+    Creates and starts a new chatbot instance based on the provided configuration.
+    Returns a JSON object with the result.
     """
-    successful_creations = []
-    failed_creations = []
+    instance_id = str(uuid.uuid4())
+    user_id = config.user_id
 
-    for config in configs:
-        instance_id = str(uuid.uuid4())
-        # Pre-validate that user_id exists to ensure it's available for error reporting
-        user_id = config.get('user_id')
-        if not user_id:
-            failed_creations.append({
-                "user_id": "unknown",
-                "error": "Configuration must contain a 'user_id'"
-            })
-            continue
+    if user_id in active_users:
+        error_message = f"Conflict: An active session for user_id '{user_id}' already exists."
+        console_log(f"API_WARN: {error_message}")
+        raise HTTPException(status_code=409, detail=error_message)
 
-        # Check if a session for this user_id already exists
-        if user_id in active_users:
-            error_message = f"Conflict: An active session for user_id '{user_id}' already exists."
-            console_log(f"API_WARN: {error_message}")
+    console_log(f"API: Received request to create instance {instance_id} for user {user_id}")
 
-            # If this is a single-item request, raise 409. Otherwise, add to failed list.
-            if len(configs) == 1:
-                raise HTTPException(status_code=409, detail=error_message)
+    try:
+        def blocking_init_and_start(current_config, current_instance_id) -> ChatbotInstance:
+            """
+            This function contains the synchronous, blocking code.
+            It returns the created instance so its mode can be inspected.
+            """
+            instance = ChatbotInstance(config=current_config, on_session_end=remove_active_user)
+            chatbot_instances[current_instance_id] = instance
+            instance.start()
+            return instance
 
-            failed_creations.append({ "user_id": user_id, "error": error_message })
-            continue
+        # Run the blocking code in a thread pool to avoid blocking the event loop
+        instance = await run_in_threadpool(blocking_init_and_start, config, instance_id)
 
-        console_log(f"API: Received request to create instance {instance_id} for user {user_id}")
+        # Add the new instance to our active user tracking
+        active_users[user_id] = instance_id
 
-        try:
-            # The 'user_id' check is now done before this block.
+        console_log(f"API: Instance {instance_id} for user '{user_id}' is starting in the background.")
 
-            def blocking_init_and_start(current_config, current_instance_id) -> ChatbotInstance:
-                """
-                This function contains the synchronous, blocking code.
-                It returns the created instance so its mode can be inspected.
-                """
-                instance = ChatbotInstance(config=current_config, on_session_end=remove_active_user)
-                chatbot_instances[current_instance_id] = instance
-                instance.start()
-                return instance
-
-            # Run the blocking code in a thread pool to avoid blocking the event loop
-            instance = await run_in_threadpool(blocking_init_and_start, config, instance_id)
-
-            # Add the new instance to our active user tracking
-            active_users[user_id] = instance_id
-
-            console_log(f"API: Instance {instance_id} for user '{user_id}' is starting in the background.")
-
-            successful_creations.append({
+        return {
+            "successful": [{
                 "user_id": user_id,
                 "instance_id": instance_id,
                 "mode": instance.mode,
                 "warnings": instance.warnings
-            })
+            }],
+            "failed": []
+        }
 
-        except Exception as e:
-            console_log(f"API_ERROR: Failed to create instance for user {user_id}: {e}")
-            failed_creations.append({"user_id": user_id, "error": str(e)})
-
-    return {"successful": successful_creations, "failed": failed_creations}
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to create instance for user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/chatbot/{user_id}/status")
 async def get_chatbot_status(user_id: str):

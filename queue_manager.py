@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from typing import Optional, Callable, List
 
 from logging_lock import lock, get_timestamp, console_log
+from config_models import QueueConfig
 
 @dataclass
 class Sender:
@@ -33,13 +34,13 @@ class Message:
         self.message_size = len(self.content)
 
 class UserQueue:
-    def __init__(self, user_id: str, provider_name: str, max_messages: int, max_characters: int, max_days: int, max_characters_single_message: int):
+    def __init__(self, user_id: str, provider_name: str, queue_config: QueueConfig):
         self.user_id = user_id
         self.provider_name = provider_name
-        self.max_messages = max_messages
-        self.max_characters = max_characters
-        self.max_characters_single_message = max_characters_single_message
-        self.max_age_seconds = max_days * 24 * 60 * 60
+        self.max_messages = queue_config.max_messages
+        self.max_characters = queue_config.max_characters
+        self.max_characters_single_message = queue_config.max_characters_single_message
+        self.max_age_seconds = queue_config.max_days * 24 * 60 * 60
 
         self._messages: deque[Message] = deque()
         self._next_message_id = 1

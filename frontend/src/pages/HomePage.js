@@ -98,10 +98,27 @@ function HomePage() {
     }
 
     try {
+      const defaultConfig = {
+        user_id: filename.replace('.json', ''),
+        respond_to_whitelist: [],
+        chat_provider_config: {
+          provider_name: 'dummy',
+          allow_group_messages: false,
+          process_offline_messages: false,
+        },
+        queue_config: {
+          max_messages: 10,
+          max_characters: 1000,
+          max_days: 1,
+          max_characters_single_message: 300,
+        },
+        llm_provider_config: null,
+      };
+
       const response = await fetch(`/api/configurations/${filename}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([]), // Create with an empty array
+        body: JSON.stringify(defaultConfig), // Create with a default object
       });
 
       if (!response.ok) {
