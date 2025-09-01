@@ -4,7 +4,8 @@ def test_user_configuration():
     config_data = {
         "user_id": "test_user",
         "chat_provider_config": {
-            "provider_name": "dummy"
+            "provider_name": "dummy",
+            "provider_config": {}
         },
         "queue_config": {}
     }

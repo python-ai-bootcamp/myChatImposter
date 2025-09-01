@@ -2,6 +2,7 @@ import unittest
 import os
 import re
 from queue_manager import UserQueue, Sender
+from config_models import QueueConfig
 
 class TestUserQueueUpdated(unittest.TestCase):
     def tearDown(self):
@@ -16,13 +17,16 @@ class TestUserQueueUpdated(unittest.TestCase):
         """
         Test that a message exceeding max_characters_single_message is truncated.
         """
-        user_queue = UserQueue(
-            user_id='test_user_truncate',
-            provider_name='test_vendor',
+        queue_config = QueueConfig(
             max_messages=5,
             max_characters=200,
             max_days=1,
             max_characters_single_message=50
+        )
+        user_queue = UserQueue(
+            user_id='test_user_truncate',
+            provider_name='test_vendor',
+            queue_config=queue_config
         )
         sender = Sender(identifier='test_sender', display_name='Test Sender')
 
@@ -38,13 +42,16 @@ class TestUserQueueUpdated(unittest.TestCase):
         """
         Test that old messages are evicted (FIFO) when the total max_characters limit is breached.
         """
-        user_queue = UserQueue(
-            user_id='test_user_char_limit',
-            provider_name='test_vendor',
+        queue_config = QueueConfig(
             max_messages=10,
             max_characters=100,
             max_days=1,
             max_characters_single_message=100
+        )
+        user_queue = UserQueue(
+            user_id='test_user_char_limit',
+            provider_name='test_vendor',
+            queue_config=queue_config
         )
         sender = Sender(identifier='test_sender', display_name='Test Sender')
 
@@ -70,13 +77,16 @@ class TestUserQueueUpdated(unittest.TestCase):
         Test that the queue correctly evicts the oldest messages (FIFO)
         when the max_messages limit is reached.
         """
-        user_queue = UserQueue(
-            user_id='test_user_msg_limit',
-            provider_name='test_vendor',
+        queue_config = QueueConfig(
             max_messages=3,
             max_characters=1000,
             max_days=1,
             max_characters_single_message=1000
+        )
+        user_queue = UserQueue(
+            user_id='test_user_msg_limit',
+            provider_name='test_vendor',
+            queue_config=queue_config
         )
         sender = Sender(identifier='test_sender', display_name='Test Sender')
 
@@ -106,13 +116,16 @@ class TestUserQueueUpdated(unittest.TestCase):
         if os.path.exists(log_path):
             os.remove(log_path)
 
-        user_queue = UserQueue(
-            user_id=user_id,
-            provider_name=provider_name,
+        queue_config = QueueConfig(
             max_messages=2,
             max_characters=100,
             max_days=1,
             max_characters_single_message=100
+        )
+        user_queue = UserQueue(
+            user_id=user_id,
+            provider_name=provider_name,
+            queue_config=queue_config
         )
         sender = Sender(identifier='test_sender', display_name='Test Sender')
 
