@@ -59,23 +59,9 @@ async function connectToWhatsApp() {
     // Event listener for connection updates
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
-        connectionStatus = connection || 'waiting';
-
-        if (qr) {
-            console.log("QR code received, generating data URL...");
-            // We still print to console for debugging
-            qrcodeTerminal.generate(qr, { small: true });
-            // Generate a data URL for the frontend
-            QRCode.toDataURL(qr, (err, url) => {
-                if (err) {
-                    console.error("Error generating QR data URL:", err);
-                    return;
-                }
-                currentQR = url;
-            });
-        }
 
         if (connection === 'open') {
+            connectionStatus = 'connected';
             console.log(`WhatsApp connection opened for user ${userId}.`);
             currentQR = null; // QR is no longer needed
 
@@ -94,6 +80,22 @@ async function connectToWhatsApp() {
             } catch (e) {
                 console.error('Error populating contacts cache from auth state:', e);
             }
+        } else {
+            connectionStatus = connection || 'waiting';
+        }
+
+        if (qr) {
+            console.log("QR code received, generating data URL...");
+            // We still print to console for debugging
+            qrcodeTerminal.generate(qr, { small: true });
+            // Generate a data URL for the frontend
+            QRCode.toDataURL(qr, (err, url) => {
+                if (err) {
+                    console.error("Error generating QR data URL:", err);
+                    return;
+                }
+                currentQR = url;
+            });
         }
 
         if (connection === 'close') {
@@ -238,14 +240,11 @@ app.get('/messages', (req, res) => {
 
 // Endpoint to get the current connection status and QR code
 app.get('/status', (req, res) => {
-    if (connectionStatus === 'open') {
-        return res.status(200).json({ status: 'connected' });
-    }
     if (currentQR) {
         // Instead of just 'qr', we can call it 'linking' to be more descriptive
         return res.status(200).json({ status: 'linking', qr: currentQR });
     }
-    // For 'connecting', 'close', etc.
+    // For 'connecting', 'close', 'connected', 'waiting', etc.
     return res.status(200).json({ status: connectionStatus });
 });
 

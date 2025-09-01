@@ -125,8 +125,6 @@ async def get_all_configurations_status():
                     if instance:
                         status_info = await run_in_threadpool(instance.get_status)
                         status = status_info.get('status', 'unknown')
-                        if status == 'open':
-                            status = 'connected'
                         statuses.append({"filename": filename, "user_id": user_id, "status": status})
                     else:
                         statuses.append({"filename": filename, "user_id": user_id, "status": "error"})
@@ -161,9 +159,9 @@ async def get_configuration_file(filename: str):
 
 
 @app.put("/api/configurations/{filename}")
-async def save_configuration_file(filename: str, config: UserConfiguration = Body(...)):
+async def save_configuration_file(filename: str, config: Union[UserConfiguration, List[UserConfiguration]] = Body(...)):
     """
-    Saves a UserConfiguration to a specific .json file.
+    Saves a UserConfiguration or a list of them to a specific .json file.
     """
     if not filename.endswith('.json'):
         raise HTTPException(status_code=400, detail="Invalid file type. Only .json files are supported.")
@@ -171,8 +169,14 @@ async def save_configuration_file(filename: str, config: UserConfiguration = Bod
     file_path = CONFIGURATIONS_DIR / filename
     try:
         with open(file_path, 'w') as f:
-            # Pydantic's model_dump_json is perfect for this
-            f.write(config.model_dump_json(indent=4))
+            if isinstance(config, list):
+                # It's a list of Pydantic models, so we dump each one to a dict
+                json_data = [item.model_dump() for item in config]
+                # Then we dump the list of dicts to a JSON string
+                f.write(json.dumps(json_data, indent=4))
+            else:
+                # It's a single Pydantic model, so we can use its method directly
+                f.write(config.model_dump_json(indent=4))
         console_log(f"API: Successfully saved configuration file '{filename}'")
         return {"status": "success", "filename": filename}
     except Exception as e:
