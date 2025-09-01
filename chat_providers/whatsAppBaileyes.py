@@ -16,6 +16,7 @@ from queue_manager import UserQueue, Sender, Group, Message
 from logging_lock import console_log
 
 from .base import BaseChatProvider
+from config_models import ChatProviderConfig
 
 def find_free_port():
     """Finds a free port on the host machine."""
@@ -28,7 +29,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
     """
     A provider that connects to a Node.js Baileys server to send and receive WhatsApp messages.
     """
-    def __init__(self, user_id: str, config: Dict, user_queues: Dict[str, UserQueue], on_session_end=None):
+    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueue], on_session_end=None):
         """
         Initializes the provider.
         - user_id: The specific user this provider instance is for.
@@ -55,7 +56,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             console_log(f"PROVIDER ({self.user_id}): Starting Node.js server on port {self.port} in CWD: {self.work_dir}")
 
             # Serialize and encode the config to pass as a command line argument
-            config_json = json.dumps(self.config)
+            config_json = json.dumps(self.config.provider_config.model_dump())
             config_base64 = base64.b64encode(config_json.encode('utf-8')).decode('utf-8')
 
             # The path to server.js must be absolute so it can be found from the new CWD
@@ -147,9 +148,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                                     # The message format is { sender, message, timestamp, group? }
 
                                     # Check if group messages are allowed
-                                    allow_groups = self.config.get('allow_group_messages', True)
                                     group_info = msg.get('group')
-                                    if group_info and not allow_groups:
+                                    if group_info and not self.config.provider_config.allow_group_messages:
                                         console_log(f"PROVIDER ({self.user_id}): Ignoring message from group {group_info.get('id')} as per configuration.")
                                         continue
 

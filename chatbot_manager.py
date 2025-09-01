@@ -7,6 +7,7 @@ import inspect
 from typing import Dict, Any, Optional, Type, List
 
 from logging_lock import console_log
+from config_models import UserConfiguration
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
@@ -56,8 +57,8 @@ from typing import Dict, Any, Optional, List, Callable
 
 class ChatbotInstance:
     """Manages all components for a single chatbot instance."""
-    def __init__(self, config: Dict[str, Any], on_session_end: Optional[Callable[[str], None]] = None):
-        self.user_id = config['user_id']
+    def __init__(self, config: UserConfiguration, on_session_end: Optional[Callable[[str], None]] = None):
+        self.user_id = config.user_id
         self.config = config
         self.on_session_end = on_session_end
         self.user_queue: Optional[UserQueue] = None
@@ -78,26 +79,17 @@ class ChatbotInstance:
         console_log(f"INSTANCE ({self.user_id}): Initializing components...")
 
         # 1. Initialize Queue (Essential)
-        self.whitelist = self.config.get('respond_to_whitelist', [])
-        chat_provider_config = self.config['chat_provider_config']
-        provider_name = chat_provider_config['provider_name']
-        q_config = self.config['queue_config']
+        self.whitelist = self.config.respond_to_whitelist
+        chat_provider_config = self.config.chat_provider_config
+        provider_name = chat_provider_config.provider_name
         self.user_queue = UserQueue(
             user_id=self.user_id,
             provider_name=provider_name,
-            max_messages=q_config['max_messages'],
-            max_characters=q_config['max_characters'],
-            max_days=q_config['max_days'],
-            max_characters_single_message=q_config.get('max_characters_single_message', q_config['max_characters'])
+            queue_config=self.config.queue_config
         )
         console_log(f"INSTANCE ({self.user_id}): Initialized queue.")
 
         # 2. Initialize Chat Provider (Essential)
-        provider_config = chat_provider_config.get('provider_config')
-        if provider_config is None:
-            self.warnings.append("No 'provider_config' section found for chat provider; reverting to default settings.")
-            provider_config = {}
-
         provider_module = importlib.import_module(f"chat_providers.{provider_name}")
         ProviderClass = _find_provider_class(provider_module, BaseChatProvider)
         if not ProviderClass:
@@ -105,23 +97,22 @@ class ChatbotInstance:
 
         self.provider_instance = ProviderClass(
             user_id=self.user_id,
-            config=provider_config,
+            config=chat_provider_config,
             user_queues={self.user_id: self.user_queue},
             on_session_end=self.on_session_end
         )
         console_log(f"INSTANCE ({self.user_id}): Initialized chat provider '{provider_name}'.")
 
         # 3. Initialize Chatbot Model (Optional)
-        llm_provider_config = self.config.get('llm_provider_config')
-        if llm_provider_config:
+        if self.config.llm_provider_config:
             self.mode = "fully_functional"
-            llm_provider_name = llm_provider_config['provider_name']
+            llm_provider_name = self.config.llm_provider_config.provider_name
             llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
             LlmProviderClass = _find_provider_class(llm_provider_module, BaseLlmProvider)
             if not LlmProviderClass:
                 raise ImportError(f"Could not find a valid LLM provider class in module 'llm_providers.{llm_provider_name}'")
 
-            llm_provider = LlmProviderClass(config=llm_provider_config.get('provider_config', {}), user_id=self.user_id)
+            llm_provider = LlmProviderClass(config=self.config.llm_provider_config, user_id=self.user_id)
             llm_instance = llm_provider.get_llm()
             system_prompt = llm_provider.get_system_prompt()
             self.chatbot_model = ChatbotModel(self.user_id, llm_instance, system_prompt)
