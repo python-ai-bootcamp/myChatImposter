@@ -111,12 +111,6 @@ function EditPage() {
           "ui:widget": "password"
         }
       }
-    },
-    respond_to_whitelist: {
-        "ui:options": {
-            // This should prevent the verbose labels on each item
-            label: false
-        }
     }
   };
 

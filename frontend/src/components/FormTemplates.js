@@ -35,10 +35,13 @@ export function CustomFieldTemplate(props) {
       paddingLeft: isLlmSelector ? '0' : undefined
   };
 
+  // For items inside an array, render a bullet instead of the verbose label.
+  const isArrayItem = /_\d+$/.test(id);
+
   return (
     <div className={classNames} style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
       <label htmlFor={id} style={{ width: '30%', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem' }}>
-        {label}{required ? '*' : null}
+        {isArrayItem ? '•' : label}{required && !isArrayItem ? '*' : null}
       </label>
       <div style={rightColumnStyle}>
         {description}
@@ -76,26 +79,34 @@ export function CustomObjectFieldTemplate(props) {
 }
 
 export function CustomArrayFieldTemplate(props) {
+    const btnStyle = {
+        padding: '0.1rem 0.4rem',
+        fontSize: '0.8rem',
+        lineHeight: 1.2,
+        border: '1px solid #ccc',
+        borderRadius: '3px',
+        cursor: 'pointer'
+    };
     return (
       <div>
         {props.items &&
           props.items.map(element => (
-            <div key={element.key} style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center' }}>
+            <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
               <div style={{ flex: 1 }}>{element.children}</div>
-              <div style={{ marginLeft: '1rem' }}>
+              <div style={{ marginLeft: '1rem', display: 'flex', gap: '0.3rem' }}>
                 {element.hasMoveUp && (
-                  <button type="button" onClick={element.onReorderClick(element.index, element.index - 1)} style={{ marginRight: '0.5rem' }}>
+                  <button type="button" onClick={element.onReorderClick(element.index, element.index - 1)} style={btnStyle}>
                     ↑
                   </button>
                 )}
                 {element.hasMoveDown && (
-                  <button type="button" onClick={element.onReorderClick(element.index, element.index + 1)} style={{ marginRight: '0.5rem' }}>
+                  <button type="button" onClick={element.onReorderClick(element.index, element.index + 1)} style={btnStyle}>
                     ↓
                   </button>
                 )}
                 {element.hasRemove && (
-                  <button type="button" onClick={element.onDropIndexClick(element.index)}>
-                    Remove
+                  <button type="button" onClick={element.onDropIndexClick(element.index)} style={btnStyle}>
+                    -
                   </button>
                 )}
               </div>
@@ -103,8 +114,8 @@ export function CustomArrayFieldTemplate(props) {
           ))}
 
         {props.canAdd && (
-          <button type="button" onClick={props.onAddClick}>
-            + Add Item
+          <button type="button" onClick={props.onAddClick} style={{ ...btnStyle, padding: '0.3rem 0.6rem' }}>
+            + Add
           </button>
         )}
       </div>
