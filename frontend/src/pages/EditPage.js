@@ -126,9 +126,9 @@ function EditPage() {
     <div style={{ maxWidth: '1800px', margin: '0 auto', padding: '20px' }}>
       <div style={panelStyle}>
         <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
-        <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start', marginTop: '1rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem' }}>
           {/* Left Panel: Form Editor */}
-          <div style={{ flex: 1, ...panelStyle }}>
+          <div style={panelStyle}>
             <Form
               schema={schema}
               uiSchema={uiSchema}
@@ -153,7 +153,7 @@ function EditPage() {
           </div>
 
           {/* Right Panel: Live JSON Output */}
-          <div style={{ flex: 1, ...panelStyle }}>
+          <div style={panelStyle}>
             <h3>Live JSON Output</h3>
             <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
               <code>
