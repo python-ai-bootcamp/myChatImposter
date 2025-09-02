@@ -100,37 +100,40 @@ export function CustomArrayFieldTemplate(props) {
       <div>
         {props.items &&
           props.items.map(element => (
-            // Use baseline alignment for better vertical alignment of text input and buttons
             <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'baseline' }}>
-              <span style={{ marginRight: '0.5rem', paddingTop: '0.5rem' }}>•</span>
-              {/* This div no longer expands, so the buttons will be right next to the input */}
-              <div>{element.children}</div>
-              <div style={{ marginLeft: '0.5rem', display: 'flex', gap: '0.3rem' }}>
-                <button
-                    type="button"
-                    onClick={element.onReorderClick(element.index, element.index - 1)}
-                    style={element.hasMoveUp ? btnStyle : disabledBtnStyle}
-                    disabled={!element.hasMoveUp}
-                >
-                    ↑
-                </button>
-                <button
-                    type="button"
-                    onClick={element.onReorderClick(element.index, element.index + 1)}
-                    style={element.hasMoveDown ? btnStyle : disabledBtnStyle}
-                    disabled={!element.hasMoveDown}
-                >
-                    ↓
-                </button>
-                <button
-                    type="button"
-                    onClick={element.onDropIndexClick(element.index)}
-                    style={element.hasRemove ? btnStyle : disabledBtnStyle}
-                    disabled={!element.hasRemove}
-                >
-                    -
-                </button>
-              </div>
+                <span style={{ marginRight: '0.5rem', paddingTop: '0.5rem' }}>•</span>
+                {/* This inner flex container groups the input and buttons together */}
+                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
+                    {/* The input field itself (no flex: 1) */}
+                    <div>{element.children}</div>
+                    {/* The buttons */}
+                    <div style={{ display: 'flex', gap: '0.3rem' }}>
+                        <button
+                            type="button"
+                            onClick={element.onReorderClick(element.index, element.index - 1)}
+                            style={element.hasMoveUp ? btnStyle : disabledBtnStyle}
+                            disabled={!element.hasMoveUp}
+                        >
+                            ↑
+                        </button>
+                        <button
+                            type="button"
+                            onClick={element.onReorderClick(element.index, element.index + 1)}
+                            style={element.hasMoveDown ? btnStyle : disabledBtnStyle}
+                            disabled={!element.hasMoveDown}
+                        >
+                            ↓
+                        </button>
+                        <button
+                            type="button"
+                            onClick={element.onDropIndexClick(element.index)}
+                            style={element.hasRemove ? btnStyle : disabledBtnStyle}
+                            disabled={!element.hasRemove}
+                        >
+                            -
+                        </button>
+                    </div>
+                </div>
             </div>
           ))}
 
