@@ -2,7 +2,59 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, GeneralConfigObjectFieldTemplate } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate } from '../components/FormTemplates';
+
+// Helper to transform schema
+const transformSchema = (originalSchema) => {
+  const newSchema = JSON.parse(JSON.stringify(originalSchema));
+  const generalConfigFields = ['user_id', 'respond_to_whitelist'];
+
+  const generalConfigSchema = {
+    type: 'object',
+    title: 'General Config',
+    properties: {},
+  };
+
+  for (const field of generalConfigFields) {
+    if (newSchema.properties[field]) {
+      generalConfigSchema.properties[field] = newSchema.properties[field];
+      delete newSchema.properties[field];
+    }
+  }
+
+  newSchema.properties = {
+    general_config: generalConfigSchema,
+    ...newSchema.properties,
+  };
+
+  return newSchema;
+};
+
+// Helper to transform formData to match the new schema
+const transformDataToUI = (data) => {
+  if (!data) return data;
+  const uiData = { ...data };
+  uiData.general_config = {
+    user_id: data.user_id,
+    respond_to_whitelist: data.respond_to_whitelist,
+  };
+  delete uiData.user_id;
+  delete uiData.respond_to_whitelist;
+  return uiData;
+};
+
+// Helper to transform formData back to the original format for saving
+const transformDataToAPI = (uiData) => {
+  if (!uiData) return uiData;
+  const apiData = { ...uiData };
+  if (uiData.general_config) {
+    apiData.user_id = uiData.general_config.user_id;
+    apiData.respond_to_whitelist = uiData.general_config.respond_to_whitelist;
+  }
+  delete apiData.general_config;
+  return apiData;
+};
+
 
 function EditPage() {
   const { filename } = useParams();
@@ -23,22 +75,22 @@ function EditPage() {
         const schemaResponse = await fetch('/api/configurations/schema');
         if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
         const schemaData = await schemaResponse.json();
-        setSchema(schemaData);
+        const transformedSchema = transformSchema(schemaData);
+        setSchema(transformedSchema);
 
         // Fetch existing data or set up new data
         if (isNew) {
-          // For a new file, we can start with an empty object or some defaults.
-          // RJSF will use the schema's defaults if available.
-          setFormData({
+          const initialData = {
             user_id: filename.replace('.json', ''),
-            // Set other defaults if necessary, but RJSF handles schema defaults
-          });
+            respond_to_whitelist: [],
+          };
+          setFormData(transformDataToUI(initialData));
         } else {
           const dataResponse = await fetch(`/api/configurations/${filename}`);
           if (!dataResponse.ok) throw new Error('Failed to fetch file content.');
           const data = await dataResponse.json();
-          // The config might be in an array
-          setFormData(Array.isArray(data) ? data[0] : data);
+          const originalData = Array.isArray(data) ? data[0] : data;
+          setFormData(transformDataToUI(originalData));
         }
       } catch (err) {
         setError(err.message);
@@ -52,16 +104,13 @@ function EditPage() {
     setIsSaving(true);
     setError(null);
     try {
-      // The react-jsonschema-form component validates the data against the schema internally.
-      // The onSubmit handler is only called if the data is valid.
+      const apiData = transformDataToAPI(formData);
       const response = await fetch(`/api/configurations/${filename}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        // The backend endpoint expects a list for a new file,
-        // and a single object for an existing one. We will send a list for new files.
-        body: JSON.stringify([formData]),
+        body: JSON.stringify([apiData]),
       });
 
       if (!response.ok) {
@@ -103,10 +152,9 @@ function EditPage() {
   };
 
   const uiSchema = {
-    "ui:ObjectFieldTemplate": GeneralConfigObjectFieldTemplate,
     "ui:classNames": "form-container",
-    respond_to_whitelist: {
-      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
+    general_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
     },
     chat_provider_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate

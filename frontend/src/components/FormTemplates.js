@@ -99,47 +99,6 @@ export function CollapsibleObjectFieldTemplate(props) {
   );
 }
 
-export function GeneralConfigObjectFieldTemplate(props) {
-  const [isOpen, setIsOpen] = useState(true);
-
-  const generalProps = props.properties.filter(
-    p => p.content.props.schema.type !== 'object' && p.content.props.schema.type !== 'array'
-  );
-  const otherProps = props.properties.filter(
-    p => p.content.props.schema.type === 'object' || p.content.props.schema.type === 'array'
-  );
-
-  const containerStyle = {
-    border: '1px solid #ccc',
-    borderRadius: '4px',
-    padding: '1rem',
-    margin: '1rem 0',
-  };
-
-  const titleStyle = {
-    margin: 0,
-    padding: 0,
-    cursor: 'pointer',
-    textAlign: 'left',
-  };
-
-  return (
-    <div>
-      <div style={containerStyle}>
-        <h3 style={titleStyle} onClick={() => setIsOpen(!isOpen)}>
-          GeneralConfig {isOpen ? '[-]' : '[+]'}
-        </h3>
-        {isOpen && (
-          <div style={{marginTop: '1rem'}}>
-            {generalProps.map(prop => prop.content)}
-          </div>
-        )}
-      </div>
-      {otherProps.map(prop => prop.content)}
-    </div>
-  );
-}
-
 export function CustomObjectFieldTemplate(props) {
   // Conditionally apply border for the inner provider settings objects.
   const hasApiKey = props.properties.some(p => p.name === 'api_key');
