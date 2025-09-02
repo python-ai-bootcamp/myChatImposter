@@ -238,10 +238,10 @@ function EditPage() {
 
               {/* Right Panel: Live JSON Output */}
               <div style={panelStyle}>
-                <h3>Live JSON Output</h3>
+            <h3>Live JSON Output (as it will be saved)</h3>
                 <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }}>
                   <code>
-                    {JSON.stringify(formData, null, 2)}
+                {JSON.stringify(transformDataToAPI(formData), null, 2)}
                   </code>
                 </pre>
               </div>
