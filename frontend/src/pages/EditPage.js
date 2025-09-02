@@ -118,7 +118,8 @@ function EditPage() {
     border: '1px solid #ccc',
     borderRadius: '4px',
     padding: '1rem',
-    backgroundColor: '#f9f9f9'
+    backgroundColor: '#f9f9f9',
+    boxSizing: 'border-box'
   };
 
   return (
