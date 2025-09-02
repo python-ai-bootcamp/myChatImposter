@@ -98,6 +98,7 @@ function EditPage() {
   const [formData, setFormData] = useState(null);
   const [error, setError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [debugData, setDebugData] = useState(null);
 
   const isNew = location.state?.isNew;
 
@@ -134,18 +135,9 @@ function EditPage() {
   }, [filename, isNew]);
 
   const handleSave = async ({ formData }) => {
-    setIsSaving(true);
-    setError(null);
-    try {
-      const apiData = transformDataToAPI(formData);
-      // For debugging: display the data instead of sending it.
-      setError(`DEBUG: Data to be sent:\n${JSON.stringify(apiData, null, 2)}`);
-    } catch (err) {
-      setError(`Failed to process data: ${err.message}`);
-    } finally {
-      // Do not set isSaving to false, to prevent multiple clicks
-      // and to indicate the "save" is paused for debugging.
-    }
+    // For debugging: display the data in the new debug panel.
+    const apiData = transformDataToAPI(formData);
+    setDebugData(apiData);
   };
 
   const handleCancel = () => {
@@ -237,6 +229,17 @@ function EditPage() {
                     {JSON.stringify(transformDataToAPI(formData), null, 2)}
                   </code>
                 </pre>
+                {debugData && (
+                  <>
+                    <hr />
+                    <h3 style={{ color: 'red' }}>DEBUG: Data in handleSave</h3>
+                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }}>
+                      <code>
+                        {JSON.stringify(debugData, null, 2)}
+                      </code>
+                    </pre>
+                  </>
+                )}
               </div>
             </div>
           </div>
