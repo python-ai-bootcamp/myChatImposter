@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 
 // A custom widget for checkboxes that only renders the input element.
 // The label is handled by the CustomFieldTemplate.
@@ -60,6 +60,48 @@ export function CustomFieldTemplate(props) {
         </div>
       </div>
     </>
+  );
+}
+
+export function CollapsibleObjectFieldTemplate(props) {
+  const [isOpen, setIsOpen] = useState(true);
+
+  const fieldsetStyle = {
+    border: '1px solid #ccc',
+    borderRadius: '4px',
+    padding: '1rem',
+    margin: 0,
+    marginTop: '0.5rem',
+    width: '100%',
+    display: 'table',
+    borderCollapse: 'collapse'
+  };
+
+  const titleStyle = {
+    margin: 0,
+    padding: '0.5rem',
+    cursor: 'pointer',
+    textAlign: 'left',
+    borderBottom: isOpen ? '1px solid #eee' : 'none',
+    marginBottom: isOpen ? '1rem' : 0
+  };
+
+  return (
+    <div>
+      <h3 style={titleStyle} onClick={() => setIsOpen(!isOpen)}>
+        {props.title} {isOpen ? '[-]' : '[+]'}
+      </h3>
+      {isOpen && (
+        <fieldset style={fieldsetStyle}>
+          {props.description}
+          {props.properties.map(element => (
+            <React.Fragment key={element.content.key}>
+              {element.content}
+            </React.Fragment>
+          ))}
+        </fieldset>
+      )}
+    </div>
   );
 }
 
