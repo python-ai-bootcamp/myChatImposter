@@ -18,30 +18,32 @@ export function CustomCheckboxWidget(props) {
 export function CustomFieldTemplate(props) {
   const { id, label, children, required, rawErrors = [], help, description, classNames } = props;
 
+  // For items inside an array, we bypass the label/two-column layout in this template.
+  // The layout is handled entirely by CustomArrayFieldTemplate.
+  const isArrayItem = /_\d+$/.test(id);
+  if (isArrayItem) {
+    return children;
+  }
+
   // Don't render a label for the top-level object title, it's handled by the ObjectFieldTemplate
   if (props.schema.type === 'object') {
       return children;
   }
 
-  // A single, consistent layout for all fields.
-  // `align-items: flex-start` ensures that taller fields (like textareas) and their labels are top-aligned.
+  // A single, consistent layout for all other fields.
   const isLlmSelector = classNames && classNames.includes('llm-provider-selector');
   const rightColumnStyle = {
       width: '70%',
       boxSizing: 'border-box',
       paddingTop: '0.5rem',
       textAlign: 'left',
-      // For the LLM selector, we remove padding to counteract its internal indentation.
       paddingLeft: isLlmSelector ? '0' : undefined
   };
-
-  // For items inside an array, render a bullet instead of the verbose label.
-  const isArrayItem = /_\d+$/.test(id);
 
   return (
     <div className={classNames} style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
       <label htmlFor={id} style={{ width: '30%', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem' }}>
-        {isArrayItem ? '•' : label}{required && !isArrayItem ? '*' : null}
+        {label}{required ? '*' : null}
       </label>
       <div style={rightColumnStyle}>
         {description}
@@ -98,7 +100,9 @@ export function CustomArrayFieldTemplate(props) {
       <div>
         {props.items &&
           props.items.map(element => (
-            <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
+            // Use baseline alignment for better vertical alignment of text input and buttons
+            <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'baseline' }}>
+              <span style={{ marginRight: '0.5rem', paddingTop: '0.5rem' }}>•</span>
               <div style={{ flex: 1 }}>{element.children}</div>
               <div style={{ marginLeft: '1rem', display: 'flex', gap: '0.3rem' }}>
                 <button
@@ -130,7 +134,7 @@ export function CustomArrayFieldTemplate(props) {
           ))}
 
         {props.canAdd && (
-          <button type="button" onClick={props.onAddClick} style={{ ...btnStyle, padding: '0.3rem 0.6rem' }}>
+          <button type="button" onClick={props.onAddClick} style={{ ...btnStyle, padding: '0.3rem 0.6rem', marginTop: '0.5rem' }}>
             + Add
           </button>
         )}
