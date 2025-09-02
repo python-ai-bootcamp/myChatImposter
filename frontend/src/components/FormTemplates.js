@@ -25,19 +25,34 @@ export function CustomFieldTemplate(props) {
     return children;
   }
 
+  // This is the new logic to handle the special provider config sections.
+  // We identify them by their top-level ID and apply a border and indented title.
+  const isProviderContainer = id === 'root_chat_provider_config' || id === 'root_llm_provider_config';
+  if (isProviderContainer) {
+    return (
+        <div className={classNames} style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
+            {/* Empty left column to maintain alignment */}
+            <div style={{ width: '30%', paddingRight: '1rem' }}></div>
+            {/* Right column contains the border, title, and the actual object fields */}
+            <div style={{ width: '70%', border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
+                <h3 style={{ marginTop: 0, paddingTop: 0 }}>{label}</h3>
+                {children}
+            </div>
+        </div>
+    )
+  }
+
   // Don't render a label for the top-level object title, it's handled by the ObjectFieldTemplate
   if (props.schema.type === 'object') {
       return children;
   }
 
   // A single, consistent layout for all other fields.
-  const isLlmSelector = classNames && classNames.includes('llm-provider-selector');
   const rightColumnStyle = {
       width: '70%',
       boxSizing: 'border-box',
       paddingTop: '0.5rem',
       textAlign: 'left',
-      paddingLeft: isLlmSelector ? '0' : undefined
   };
 
   return (
@@ -55,35 +70,12 @@ export function CustomFieldTemplate(props) {
   );
 }
 
+// This template is now much simpler. It just renders the properties.
+// The border and title are handled by the parent CustomFieldTemplate.
 export function CustomObjectFieldTemplate(props) {
-  // Conditionally apply border for nested provider settings objects.
-  const hasApiKey = props.properties.some(p => p.name === 'api_key');
-  const hasGroupMessages = props.properties.some(p => p.name === 'allow_group_messages');
-  const shouldHaveBorder = hasApiKey || hasGroupMessages;
-
-  const fieldsetStyle = {
-    border: shouldHaveBorder ? '1px solid #ccc' : 'none',
-    borderRadius: shouldHaveBorder ? '4px' : '0',
-    padding: shouldHaveBorder ? '1rem' : '0',
-    margin: 0,
-    width: '100%'
-  };
-
   return (
-    <fieldset style={fieldsetStyle}>
-      {/* Render the title of the object, aligned with the right column */}
-      {props.title && (
-         <div style={{ display: 'flex', marginBottom: '1rem', alignItems: 'center' }}>
-            <div style={{ width: '30%', paddingRight: '1rem', boxSizing: 'border-box' }}></div>
-            <div style={{ width: '70%', boxSizing: 'border-box' }}>
-                <h3 style={{ margin: 0, padding: 0, borderBottom: shouldHaveBorder ? 'none' : '1px solid #eee', paddingBottom: '0.5rem' }}>{props.title}</h3>
-            </div>
-         </div>
-      )}
-
+    <fieldset style={{ border: 'none', padding: 0, margin: 0, width: '100%' }}>
       {props.description}
-
-      {/* Render the properties of the object */}
       {props.properties.map(element => (
         <div className="property-wrapper" key={element.content.key}>
           {element.content}
