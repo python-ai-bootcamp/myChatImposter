@@ -115,7 +115,7 @@ function EditPage() {
   };
 
   return (
-    <div>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
       <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
       <Form
         schema={schema}
