@@ -37,6 +37,8 @@ export function CustomFieldTemplate(props) {
       boxSizing: 'border-box',
       paddingTop: '0.5rem',
       textAlign: 'left',
+      display: 'table-cell',
+      width: '100%'
   };
 
   return (
@@ -47,8 +49,8 @@ export function CustomFieldTemplate(props) {
           LLM Bot Response
         </h3>
       )}
-      <div className={classNames} style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
-        <label htmlFor={id} style={{ whiteSpace: 'nowrap', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem' }}>
+      <div className={classNames} style={{ display: 'table-row' }}>
+        <label htmlFor={id} style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem', paddingBottom: '1rem' }}>
           {label}{required ? '*' : null}
         </label>
         <div style={rightColumnStyle}>
@@ -74,7 +76,9 @@ export function CustomObjectFieldTemplate(props) {
     padding: shouldHaveBorder ? '1rem' : '0',
     margin: 0,
     width: '100%',
-    marginTop: shouldHaveBorder ? '0.5rem' : '0'
+    marginTop: shouldHaveBorder ? '0.5rem' : '0',
+    display: 'table',
+    borderCollapse: 'collapse'
   };
 
   return (
