@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
@@ -89,6 +89,7 @@ function EditPage() {
   const { filename } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const formRef = useRef(null);
 
   const [schema, setSchema] = useState(null);
   const [formData, setFormData] = useState(null);
@@ -206,47 +207,54 @@ function EditPage() {
   };
 
   return (
-    <div style={{ maxWidth: '1800px', margin: '0 auto', padding: '20px' }}>
-      <div style={panelStyle}>
-        <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem' }}>
-          {/* Left Panel: Form Editor */}
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      <div style={{ flex: '1', overflowY: 'auto', padding: '20px' }}>
+        <div style={{ maxWidth: '1800px', margin: '0 auto' }}>
           <div style={panelStyle}>
-            <Form
-              schema={schema}
-              uiSchema={uiSchema}
-              formData={formData}
-              validator={validator}
-              onSubmit={handleSave}
-              onChange={(e) => setFormData(e.formData)}
-              onError={(errors) => console.log('Form validation errors:', errors)}
-              disabled={isSaving}
-              templates={templates}
-              widgets={widgets}
-            >
-              <div>
-                <button type="submit" disabled={isSaving}>
-                  {isSaving ? 'Saving...' : 'Save'}
-                </button>
-                <button type="button" onClick={handleCancel} style={{ marginLeft: '10px' }}>
-                  Cancel
-                </button>
+            <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem' }}>
+              {/* Left Panel: Form Editor */}
+              <div style={panelStyle}>
+                <Form
+                  ref={formRef}
+                  schema={schema}
+                  uiSchema={uiSchema}
+                  formData={formData}
+                  validator={validator}
+                  onSubmit={handleSave}
+                  onChange={(e) => setFormData(e.formData)}
+                  onError={(errors) => console.log('Form validation errors:', errors)}
+                  disabled={isSaving}
+                  templates={templates}
+                  widgets={widgets}
+                >
+                  {/* Buttons are now in the footer */}
+                  <div />
+                </Form>
               </div>
-            </Form>
-          </div>
 
-          {/* Right Panel: Live JSON Output */}
-          <div style={panelStyle}>
-            <h3>Live JSON Output</h3>
-            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }}>
-              <code>
-                {JSON.stringify(formData, null, 2)}
-              </code>
-            </pre>
+              {/* Right Panel: Live JSON Output */}
+              <div style={panelStyle}>
+                <h3>Live JSON Output</h3>
+                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }}>
+                  <code>
+                    {JSON.stringify(formData, null, 2)}
+                  </code>
+                </pre>
+              </div>
+            </div>
           </div>
+          {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', marginTop: '10px' }}>{error}</p>}
         </div>
       </div>
-      {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', marginTop: '10px' }}>{error}</p>}
+      <div style={{ flexShrink: 0, padding: '1rem', backgroundColor: '#f0f0f0', borderTop: '1px solid #ccc', textAlign: 'right' }}>
+        <button type="button" onClick={handleCancel} style={{ marginRight: '10px' }}>
+          Cancel
+        </button>
+        <button type="button" onClick={() => formRef.current.submit()} disabled={isSaving}>
+          {isSaving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
     </div>
   );
 }
