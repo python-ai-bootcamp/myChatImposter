@@ -118,6 +118,9 @@ function EditPage() {
           "ui:widget": "password"
         }
       }
+    },
+    queue_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
     }
   };
 

@@ -64,42 +64,36 @@ export function CustomFieldTemplate(props) {
 }
 
 export function CollapsibleObjectFieldTemplate(props) {
-  const [isOpen, setIsOpen] = useState(true);
+  const [isOpen, setIsOpen] = useState(false);
 
-  const fieldsetStyle = {
+  const containerStyle = {
     border: '1px solid #ccc',
     borderRadius: '4px',
     padding: '1rem',
-    margin: 0,
-    marginTop: '0.5rem',
-    width: '100%',
-    display: 'table',
-    borderCollapse: 'collapse'
+    margin: '1rem 0',
   };
 
   const titleStyle = {
     margin: 0,
-    padding: '0.5rem',
+    padding: 0,
     cursor: 'pointer',
     textAlign: 'left',
-    borderBottom: isOpen ? '1px solid #eee' : 'none',
-    marginBottom: isOpen ? '1rem' : 0
   };
 
   return (
-    <div>
+    <div style={containerStyle}>
       <h3 style={titleStyle} onClick={() => setIsOpen(!isOpen)}>
         {props.title} {isOpen ? '[-]' : '[+]'}
       </h3>
       {isOpen && (
-        <fieldset style={fieldsetStyle}>
+        <div style={{marginTop: '1rem'}}>
           {props.description}
           {props.properties.map(element => (
             <React.Fragment key={element.content.key}>
               {element.content}
             </React.Fragment>
           ))}
-        </fieldset>
+        </div>
       )}
     </div>
   );
