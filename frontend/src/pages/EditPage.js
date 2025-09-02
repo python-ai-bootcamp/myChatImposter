@@ -207,8 +207,8 @@ function EditPage() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
-      <div style={{ flex: '1', overflowY: 'auto', padding: '20px' }}>
+    <>
+      <div style={{ padding: '20px', paddingBottom: '80px' }}> {/* paddingBottom to make space for footer */}
         <div style={{ maxWidth: '1800px', margin: '0 auto' }}>
           <div style={panelStyle}>
             <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
@@ -247,7 +247,16 @@ function EditPage() {
           {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', marginTop: '10px' }}>{error}</p>}
         </div>
       </div>
-      <div style={{ flexShrink: 0, padding: '1rem', backgroundColor: '#f0f0f0', borderTop: '1px solid #ccc', textAlign: 'right' }}>
+      <div style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        padding: '1rem',
+        backgroundColor: '#f0f0f0',
+        borderTop: '1px solid #ccc',
+        textAlign: 'center'
+      }}>
         <button type="button" onClick={handleCancel} style={{ marginRight: '10px' }}>
           Cancel
         </button>
@@ -255,7 +264,7 @@ function EditPage() {
           {isSaving ? 'Saving...' : 'Save'}
         </button>
       </div>
-    </div>
+    </>
   );
 }
 
