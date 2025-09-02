@@ -87,6 +87,13 @@ export function CustomArrayFieldTemplate(props) {
         borderRadius: '3px',
         cursor: 'pointer'
     };
+    const disabledBtnStyle = {
+        ...btnStyle,
+        cursor: 'not-allowed',
+        backgroundColor: '#f8f8f8',
+        color: '#ccc',
+    };
+
     return (
       <div>
         {props.items &&
@@ -94,21 +101,30 @@ export function CustomArrayFieldTemplate(props) {
             <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
               <div style={{ flex: 1 }}>{element.children}</div>
               <div style={{ marginLeft: '1rem', display: 'flex', gap: '0.3rem' }}>
-                {element.hasMoveUp && (
-                  <button type="button" onClick={element.onReorderClick(element.index, element.index - 1)} style={btnStyle}>
+                <button
+                    type="button"
+                    onClick={element.onReorderClick(element.index, element.index - 1)}
+                    style={element.hasMoveUp ? btnStyle : disabledBtnStyle}
+                    disabled={!element.hasMoveUp}
+                >
                     ↑
-                  </button>
-                )}
-                {element.hasMoveDown && (
-                  <button type="button" onClick={element.onReorderClick(element.index, element.index + 1)} style={btnStyle}>
+                </button>
+                <button
+                    type="button"
+                    onClick={element.onReorderClick(element.index, element.index + 1)}
+                    style={element.hasMoveDown ? btnStyle : disabledBtnStyle}
+                    disabled={!element.hasMoveDown}
+                >
                     ↓
-                  </button>
-                )}
-                {element.hasRemove && (
-                  <button type="button" onClick={element.onDropIndexClick(element.index)} style={btnStyle}>
+                </button>
+                <button
+                    type="button"
+                    onClick={element.onDropIndexClick(element.index)}
+                    style={element.hasRemove ? btnStyle : disabledBtnStyle}
+                    disabled={!element.hasRemove}
+                >
                     -
-                  </button>
-                )}
+                </button>
               </div>
             </div>
           ))}
