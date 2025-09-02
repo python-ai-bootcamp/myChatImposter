@@ -42,6 +42,7 @@ const transformSchema = (originalSchema) => {
     ...newSchema.properties,
   };
 
+  newSchema.title = ''; // Remove root title
   return newSchema;
 };
 
@@ -68,18 +69,20 @@ const transformDataToUI = (data) => {
 // Helper to transform formData back to the original format for saving
 const transformDataToAPI = (uiData) => {
   if (!uiData) return uiData;
-  const apiData = { ...uiData };
 
-  if (uiData.general_config) {
-    apiData.user_id = uiData.general_config.user_id;
-    apiData.respond_to_whitelist = uiData.general_config.respond_to_whitelist;
-  }
-  delete apiData.general_config;
+  // Destructure to separate the nested UI objects from the rest of the data
+  const { general_config, llm_bot_config, ...rest } = uiData;
+  const apiData = { ...rest }; // Start with the flat properties
 
-  if (uiData.llm_bot_config) {
-    apiData.llm_provider_config = uiData.llm_bot_config.llm_provider_config;
+  // Flatten the nested properties back to the top level
+  if (general_config) {
+    apiData.user_id = general_config.user_id;
+    apiData.respond_to_whitelist = general_config.respond_to_whitelist;
   }
-  delete apiData.llm_bot_config;
+
+  if (llm_bot_config) {
+    apiData.llm_provider_config = llm_bot_config.llm_provider_config;
+  }
 
   return apiData;
 };
@@ -257,11 +260,11 @@ function EditPage() {
         borderTop: '1px solid #ccc',
         textAlign: 'center'
       }}>
-        <button type="button" onClick={handleCancel} style={{ marginRight: '10px' }}>
-          Cancel
-        </button>
-        <button type="button" onClick={() => formRef.current.submit()} disabled={isSaving}>
+        <button type="button" onClick={() => formRef.current.submit()} disabled={isSaving} style={{ marginRight: '10px' }}>
           {isSaving ? 'Saving...' : 'Save'}
+        </button>
+        <button type="button" onClick={handleCancel}>
+          Cancel
         </button>
       </div>
     </>
