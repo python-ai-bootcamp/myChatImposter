@@ -29,15 +29,12 @@ export function CustomFieldTemplate(props) {
   // It creates an indented title and wraps the content in a border.
   if (id === 'root_chat_provider_config') {
     return (
-        <div className={classNames} style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
-            {/* Empty left column to maintain alignment */}
-            <div style={{ width: '30%', paddingRight: '1rem' }}></div>
-            {/* Right column contains the title AND the bordered box */}
-            <div style={{ width: '70%' }}>
-                <h3 style={{ marginTop: 0, paddingTop: 0, marginBottom: '0.5rem' }}>{label}</h3>
-                <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
-                    {children}
-                </div>
+        <div className={classNames} style={{ marginBottom: '1rem' }}>
+            {/* Title is now outside the two-column structure, and left-aligned */}
+            <h3 style={{ marginTop: 0, paddingTop: 0, marginBottom: '0.5rem', borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>{label}</h3>
+            {/* The content is now wrapped in the border */}
+            <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
+                {children}
             </div>
         </div>
     );
@@ -74,8 +71,7 @@ export function CustomFieldTemplate(props) {
 }
 
 export function CustomObjectFieldTemplate(props) {
-  // This is the logic from before the last change.
-  // It correctly applies a border ONLY to the LLM provider's inner settings object.
+  // Conditionally apply border for the LLM provider's inner settings object.
   const hasApiKey = props.properties.some(p => p.name === 'api_key');
   const fieldsetStyle = {
     border: hasApiKey ? '1px solid #ccc' : 'none',
@@ -85,22 +81,15 @@ export function CustomObjectFieldTemplate(props) {
     width: '100%'
   };
 
-  // This is the fix for the "double title" issue.
-  // We don't render a title for the main chat_provider_config object,
-  // because the CustomFieldTemplate is already rendering it.
   const isChatProviderObject = props.idSchema.$id === 'root_chat_provider_config';
-
 
   return (
     <fieldset style={fieldsetStyle}>
-      {/* Render the title of the object, aligned with the right column, but not for the chat provider object */}
+      {/* Render the title, now fully left-aligned */}
       {props.title && !isChatProviderObject && (
-         <div style={{ display: 'flex', marginBottom: '1rem', alignItems: 'center' }}>
-            <div style={{ width: '30%', paddingRight: '1rem', boxSizing: 'border-box' }}></div>
-            <div style={{ width: '70%', boxSizing: 'border-box' }}>
-                <h3 style={{ margin: 0, padding: 0, borderBottom: hasApiKey ? 'none' : '1px solid #eee', paddingBottom: '0.5rem' }}>{props.title}</h3>
-            </div>
-         </div>
+        <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
+            {props.title}
+        </h3>
       )}
 
       {props.description}
