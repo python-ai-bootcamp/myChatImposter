@@ -92,9 +92,9 @@ export function CustomObjectFieldTemplate(props) {
 
       {props.description}
       {props.properties.map(element => (
-        <div className="property-wrapper" key={element.content.key}>
+        <React.Fragment key={element.content.key}>
           {element.content}
-        </div>
+        </React.Fragment>
       ))}
     </fieldset>
   );
