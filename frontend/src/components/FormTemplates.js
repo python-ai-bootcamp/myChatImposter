@@ -56,14 +56,25 @@ export function CustomFieldTemplate(props) {
 }
 
 export function CustomObjectFieldTemplate(props) {
+  // Conditionally apply border for the LLM provider settings object.
+  // We identify it by checking for a unique property like 'api_key'.
+  const hasApiKey = props.properties.some(p => p.name === 'api_key');
+  const fieldsetStyle = {
+    border: hasApiKey ? '1px solid #ccc' : 'none',
+    borderRadius: hasApiKey ? '4px' : '0',
+    padding: hasApiKey ? '1rem' : '0',
+    margin: 0,
+    width: '100%'
+  };
+
   return (
-    <fieldset style={{ border: 'none', padding: 0, margin: 0, width: '100%' }}>
+    <fieldset style={fieldsetStyle}>
       {/* Render the title of the object, aligned with the right column */}
       {props.title && (
          <div style={{ display: 'flex', marginBottom: '1rem', alignItems: 'center' }}>
             <div style={{ width: '30%', paddingRight: '1rem', boxSizing: 'border-box' }}></div>
             <div style={{ width: '70%', boxSizing: 'border-box' }}>
-                <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>{props.title}</h3>
+                <h3 style={{ margin: 0, padding: 0, borderBottom: hasApiKey ? 'none' : '1px solid #eee', paddingBottom: '0.5rem' }}>{props.title}</h3>
             </div>
          </div>
       )}
