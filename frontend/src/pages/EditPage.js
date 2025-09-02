@@ -1,13 +1,117 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate } from '../components/FormTemplates';
+
+// Helper to transform schema
+const transformSchema = (originalSchema) => {
+  const newSchema = JSON.parse(JSON.stringify(originalSchema));
+
+  // --- Group GeneralConfig ---
+  const generalConfigFields = ['user_id', 'respond_to_whitelist'];
+  const generalConfigSchema = {
+    type: 'object',
+    title: 'GeneralConfig',
+    properties: {},
+    required: [],
+  };
+  for (const field of generalConfigFields) {
+    if (newSchema.properties[field]) {
+      generalConfigSchema.properties[field] = newSchema.properties[field];
+      delete newSchema.properties[field];
+      if (newSchema.required && newSchema.required.includes(field)) {
+        generalConfigSchema.required.push(field);
+        newSchema.required = newSchema.required.filter(f => f !== field);
+      }
+    }
+  }
+
+  // --- Group LlmBotConfig ---
+  const llmBotConfigFields = ['llm_provider_config'];
+  const llmBotConfigSchema = {
+    type: 'object',
+    title: 'LlmBotConfig',
+    properties: {},
+    required: [],
+  };
+  for (const field of llmBotConfigFields) {
+    if (newSchema.properties[field]) {
+      llmBotConfigSchema.properties[field] = newSchema.properties[field];
+      delete newSchema.properties[field];
+      if (newSchema.required && newSchema.required.includes(field)) {
+        llmBotConfigSchema.required.push(field);
+        newSchema.required = newSchema.required.filter(f => f !== field);
+      }
+    }
+  }
+
+  newSchema.properties = {
+    general_config: generalConfigSchema,
+    llm_bot_config: llmBotConfigSchema,
+    ...newSchema.properties,
+  };
+
+  if (generalConfigSchema.required.length > 0) {
+    if (!newSchema.required) newSchema.required = [];
+    newSchema.required.push('general_config');
+  }
+  if (llmBotConfigSchema.required.length > 0) {
+    if (!newSchema.required) newSchema.required = [];
+    newSchema.required.push('llm_bot_config');
+  }
+
+  newSchema.title = ''; // Remove root title
+  return newSchema;
+};
+
+// Helper to transform formData to match the new schema
+const transformDataToUI = (data) => {
+  if (!data) return data;
+  const uiData = { ...data };
+
+  uiData.general_config = {
+    user_id: data.user_id,
+    respond_to_whitelist: data.respond_to_whitelist,
+  };
+  delete uiData.user_id;
+  delete uiData.respond_to_whitelist;
+
+  uiData.llm_bot_config = {
+    llm_provider_config: data.llm_provider_config,
+  };
+  delete uiData.llm_provider_config;
+
+  return uiData;
+};
+
+// Helper to transform formData back to the original format for saving
+const transformDataToAPI = (uiData) => {
+  if (!uiData) return uiData;
+
+  // Destructure to separate the nested UI objects from the rest of the data
+  const { general_config, llm_bot_config, ...rest } = uiData;
+  const apiData = { ...rest }; // Start with the flat properties
+
+  // Flatten the nested properties back to the top level
+  if (general_config) {
+    apiData.user_id = general_config.user_id;
+    apiData.respond_to_whitelist = general_config.respond_to_whitelist;
+  }
+
+  if (llm_bot_config) {
+    apiData.llm_provider_config = llm_bot_config.llm_provider_config;
+  }
+
+  return apiData;
+};
+
 
 function EditPage() {
   const { filename } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const formRef = useRef(null);
 
   const [schema, setSchema] = useState(null);
   const [formData, setFormData] = useState(null);
@@ -23,22 +127,22 @@ function EditPage() {
         const schemaResponse = await fetch('/api/configurations/schema');
         if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
         const schemaData = await schemaResponse.json();
-        setSchema(schemaData);
+        const transformedSchema = transformSchema(schemaData);
+        setSchema(transformedSchema);
 
         // Fetch existing data or set up new data
         if (isNew) {
-          // For a new file, we can start with an empty object or some defaults.
-          // RJSF will use the schema's defaults if available.
-          setFormData({
+          const initialData = {
             user_id: filename.replace('.json', ''),
-            // Set other defaults if necessary, but RJSF handles schema defaults
-          });
+            respond_to_whitelist: [],
+          };
+          setFormData(transformDataToUI(initialData));
         } else {
           const dataResponse = await fetch(`/api/configurations/${filename}`);
           if (!dataResponse.ok) throw new Error('Failed to fetch file content.');
           const data = await dataResponse.json();
-          // The config might be in an array
-          setFormData(Array.isArray(data) ? data[0] : data);
+          const originalData = Array.isArray(data) ? data[0] : data;
+          setFormData(transformDataToUI(originalData));
         }
       } catch (err) {
         setError(err.message);
@@ -52,16 +156,13 @@ function EditPage() {
     setIsSaving(true);
     setError(null);
     try {
-      // The react-jsonschema-form component validates the data against the schema internally.
-      // The onSubmit handler is only called if the data is valid.
+      const apiData = transformDataToAPI(formData);
       const response = await fetch(`/api/configurations/${filename}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        // The backend endpoint expects a list for a new file,
-        // and a single object for an existing one. We will send a list for new files.
-        body: JSON.stringify([formData]),
+        body: JSON.stringify([apiData]),
       });
 
       if (!response.ok) {
@@ -104,13 +205,18 @@ function EditPage() {
 
   const uiSchema = {
     "ui:classNames": "form-container",
-    llm_provider_config: {
-      "ui:classNames": "llm-provider-selector",
-      provider_config: {
-        api_key: {
-          "ui:widget": "password"
-        }
-      }
+    general_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
+    },
+    chat_provider_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
+    },
+    llm_bot_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
+      "ui:title": "LlmBotConfig",
+    },
+    queue_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
     }
   };
 
@@ -123,48 +229,66 @@ function EditPage() {
   };
 
   return (
-    <div style={{ maxWidth: '1800px', margin: '0 auto', padding: '20px' }}>
-      <div style={panelStyle}>
-        <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem' }}>
-          {/* Left Panel: Form Editor */}
+    <>
+      <div style={{ padding: '20px', paddingBottom: '80px' }}> {/* paddingBottom to make space for footer */}
+        <div style={{ maxWidth: '1800px', margin: '0 auto' }}>
           <div style={panelStyle}>
-            <Form
-              schema={schema}
-              uiSchema={uiSchema}
-              formData={formData}
-              validator={validator}
-              onSubmit={handleSave}
-              onChange={(e) => setFormData(e.formData)}
-              onError={(errors) => console.log('Form validation errors:', errors)}
-              disabled={isSaving}
-              templates={templates}
-              widgets={widgets}
-            >
-              <div>
-                <button type="submit" disabled={isSaving}>
-                  {isSaving ? 'Saving...' : 'Save'}
-                </button>
-                <button type="button" onClick={handleCancel} style={{ marginLeft: '10px' }}>
-                  Cancel
-                </button>
+            <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem' }}>
+              {/* Left Panel: Form Editor */}
+              <div style={panelStyle}>
+                <Form
+                  ref={formRef}
+                  schema={schema}
+                  uiSchema={uiSchema}
+                  formData={formData}
+                  validator={validator}
+                  onSubmit={handleSave}
+                  onChange={(e) => setFormData(e.formData)}
+                  onError={(errors) => console.log('Form validation errors:', errors)}
+                  disabled={isSaving}
+                  templates={templates}
+                  widgets={widgets}
+                >
+                  {/* Buttons are now in the footer */}
+                  <div />
+                </Form>
               </div>
-            </Form>
-          </div>
 
-          {/* Right Panel: Live JSON Output */}
-          <div style={panelStyle}>
-            <h3>Live JSON Output</h3>
-            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }}>
-              <code>
-                {JSON.stringify(formData, null, 2)}
-              </code>
-            </pre>
+              {/* Right Panel: Live JSON Output */}
+              <div style={panelStyle}>
+                <h3>Live JSON Output (as it will be saved)</h3>
+                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }}>
+                  <code>
+                    {JSON.stringify(transformDataToAPI(formData), null, 2)}
+                  </code>
+                </pre>
+              </div>
+            </div>
           </div>
         </div>
       </div>
-      {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', marginTop: '10px' }}>{error}</p>}
-    </div>
+      <div style={{
+        position: 'fixed',
+        bottom: 0,
+        left: 0,
+        right: 0,
+        padding: '1rem',
+        backgroundColor: '#f0f0f0',
+        borderTop: '1px solid #ccc',
+        textAlign: 'center'
+      }}>
+        {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', marginBottom: '1rem' }}>{error}</p>}
+        <div>
+          <button type="button" onClick={() => formRef.current.submit()} disabled={isSaving} style={{ marginRight: '10px' }}>
+            {isSaving ? 'Saving...' : 'Save'}
+          </button>
+          <button type="button" onClick={handleCancel}>
+            Cancel
+          </button>
+        </div>
+      </div>
+    </>
   );
 }
 
