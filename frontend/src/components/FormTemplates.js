@@ -35,7 +35,6 @@ export function CustomFieldTemplate(props) {
   // A single, consistent layout for all other fields.
   const rightColumnStyle = {
       boxSizing: 'border-box',
-      paddingTop: '0.5rem',
       textAlign: 'left',
       display: 'table-cell',
       width: '100%'
@@ -50,7 +49,7 @@ export function CustomFieldTemplate(props) {
         </h3>
       )}
       <div className={classNames} style={{ display: 'table-row' }}>
-        <label htmlFor={id} style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem', paddingBottom: '1rem' }}>
+        <label htmlFor={id} style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
           {label}{required ? '*' : null}
         </label>
         <div style={rightColumnStyle}>
@@ -126,7 +125,7 @@ export function CustomArrayFieldTemplate(props) {
         {props.items &&
           props.items.map(element => (
             <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'baseline' }}>
-                <span style={{ marginRight: '0.5rem', paddingTop: '0.5rem' }}>•</span>
+                <span style={{ marginRight: '0.5rem' }}>•</span>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
                     <div>{element.children}</div>
                     <div style={{ display: 'flex', gap: '0.3rem' }}>
