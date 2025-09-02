@@ -80,8 +80,8 @@ export function CustomObjectFieldTemplate(props) {
 
   return (
     <fieldset style={fieldsetStyle}>
-      {/* Render the title fully left-aligned with a separator line */}
-      {props.title && (
+      {/* Render the title fully left-aligned with a separator line, but not if it's the redundant one */}
+      {props.title && props.title !== 'Respond Using Llm' && (
         <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
             {props.title}
         </h3>
