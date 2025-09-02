@@ -45,12 +45,12 @@ export function CustomFieldTemplate(props) {
     <>
       {/* If this is the LLM dropdown field, render the static title above it. */}
       {isLlmDropdown && (
-        <h3 style={{ margin: '1.5rem 0 1rem 0', padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', textAlign: 'left' }}>
+        <h3 style={{ margin: '1rem 0 0.5rem 0', padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', textAlign: 'left' }}>
           LLM Bot Response
         </h3>
       )}
       <div className={classNames} style={{ display: 'table-row' }}>
-        <label htmlFor={id} style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem', paddingBottom: '1rem' }}>
+        <label htmlFor={id} style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem', paddingBottom: '0.5rem' }}>
           {label}{required ? '*' : null}
         </label>
         <div style={rightColumnStyle}>
@@ -85,7 +85,7 @@ export function CustomObjectFieldTemplate(props) {
     <fieldset style={fieldsetStyle}>
       {/* Render the title fully left-aligned with a separator line, but not if it's the redundant one */}
       {props.title && props.title !== 'Respond Using Llm' && (
-        <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
+        <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '0.5rem', textAlign: 'left' }}>
             {props.title}
         </h3>
       )}
@@ -117,15 +117,15 @@ export function CustomArrayFieldTemplate(props) {
     };
 
     return (
-      <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
+      <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '0.5rem' }}>
          {props.title && (
-            <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
+            <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '0.5rem', textAlign: 'left' }}>
                 {props.title}
             </h3>
         )}
         {props.items &&
           props.items.map(element => (
-            <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'baseline' }}>
+            <div key={element.key} style={{ marginBottom: '0.25rem', display: 'flex', alignItems: 'baseline' }}>
                 <span style={{ marginRight: '0.5rem', paddingTop: '0.5rem' }}>•</span>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
                     <div>{element.children}</div>
