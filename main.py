@@ -99,15 +99,17 @@ async def get_configuration_schema():
 
     defs_key = '$defs' if '$defs' in schema else 'definitions'
 
-    # Add descriptive titles to the oneOf choices for llm_provider_config
+    # Modify the llm_provider_config schema for better frontend rendering
     if 'llm_provider_config' in schema['properties']:
+        # Change the main field title
+        schema['properties']['llm_provider_config']['title'] = "LLM Bot Response"
+
+        # Remove the titles from the dropdown options for a cleaner look
         llm_config_schema = schema['properties']['llm_provider_config']
         if 'anyOf' in llm_config_schema:
             for item in llm_config_schema['anyOf']:
-                if '$ref' in item:
-                    item['title'] = "Respond Using Llm"
-                elif item.get('type') == 'null':
-                    item['title'] = "Collection Only"
+                if 'title' in item:
+                    del item['title']
 
     # Explicitly set the api_key to be a string to avoid type ambiguity on the frontend
     if defs_key in schema and 'LLMProviderSettings' in schema[defs_key]:

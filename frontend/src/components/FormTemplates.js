@@ -16,7 +16,7 @@ export function CustomCheckboxWidget(props) {
 }
 
 export function CustomFieldTemplate(props) {
-  const { id, label, children, required, rawErrors = [], help, description, classNames } = props;
+  const { id, label, children, required, rawErrors = [], help, description, classNames, schema } = props;
 
   // For items inside an array, we bypass the label/two-column layout in this template.
   // The layout is handled entirely by CustomArrayFieldTemplate.
@@ -25,34 +25,17 @@ export function CustomFieldTemplate(props) {
     return children;
   }
 
-  // This is the new logic to handle the special chat provider config section.
-  // It creates an indented title and wraps the content in a border.
-  if (id === 'root_chat_provider_config') {
-    return (
-        <div className={classNames} style={{ marginBottom: '1rem' }}>
-            {/* Title is now outside the two-column structure, and left-aligned */}
-            <h3 style={{ marginTop: 0, paddingTop: 0, marginBottom: '0.5rem', borderBottom: '1px solid #eee', paddingBottom: '0.5rem' }}>{label}</h3>
-            {/* The content is now wrapped in the border */}
-            <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
-                {children}
-            </div>
-        </div>
-    );
-  }
-
-  // Don't render a label for other top-level objects, it's handled by the ObjectFieldTemplate
-  if (props.schema.type === 'object') {
+  // For object containers, we let the ObjectFieldTemplate handle the title and layout.
+  if (schema.type === 'object') {
       return children;
   }
 
   // A single, consistent layout for all other fields.
-  const isLlmSelector = classNames && classNames.includes('llm-provider-selector');
   const rightColumnStyle = {
       width: '70%',
       boxSizing: 'border-box',
       paddingTop: '0.5rem',
       textAlign: 'left',
-      paddingLeft: isLlmSelector ? '0' : undefined
   };
 
   return (
@@ -71,23 +54,26 @@ export function CustomFieldTemplate(props) {
 }
 
 export function CustomObjectFieldTemplate(props) {
-  // Conditionally apply border for the LLM provider's inner settings object.
+  // Conditionally apply border for the inner provider settings objects.
   const hasApiKey = props.properties.some(p => p.name === 'api_key');
-  const fieldsetStyle = {
-    border: hasApiKey ? '1px solid #ccc' : 'none',
-    borderRadius: hasApiKey ? '4px' : '0',
-    padding: hasApiKey ? '1rem' : '0',
-    margin: 0,
-    width: '100%'
-  };
+  const hasGroupMessages = props.properties.some(p => p.name === 'allow_group_messages');
+  const shouldHaveBorder = hasApiKey || hasGroupMessages;
 
-  const isChatProviderObject = props.idSchema.$id === 'root_chat_provider_config';
+  const fieldsetStyle = {
+    border: shouldHaveBorder ? '1px solid #ccc' : 'none',
+    borderRadius: shouldHaveBorder ? '4px' : '0',
+    padding: shouldHaveBorder ? '1rem' : '0',
+    margin: 0,
+    width: '100%',
+    // Add margin if there's a border, to space it from the title
+    marginTop: shouldHaveBorder ? '0.5rem' : '0'
+  };
 
   return (
     <fieldset style={fieldsetStyle}>
-      {/* Render the title, now fully left-aligned */}
-      {props.title && !isChatProviderObject && (
-        <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem' }}>
+      {/* Render the title fully left-aligned with a separator line */}
+      {props.title && (
+        <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
             {props.title}
         </h3>
       )}
@@ -120,6 +106,11 @@ export function CustomArrayFieldTemplate(props) {
 
     return (
       <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
+        {props.title && (
+            <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
+                {props.title}
+            </h3>
+        )}
         {props.items &&
           props.items.map(element => (
             <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'baseline' }}>
