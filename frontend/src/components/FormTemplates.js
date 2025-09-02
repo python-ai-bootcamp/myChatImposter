@@ -34,7 +34,7 @@ export function CustomFieldTemplate(props) {
 
   // A single, consistent layout for all other fields.
   const rightColumnStyle = {
-      width: '70%',
+      width: '60%',
       boxSizing: 'border-box',
       paddingTop: '0.5rem',
       textAlign: 'left',
@@ -49,7 +49,7 @@ export function CustomFieldTemplate(props) {
         </h3>
       )}
       <div className={classNames} style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
-        <label htmlFor={id} style={{ width: '30%', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem' }}>
+        <label htmlFor={id} style={{ width: '40%', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem' }}>
           {label}{required ? '*' : null}
         </label>
         <div style={rightColumnStyle}>
