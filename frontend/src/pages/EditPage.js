@@ -138,27 +138,13 @@ function EditPage() {
     setError(null);
     try {
       const apiData = transformDataToAPI(formData);
-      const response = await fetch(`/api/configurations/${filename}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify([apiData]),
-      });
-
-      if (!response.ok) {
-        const errorBody = await response.json();
-        const detail = typeof errorBody.detail === 'object' && errorBody.detail !== null
-            ? JSON.stringify(errorBody.detail, null, 2)
-            : errorBody.detail;
-        throw new Error(detail || 'Failed to save file.');
-      }
-
-      navigate('/');
+      // For debugging: display the data instead of sending it.
+      setError(`DEBUG: Data to be sent:\n${JSON.stringify(apiData, null, 2)}`);
     } catch (err) {
-      setError(`Failed to save: ${err.message}`);
+      setError(`Failed to process data: ${err.message}`);
     } finally {
-      setIsSaving(false);
+      // Do not set isSaving to false, to prevent multiple clicks
+      // and to indicate the "save" is paused for debugging.
     }
   };
 
