@@ -34,10 +34,10 @@ export function CustomFieldTemplate(props) {
 
   // A single, consistent layout for all other fields.
   const rightColumnStyle = {
-      width: '70%',
       boxSizing: 'border-box',
-      paddingTop: '0.5rem',
       textAlign: 'left',
+      display: 'table-cell',
+      width: '100%'
   };
 
   return (
@@ -48,8 +48,8 @@ export function CustomFieldTemplate(props) {
           LLM Bot Response
         </h3>
       )}
-      <div className={classNames} style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
-        <label htmlFor={id} style={{ width: '30%', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem' }}>
+      <div className={classNames} style={{ display: 'table-row' }}>
+        <label htmlFor={id} style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
           {label}{required ? '*' : null}
         </label>
         <div style={rightColumnStyle}>
@@ -75,7 +75,9 @@ export function CustomObjectFieldTemplate(props) {
     padding: shouldHaveBorder ? '1rem' : '0',
     margin: 0,
     width: '100%',
-    marginTop: shouldHaveBorder ? '0.5rem' : '0'
+    marginTop: shouldHaveBorder ? '0.5rem' : '0',
+    display: 'table',
+    borderCollapse: 'collapse'
   };
 
   return (
@@ -89,9 +91,9 @@ export function CustomObjectFieldTemplate(props) {
 
       {props.description}
       {props.properties.map(element => (
-        <div className="property-wrapper" key={element.content.key}>
+        <React.Fragment key={element.content.key}>
           {element.content}
-        </div>
+        </React.Fragment>
       ))}
     </fieldset>
   );
@@ -123,7 +125,7 @@ export function CustomArrayFieldTemplate(props) {
         {props.items &&
           props.items.map(element => (
             <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'baseline' }}>
-                <span style={{ marginRight: '0.5rem', paddingTop: '0.5rem' }}>•</span>
+                <span style={{ marginRight: '0.5rem' }}>•</span>
                 <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
                     <div>{element.children}</div>
                     <div style={{ display: 'flex', gap: '0.3rem' }}>

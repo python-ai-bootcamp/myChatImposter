@@ -114,29 +114,55 @@ function EditPage() {
     }
   };
 
+  const panelStyle = {
+    border: '1px solid #ccc',
+    borderRadius: '4px',
+    padding: '1rem',
+    backgroundColor: '#f9f9f9',
+    boxSizing: 'border-box'
+  };
+
   return (
-    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
-      <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
-      <Form
-        schema={schema}
-        uiSchema={uiSchema}
-        formData={formData}
-        validator={validator}
-        onSubmit={handleSave}
-        onError={(errors) => console.log('Form validation errors:', errors)}
-        disabled={isSaving}
-        templates={templates}
-        widgets={widgets}
-      >
-        <div>
-          <button type="submit" disabled={isSaving}>
-            {isSaving ? 'Saving...' : 'Save'}
-          </button>
-          <button type="button" onClick={handleCancel} style={{ marginLeft: '10px' }}>
-            Cancel
-          </button>
+    <div style={{ maxWidth: '1800px', margin: '0 auto', padding: '20px' }}>
+      <div style={panelStyle}>
+        <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem' }}>
+          {/* Left Panel: Form Editor */}
+          <div style={panelStyle}>
+            <Form
+              schema={schema}
+              uiSchema={uiSchema}
+              formData={formData}
+              validator={validator}
+              onSubmit={handleSave}
+              onChange={(e) => setFormData(e.formData)}
+              onError={(errors) => console.log('Form validation errors:', errors)}
+              disabled={isSaving}
+              templates={templates}
+              widgets={widgets}
+            >
+              <div>
+                <button type="submit" disabled={isSaving}>
+                  {isSaving ? 'Saving...' : 'Save'}
+                </button>
+                <button type="button" onClick={handleCancel} style={{ marginLeft: '10px' }}>
+                  Cancel
+                </button>
+              </div>
+            </Form>
+          </div>
+
+          {/* Right Panel: Live JSON Output */}
+          <div style={panelStyle}>
+            <h3>Live JSON Output</h3>
+            <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }}>
+              <code>
+                {JSON.stringify(formData, null, 2)}
+              </code>
+            </pre>
+          </div>
         </div>
-      </Form>
+      </div>
       {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', marginTop: '10px' }}>{error}</p>}
     </div>
   );
