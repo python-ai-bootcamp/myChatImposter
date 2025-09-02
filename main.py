@@ -89,6 +89,40 @@ async def get_configuration_files():
         raise HTTPException(status_code=500, detail="Could not list configuration files.")
 
 
+@app.get("/api/configurations/schema", response_model=Dict[str, Any])
+async def get_configuration_schema():
+    """
+    Returns the JSON Schema for the UserConfiguration model, with modifications
+    for better frontend rendering.
+    """
+    schema = UserConfiguration.model_json_schema()
+
+    defs_key = '$defs' if '$defs' in schema else 'definitions'
+
+    # Add descriptive titles to the oneOf choices for llm_provider_config for the dropdown
+    if 'llm_provider_config' in schema['properties']:
+        llm_config_schema = schema['properties']['llm_provider_config']
+        if 'anyOf' in llm_config_schema:
+            for item in llm_config_schema['anyOf']:
+                if '$ref' in item:
+                    # This is the object choice
+                    item['title'] = "Respond Using Llm"
+                elif item.get('type') == 'null':
+                    # This is the null choice
+                    item['title'] = "Collection Only"
+
+    # Explicitly set the api_key to be a string to avoid type ambiguity on the frontend
+    if defs_key in schema and 'LLMProviderSettings' in schema[defs_key]:
+        api_key_schema = schema[defs_key]['LLMProviderSettings']['properties']['api_key']
+        # Pydantic's Optional[str] can become anyOf:[{type:'string'}, {type:'null'}]
+        # We simplify this to just a string type for the password widget.
+        if 'anyOf' in api_key_schema:
+            api_key_schema['type'] = 'string'
+            del api_key_schema['anyOf']
+
+    return schema
+
+
 @app.get("/api/configurations/status")
 async def get_all_configurations_status():
     """

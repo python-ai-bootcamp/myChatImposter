@@ -12,12 +12,61 @@ jest.mock('react-router-dom', () => ({
   useNavigate: () => mockedNavigate,
 }));
 
+const mockSchema = {
+  title: 'User Configuration',
+  type: 'object',
+  properties: {
+    user_id: { type: 'string', title: 'User ID' },
+    respond_to_whitelist: { type: 'array', items: { type: 'string' } },
+    queue_config: {
+        type: 'object',
+        title: 'Queue Config',
+        properties: {
+            max_messages: { type: 'number', title: 'Max Messages' }
+        }
+    }
+  },
+};
+
+const mockInitialData = {
+    user_id: 'test-user',
+    respond_to_whitelist: ['user1'],
+    queue_config: {
+        max_messages: 10
+    }
+};
+
 beforeEach(() => {
   fetch.mockClear();
   mockedNavigate.mockClear();
 });
 
 const renderComponent = () => {
+    // Setup mock fetches for both schema and data
+    fetch.mockImplementation((url) => {
+        if (url.includes('/api/configurations/schema')) {
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve(mockSchema),
+            });
+        }
+        if (url.includes('/api/configurations/test.json')) {
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve(mockInitialData),
+            });
+        }
+        // Mock the save PUT request
+        if (url.includes('/api/configurations/')) {
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve({ status: 'success' }),
+            });
+        }
+        return Promise.reject(new Error(`Unhandled fetch call: ${url}`));
+    });
+
+
   render(
     <MemoryRouter initialEntries={['/edit/test.json']}>
       <Routes>
@@ -27,88 +76,39 @@ const renderComponent = () => {
   );
 };
 
-test('fetches and displays file content', async () => {
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ key: 'value' }),
-  });
-
+test('renders the form and saves updated data', async () => {
   renderComponent();
 
-  const textArea = await screen.findByRole('textbox');
+  // Wait for the form to render by finding a field from the schema
+  const maxMessagesInput = await screen.findByLabelText('Max Messages');
+  expect(maxMessagesInput).toBeInTheDocument();
+  expect(maxMessagesInput.value).toBe('10');
+
+  // Change a value
+  fireEvent.change(maxMessagesInput, { target: { value: '50' } });
+  expect(maxMessagesInput.value).toBe('50');
+
+  // Submit the form
+  const saveButton = screen.getByRole('button', { name: /Save/i });
+  fireEvent.click(saveButton);
+
+  // Wait for the save operation to complete and check the fetch call
   await waitFor(() => {
-    expect(JSON.parse(textArea.value)).toEqual({ key: 'value' });
-  });
-});
-
-test('shows an error for invalid JSON on save', async () => {
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({}),
-  });
-  renderComponent();
-
-  const textArea = await screen.findByRole('textbox');
-  fireEvent.change(textArea, { target: { value: '{"key": "value"' } }); // Invalid JSON
-
-  fireEvent.click(screen.getByRole('button', { name: /Save/i }));
-
-  const errorMessage = await screen.findByText(/Invalid JSON syntax/i);
-  expect(errorMessage).toBeInTheDocument();
-});
-
-test('successfully saves a JSON array', async () => {
-  // Mock initial fetch
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({}),
+    expect(fetch).toHaveBeenCalledWith(
+      '/api/configurations/test.json',
+      expect.objectContaining({
+        method: 'PUT',
+        body: JSON.stringify([{ // The component now wraps the data in an array
+            ...mockInitialData,
+            queue_config: {
+                ...mockInitialData.queue_config,
+                max_messages: 50, // The updated value
+            }
+        }]),
+      })
+    );
   });
 
-  // Mock save fetch
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ status: 'success' }),
-  });
-
-  renderComponent();
-
-  const textArea = await screen.findByRole('textbox');
-  const arrayContent = JSON.stringify([{ id: 1 }, { id: 2 }], null, 2);
-  fireEvent.change(textArea, { target: { value: arrayContent } });
-
-  fireEvent.click(screen.getByRole('button', { name: /Save/i }));
-
-  await waitFor(() => {
-    expect(mockedNavigate).toHaveBeenCalledWith('/');
-  });
-});
-
-test('successfully saves valid JSON object', async () => {
-  // Mock initial fetch
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ key: 'old value' }),
-  });
-
-  // Mock save fetch
-  fetch.mockResolvedValueOnce({
-    ok: true,
-    json: async () => ({ status: 'success' }),
-  });
-
-  renderComponent();
-
-  const textArea = await screen.findByRole('textbox');
-  await waitFor(() => {
-      // Wait for the initial content to be loaded
-      expect(JSON.parse(textArea.value)).toEqual({ key: 'old value' });
-  });
-
-  fireEvent.change(textArea, { target: { value: '{"key": "new value"}' } });
-
-  fireEvent.click(screen.getByRole('button', { name: /Save/i }));
-
-  await waitFor(() => {
-    expect(mockedNavigate).toHaveBeenCalledWith('/');
-  });
+  // Check for navigation
+  expect(mockedNavigate).toHaveBeenCalledWith('/');
 });

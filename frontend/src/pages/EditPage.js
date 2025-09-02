@@ -1,74 +1,67 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { validateConfiguration } from '../configModels';
+import Form from '@rjsf/core';
+import validator from '@rjsf/validator-ajv8';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate } from '../components/FormTemplates';
 
 function EditPage() {
   const { filename } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const [content, setContent] = useState('');
+
+  const [schema, setSchema] = useState(null);
+  const [formData, setFormData] = useState(null);
   const [error, setError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+
   const isNew = location.state?.isNew;
 
   useEffect(() => {
-    const fetchFileContent = async () => {
+    const fetchData = async () => {
       try {
-        const response = await fetch(`/api/configurations/${filename}`);
-        if (!response.ok) {
-          throw new Error('Failed to fetch file content.');
+        // Fetch schema
+        const schemaResponse = await fetch('/api/configurations/schema');
+        if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
+        const schemaData = await schemaResponse.json();
+        setSchema(schemaData);
+
+        // Fetch existing data or set up new data
+        if (isNew) {
+          // For a new file, we can start with an empty object or some defaults.
+          // RJSF will use the schema's defaults if available.
+          setFormData({
+            user_id: filename.replace('.json', ''),
+            // Set other defaults if necessary, but RJSF handles schema defaults
+          });
+        } else {
+          const dataResponse = await fetch(`/api/configurations/${filename}`);
+          if (!dataResponse.ok) throw new Error('Failed to fetch file content.');
+          const data = await dataResponse.json();
+          // The config might be in an array
+          setFormData(Array.isArray(data) ? data[0] : data);
         }
-        const data = await response.json();
-        setContent(JSON.stringify(data, null, 2));
       } catch (err) {
         setError(err.message);
       }
     };
 
-    if (isNew) {
-      const defaultConfig = {
-        user_id: filename.replace('.json', ''),
-        respond_to_whitelist: [],
-        chat_provider_config: {
-          provider_name: 'dummy',
-          provider_config: {
-            allow_group_messages: false,
-            process_offline_messages: false,
-          }
-        },
-        queue_config: {
-          max_messages: 10,
-          max_characters: 1000,
-          max_days: 1,
-          max_characters_single_message: 300,
-        },
-        llm_provider_config: null,
-      };
-      setContent(JSON.stringify(defaultConfig, null, 2));
-    } else {
-      fetchFileContent();
-    }
+    fetchData();
   }, [filename, isNew]);
 
-  const handleSave = async () => {
+  const handleSave = async ({ formData }) => {
     setIsSaving(true);
     setError(null);
     try {
-      const parsedContent = JSON.parse(content);
-
-      // Frontend validation
-      const validationResult = validateConfiguration(parsedContent);
-      if (!validationResult.isValid) {
-        const errorMessages = validationResult.errors.map(e => `Validation error at ${e.path}: ${e.message}`).join('\n');
-        throw new Error(errorMessages);
-      }
-
+      // The react-jsonschema-form component validates the data against the schema internally.
+      // The onSubmit handler is only called if the data is valid.
       const response = await fetch(`/api/configurations/${filename}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify(parsedContent),
+        // The backend endpoint expects a list for a new file,
+        // and a single object for an existing one. We will send a list for new files.
+        body: JSON.stringify([formData]),
       });
 
       if (!response.ok) {
@@ -81,11 +74,7 @@ function EditPage() {
 
       navigate('/');
     } catch (err) {
-      if (err instanceof SyntaxError) {
-        setError(`Invalid JSON syntax: ${err.message}`);
-      } else {
-        setError(`Failed to save: ${err.message}`);
-      }
+      setError(`Failed to save: ${err.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -95,33 +84,60 @@ function EditPage() {
     navigate('/');
   };
 
-  if (error && !isSaving) {
-    // For new files, we don't want to show a "failed to fetch" error initially
-    if (isNew && error && error.includes('Failed to fetch file content')) {
-      // clear error
-        setError(null);
-    } else {
-      return <div>Error: {error}</div>;
-    }
+  if (error) {
+    return <div>Error: {error}</div>;
   }
 
+  if (!schema || !formData) {
+    return <div>Loading form...</div>;
+  }
+
+  const templates = {
+    FieldTemplate: CustomFieldTemplate,
+    ObjectFieldTemplate: CustomObjectFieldTemplate,
+    ArrayFieldTemplate: CustomArrayFieldTemplate
+  };
+
+  const widgets = {
+    CheckboxWidget: CustomCheckboxWidget
+  };
+
+  const uiSchema = {
+    "ui:classNames": "form-container",
+    llm_provider_config: {
+      "ui:classNames": "llm-provider-selector",
+      provider_config: {
+        api_key: {
+          "ui:widget": "password"
+        }
+      }
+    }
+  };
+
   return (
-    <div>
+    <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '20px' }}>
       <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
-      <textarea
-        value={content}
-        onChange={(e) => setContent(e.target.value)}
-        rows="20"
-        cols="80"
-        style={{ whiteSpace: 'pre', overflowWrap: 'normal', overflowX: 'scroll', width: '100%' }}
-      />
-      <div>
-        <button onClick={handleSave} disabled={isSaving}>
-          {isSaving ? 'Saving...' : 'Save'}
-        </button>
-        <button onClick={handleCancel}>Cancel</button>
-      </div>
-      {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap' }}>{error}</p>}
+      <Form
+        schema={schema}
+        uiSchema={uiSchema}
+        formData={formData}
+        validator={validator}
+        onSubmit={handleSave}
+        onError={(errors) => console.log('Form validation errors:', errors)}
+        disabled={isSaving}
+        templates={templates}
+        widgets={widgets}
+      >
+        <div>
+          <button type="submit" disabled={isSaving}>
+            {isSaving ? 'Saving...' : 'Save'}
+          </button>
+          <button type="button" onClick={handleCancel} style={{ marginLeft: '10px' }}>
+            Cancel
+          </button>
+        </div>
+      </Form>
+      {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', marginTop: '10px' }}>{error}</p>}
     </div>
   );
 }
