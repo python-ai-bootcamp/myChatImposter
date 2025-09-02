@@ -9,7 +9,6 @@ function App() {
   return (
     <Router>
       <div>
-        <h1>WhatsApp Imposter Control Panel</h1>
         <Routes>
           <Route path="/" element={<HomePage />} />
           <Route path="/edit/:filename" element={<EditPage />} />

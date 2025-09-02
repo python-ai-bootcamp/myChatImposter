@@ -117,16 +117,15 @@ function EditPage() {
   const panelStyle = {
     border: '1px solid #ccc',
     borderRadius: '4px',
-    padding: '1rem',
-    backgroundColor: '#f9f9f9'
+    padding: '1rem'
   };
 
   return (
     <div style={{ maxWidth: '1800px', margin: '0 auto', padding: '20px' }}>
       <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
-      <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start' }}>
+      <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start', ...panelStyle }}>
         {/* Left Panel: Form Editor */}
-        <div style={{ flex: 1, ...panelStyle }}>
+        <div style={{ flex: 1 }}>
           <Form
             schema={schema}
             uiSchema={uiSchema}
@@ -151,7 +150,7 @@ function EditPage() {
         </div>
 
         {/* Right Panel: Live JSON Output */}
-        <div style={{ flex: 1, ...panelStyle }}>
+        <div style={{ flex: 1 }}>
           <h3>Live JSON Output</h3>
           <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all' }}>
             <code>
