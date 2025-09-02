@@ -103,8 +103,9 @@ export function CustomArrayFieldTemplate(props) {
             // Use baseline alignment for better vertical alignment of text input and buttons
             <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'baseline' }}>
               <span style={{ marginRight: '0.5rem', paddingTop: '0.5rem' }}>•</span>
-              <div style={{ flex: 1 }}>{element.children}</div>
-              <div style={{ marginLeft: '1rem', display: 'flex', gap: '0.3rem' }}>
+              {/* This div no longer expands, so the buttons will be right next to the input */}
+              <div>{element.children}</div>
+              <div style={{ marginLeft: '0.5rem', display: 'flex', gap: '0.3rem' }}>
                 <button
                     type="button"
                     onClick={element.onReorderClick(element.index, element.index - 1)}
