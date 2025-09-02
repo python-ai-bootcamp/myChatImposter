@@ -26,15 +26,18 @@ export function CustomFieldTemplate(props) {
   }
 
   // This is the new logic to handle the special chat provider config section.
+  // It creates an indented title and wraps the content in a border.
   if (id === 'root_chat_provider_config') {
     return (
         <div className={classNames} style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
             {/* Empty left column to maintain alignment */}
             <div style={{ width: '30%', paddingRight: '1rem' }}></div>
-            {/* Right column contains the border, title, and the actual object fields */}
-            <div style={{ width: '70%', border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
-                <h3 style={{ marginTop: 0, paddingTop: 0, marginBottom: '1rem' }}>{label}</h3>
-                {children}
+            {/* Right column contains the title AND the bordered box */}
+            <div style={{ width: '70%' }}>
+                <h3 style={{ marginTop: 0, paddingTop: 0, marginBottom: '0.5rem' }}>{label}</h3>
+                <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
+                    {children}
+                </div>
             </div>
         </div>
     );
@@ -82,10 +85,16 @@ export function CustomObjectFieldTemplate(props) {
     width: '100%'
   };
 
+  // This is the fix for the "double title" issue.
+  // We don't render a title for the main chat_provider_config object,
+  // because the CustomFieldTemplate is already rendering it.
+  const isChatProviderObject = props.idSchema.$id === 'root_chat_provider_config';
+
+
   return (
     <fieldset style={fieldsetStyle}>
-      {/* Render the title of the object, aligned with the right column */}
-      {props.title && (
+      {/* Render the title of the object, aligned with the right column, but not for the chat provider object */}
+      {props.title && !isChatProviderObject && (
          <div style={{ display: 'flex', marginBottom: '1rem', alignItems: 'center' }}>
             <div style={{ width: '30%', paddingRight: '1rem', boxSizing: 'border-box' }}></div>
             <div style={{ width: '70%', boxSizing: 'border-box' }}>
