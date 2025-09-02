@@ -117,7 +117,7 @@ function EditPage() {
   const panelStyle = {
     border: '1px solid #ccc',
     borderRadius: '4px',
-    padding: '0.5rem',
+    padding: '1rem',
     backgroundColor: '#f9f9f9',
     boxSizing: 'border-box'
   };
@@ -126,7 +126,7 @@ function EditPage() {
     <div style={{ maxWidth: '1800px', margin: '0 auto', padding: '20px' }}>
       <div style={panelStyle}>
         <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '10px', marginTop: '0.5rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem' }}>
           {/* Left Panel: Form Editor */}
           <div style={panelStyle}>
             <Form
