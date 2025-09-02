@@ -30,6 +30,8 @@ export function CustomFieldTemplate(props) {
       return children;
   }
 
+  const isLlmDropdown = id === 'root_llm_provider_config';
+
   // A single, consistent layout for all other fields.
   const rightColumnStyle = {
       width: '70%',
@@ -39,17 +41,25 @@ export function CustomFieldTemplate(props) {
   };
 
   return (
-    <div className={classNames} style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
-      <label htmlFor={id} style={{ width: '30%', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem' }}>
-        {label}{required ? '*' : null}
-      </label>
-      <div style={rightColumnStyle}>
-        {description}
-        {children}
-        {rawErrors.length > 0 && <ul>{rawErrors.map((error, i) => <li key={i} className="text-danger">{error}</li>)}</ul>}
-        {help}
+    <>
+      {/* If this is the LLM dropdown field, render the static title above it. */}
+      {isLlmDropdown && (
+        <h3 style={{ margin: '1.5rem 0 1rem 0', padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', textAlign: 'left' }}>
+          LLM Bot Response
+        </h3>
+      )}
+      <div className={classNames} style={{ display: 'flex', marginBottom: '1rem', alignItems: 'flex-start' }}>
+        <label htmlFor={id} style={{ width: '30%', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0, paddingTop: '0.5rem' }}>
+          {label}{required ? '*' : null}
+        </label>
+        <div style={rightColumnStyle}>
+          {description}
+          {children}
+          {rawErrors.length > 0 && <ul>{rawErrors.map((error, i) => <li key={i} className="text-danger">{error}</li>)}</ul>}
+          {help}
+        </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -65,7 +75,6 @@ export function CustomObjectFieldTemplate(props) {
     padding: shouldHaveBorder ? '1rem' : '0',
     margin: 0,
     width: '100%',
-    // Add margin if there's a border, to space it from the title
     marginTop: shouldHaveBorder ? '0.5rem' : '0'
   };
 
@@ -106,7 +115,7 @@ export function CustomArrayFieldTemplate(props) {
 
     return (
       <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
-        {props.title && (
+         {props.title && (
             <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
                 {props.title}
             </h3>
