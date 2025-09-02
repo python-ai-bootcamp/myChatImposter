@@ -240,7 +240,6 @@ function EditPage() {
               </div>
             </div>
           </div>
-          {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', marginTop: '10px' }}>{error}</p>}
         </div>
       </div>
       <div style={{
@@ -253,12 +252,15 @@ function EditPage() {
         borderTop: '1px solid #ccc',
         textAlign: 'center'
       }}>
-        <button type="button" onClick={() => formRef.current.submit()} disabled={isSaving} style={{ marginRight: '10px' }}>
-          {isSaving ? 'Saving...' : 'Save'}
-        </button>
-        <button type="button" onClick={handleCancel}>
-          Cancel
-        </button>
+        {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', marginBottom: '1rem' }}>{error}</p>}
+        <div>
+          <button type="button" onClick={() => formRef.current.submit()} disabled={isSaving} style={{ marginRight: '10px' }}>
+            {isSaving ? 'Saving...' : 'Save'}
+          </button>
+          <button type="button" onClick={handleCancel}>
+            Cancel
+          </button>
+        </div>
       </div>
     </>
   );
