@@ -97,7 +97,7 @@ export function CustomArrayFieldTemplate(props) {
     };
 
     return (
-      <div>
+      <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
         {props.items &&
           props.items.map(element => (
             <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'baseline' }}>
