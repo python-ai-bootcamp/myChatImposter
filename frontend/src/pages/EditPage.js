@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate } from '../components/FormTemplates';
 
 function EditPage() {
   const { filename } = useParams();
@@ -94,7 +94,8 @@ function EditPage() {
 
   const templates = {
     FieldTemplate: CustomFieldTemplate,
-    ObjectFieldTemplate: CustomObjectFieldTemplate
+    ObjectFieldTemplate: CustomObjectFieldTemplate,
+    ArrayFieldTemplate: CustomArrayFieldTemplate
   };
 
   const widgets = {
@@ -110,6 +111,12 @@ function EditPage() {
           "ui:widget": "password"
         }
       }
+    },
+    respond_to_whitelist: {
+        "ui:options": {
+            // This should prevent the verbose labels on each item
+            label: false
+        }
     }
   };
 

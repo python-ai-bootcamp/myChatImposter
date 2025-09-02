@@ -74,3 +74,39 @@ export function CustomObjectFieldTemplate(props) {
     </fieldset>
   );
 }
+
+export function CustomArrayFieldTemplate(props) {
+    return (
+      <div>
+        {props.items &&
+          props.items.map(element => (
+            <div key={element.key} style={{ marginBottom: '1rem', display: 'flex', alignItems: 'center' }}>
+              <div style={{ flex: 1 }}>{element.children}</div>
+              <div style={{ marginLeft: '1rem' }}>
+                {element.hasMoveUp && (
+                  <button type="button" onClick={element.onReorderClick(element.index, element.index - 1)} style={{ marginRight: '0.5rem' }}>
+                    ↑
+                  </button>
+                )}
+                {element.hasMoveDown && (
+                  <button type="button" onClick={element.onReorderClick(element.index, element.index + 1)} style={{ marginRight: '0.5rem' }}>
+                    ↓
+                  </button>
+                )}
+                {element.hasRemove && (
+                  <button type="button" onClick={element.onDropIndexClick(element.index)}>
+                    Remove
+                  </button>
+                )}
+              </div>
+            </div>
+          ))}
+
+        {props.canAdd && (
+          <button type="button" onClick={props.onAddClick}>
+            + Add Item
+          </button>
+        )}
+      </div>
+    );
+  }
