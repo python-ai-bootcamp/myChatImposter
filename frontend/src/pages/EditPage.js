@@ -11,7 +11,7 @@ const transformSchema = (originalSchema) => {
 
   const generalConfigSchema = {
     type: 'object',
-    title: 'General Config',
+    title: 'GeneralConfig',
     properties: {},
   };
 
@@ -161,6 +161,7 @@ function EditPage() {
     },
     llm_provider_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
+      "ui:title": "LlmBotConfig",
       "ui:classNames": "llm-provider-selector",
       provider_config: {
         api_key: {

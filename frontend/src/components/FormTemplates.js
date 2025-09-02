@@ -30,8 +30,6 @@ export function CustomFieldTemplate(props) {
       return children;
   }
 
-  const isLlmDropdown = id === 'root_llm_provider_config';
-
   // A single, consistent layout for all other fields.
   const rightColumnStyle = {
       boxSizing: 'border-box',
@@ -42,12 +40,6 @@ export function CustomFieldTemplate(props) {
 
   return (
     <>
-      {/* If this is the LLM dropdown field, render the static title above it. */}
-      {isLlmDropdown && (
-        <h3 style={{ margin: '1.5rem 0 1rem 0', padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', textAlign: 'left' }}>
-          LLM Bot Response
-        </h3>
-      )}
       <div className={classNames} style={{ display: 'table-row' }}>
         <label htmlFor={id} style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
           {label}{required ? '*' : null}
