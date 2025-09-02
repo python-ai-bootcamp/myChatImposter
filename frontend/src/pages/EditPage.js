@@ -8,31 +8,41 @@ import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, C
 const transformSchema = (originalSchema) => {
   const newSchema = JSON.parse(JSON.stringify(originalSchema));
 
-  // Group GeneralConfig
+  // --- Group GeneralConfig ---
   const generalConfigFields = ['user_id', 'respond_to_whitelist'];
   const generalConfigSchema = {
     type: 'object',
     title: 'GeneralConfig',
     properties: {},
+    required: [],
   };
   for (const field of generalConfigFields) {
     if (newSchema.properties[field]) {
       generalConfigSchema.properties[field] = newSchema.properties[field];
       delete newSchema.properties[field];
+      if (newSchema.required && newSchema.required.includes(field)) {
+        generalConfigSchema.required.push(field);
+        newSchema.required = newSchema.required.filter(f => f !== field);
+      }
     }
   }
 
-  // Group LlmBotConfig
+  // --- Group LlmBotConfig ---
   const llmBotConfigFields = ['llm_provider_config'];
   const llmBotConfigSchema = {
     type: 'object',
     title: 'LlmBotConfig',
     properties: {},
+    required: [],
   };
   for (const field of llmBotConfigFields) {
     if (newSchema.properties[field]) {
       llmBotConfigSchema.properties[field] = newSchema.properties[field];
       delete newSchema.properties[field];
+      if (newSchema.required && newSchema.required.includes(field)) {
+        llmBotConfigSchema.required.push(field);
+        newSchema.required = newSchema.required.filter(f => f !== field);
+      }
     }
   }
 
@@ -41,6 +51,15 @@ const transformSchema = (originalSchema) => {
     llm_bot_config: llmBotConfigSchema,
     ...newSchema.properties,
   };
+
+  if (generalConfigSchema.required.length > 0) {
+    if (!newSchema.required) newSchema.required = [];
+    newSchema.required.push('general_config');
+  }
+  if (llmBotConfigSchema.required.length > 0) {
+    if (!newSchema.required) newSchema.required = [];
+    newSchema.required.push('llm_bot_config');
+  }
 
   newSchema.title = ''; // Remove root title
   return newSchema;
@@ -98,7 +117,6 @@ function EditPage() {
   const [formData, setFormData] = useState(null);
   const [error, setError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
-  const [debugData, setDebugData] = useState(null);
 
   const isNew = location.state?.isNew;
 
@@ -135,9 +153,32 @@ function EditPage() {
   }, [filename, isNew]);
 
   const handleSave = async ({ formData }) => {
-    // For debugging: display the data in the new debug panel.
-    const apiData = transformDataToAPI(formData);
-    setDebugData(apiData);
+    setIsSaving(true);
+    setError(null);
+    try {
+      const apiData = transformDataToAPI(formData);
+      const response = await fetch(`/api/configurations/${filename}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify([apiData]),
+      });
+
+      if (!response.ok) {
+        const errorBody = await response.json();
+        const detail = typeof errorBody.detail === 'object' && errorBody.detail !== null
+            ? JSON.stringify(errorBody.detail, null, 2)
+            : errorBody.detail;
+        throw new Error(detail || 'Failed to save file.');
+      }
+
+      navigate('/');
+    } catch (err) {
+      setError(`Failed to save: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancel = () => {
@@ -216,30 +257,12 @@ function EditPage() {
 
               {/* Right Panel: Live JSON Output */}
               <div style={panelStyle}>
-                <h3>UI formData (Internal State)</h3>
-                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }}>
-                  <code>
-                    {JSON.stringify(formData, null, 2)}
-                  </code>
-                </pre>
-                <hr />
-                <h3>API data (as it will be saved)</h3>
+                <h3>Live JSON Output (as it will be saved)</h3>
                 <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }}>
                   <code>
                     {JSON.stringify(transformDataToAPI(formData), null, 2)}
                   </code>
                 </pre>
-                {debugData && (
-                  <>
-                    <hr />
-                    <h3 style={{ color: 'red' }}>DEBUG: Data in handleSave</h3>
-                    <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }}>
-                      <code>
-                        {JSON.stringify(debugData, null, 2)}
-                      </code>
-                    </pre>
-                  </>
-                )}
               </div>
             </div>
           </div>
