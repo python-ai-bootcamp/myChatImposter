@@ -168,9 +168,19 @@ function HomePage() {
     }
   };
 
+  const pageStyle = {
+    maxWidth: '600px',
+    margin: '40px auto',
+    padding: '2rem',
+    backgroundColor: '#fff',
+    border: '1px solid #ccc',
+    borderRadius: '8px',
+    boxShadow: '0 4px 8px rgba(0,0,0,0.1)'
+  };
+
   return (
-    <div>
-      <h2>Configuration Files</h2>
+    <div style={pageStyle}>
+      <h2 style={{ textAlign: 'center', marginBottom: '2rem' }}>Configuration Files</h2>
       <div className="file-list-container">
         {configs.length === 0 ? (
           <p>No configuration files found.</p>
@@ -189,7 +199,7 @@ function HomePage() {
           </ul>
         )}
       </div>
-      <div className="action-buttons">
+      <div className="action-buttons" style={{ marginTop: '2rem' }}>
         <button onClick={handleAdd}>
           Add
         </button>
