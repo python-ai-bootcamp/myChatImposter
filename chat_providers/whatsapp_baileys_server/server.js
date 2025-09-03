@@ -7,261 +7,306 @@ const http = require('http');
 const pino = require('pino');
 
 // --- Globals ---
-let sock;
-let incomingMessages = []; // A simple in-memory queue for messages
-let currentQR = null;
-let connectionStatus = 'waiting'; // 'waiting', 'connecting', 'open', 'close'
-let contactsCache = {}; // A cache for contact information
-
-// --- Globals ---
+const sessions = {}; // Store all active WhatsApp sessions, keyed by user_id
 const serverStartTime = Date.now();
 
 // --- Command Line Arguments ---
 const args = process.argv.slice(2);
 const port = args[0];
-const userId = args[1];
-const configBase64 = args[2] || '';
 
-let vendorConfig = {};
-try {
-    if (configBase64) {
-        const configJson = Buffer.from(configBase64, 'base64').toString('utf-8');
-        vendorConfig = JSON.parse(configJson);
-    }
-} catch (e) {
-    console.error("Error: Could not parse vendor config from command line.", e);
-    // Continue with default config
-}
-
-if (!port || !userId) {
-    console.error("Error: Port and User ID must be provided as command-line arguments.");
-    console.error("Usage: node server.js <PORT> <USER_ID> [CONFIG_BASE64]");
+if (!port) {
+    console.error("Error: Port must be provided as a command-line argument.");
+    console.error("Usage: node server.js <PORT>");
     process.exit(1);
 }
 
-const authDir = `auth_info_${userId}`;
-
 // --- Baileys Connection Logic ---
-async function connectToWhatsApp() {
+async function initializeWhatsAppSession(userId, vendorConfig = {}) {
+    console.log(`Initializing WhatsApp session for user: ${userId}`);
+
+    // Ensure the sessions directory exists to store auth info
+    const sessionsDir = 'running_sessions';
+    if (!fs.existsSync(sessionsDir)) {
+        fs.mkdirSync(sessionsDir);
+    }
+    const authDir = `${sessionsDir}/auth_info_${userId}`;
+
     const { default: makeWASocket, useMultiFileAuthState } = await import('@whiskeysockets/baileys');
-
-    // useMultiFileAuthState will use the directory to store and manage auth state
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
-
     const logger = pino({ level: 'debug' });
 
-    sock = makeWASocket({
+    const sock = makeWASocket({
         auth: state,
         logger: logger,
         syncFullHistory: true,
     });
 
-    // Event listener for connection updates
+    // Store the session object
+    sessions[userId] = {
+        sock: sock,
+        qr: null,
+        status: 'initializing',
+        messages: [],
+        contacts: {},
+        config: vendorConfig,
+    };
+
+    // --- Event Listeners for this session ---
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
+        const session = sessions[userId];
 
         if (connection === 'open') {
-            connectionStatus = 'connected';
+            session.status = 'connected';
+            session.qr = null; // QR is no longer needed
             console.log(`WhatsApp connection opened for user ${userId}.`);
-            currentQR = null; // QR is no longer needed
-
-            // Populate contacts cache on connection from the auth state
-            try {
-                console.log('Populating contacts cache from auth state...');
-                const contacts = sock.authState.creds.contacts;
-                if (contacts) {
-                    for (const id in contacts) {
-                        contactsCache[id] = contacts[id];
-                    }
-                    console.log(`Contacts cache populated with ${Object.keys(contactsCache).length} contacts.`);
-                } else {
-                    console.log('No contacts found in auth state to populate cache.');
-                }
-            } catch (e) {
-                console.error('Error populating contacts cache from auth state:', e);
-            }
         } else if (connection) {
-            connectionStatus = connection;
+            session.status = connection;
         }
 
         if (qr) {
-            console.log("QR code received, generating data URL...");
-            // We still print to console for debugging
+            console.log(`QR code received for ${userId}, generating data URL...`);
             qrcodeTerminal.generate(qr, { small: true });
-            // Generate a data URL for the frontend
             QRCode.toDataURL(qr, (err, url) => {
                 if (err) {
-                    console.error("Error generating QR data URL:", err);
+                    console.error(`Error generating QR data URL for ${userId}:`, err);
                     return;
                 }
-                currentQR = url;
+                session.qr = url;
+                session.status = 'linking';
             });
         }
 
         if (connection === 'close') {
-            currentQR = null; // Clear QR on close
-
+            session.qr = null;
             const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
 
-            // if the error is a 401 (Unauthorized), it means the session is invalid.
-            // we need to delete the auth directory to force a new QR code scan.
             if (statusCode === 401) {
-                console.log("Connection closed due to Unauthorized error. Deleting session and restarting...");
-                // The auth directory is named after the user ID
+                console.log(`Connection closed for ${userId} due to Unauthorized error. Deleting session data.`);
                 if (fs.existsSync(authDir)) {
                     fs.rmSync(authDir, { recursive: true, force: true });
                 }
+                // The session will be removed from the sessions object later, in the /session DELETE endpoint
             }
-
-            // Always try to reconnect on any disconnection.
-            console.log(`Connection closed due to:`, lastDisconnect.error, `... Attempting to reconnect.`);
-            connectToWhatsApp();
+            console.log(`Connection closed for ${userId} due to:`, lastDisconnect.error);
+            // We don't automatically reconnect here anymore. The client (Python) will decide when to re-initiate.
+            session.status = 'close';
         }
     });
 
-    // Event listener for credentials update
     sock.ev.on('creds.update', saveCreds);
 
-    // Event listener for contact updates, to build a cache
     sock.ev.on('contacts.update', (updates) => {
         for (const contact of updates) {
             if (contact.id) {
-                contactsCache[contact.id] = contact;
+                sessions[userId].contacts[contact.id] = contact;
             }
         }
-        console.log(`Contacts cache updated with ${updates.length} contacts.`);
     });
 
-    // Event listener for incoming messages
-    sock.ev.on('messages.upsert', async (m) => { // Make it async
-        const processOffline = vendorConfig.process_offline_messages === true; // Default to false
-        const allowGroups = vendorConfig.allow_group_messages === true; // Default to false
+    sock.ev.on('messages.upsert', async (m) => {
+        const session = sessions[userId];
+        if (!session) return;
 
-        const newMessagesPromises = m.messages.map(async (msg) => { // Use map with async callback
-            // Ignore notifications and messages from self
-            if (!msg.message || msg.key.fromMe) {
-                return null; // Return null for messages to be filtered out
-            }
+        const processOffline = session.config.process_offline_messages === true;
+        const allowGroups = session.config.allow_group_messages === true;
+
+        const newMessagesPromises = m.messages.map(async (msg) => {
+            if (!msg.message || msg.key.fromMe) return null;
 
             const isGroup = msg.key.remoteJid.endsWith('@g.us');
-            if (isGroup && !allowGroups) {
-                return null;
-            }
+            if (isGroup && !allowGroups) return null;
 
-            // Check if the message is old and should be ignored
             const messageTimestamp = (typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp * 1000 : msg.messageTimestamp.toNumber() * 1000);
             if (!processOffline && messageTimestamp < serverStartTime) {
-                console.log(`Ignoring offline message from ${msg.key.remoteJid} (sent before startup)`);
                 return null;
             }
 
-            console.log(`Received message from ${msg.key.remoteJid}`);
-
             let messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text;
-
             if (!messageContent) {
                 const messageType = Object.keys(msg.message)[0] || 'unknown';
                 messageContent = `[User sent a non-text message: ${messageType}]`;
             }
 
             const senderId = isGroup ? (msg.participant_pn || msg.key.participant || msg.key.remoteJid) : msg.key.remoteJid;
-            const cachedContact = contactsCache[senderId];
+            const cachedContact = session.contacts[senderId];
             const senderName = msg.notify || msg.pushName || cachedContact?.name || cachedContact?.notify || null;
 
             let groupInfo = null;
             if (isGroup) {
                 try {
-                    // Caching group metadata would be a good optimization, but for now, let's fetch it every time.
                     const metadata = await sock.groupMetadata(msg.key.remoteJid);
                     groupInfo = { id: msg.key.remoteJid, name: metadata.subject };
                 } catch (e) {
                     console.error(`Could not fetch group metadata for ${msg.key.remoteJid}:`, e);
-                    groupInfo = { id: msg.key.remoteJid, name: null }; // Fallback
+                    groupInfo = { id: msg.key.remoteJid, name: null };
                 }
             }
 
-            const incoming = {
+            return {
                 sender: senderId,
-                display_name: senderName, // Add display_name to the payload
+                display_name: senderName,
                 message: messageContent,
                 timestamp: new Date().toISOString(),
                 group: groupInfo
             };
-            return incoming;
         });
 
-        const newMessages = (await Promise.all(newMessagesPromises)).filter(Boolean); // Await all promises and filter out nulls
-
+        const newMessages = (await Promise.all(newMessagesPromises)).filter(Boolean);
         if (newMessages.length > 0) {
-            incomingMessages.push(...newMessages);
+            session.messages.push(...newMessages);
         }
     });
-}
 
+    return sessions[userId];
+}
 
 // --- Express Server ---
 const app = express();
 app.use(express.json());
 
-// Endpoint to send a message
-app.post('/send', async (req, res) => {
-    const { recipient, message } = req.body;
-    if (!recipient || !message) {
-        return res.status(400).json({ error: 'Recipient and message are required.' });
+// --- Session Management Endpoints ---
+
+// Create a new session
+app.post('/sessions', async (req, res) => {
+    const { userId, config } = req.body;
+    if (!userId) {
+        return res.status(400).json({ error: 'userId is required.' });
     }
-    if (!sock) {
-        return res.status(503).json({ error: 'WhatsApp client is not ready.' });
+    if (sessions[userId]) {
+        return res.status(409).json({ error: `Session for user ${userId} already exists.` });
     }
 
     try {
-        // Only check if the JID exists if it's NOT a group
-        if (!recipient.endsWith('@g.us')) {
-            const [result] = await sock.onWhatsApp(recipient);
-            if (!result?.exists) {
-               return res.status(400).json({ error: `Recipient ${recipient} is not on WhatsApp.`});
-            }
+        await initializeWhatsAppSession(userId, config);
+        console.log(`Session created for user ${userId}`);
+        res.status(201).json({ status: 'Session created', userId: userId });
+    } catch (error) {
+        console.error(`Failed to initialize session for ${userId}:`, error);
+        res.status(500).json({ error: 'Failed to initialize session.' });
+    }
+});
+
+// Delete a session
+app.delete('/sessions/:userId', async (req, res) => {
+    const { userId } = req.params;
+    const session = sessions[userId];
+
+    if (!session) {
+        return res.status(404).json({ error: `Session for user ${userId} not found.` });
+    }
+
+    try {
+        // Request a logout from the WhatsApp servers
+        await session.sock.logout();
+    } catch (e) {
+        console.warn(`Could not cleanly logout for user ${userId}, continuing with shutdown. Error: ${e}`);
+    } finally {
+        // Ensure the socket connection is closed
+        if (session.sock && typeof session.sock.end === 'function') {
+            session.sock.end();
         }
 
-        await sock.sendMessage(recipient, { text: message });
-        console.log(`Sent message to ${recipient}`);
+        // Remove the session from our active list
+        delete sessions[userId];
+        console.log(`Session deleted for user ${userId}`);
+
+        // Optionally, you might want to clean up the auth directory
+        const authDir = `running_sessions/auth_info_${userId}`;
+        if (fs.existsSync(authDir)) {
+            fs.rmSync(authDir, { recursive: true, force: true });
+            console.log(`Authentication directory cleaned for ${userId}`);
+        }
+
+        res.status(200).json({ status: 'Session deleted', userId: userId });
+    }
+});
+
+
+// --- Messaging Endpoints ---
+
+// Send a message using a specific session
+app.post('/sessions/:userId/send', async (req, res) => {
+    const { userId } = req.params;
+    const { recipient, message } = req.body;
+    const session = sessions[userId];
+
+    if (!session || !session.sock) {
+        return res.status(404).json({ error: 'WhatsApp client is not ready or session not found.' });
+    }
+    if (!recipient || !message) {
+        return res.status(400).json({ error: 'Recipient and message are required.' });
+    }
+
+    try {
+        if (!recipient.endsWith('@g.us')) {
+            const [result] = await session.sock.onWhatsApp(recipient);
+            if (!result?.exists) {
+                return res.status(400).json({ error: `Recipient ${recipient} is not on WhatsApp.` });
+            }
+        }
+        await session.sock.sendMessage(recipient, { text: message });
+        console.log(`Sent message to ${recipient} from user ${userId}`);
         res.status(200).json({ status: 'Message sent' });
     } catch (error) {
-        console.error('Failed to send message:', error);
+        console.error(`Failed to send message from ${userId}:`, error);
         res.status(500).json({ error: 'Failed to send message.' });
     }
 });
 
-// Endpoint for the Python client to poll for new messages
-app.get('/messages', (req, res) => {
-    res.status(200).json(incomingMessages);
-    // Clear the queue after fetching
-    incomingMessages = [];
-});
+// Poll for new messages for a specific session
+app.get('/sessions/:userId/messages', (req, res) => {
+    const { userId } = req.params;
+    const session = sessions[userId];
 
-// Endpoint to get the current connection status and QR code
-app.get('/status', (req, res) => {
-    if (currentQR) {
-        // Instead of just 'qr', we can call it 'linking' to be more descriptive
-        return res.status(200).json({ status: 'linking', qr: currentQR });
+    if (!session) {
+        return res.status(404).json({ error: `Session for user ${userId} not found.` });
     }
-    // For 'connecting', 'close', 'connected', 'waiting', etc.
-    return res.status(200).json({ status: connectionStatus });
+
+    res.status(200).json(session.messages);
+    // Clear the message queue for this session
+    session.messages = [];
 });
 
+// Get the status of a specific session
+app.get('/sessions/:userId/status', (req, res) => {
+    const { userId } = req.params;
+    const session = sessions[userId];
 
+    if (!session) {
+        return res.status(404).json({ status: 'not_found', message: `No session found for user ${userId}.` });
+    }
+
+    if (session.status === 'linking' && session.qr) {
+        return res.status(200).json({ status: 'linking', qr: session.qr });
+    }
+
+    return res.status(200).json({ status: session.status });
+});
+
+// --- Server Startup ---
 const server = http.createServer(app);
 
 server.listen(port, () => {
-    console.log(`Express server for user ${userId} listening on port ${port}`);
-    // Start the WhatsApp connection process after the server is up
-    connectToWhatsApp().catch(err => console.error("Unexpected error during WhatsApp connection:", err));
+    console.log(`Multi-session Express server listening on port ${port}`);
 });
 
 // Graceful shutdown
 process.on('SIGINT', async () => {
-    console.log('SIGINT received, shutting down gracefully.');
-    // The socket will close automatically when the process exits.
-    // No need to logout or delete session data.
+    console.log('SIGINT received, shutting down all sessions gracefully.');
+    const userIds = Object.keys(sessions);
+    for (const userId of userIds) {
+        const session = sessions[userId];
+        if (session && session.sock) {
+            try {
+                // We don't need to logout as the session will be invalid on next startup anyway
+                // and this can cause delays. Just closing the connection is faster.
+                session.sock.end();
+            } catch (e) {
+                console.warn(`Error while closing socket for user ${userId}:`, e);
+            }
+        }
+    }
     server.close(() => {
         console.log('Express server closed.');
         process.exit(0);

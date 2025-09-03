@@ -1,0 +1,37 @@
+# Git files
+.git
+.gitignore
+.gitattributes
+
+# Docker files
+.dockerignore
+docker-compose.yml
+Dockerfile
+
+# Python specific
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+
+# Node specific
+node_modules/
+npm-debug.log
+
+# IDE and OS specific
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+
+# Log and session files
+log/
+running_sessions/
+auth_info_*/
+
+# Test configurations
+testConfigurations/

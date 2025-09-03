@@ -1,0 +1,56 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./configurations:/app/configurations
+      - ./log:/app/log
+    environment:
+      - BAILEYS_SERVER_URL=http://baileys:3000
+    depends_on:
+      - baileys
+    networks:
+      - app-network
+
+  baileys:
+    build:
+      context: ./chat_providers/whatsapp_baileys_server
+      dockerfile: Dockerfile
+    # The port is exposed for potential direct access/debugging, but not required for backend communication
+    ports:
+      - "3000:3000"
+    volumes:
+      # Persist session data outside the container
+      - ./running_sessions:/app/running_sessions
+    networks:
+      - app-network
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - app-network
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"  # For application communication
+      - "15672:15672" # For the management UI
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local
