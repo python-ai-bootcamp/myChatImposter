@@ -171,10 +171,6 @@ function HomePage() {
   const pageStyle = {
     maxWidth: '600px',
     margin: '40px auto',
-    padding: '2rem',
-    border: '1px solid #ccc',
-    borderRadius: '8px',
-    boxShadow: '0 4px 8px rgba(0,0,0,0.1)'
   };
 
   return (
