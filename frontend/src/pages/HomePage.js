@@ -159,6 +159,7 @@ function HomePage() {
       case 'linking':
       case 'initializing':
       case 'got qr code':
+      case 'waiting':
         return 'orange';
       case 'disconnected':
       case 'invalid_config':

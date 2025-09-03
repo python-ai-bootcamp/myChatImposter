@@ -80,8 +80,8 @@ async function connectToWhatsApp() {
             } catch (e) {
                 console.error('Error populating contacts cache from auth state:', e);
             }
-        } else {
-            connectionStatus = connection || 'waiting';
+        } else if (connection) {
+            connectionStatus = connection;
         }
 
         if (qr) {
