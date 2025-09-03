@@ -47,12 +47,24 @@ function LinkPage() {
     };
   }, [userId]); // Effect depends on userId
 
+  const pageStyle = {
+    maxWidth: '600px',
+    margin: '40px auto',
+    padding: '2rem',
+    border: '1px solid #ccc',
+    borderRadius: '8px',
+    boxShadow: '0 4px 8px rgba(0,0,0,0.1)',
+    textAlign: 'center'
+  };
+
   return (
-    <div>
+    <div style={pageStyle}>
       <h2>Link Status for User: {userId}</h2>
-      {error && <div style={{ color: 'red' }}>Error: {error}</div>}
-      <p>Status: {status}</p>
-      {qrCode && <img src={qrCode} alt="QR Code" />}
+      {error && <div style={{ color: 'red', marginTop: '1rem' }}>Error: {error}</div>}
+      <p style={{ fontSize: '1.2rem', margin: '1rem 0' }}>
+        Status: <span style={{ fontWeight: 'bold' }}>{status}</span>
+      </p>
+      {qrCode && <img src={qrCode} alt="QR Code" style={{ marginTop: '1rem', border: '5px solid white', boxShadow: '0 2px 5px rgba(0,0,0,0.1)' }} />}
     </div>
   );
 }
