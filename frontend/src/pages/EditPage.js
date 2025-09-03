@@ -260,9 +260,9 @@ function EditPage() {
         <div style={{ maxWidth: '1800px', margin: '0 auto' }}>
           <div style={panelStyle}>
             <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem', minHeight: '75vh' }}>
               {/* Left Panel: Form Editor */}
-              <div style={panelStyle}>
+              <div style={{...panelStyle, overflowY: 'auto'}}>
                 <Form
                   ref={formRef}
                   schema={schema}
