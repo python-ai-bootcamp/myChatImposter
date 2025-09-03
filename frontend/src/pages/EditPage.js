@@ -250,8 +250,13 @@ function EditPage() {
     border: '1px solid #ccc',
     borderRadius: '4px',
     padding: '1rem',
-    backgroundColor: '#f9f9f9',
+    backgroundColor: '#fff', // Changed to white for a cleaner base
     boxSizing: 'border-box'
+  };
+
+  const innerPanelStyle = {
+      ...panelStyle,
+      backgroundColor: '#f9f9f9', // The light gray for the inner panels
   };
 
   return (
@@ -262,7 +267,7 @@ function EditPage() {
             <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem', minHeight: '75vh' }}>
               {/* Left Panel: Form Editor */}
-              <div style={{...panelStyle, overflowY: 'auto'}}>
+              <div style={{...innerPanelStyle, overflowY: 'auto'}}>
                 <Form
                   ref={formRef}
                   schema={schema}
@@ -282,7 +287,7 @@ function EditPage() {
               </div>
 
               {/* Right Panel: Live JSON Editor */}
-              <div style={{ ...panelStyle, display: 'flex', flexDirection: 'column' }}>
+              <div style={{ ...innerPanelStyle, display: 'flex', flexDirection: 'column' }}>
                 <h3>Live JSON Editor</h3>
                 <textarea
                   style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.9rem', border: jsonError ? '1px solid red' : '1px solid #ccc', resize: 'vertical', padding: '0.5rem' }}
