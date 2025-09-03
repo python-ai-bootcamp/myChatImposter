@@ -115,6 +115,8 @@ function EditPage() {
 
   const [schema, setSchema] = useState(null);
   const [formData, setFormData] = useState(null);
+  const [jsonString, setJsonString] = useState('');
+  const [jsonError, setJsonError] = useState(null);
   const [error, setError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -131,19 +133,23 @@ function EditPage() {
         setSchema(transformedSchema);
 
         // Fetch existing data or set up new data
+        let initialFormData;
         if (isNew) {
           const initialData = {
             user_id: filename.replace('.json', ''),
             respond_to_whitelist: [],
           };
-          setFormData(transformDataToUI(initialData));
+          initialFormData = transformDataToUI(initialData);
         } else {
           const dataResponse = await fetch(`/api/configurations/${filename}`);
           if (!dataResponse.ok) throw new Error('Failed to fetch file content.');
           const data = await dataResponse.json();
           const originalData = Array.isArray(data) ? data[0] : data;
-          setFormData(transformDataToUI(originalData));
+          initialFormData = transformDataToUI(originalData);
         }
+        setFormData(initialFormData);
+        setJsonString(JSON.stringify(transformDataToAPI(initialFormData), null, 2));
+
       } catch (err) {
         setError(err.message);
       }
@@ -151,6 +157,26 @@ function EditPage() {
 
     fetchData();
   }, [filename, isNew]);
+
+  // Update JSON editor when form data changes
+  useEffect(() => {
+    if (formData) {
+      setJsonString(JSON.stringify(transformDataToAPI(formData), null, 2));
+    }
+  }, [formData]);
+
+  const handleJsonChange = (event) => {
+    const newJsonString = event.target.value;
+    setJsonString(newJsonString);
+    try {
+      const parsedData = JSON.parse(newJsonString);
+      const uiData = transformDataToUI(parsedData);
+      setFormData(uiData);
+      setJsonError(null);
+    } catch (err) {
+      setJsonError('Invalid JSON: ' + err.message);
+    }
+  };
 
   const handleSave = async ({ formData }) => {
     setIsSaving(true);
@@ -255,14 +281,15 @@ function EditPage() {
                 </Form>
               </div>
 
-              {/* Right Panel: Live JSON Output */}
-              <div style={panelStyle}>
-                <h3>Live JSON Output (as it will be saved)</h3>
-                <pre style={{ whiteSpace: 'pre-wrap', wordBreak: 'break-all', textAlign: 'left' }}>
-                  <code>
-                    {JSON.stringify(transformDataToAPI(formData), null, 2)}
-                  </code>
-                </pre>
+              {/* Right Panel: Live JSON Editor */}
+              <div style={{ ...panelStyle, display: 'flex', flexDirection: 'column' }}>
+                <h3>Live JSON Editor</h3>
+                <textarea
+                  style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.9rem', border: jsonError ? '1px solid red' : '1px solid #ccc', resize: 'vertical', padding: '0.5rem' }}
+                  value={jsonString}
+                  onChange={handleJsonChange}
+                />
+                {jsonError && <p style={{ color: 'red', margin: '0.5rem 0 0 0', whiteSpace: 'pre-wrap' }}>{jsonError}</p>}
               </div>
             </div>
           </div>
