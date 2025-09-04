@@ -17,15 +17,33 @@ services:
     networks:
       - app-network
 
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"
+    volumes:
+      # Mount the source code for hot-reloading
+      - ./frontend:/app
+      # This volume is to prevent the host's node_modules from overwriting the container's
+      - /app/node_modules
+    environment:
+      # Enables polling for file changes, which is necessary for hot-reloading in some Docker setups
+      - CHOKIDAR_USEPOLLING=true
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
   baileys:
     build:
       context: ./chat_providers/whatsapp_baileys_server
       dockerfile: Dockerfile
-    # The port is exposed for potential direct access/debugging, but not required for backend communication
     ports:
-      - "3000:3000"
+      # Changed host port to 3002 to avoid conflict with frontend dev server
+      - "3002:3000"
     volumes:
-      # Persist session data outside the container
       - ./running_sessions:/app/running_sessions
     networks:
       - app-network
@@ -42,8 +60,8 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     ports:
-      - "5672:5672"  # For application communication
-      - "15672:15672" # For the management UI
+      - "5672:5672"
+      - "15672:15672"
     networks:
       - app-network
 
