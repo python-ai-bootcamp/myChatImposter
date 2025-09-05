@@ -16,3 +16,6 @@ configurations/*
 
 # Ignore root-level log files
 *.log
+
+# Ignore environment files
+.env

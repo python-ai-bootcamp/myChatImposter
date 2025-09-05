@@ -12,6 +12,7 @@ services:
       - ./log:/app/log
     environment:
       - BAILEYS_SERVER_URL=http://baileys:3000
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
       - baileys
     networks:
