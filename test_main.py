@@ -68,3 +68,19 @@ def test_save_array_configuration():
     assert isinstance(saved_data, list)
     assert len(saved_data) == 1
     assert saved_data[0]["user_id"] == "test_user_array"
+
+def test_get_configuration_schema_allows_null_api_key():
+    response = client.get("/api/configurations/schema")
+    assert response.status_code == 200
+    schema = response.json()
+
+    defs_key = '$defs' if '$defs' in schema else 'definitions'
+
+    llm_provider_settings = schema[defs_key]['LLMProviderSettings']
+    api_key_schema = llm_provider_settings['properties']['api_key']
+
+    assert 'anyOf' in api_key_schema
+
+    type_options = [item.get('type') for item in api_key_schema['anyOf']]
+    assert 'string' in type_options
+    assert 'null' in type_options

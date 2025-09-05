@@ -111,15 +111,6 @@ async def get_configuration_schema():
                     # This is the null choice
                     item['title'] = "Collection Only"
 
-    # Explicitly set the api_key to be a string to avoid type ambiguity on the frontend
-    if defs_key in schema and 'LLMProviderSettings' in schema[defs_key]:
-        api_key_schema = schema[defs_key]['LLMProviderSettings']['properties']['api_key']
-        # Pydantic's Optional[str] can become anyOf:[{type:'string'}, {type:'null'}]
-        # We simplify this to just a string type for the password widget.
-        if 'anyOf' in api_key_schema:
-            api_key_schema['type'] = 'string'
-            del api_key_schema['anyOf']
-
     return schema
 
 
