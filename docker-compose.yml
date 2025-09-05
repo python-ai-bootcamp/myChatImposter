@@ -1,0 +1,74 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./configurations:/app/configurations
+      - ./log:/app/log
+    environment:
+      - BAILEYS_SERVER_URL=http://baileys:3000
+    depends_on:
+      - baileys
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3000"
+    volumes:
+      # Mount the source code for hot-reloading
+      - ./frontend:/app
+      # This volume is to prevent the host's node_modules from overwriting the container's
+      - /app/node_modules
+    environment:
+      # Enables polling for file changes, which is necessary for hot-reloading in some Docker setups
+      - CHOKIDAR_USEPOLLING=true
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+  baileys:
+    build:
+      context: ./chat_providers/whatsapp_baileys_server
+      dockerfile: Dockerfile
+    ports:
+      # Changed host port to 3002 to avoid conflict with frontend dev server
+      - "3002:3000"
+    volumes:
+      - ./running_sessions:/app/running_sessions
+    networks:
+      - app-network
+
+  mongodb:
+    image: mongo:latest
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    networks:
+      - app-network
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge
+
+volumes:
+  mongodb_data:
+    driver: local

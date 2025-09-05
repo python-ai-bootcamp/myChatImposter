@@ -1,107 +1,65 @@
 import time
 import threading
-import subprocess
 import json
-import sys
-import base64
-import socket
 import os
-import uuid
-from typing import Dict, Optional
-import urllib.request
-import urllib.error
+import requests  # Using requests library for easier HTTP communication
+from typing import Dict
 
-# Assuming queue_manager.py is in the parent directory or accessible
-from queue_manager import UserQueue, Sender, Group, Message
+from queue_manager import UserQueue, Sender, Group
 from logging_lock import console_log
-
 from .base import BaseChatProvider
 from config_models import ChatProviderConfig
 
-def find_free_port():
-    """Finds a free port on the host machine."""
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-        s.bind(('', 0))
-        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-        return s.getsockname()[1]
+# The base URL of the Node.js Baileys server.
+# It's recommended to use an environment variable for this in a containerized setup.
+NODE_SERVER_URL = os.environ.get("BAILEYS_SERVER_URL", "http://localhost:3000")
 
 class WhatsAppBaileysProvider(BaseChatProvider):
     """
-    A provider that connects to a Node.js Baileys server to send and receive WhatsApp messages.
+    A provider that connects to a centralized, multi-session Node.js Baileys server
+    to send and receive WhatsApp messages.
     """
     def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueue], on_session_end=None):
-        """
-        Initializes the provider.
-        - user_id: The specific user this provider instance is for.
-        - config: The 'provider_config' block from the JSON configuration.
-        - user_queues: A dictionary of all user queues, passed by the main application.
-        """
         super().__init__(user_id, config, user_queues, on_session_end)
         self.is_listening = False
         self.session_ended = False
         self.thread = None
-        self.node_process = None
+        self.base_url = f"{NODE_SERVER_URL}/sessions/{self.user_id}"
 
-        # Dynamically find a free port for the Node.js server to listen on.
-        # This prevents port conflicts when running multiple vendor instances.
-        self.port = find_free_port()
-        self.base_url = f"http://localhost:{self.port}"
-
-        # Start the Node.js server as a subprocess in an isolated directory
-        try:
-            # Create a deterministic working directory for this provider instance to allow for session persistence.
-            self.work_dir = os.path.abspath(os.path.join('running_sessions', self.user_id))
-            os.makedirs(self.work_dir, exist_ok=True)
-
-            console_log(f"PROVIDER ({self.user_id}): Starting Node.js server on port {self.port} in CWD: {self.work_dir}")
-
-            # Serialize and encode the config to pass as a command line argument
-            config_json = json.dumps(self.config.provider_config.model_dump())
-            config_base64 = base64.b64encode(config_json.encode('utf-8')).decode('utf-8')
-
-            # The path to server.js must be absolute so it can be found from the new CWD
-            server_script = os.path.abspath("chat_providers/whatsapp_baileys_server/server.js")
-
-            self.node_process = subprocess.Popen(
-                ['node', server_script, str(self.port), self.user_id, config_base64],
-                stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
-                cwd=self.work_dir  # Set the current working directory for the subprocess
-            )
-            # Thread to print server output for debugging
-            threading.Thread(target=self._log_subprocess_output, daemon=True).start()
-            console_log(f"PROVIDER ({self.user_id}): Node.js server process started (PID: {self.node_process.pid}).")
-        except FileNotFoundError:
-            console_log(f"PROVIDER_ERROR ({self.user_id}): 'node' command not found. Please ensure Node.js is installed and in your PATH.")
-            raise
-        except Exception as e:
-            console_log(f"PROVIDER_ERROR ({self.user_id}): Failed to start Node.js server: {e}")
-            raise
-
-    def _log_subprocess_output(self):
-        """
-        Logs the combined stdout and stderr from the Node.js subprocess for debugging.
-        This method reads the subprocess output line by line to prevent garbled logs,
-        and uses a lock to ensure writes to stdout are atomic.
-        """
-        if self.node_process.stdout:
-            for line in iter(self.node_process.stdout.readline, b''):
-                line_str = line.decode('utf-8', 'backslashreplace').rstrip()
-                console_log(f"NODE_SERVER ({self.user_id}): {line_str}")
-
-                # Check for the specific unrecoverable session-ending error.
-                # "restart required" is a recoverable error during pairing, so we ignore it.
-                if "Stream Errored (conflict)" in line_str:
-                    console_log(f"PROVIDER ({self.user_id}): Detected unrecoverable 'conflict' error. Ending session.")
-                    self.is_listening = False # Stop the polling loop
-                    if self.on_session_end and not self.session_ended:
-                        self.session_ended = True
-                        self.on_session_end(self.user_id)
+        console_log(f"PROVIDER ({self.user_id}): Initialized. Will connect to Node.js server at {NODE_SERVER_URL}")
 
     def start_listening(self):
-        """Starts the message listening loop in a background thread."""
+        """
+        Ensures a session is created on the Node.js server and starts polling for messages.
+        """
         if self.is_listening:
             console_log(f"PROVIDER ({self.user_id}): Already listening.")
+            return
+
+        # --- Create session on the Node.js server ---
+        try:
+            console_log(f"PROVIDER ({self.user_id}): Creating session on Node.js server...")
+            payload = {
+                "userId": self.user_id,
+                "config": self.config.provider_config.model_dump()
+            }
+            response = requests.post(f"{NODE_SERVER_URL}/sessions", json=payload, timeout=20)
+
+            if response.status_code == 409: # Conflict, session exists
+                 console_log(f"PROVIDER ({self.user_id}): Session already exists on Node.js server. Proceeding.")
+            elif response.status_code != 201: # Created
+                console_log(f"PROVIDER_ERROR ({self.user_id}): Failed to create session. Status: {response.status_code}, Body: {response.text}")
+                raise Exception(f"Failed to create session on Node.js server: {response.text}")
+
+            console_log(f"PROVIDER ({self.user_id}): Session created or confirmed on Node.js server.")
+
+        except requests.exceptions.RequestException as e:
+            console_log(f"PROVIDER_ERROR ({self.user_id}): Could not connect to Node.js server to create session: {e}")
+            # We can't proceed without the node server, so we'll stop here.
+            # The main application logic can decide whether to retry.
+            if self.on_session_end and not self.session_ended:
+                 self.session_ended = True
+                 self.on_session_end(self.user_id)
             return
 
         self.is_listening = True
@@ -110,19 +68,25 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         console_log(f"PROVIDER ({self.user_id}): Started polling for messages from Node.js server.")
 
     def stop_listening(self):
-        """Stops the message listening loop and terminates the Node.js server."""
+        """
+        Stops the message listening loop and deletes the session from the Node.js server.
+        """
         console_log(f"PROVIDER ({self.user_id}): Stopping...")
         self.is_listening = False
-        if self.thread:
-            # The thread will exit on its own since it checks `is_listening`
-            self.thread.join() # Wait for the listening thread to finish
+        if self.thread and self.thread.is_alive():
+            self.thread.join()
             console_log(f"PROVIDER ({self.user_id}): Polling thread stopped.")
 
-        if self.node_process:
-            console_log(f"PROVIDER ({self.user_id}): Terminating Node.js server process (PID: {self.node_process.pid})...")
-            self.node_process.terminate()
-            self.node_process.wait()
-            console_log(f"PROVIDER ({self.user_id}): Node.js server process terminated.")
+        # --- Delete session on the Node.js server ---
+        try:
+            console_log(f"PROVIDER ({self.user_id}): Deleting session from Node.js server...")
+            response = requests.delete(self.base_url, timeout=20)
+            if response.status_code not in [200, 404]: # OK or Not Found
+                console_log(f"PROVIDER_WARN ({self.user_id}): Failed to cleanly delete session. Status: {response.status_code}, Body: {response.text}")
+            else:
+                 console_log(f"PROVIDER ({self.user_id}): Session deleted from Node.js server.")
+        except requests.exceptions.RequestException as e:
+            console_log(f"PROVIDER_WARN ({self.user_id}): Could not connect to Node.js server to delete session: {e}")
 
         # Call the session end callback to clean up the main application's state
         if self.on_session_end and not self.session_ended:
@@ -131,48 +95,39 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
     def _listen(self):
         """
-        The actual listening loop. It polls the Node.js server's /messages
-        endpoint to fetch incoming WhatsApp messages.
+        The actual listening loop. It polls the Node.js server's /messages endpoint
+        for this specific user's session.
         """
         while self.is_listening:
             try:
-                # Add a timeout to prevent the thread from blocking indefinitely
-                with urllib.request.urlopen(f"{self.base_url}/messages", timeout=10) as response:
-                    if response.status == 200:
-                        messages = json.loads(response.read().decode('utf-8'))
-                        if messages:
-                            console_log(f"PROVIDER ({self.user_id}): Fetched {len(messages)} new message(s).")
-                            queue = self.user_queues.get(self.user_id)
-                            if queue:
-                                for msg in messages:
-                                    # The message format is { sender, message, timestamp, group? }
+                response = requests.get(f"{self.base_url}/messages", timeout=15)
+                if response.status_code == 200:
+                    messages = response.json()
+                    if messages:
+                        console_log(f"PROVIDER ({self.user_id}): Fetched {len(messages)} new message(s).")
+                        queue = self.user_queues.get(self.user_id)
+                        if queue:
+                            for msg in messages:
+                                group_info = msg.get('group')
+                                if group_info and not self.config.provider_config.allow_group_messages:
+                                    continue
 
-                                    # Check if group messages are allowed
-                                    group_info = msg.get('group')
-                                    if group_info and not self.config.provider_config.allow_group_messages:
-                                        console_log(f"PROVIDER ({self.user_id}): Ignoring message from group {group_info.get('id')} as per configuration.")
-                                        continue
+                                sender = Sender(identifier=msg['sender'], display_name=msg.get('display_name', msg['sender']))
+                                group = Group(identifier=group_info['id'], display_name=group_info.get('name') or group_info['id']) if group_info else None
 
-                                    sender = Sender(identifier=msg['sender'], display_name=msg.get('display_name', msg['sender']))
-                                    group = Group(identifier=group_info['id'], display_name=group_info.get('name') or group_info['id']) if group_info else None
+                                queue.add_message(content=msg['message'], sender=sender, source='user', group=group)
+                        else:
+                            console_log(f"PROVIDER_ERROR ({self.user_id}): Could not find a queue for myself.")
+                elif response.status_code == 404:
+                    console_log(f"PROVIDER_ERROR ({self.user_id}): Session not found on Node server. Ending listener.")
+                    self.is_listening = False # Stop the loop
+                else:
+                    console_log(f"PROVIDER_ERROR ({self.user_id}): Error polling for messages. Status: {response.status_code}, Body: {response.text}")
 
-                                    queue.add_message(
-                                        content=msg['message'],
-                                        sender=sender,
-                                        source='user',
-                                        group=group
-                                        # originating_time might need parsing from timestamp if needed
-                                    )
-                            else:
-                                console_log(f"PROVIDER_ERROR ({self.user_id}): Could not find a queue for myself.")
-                    else:
-                        console_log(f"PROVIDER_ERROR ({self.user_id}): Error polling for messages. Status: {response.status}")
-            except urllib.error.URLError as e:
-                # This is expected if the server is not up yet, so don't spam the log
-                time.sleep(2) # Wait a bit longer if server is not reachable
-                continue
-            except Exception as e:
+            except requests.exceptions.RequestException as e:
                 console_log(f"PROVIDER_ERROR ({self.user_id}): Exception while polling for messages: {e}")
+                # If we can't reach the server, wait a bit before retrying.
+                time.sleep(5)
 
             time.sleep(5) # Poll every 5 seconds
 
@@ -182,31 +137,26 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         """
         console_log(f"PROVIDER ({self.user_id}): Sending reply to {recipient} ---> {message[:50]}...")
         try:
-            data = json.dumps({"recipient": recipient, "message": message}).encode('utf-8')
-            req = urllib.request.Request(
-                f"{self.base_url}/send",
-                data=data,
-                headers={'Content-Type': 'application/json'}
-            )
-            with urllib.request.urlopen(req) as response:
-                if response.status != 200:
-                    body = response.read().decode('utf-8', 'backslashreplace')
-                    console_log(f"PROVIDER_ERROR ({self.user_id}): Failed to send message. Status: {response.status}, Body: {body}")
-        except Exception as e:
+            payload = {"recipient": recipient, "message": message}
+            response = requests.post(f"{self.base_url}/send", json=payload, timeout=20)
+            if response.status_code != 200:
+                console_log(f"PROVIDER_ERROR ({self.user_id}): Failed to send message. Status: {response.status_code}, Body: {response.text}")
+        except requests.exceptions.RequestException as e:
             console_log(f"PROVIDER_ERROR ({self.user_id}): Exception while sending message: {e}")
 
     def get_status(self) -> Dict:
         """
-        Gets the connection status from the Node.js server.
+        Gets the connection status from the Node.js server for this session.
         """
         try:
-            with urllib.request.urlopen(f"{self.base_url}/status", timeout=5) as response:
-                if response.status == 200:
-                    return json.loads(response.read().decode('utf-8'))
-                else:
-                    return {"status": "error", "message": f"Failed to get status, HTTP {response.status}"}
-        except urllib.error.URLError as e:
-            # This can happen if the server is not yet running, which is a valid state
-            return {"status": "initializing", "message": "Node.js server is not reachable yet."}
-        except Exception as e:
-            return {"status": "error", "message": f"Exception while getting status: {e}"}
+            response = requests.get(f"{self.base_url}/status", timeout=10)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                # If a session is not found (404), it's equivalent to it being disconnected.
+                if response.status_code == 404:
+                    return {"status": "disconnected", "message": "Session not found on the server."}
+                return {"status": "error", "message": f"Failed to get status, HTTP {response.status_code}"}
+        except requests.exceptions.RequestException as e:
+            # This can happen if the node server itself is down.
+            return {"status": "error", "message": f"Could not connect to the Baileys server: {e}"}
