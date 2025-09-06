@@ -138,7 +138,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
     const { state, saveCreds } = await useMongoDBAuthState(userId, baileysSessionsCollection);
 
-    const logger = pino({ level: 'silent' });
+    const logger = pino({ level: 'debug' });
 
     const sock = makeWASocket({
         auth: state,
