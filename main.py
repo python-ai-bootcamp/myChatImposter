@@ -308,6 +308,7 @@ async def get_chatbot_status(user_id: str):
 async def unlink_chatbot(user_id: str):
     """
     Stops and unlinks a specific chatbot instance using its user_id.
+    This involves cleaning up the session data.
     """
     if user_id not in active_users:
         raise HTTPException(status_code=404, detail=f"No active session found for user_id '{user_id}' to unlink.")
@@ -323,10 +324,9 @@ async def unlink_chatbot(user_id: str):
         raise HTTPException(status_code=500, detail="Internal server error: instance not found for active user.")
 
     try:
-        # The stop() method will trigger the on_session_end callback,
-        # which in turn calls remove_active_user to clean up the state.
-        instance.stop()
-        return {"status": "success", "message": f"Session for user '{user_id}' is being terminated."}
+        # Stop the instance and clean up the session data on the provider.
+        instance.stop(cleanup_session=True)
+        return {"status": "success", "message": f"Session for user '{user_id}' is being terminated and cleaned up."}
     except Exception as e:
         console_log(f"API_ERROR: Failed to stop instance for user '{user_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to stop instance: {e}")
@@ -336,12 +336,14 @@ async def unlink_chatbot(user_id: str):
 def shutdown_event():
     """
     Gracefully shut down all running chatbot instances when the server is stopped.
+    This should NOT delete the session data, so it can be resumed on next startup.
     """
     console_log("API: Server is shutting down. Stopping all chatbot instances...")
     # Create a copy of the dictionary to avoid issues with modifying it while iterating
     for instance_id, instance in list(chatbot_instances.items()):
-        console_log(f"API: Stopping instance {instance_id} for user '{instance.user_id}'...")
-        instance.stop()
+        console_log(f"API: Stopping instance {instance_id} for user '{instance.user_id}' (no cleanup)...")
+        # We call stop() without cleanup to ensure sessions are persisted.
+        instance.stop(cleanup_session=False)
         # Clean up the dictionaries
         if instance.user_id in active_users:
             del active_users[instance.user_id]
