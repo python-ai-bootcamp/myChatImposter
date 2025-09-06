@@ -61,7 +61,7 @@ const useMongoDBAuthState = async (userId, collection) => {
         }
     };
 
-    const credsKey = `creds-${userId}`;
+    const credsKey = `${userId}-creds`;
     const creds = (await readData(credsKey)) || initAuthCreds();
 
     return {
@@ -321,16 +321,15 @@ app.delete('/sessions/:userId', async (req, res) => {
 
     try {
         console.log(`[${userId}] Logging out...`);
-        await session.sock.logout(); // This should trigger the key removal via 'remove' in the auth state
+        await session.sock.logout();
     } catch (error) {
         console.error(`[${userId}] Error during logout:`, error);
     } finally {
         try {
-            // Also explicitly delete the main creds file
-            await baileysSessionsCollection.deleteOne({ _id: `creds-${userId}` });
-            console.log(`[${userId}] Auth creds deleted from MongoDB.`);
+            const deleteResult = await baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } });
+            console.log(`[${userId}] Deleted ${deleteResult.deletedCount} auth entries from MongoDB.`);
         } catch (dbError) {
-            console.error(`[${userId}] Error deleting auth creds from MongoDB:`, dbError);
+            console.error(`[${userId}] Error deleting auth data from MongoDB:`, dbError);
         }
         delete sessions[userId];
         console.log(`[${userId}] Session object deleted.`);
