@@ -7,10 +7,11 @@ import os
 import json
 from pathlib import Path
 from fastapi import FastAPI, HTTPException, Body, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import JSONResponse
 from fastapi.concurrency import run_in_threadpool
 from typing import Dict, Any, List, Union
 from uvicorn.config import LOGGING_CONFIG
+from pymongo import MongoClient
 
 from chatbot_manager import ChatbotInstance
 from logging_lock import console_log
@@ -29,6 +30,33 @@ default_logger.propagate = False # Prevent logs from reaching root logger
 
 
 app = FastAPI()
+
+# MongoDB Client
+mongo_client: MongoClient = None
+db = None
+configurations_collection = None
+
+@app.on_event("startup")
+async def startup_event():
+    """
+    Connect to MongoDB on startup.
+    """
+    global mongo_client, db, configurations_collection
+    mongodb_url = os.environ.get("MONGODB_URL", "mongodb://mongodb:27017/")
+    console_log(f"API: Connecting to MongoDB at {mongodb_url}")
+    try:
+        mongo_client = MongoClient(mongodb_url, serverSelectionTimeoutMS=5000)
+        # The ismaster command is cheap and does not require auth.
+        mongo_client.admin.command('ismaster')
+        db = mongo_client.get_database("chat_manager")
+        configurations_collection = db.get_collection("configurations")
+        console_log("API: Successfully connected to MongoDB.")
+    except Exception as e:
+        console_log(f"API_ERROR: Could not connect to MongoDB: {e}")
+        # Depending on the use case, you might want to exit the application
+        # if the database connection fails.
+        # For now, we'll log the error and continue, endpoints will fail if the db is needed.
+        mongo_client = None
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -62,31 +90,21 @@ def remove_active_user(user_id: str):
     else:
         console_log(f"API_WARN: Tried to remove non-existent user '{user_id}' from active list.")
 
-CONFIGURATIONS_DIR = Path("configurations")
-
-@app.on_event("startup")
-async def startup_event():
-    """
-    Ensure the configurations directory exists on startup.
-    """
-    if not CONFIGURATIONS_DIR.exists():
-        console_log(f"API: Configurations directory not found at '{CONFIGURATIONS_DIR}'. Creating it.")
-        CONFIGURATIONS_DIR.mkdir(parents=True, exist_ok=True)
-    else:
-        console_log(f"API: Found configurations directory at '{CONFIGURATIONS_DIR}'.")
-
-
 @app.get("/api/configurations")
-async def get_configuration_files():
+async def get_configuration_names():
     """
-    Returns a list of all .json configuration files in the configurations directory.
+    Returns a list of all configuration "filenames" from the database.
     """
+    if not configurations_collection:
+        raise HTTPException(status_code=503, detail="Database connection not available.")
     try:
-        files = [f for f in os.listdir(CONFIGURATIONS_DIR) if f.endswith('.json') and os.path.isfile(CONFIGURATIONS_DIR / f)]
+        # We only need the 'filename' field for this endpoint.
+        cursor = configurations_collection.find({}, {"filename": 1, "_id": 0})
+        files = [doc["filename"] for doc in cursor]
         return {"files": files}
     except Exception as e:
-        console_log(f"API_ERROR: Could not list configuration files: {e}")
-        raise HTTPException(status_code=500, detail="Could not list configuration files.")
+        console_log(f"API_ERROR: Could not list configurations from DB: {e}")
+        raise HTTPException(status_code=500, detail="Could not list configurations.")
 
 
 @app.get("/api/configurations/schema", response_model=Dict[str, Any])
@@ -117,18 +135,22 @@ async def get_configuration_schema():
 @app.get("/api/configurations/status")
 async def get_all_configurations_status():
     """
-    Returns a list of all config files along with their current session status.
-    Validates each config file against the UserConfiguration model.
+    Returns a list of all configs from the DB along with their current session status.
+    Validates each config against the UserConfiguration model.
     """
+    if not configurations_collection:
+        raise HTTPException(status_code=503, detail="Database connection not available.")
+
     statuses = []
     try:
-        files = [f for f in os.listdir(CONFIGURATIONS_DIR) if f.endswith('.json') and os.path.isfile(CONFIGURATIONS_DIR / f)]
-        for filename in files:
-            file_path = CONFIGURATIONS_DIR / filename
+        # Fetch all configurations from the database
+        db_configs = list(configurations_collection.find({}))
+        for db_config in db_configs:
+            filename = db_config.get("filename", "unknown_config")
+            config_data = db_config.get("config_data")
             try:
-                # Read and parse the JSON file first
-                with open(file_path, 'r') as f:
-                    config_data = json.load(f)
+                if not config_data:
+                    raise ValueError("Configuration data is missing.")
 
                 # Handle both single object and list-of-one-object formats
                 if isinstance(config_data, list) and config_data:
@@ -136,14 +158,13 @@ async def get_all_configurations_status():
                 elif isinstance(config_data, dict):
                     config_to_validate = config_data
                 else:
-                    # If the format is neither a list with content nor a dict, it's invalid
-                    raise ValueError("Configuration file is empty or has an unsupported format.")
+                    raise ValueError("Configuration data is empty or has an unsupported format.")
 
                 # Validate the data using the Pydantic model
                 config = UserConfiguration.model_validate(config_to_validate)
                 user_id = config.user_id
 
-                # Now check the status for this user_id
+                # Now check the status for this user_id (this part remains the same)
                 if user_id in active_users:
                     instance_id = active_users[user_id]
                     instance = chatbot_instances.get(instance_id)
@@ -156,78 +177,106 @@ async def get_all_configurations_status():
                 else:
                     statuses.append({"filename": filename, "user_id": user_id, "status": "disconnected"})
 
-            except (json.JSONDecodeError, Exception) as e:
-                # Catches JSON errors and Pydantic validation errors
-                console_log(f"API_WARN: Could not process '{filename}': {e}")
+            except Exception as e:
+                # Catches validation errors or other issues
+                console_log(f"API_WARN: Could not process config '{filename}': {e}")
                 statuses.append({"filename": filename, "user_id": None, "status": "invalid_config"})
                 continue
 
         return {"configurations": statuses}
     except Exception as e:
-        console_log(f"API_ERROR: Could not get configuration statuses: {e}")
+        console_log(f"API_ERROR: Could not get configuration statuses from DB: {e}")
         raise HTTPException(status_code=500, detail="Could not get configuration statuses.")
 
 
 @app.get("/api/configurations/{filename}")
-async def get_configuration_file(filename: str):
+async def get_configuration_by_filename(filename: str):
     """
-    Returns the content of a specific .json configuration file.
+    Returns the content of a specific configuration from the database.
     """
+    if not configurations_collection:
+        raise HTTPException(status_code=503, detail="Database connection not available.")
+
     if not filename.endswith('.json'):
         raise HTTPException(status_code=400, detail="Invalid file type. Only .json files are supported.")
 
-    file_path = CONFIGURATIONS_DIR / filename
-    if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail="Configuration file not found.")
+    try:
+        db_config = configurations_collection.find_one({"filename": filename})
+        if not db_config:
+            raise HTTPException(status_code=404, detail="Configuration file not found.")
 
-    return FileResponse(path=file_path, media_type='application/json', filename=filename)
+        # Return the config_data part of the document.
+        # The frontend expects the raw config, not our DB structure.
+        return JSONResponse(content=db_config.get("config_data"))
+    except HTTPException:
+        # Re-raise HTTP exceptions to avoid them being caught by the general Exception handler
+        raise
+    except Exception as e:
+        console_log(f"API_ERROR: Could not retrieve config '{filename}' from DB: {e}")
+        raise HTTPException(status_code=500, detail="Could not retrieve configuration.")
 
 
 @app.put("/api/configurations/{filename}")
-async def save_configuration_file(filename: str, config: Union[UserConfiguration, List[UserConfiguration]] = Body(...)):
+async def save_configuration_by_filename(filename: str, config: Union[UserConfiguration, List[UserConfiguration]] = Body(...)):
     """
-    Saves a UserConfiguration or a list of them to a specific .json file.
+    Saves/updates a configuration to the database, identified by its filename.
     """
+    if not configurations_collection:
+        raise HTTPException(status_code=503, detail="Database connection not available.")
+
     if not filename.endswith('.json'):
         raise HTTPException(status_code=400, detail="Invalid file type. Only .json files are supported.")
 
-    file_path = CONFIGURATIONS_DIR / filename
     try:
-        with open(file_path, 'w') as f:
-            if isinstance(config, list):
-                # It's a list of Pydantic models, so we dump each one to a dict
-                json_data = [item.model_dump() for item in config]
-                # Then we dump the list of dicts to a JSON string
-                f.write(json.dumps(json_data, indent=4))
-            else:
-                # It's a single Pydantic model, so we can use its method directly
-                f.write(config.model_dump_json(indent=4))
-        console_log(f"API: Successfully saved configuration file '{filename}'")
+        # Convert the Pydantic model(s) to a dictionary/list of dictionaries
+        if isinstance(config, list):
+            json_data = [item.model_dump() for item in config]
+        else:
+            json_data = config.model_dump()
+
+        # Create the document to be saved
+        db_document = {
+            "filename": filename,
+            "config_data": json_data
+        }
+
+        # Use update_one with upsert=True to either create a new doc or update an existing one
+        configurations_collection.update_one(
+            {"filename": filename},
+            {"$set": db_document},
+            upsert=True
+        )
+
+        console_log(f"API: Successfully saved configuration '{filename}' to DB.")
         return {"status": "success", "filename": filename}
     except Exception as e:
-        console_log(f"API_ERROR: Could not save configuration file '{filename}': {e}")
-        raise HTTPException(status_code=500, detail=f"Could not save configuration file: {e}")
+        console_log(f"API_ERROR: Could not save configuration '{filename}' to DB: {e}")
+        raise HTTPException(status_code=500, detail=f"Could not save configuration: {e}")
 
 
 @app.delete("/api/configurations/{filename}")
-async def delete_configuration_file(filename: str):
+async def delete_configuration_by_filename(filename: str):
     """
-    Deletes a specific .json configuration file.
+    Deletes a specific configuration from the database.
     """
+    if not configurations_collection:
+        raise HTTPException(status_code=503, detail="Database connection not available.")
+
     if not filename.endswith('.json'):
         raise HTTPException(status_code=400, detail="Invalid file type. Only .json files are supported.")
 
-    file_path = CONFIGURATIONS_DIR / filename
-    if not file_path.exists() or not file_path.is_file():
-        raise HTTPException(status_code=404, detail="Configuration file not found.")
-
     try:
-        os.remove(file_path)
-        console_log(f"API: Successfully deleted configuration file '{filename}'")
+        result = configurations_collection.delete_one({"filename": filename})
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Configuration file not found.")
+
+        console_log(f"API: Successfully deleted configuration '{filename}' from DB.")
         return {"status": "success", "filename": filename}
+    except HTTPException:
+        raise
     except Exception as e:
-        console_log(f"API_ERROR: Could not delete configuration file '{filename}': {e}")
-        raise HTTPException(status_code=500, detail=f"Could not delete configuration file: {e}")
+        console_log(f"API_ERROR: Could not delete configuration '{filename}' from DB: {e}")
+        raise HTTPException(status_code=500, detail=f"Could not delete configuration: {e}")
 
 
 @app.put("/chatbot")
@@ -351,6 +400,12 @@ def shutdown_event():
     # It's good practice to clear the main dict as well
     chatbot_instances.clear()
     console_log("API: All instances stopped and cleaned up.")
+
+    # Close MongoDB connection
+    if mongo_client:
+        mongo_client.close()
+        console_log("API: MongoDB connection closed.")
+
 
 if __name__ == "__main__":
     import uvicorn

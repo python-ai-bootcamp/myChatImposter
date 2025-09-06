@@ -12,6 +12,7 @@
     "@hapi/boom": "^10.0.1",
     "@whiskeysockets/baileys": "^6.7.5",
     "express": "^4.19.2",
+    "mongodb": "^6.5.0",
     "pino": "^8.15.0",
     "pino-pretty": "^10.2.0",
     "qrcode": "^1.5.3",
