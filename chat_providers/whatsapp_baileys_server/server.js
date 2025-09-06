@@ -4,12 +4,11 @@ const qrcodeTerminal = require('qrcode-terminal');
 const QRCode = require('qrcode');
 const fs = require('fs');
 const http = require('http');
-const pino =require('pino');
+const pino = require('pino');
 const path = require('path');
 const { MongoClient } = require('mongodb');
 const {
     default: makeWASocket,
-    useMultiFileAuthState,
     DisconnectReason,
     jidNormalizedUser,
     initAuthCreds,
@@ -27,98 +26,82 @@ const port = args[0] || 9000; // Default to port 9000 if not provided
 
 // --- MongoDB Auth State Logic ---
 const useMongoDBAuthState = async (userId, collection) => {
-    // Helper to revive buffers from the stored JSON
     const reviveBuffers = (key, value) => {
         if (value && typeof value === 'object' && value.type === 'Buffer' && Array.isArray(value.data)) {
-            return Buffer.from(value.data);
+            return Buffer.from(value.data, 'base64');
         }
         return value;
     };
 
-    const doc = await collection.findOne({ _id: userId });
-
-    const creds = doc ? JSON.parse(JSON.stringify(doc.creds), reviveBuffers) : initAuthCreds();
-    const keys = doc ? doc.keys : {};
-
-    const saveCreds = async () => {
-        const sessionData = {
-            creds: JSON.parse(JSON.stringify(creds, (key, value) => {
-                if (value instanceof Buffer) {
-                    return { type: 'Buffer', data: value.toString('base64') };
-                }
-                return value;
-            })),
-            keys,
-        };
-        await collection.updateOne({ _id: userId }, { $set: sessionData }, { upsert: true });
-    };
-
-    const getKey = (path) => {
-        const parts = path.split('.');
-        let current = keys;
-        for (const part of parts) {
-            if (typeof current !== 'object' || current === null) return undefined;
-            current = current[part];
+    const serializeBuffers = (key, value) => {
+        if (value instanceof Buffer) {
+            return { type: 'Buffer', data: value.toString('base64') };
         }
-        return current;
+        return value;
     };
 
-    const setKey = (path, value) => {
-        const parts = path.split('.');
-        let current = keys;
-        for (let i = 0; i < parts.length - 1; i++) {
-            const part = parts[i];
-            if (typeof current[part] !== 'object' || current[part] === null) {
-                current[part] = {};
-            }
-            current = current[part];
-        }
-        current[parts[parts.length - 1]] = value;
+    const writeData = (key, data) => {
+        const jsonData = JSON.stringify(data, serializeBuffers);
+        return collection.updateOne({ _id: key }, { $set: { value: jsonData } }, { upsert: true });
     };
 
-    const delKey = (path) => {
-        const parts = path.split('.');
-        let current = keys;
-        for (let i = 0; i < parts.length - 1; i++) {
-            const part = parts[i];
-            if (typeof current[part] !== 'object' || current[part] === null) {
-                return; // Key doesn't exist
-            }
-            current = current[part];
+    const readData = async (key) => {
+        const doc = await collection.findOne({ _id: key });
+        if (doc?.value) {
+            return JSON.parse(doc.value, reviveBuffers);
         }
-        delete current[parts[parts.length - 1]];
+        return null;
     };
+
+    const removeData = async (key) => {
+        try {
+            await collection.deleteOne({ _id: key });
+        } catch (error) {
+            // It's okay if the key doesn't exist
+        }
+    };
+
+    const credsKey = `creds-${userId}`;
+    const creds = (await readData(credsKey)) || initAuthCreds();
 
     return {
         state: {
             creds,
             keys: {
-                get: (type, ids) => {
+                get: async (type, ids) => {
                     const data = {};
-                    for (const id of ids) {
-                        const value = getKey(`${type}.${id}`);
-                        if (value) {
-                            data[id] = value;
-                        }
-                    }
+                    await Promise.all(
+                        ids.map(async id => {
+                            const value = await readData(`${userId}-${type}-${id}`);
+                            if (value) {
+                                data[id] = value;
+                            }
+                        })
+                    );
                     return data;
                 },
-                set: (data) => {
-                    for (const key in data) {
-                        for (const id in data[key]) {
-                            const value = data[key][id];
-                            setKey(`${key}.${id}`, value);
+                set: async (data) => {
+                    const promises = [];
+                    for (const type in data) {
+                        for (const id in data[type]) {
+                            const value = data[type][id];
+                            promises.push(writeData(`${userId}-${type}-${id}`, value));
                         }
                     }
+                    await Promise.all(promises);
                 },
-                del: (type, ids) => {
+                remove: async (type, ids) => {
+                    const promises = [];
                     for (const id of ids) {
-                        delKey(`${type}.${id}`);
+                        promises.push(removeData(`${userId}-${type}-${id}`));
                     }
+                    await Promise.all(promises);
                 }
             },
         },
-        saveCreds,
+        saveCreds: () => {
+            return writeData(credsKey, creds);
+        },
     };
 };
 
@@ -184,11 +167,10 @@ async function connectToWhatsApp(userId, vendorConfig) {
             const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
             if (statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.connectionReplaced) {
                 console.log(`[${userId}] Connection closed, user logged out or session replaced.`);
-                // We don't automatically reconnect here, just clean up
                 delete sessions[userId];
             } else if (statusCode === DisconnectReason.badSession) {
                 console.log(`[${userId}] Connection closed due to invalid session. Deleting auth info and re-initializing.`);
-                baileysSessionsCollection.deleteOne({ _id: userId }).then(() => {
+                baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } }).then(() => {
                     connectToWhatsApp(userId, vendorConfig);
                 });
             } else {
@@ -339,15 +321,16 @@ app.delete('/sessions/:userId', async (req, res) => {
 
     try {
         console.log(`[${userId}] Logging out...`);
-        await session.sock.logout();
+        await session.sock.logout(); // This should trigger the key removal via 'remove' in the auth state
     } catch (error) {
         console.error(`[${userId}] Error during logout:`, error);
     } finally {
         try {
-            await baileysSessionsCollection.deleteOne({ _id: userId });
-            console.log(`[${userId}] Auth data deleted from MongoDB.`);
+            // Also explicitly delete the main creds file
+            await baileysSessionsCollection.deleteOne({ _id: `creds-${userId}` });
+            console.log(`[${userId}] Auth creds deleted from MongoDB.`);
         } catch (dbError) {
-            console.error(`[${userId}] Error deleting auth data from MongoDB:`, dbError);
+            console.error(`[${userId}] Error deleting auth creds from MongoDB:`, dbError);
         }
         delete sessions[userId];
         console.log(`[${userId}] Session object deleted.`);
