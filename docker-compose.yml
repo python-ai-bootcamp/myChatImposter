@@ -15,12 +15,10 @@ services:
     container_name: backend
     ports:
       - "8000:8000"
-    volumes:
-      - ./configurations:/app/configurations
-      - ./running_sessions:/app/running_sessions
     environment:
       - WHATSAPP_SERVER_URL=http://whatsapp_baileys_server:9000
       - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - MONGODB_URL=mongodb://mongodb:27017
     depends_on:
       - mongodb
       - whatsapp_baileys_server
@@ -42,8 +40,8 @@ services:
     container_name: whatsapp_baileys_server
     ports:
       - "9000:9000"
-    volumes:
-      - ./running_sessions:/app/running_sessions
+    environment:
+      - MONGODB_URL=mongodb://mongodb:27017
     # The command will be specified in the python code that starts this service.
     # We need to pass the port, user_id, and config.
     # For now, we'll just have it run and listen on a port.
