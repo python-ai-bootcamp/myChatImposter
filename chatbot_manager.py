@@ -178,15 +178,17 @@ class ChatbotInstance:
         self.provider_instance.start_listening()
         console_log(f"INSTANCE ({self.user_id}): System is running.")
 
-    def stop(self):
-        """Stops the provider listener gracefully and triggers the session end callback."""
+    def stop(self, cleanup_session: bool = False):
+        """
+        Stops the provider listener gracefully.
+
+        Args:
+            cleanup_session (bool): If True, instructs the provider to also clean up
+                                    the session data (e.g., on user unlink).
+        """
         if self.provider_instance:
-            console_log(f"INSTANCE ({self.user_id}): Shutting down...")
-            self.provider_instance.stop_listening()
-            # The provider's stop_listening should be responsible for calling the on_session_end
-            # callback to handle all session end cases (clean and unclean).
-            # However, as a fallback, we can call it here if the provider doesn't.
-            # For now, let's assume the provider handles it.
+            console_log(f"INSTANCE ({self.user_id}): Shutting down... (cleanup={cleanup_session})")
+            self.provider_instance.stop_listening(cleanup_session=cleanup_session)
             console_log(f"INSTANCE ({self.user_id}): Shutdown complete.")
 
     def get_status(self):

@@ -68,25 +68,31 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         self.thread.start()
         console_log(f"PROVIDER ({self.user_id}): Started polling for messages from Node.js server.")
 
-    def stop_listening(self):
-        """Stops the message listening loop."""
-        console_log(f"PROVIDER ({self.user_id}): Stopping...")
+    def stop_listening(self, cleanup_session: bool = False):
+        """
+        Stops the message listening loop.
+
+        Args:
+            cleanup_session (bool): If True, deletes the session data from the Node.js server.
+                                    This should be used for unlinking, not for shutdown.
+        """
+        console_log(f"PROVIDER ({self.user_id}): Stopping... (cleanup={cleanup_session})")
         self.is_listening = False
         if self.thread:
             # The thread will exit on its own since it checks `is_listening`
             self.thread.join()
             console_log(f"PROVIDER ({self.user_id}): Polling thread stopped.")
 
-        # The Node.js server is a separate container, so we don't terminate it here.
-        # We can, however, tell it to clean up the session.
-        try:
-            req = urllib.request.Request(f"{self.base_url}/sessions/{self.user_id}", method='DELETE')
-            with urllib.request.urlopen(req) as response:
-                if response.status == 200:
-                    console_log(f"PROVIDER ({self.user_id}): Successfully requested session cleanup on Node.js server.")
-        except Exception as e:
-            console_log(f"PROVIDER_ERROR ({self.user_id}): Failed to request session cleanup: {e}")
-
+        # If requested, tell the Node.js server to clean up the session.
+        if cleanup_session:
+            console_log(f"PROVIDER ({self.user_id}): Requesting session cleanup on Node.js server.")
+            try:
+                req = urllib.request.Request(f"{self.base_url}/sessions/{self.user_id}", method='DELETE')
+                with urllib.request.urlopen(req) as response:
+                    if response.status == 200:
+                        console_log(f"PROVIDER ({self.user_id}): Successfully requested session cleanup.")
+            except Exception as e:
+                console_log(f"PROVIDER_ERROR ({self.user_id}): Failed to request session cleanup: {e}")
 
         # Call the session end callback to clean up the main application's state
         if self.on_session_end and not self.session_ended:
