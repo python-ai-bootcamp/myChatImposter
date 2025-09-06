@@ -2,9 +2,10 @@ const { Boom } = require('@hapi/boom');
 const express = require('express');
 const qrcodeTerminal = require('qrcode-terminal');
 const QRCode = require('qrcode');
-const fs =require('fs');
+const fs = require('fs');
 const http = require('http');
 const pino = require('pino');
+const path = require('path');
 
 // --- Globals ---
 const sessions = {}; // Holds all active user sessions, keyed by userId
@@ -29,7 +30,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
     console.log(`[${userId}] Starting new session.`);
     const { default: makeWASocket, useMultiFileAuthState } = await import('@whiskeysockets/baileys');
 
-    const authDir = `running_sessions/${userId}/auth_info`;
+    const authDir = path.resolve('running_sessions', userId, 'auth_info');
     const { state, saveCreds } = await useMultiFileAuthState(authDir);
 
     const logger = pino({ level: 'debug' });
@@ -249,7 +250,7 @@ app.delete('/sessions/:userId', async (req, res) => {
         // Don't return, still try to clean up
     } finally {
         // Clean up session object and auth files
-        const authDir = `running_sessions/${userId}/auth_info`;
+        const authDir = path.resolve('running_sessions', userId, 'auth_info');
         if (fs.existsSync(authDir)) {
             fs.rmSync(authDir, { recursive: true, force: true });
             console.log(`[${userId}] Auth directory deleted.`);
