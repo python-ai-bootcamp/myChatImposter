@@ -20,6 +20,7 @@ services:
       - ./running_sessions:/app/running_sessions
     environment:
       - WHATSAPP_SERVER_URL=http://whatsapp_baileys_server:9000
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
     depends_on:
       - mongodb
       - whatsapp_baileys_server
