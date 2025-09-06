@@ -1,0 +1,54 @@
+version: '3.8'
+services:
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend.Dockerfile
+    container_name: backend
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./configurations:/app/configurations
+      - ./running_sessions:/app/running_sessions
+    environment:
+      - WHATSAPP_SERVER_URL=http://whatsapp_baileys_server:9000
+    depends_on:
+      - mongodb
+      - whatsapp_baileys_server
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend.Dockerfile
+    container_name: frontend
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+  whatsapp_baileys_server:
+    build:
+      context: .
+      dockerfile: whatsapp.Dockerfile
+    container_name: whatsapp_baileys_server
+    ports:
+      - "9000:9000"
+    volumes:
+      - ./running_sessions:/app/running_sessions
+    # The command will be specified in the python code that starts this service.
+    # We need to pass the port, user_id, and config.
+    # For now, we'll just have it run and listen on a port.
+    # The python code will be modified to NOT start this as a subprocess.
+    command: ["node", "server.js", "9000"]
+
+
+volumes:
+  mongo-data:
