@@ -95,7 +95,7 @@ async def get_configuration_names():
     """
     Returns a list of all configuration "filenames" from the database.
     """
-    if not configurations_collection:
+    if configurations_collection is None:
         raise HTTPException(status_code=503, detail="Database connection not available.")
     try:
         # We only need the 'filename' field for this endpoint.
@@ -138,7 +138,7 @@ async def get_all_configurations_status():
     Returns a list of all configs from the DB along with their current session status.
     Validates each config against the UserConfiguration model.
     """
-    if not configurations_collection:
+    if configurations_collection is None:
         raise HTTPException(status_code=503, detail="Database connection not available.")
 
     statuses = []
@@ -194,7 +194,7 @@ async def get_configuration_by_filename(filename: str):
     """
     Returns the content of a specific configuration from the database.
     """
-    if not configurations_collection:
+    if configurations_collection is None:
         raise HTTPException(status_code=503, detail="Database connection not available.")
 
     if not filename.endswith('.json'):
@@ -221,7 +221,7 @@ async def save_configuration_by_filename(filename: str, config: Union[UserConfig
     """
     Saves/updates a configuration to the database, identified by its filename.
     """
-    if not configurations_collection:
+    if configurations_collection is None:
         raise HTTPException(status_code=503, detail="Database connection not available.")
 
     if not filename.endswith('.json'):
@@ -259,7 +259,7 @@ async def delete_configuration_by_filename(filename: str):
     """
     Deletes a specific configuration from the database.
     """
-    if not configurations_collection:
+    if configurations_collection is None:
         raise HTTPException(status_code=503, detail="Database connection not available.")
 
     if not filename.endswith('.json'):
