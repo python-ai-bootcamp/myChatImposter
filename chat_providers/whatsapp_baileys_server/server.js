@@ -229,7 +229,10 @@ app.get('/sessions/:userId/status', (req, res) => {
         return res.status(200).json({ status: 'linking', qr: session.currentQR });
     }
 
-    return res.status(200).json({ status: session.connectionStatus || 'initializing' });
+    // Translate the internal 'open' status to 'connected' for the API
+    const apiStatus = session.connectionStatus === 'open' ? 'connected' : session.connectionStatus;
+
+    return res.status(200).json({ status: apiStatus || 'initializing' });
 });
 
 // Endpoint to delete/logout a session
