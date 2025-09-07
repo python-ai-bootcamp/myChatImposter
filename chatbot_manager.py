@@ -136,10 +136,12 @@ class ChatbotInstance:
             sender_display_name = message.sender.display_name
 
             # Check if any whitelisted string is a substring of either the identifier or display name
-            if not any(
-                whitelisted_sender in sender_identifier or whitelisted_sender in sender_display_name
+            is_whitelisted = any(
+                (whitelisted_sender in sender_identifier if sender_identifier else False) or
+                (whitelisted_sender in sender_display_name if sender_display_name else False)
                 for whitelisted_sender in self.whitelist
-            ):
+            )
+            if not is_whitelisted:
                 console_log(f"INSTANCE ({user_id}): Sender '{message.sender.identifier}' not in whitelist. Ignoring.")
                 return
 
