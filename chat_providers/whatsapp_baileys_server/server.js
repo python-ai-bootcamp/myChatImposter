@@ -168,8 +168,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
             if (statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.connectionReplaced) {
                 console.log(`[${userId}] Connection closed, user logged out or session replaced.`);
                 delete sessions[userId];
-            } else if (statusCode === DisconnectReason.badSession || statusCode === DisconnectReason.restartRequired) {
-                console.log(`[${userId}] Connection closed due to invalid session or required restart (Code: ${statusCode}). Deleting auth info and re-initializing.`);
+            } else if (statusCode === DisconnectReason.badSession) {
+                console.log(`[${userId}] Connection closed due to invalid session. Deleting auth info and re-initializing.`);
                 baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } }).then(() => {
                     connectToWhatsApp(userId, vendorConfig);
                 });
