@@ -89,11 +89,9 @@ const transformDataToUI = (data) => {
 const transformDataToAPI = (uiData) => {
   if (!uiData) return uiData;
 
-  // Destructure to separate the nested UI objects from the rest of the data
   const { general_config, llm_bot_config, ...rest } = uiData;
-  const apiData = { ...rest }; // Start with the flat properties
+  const apiData = { ...rest };
 
-  // Flatten the nested properties back to the top level
   if (general_config) {
     apiData.user_id = general_config.user_id;
     apiData.respond_to_whitelist = general_config.respond_to_whitelist;
@@ -108,7 +106,7 @@ const transformDataToAPI = (uiData) => {
 
 
 function EditPage() {
-  const { filename } = useParams();
+  const { userId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const formRef = useRef(null);
@@ -125,24 +123,22 @@ function EditPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch schema
         const schemaResponse = await fetch('/api/configurations/schema');
         if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
         const schemaData = await schemaResponse.json();
         const transformedSchema = transformSchema(schemaData);
         setSchema(transformedSchema);
 
-        // Fetch existing data or set up new data
         let initialFormData;
         if (isNew) {
           const initialData = {
-            user_id: filename.replace('.json', ''),
+            user_id: userId,
             respond_to_whitelist: [],
           };
           initialFormData = transformDataToUI(initialData);
         } else {
-          const dataResponse = await fetch(`/api/configurations/${filename}`);
-          if (!dataResponse.ok) throw new Error('Failed to fetch file content.');
+          const dataResponse = await fetch(`/api/configurations/${userId}`);
+          if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');
           const data = await dataResponse.json();
           const originalData = Array.isArray(data) ? data[0] : data;
           initialFormData = transformDataToUI(originalData);
@@ -156,9 +152,8 @@ function EditPage() {
     };
 
     fetchData();
-  }, [filename, isNew]);
+  }, [userId, isNew]);
 
-  // Update JSON editor when form data changes
   useEffect(() => {
     if (formData) {
       setJsonString(JSON.stringify(transformDataToAPI(formData), null, 2));
@@ -183,7 +178,12 @@ function EditPage() {
     setError(null);
     try {
       const apiData = transformDataToAPI(formData);
-      const response = await fetch(`/api/configurations/${filename}`, {
+
+      if (apiData.user_id !== userId) {
+        throw new Error("The user_id cannot be changed after creation.");
+      }
+
+      const response = await fetch(`/api/configurations/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -196,7 +196,7 @@ function EditPage() {
         const detail = typeof errorBody.detail === 'object' && errorBody.detail !== null
             ? JSON.stringify(errorBody.detail, null, 2)
             : errorBody.detail;
-        throw new Error(detail || 'Failed to save file.');
+        throw new Error(detail || 'Failed to save configuration.');
       }
 
       navigate('/');
@@ -233,6 +233,9 @@ function EditPage() {
     "ui:classNames": "form-container",
     general_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
+      user_id: {
+        "ui:readonly": !isNew // Make user_id readonly if it's not a new config
+      }
     },
     chat_provider_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
@@ -250,23 +253,22 @@ function EditPage() {
     border: '1px solid #ccc',
     borderRadius: '4px',
     padding: '1rem',
-    backgroundColor: '#fff', // Changed to white for a cleaner base
+    backgroundColor: '#fff',
     boxSizing: 'border-box'
   };
 
   const innerPanelStyle = {
       ...panelStyle,
-      backgroundColor: '#f9f9f9', // The light gray for the inner panels
+      backgroundColor: '#f9f9f9',
   };
 
   return (
     <>
-      <div style={{ padding: '20px', paddingBottom: '80px' }}> {/* paddingBottom to make space for footer */}
+      <div style={{ padding: '20px', paddingBottom: '80px' }}>
         <div style={{ maxWidth: '1800px', margin: '0 auto' }}>
           <div style={panelStyle}>
-            <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
+            <h2>{isNew ? 'Add New Configuration' : `Edit Configuration`}: {userId}</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem', minHeight: '75vh' }}>
-              {/* Left Panel: Form Editor */}
               <div style={{...innerPanelStyle, overflowY: 'auto'}}>
                 <Form
                   ref={formRef}
@@ -281,12 +283,10 @@ function EditPage() {
                   templates={templates}
                   widgets={widgets}
                 >
-                  {/* Buttons are now in the footer */}
                   <div />
                 </Form>
               </div>
 
-              {/* Right Panel: Live JSON Editor */}
               <div style={{ ...innerPanelStyle, display: 'flex', flexDirection: 'column' }}>
                 <h3>Live JSON Editor</h3>
                 <textarea

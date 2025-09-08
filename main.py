@@ -39,23 +39,33 @@ configurations_collection = None
 @app.on_event("startup")
 async def startup_event():
     """
-    Connect to MongoDB on startup.
+    Connect to MongoDB and create a unique index on startup.
     """
     global mongo_client, db, configurations_collection
     mongodb_url = os.environ.get("MONGODB_URL", "mongodb://mongodb:27017/")
     console_log(f"API: Connecting to MongoDB at {mongodb_url}")
     try:
         mongo_client = MongoClient(mongodb_url, serverSelectionTimeoutMS=5000)
-        # The ismaster command is cheap and does not require auth.
         mongo_client.admin.command('ismaster')
         db = mongo_client.get_database("chat_manager")
         configurations_collection = db.get_collection("configurations")
+
+        # Create a unique index on the 'user_id' field of the 'config_data'
+        # This is a bit more complex because user_id is inside an array of objects.
+        # To handle both object and array-of-one-object, we need to be careful.
+        # A simple index on "config_data.user_id" works for the object case.
+        # MongoDB can index into arrays, so it should also work for the array case.
+        try:
+            # Check if the 'config_data' field is an array and handle accordingly
+            # This is a simplified approach. A more robust solution might involve a schema migration.
+            configurations_collection.create_index("config_data.user_id", unique=True)
+            console_log("API: Ensured unique index exists for 'config_data.user_id'.")
+        except Exception as index_e:
+            console_log(f"API_WARN: Could not create unique index, it may already exist or there's a data issue: {index_e}")
+
         console_log("API: Successfully connected to MongoDB.")
     except Exception as e:
         console_log(f"API_ERROR: Could not connect to MongoDB: {e}")
-        # Depending on the use case, you might want to exit the application
-        # if the database connection fails.
-        # For now, we'll log the error and continue, endpoints will fail if the db is needed.
         mongo_client = None
 
 @app.middleware("http")
@@ -91,20 +101,38 @@ def remove_active_user(user_id: str):
         console_log(f"API_WARN: Tried to remove non-existent user '{user_id}' from active list.")
 
 @app.get("/api/configurations")
-async def get_configuration_names():
+async def get_configuration_user_ids():
     """
-    Returns a list of all configuration "filenames" from the database.
+    Returns a list of all configuration user_ids from the database.
     """
     if configurations_collection is None:
         raise HTTPException(status_code=503, detail="Database connection not available.")
     try:
-        # We only need the 'filename' field for this endpoint.
-        cursor = configurations_collection.find({}, {"filename": 1, "_id": 0})
-        files = [doc["filename"] for doc in cursor]
-        return {"files": files}
+        # Extract the user_id from the config_data field.
+        # This assumes config_data is either a single object or an array with one object.
+        # Using an aggregation pipeline is more robust for this.
+        pipeline = [
+            {"$unwind": "$config_data"}, # Deconstructs the array field
+            {"$project": {"user_id": "$config_data.user_id", "_id": 0}}
+        ]
+        # A more direct approach if config_data is always an object or you need to handle both
+        # For simplicity, we'll assume the structure is consistent and query directly.
+        # Note: a simple find with projection is harder if the data can be an object OR an array.
+        # The aggregation pipeline handles both cases gracefully after an initial check or assumption.
+
+        # Let's try a simpler find and handle the two cases in python
+        user_ids = []
+        for doc in configurations_collection.find({}, {"config_data.user_id": 1, "_id": 0}):
+            config_data = doc.get("config_data", {})
+            if isinstance(config_data, list) and config_data:
+                user_ids.append(config_data[0].get("user_id"))
+            elif isinstance(config_data, dict):
+                user_ids.append(config_data.get("user_id"))
+
+        return {"user_ids": user_ids}
     except Exception as e:
-        console_log(f"API_ERROR: Could not list configurations from DB: {e}")
-        raise HTTPException(status_code=500, detail="Could not list configurations.")
+        console_log(f"API_ERROR: Could not list user_ids from DB: {e}")
+        raise HTTPException(status_code=500, detail="Could not list user_ids.")
 
 
 @app.get("/api/configurations/schema", response_model=Dict[str, Any])
@@ -143,16 +171,14 @@ async def get_all_configurations_status():
 
     statuses = []
     try:
-        # Fetch all configurations from the database
         db_configs = list(configurations_collection.find({}))
         for db_config in db_configs:
-            filename = db_config.get("filename", "unknown_config")
             config_data = db_config.get("config_data")
+            user_id_from_config = None
             try:
                 if not config_data:
                     raise ValueError("Configuration data is missing.")
 
-                # Handle both single object and list-of-one-object formats
                 if isinstance(config_data, list) and config_data:
                     config_to_validate = config_data[0]
                 elif isinstance(config_data, dict):
@@ -160,27 +186,27 @@ async def get_all_configurations_status():
                 else:
                     raise ValueError("Configuration data is empty or has an unsupported format.")
 
-                # Validate the data using the Pydantic model
                 config = UserConfiguration.model_validate(config_to_validate)
-                user_id = config.user_id
+                user_id_from_config = config.user_id
 
-                # Now check the status for this user_id (this part remains the same)
-                if user_id in active_users:
-                    instance_id = active_users[user_id]
+                if user_id_from_config in active_users:
+                    instance_id = active_users[user_id_from_config]
                     instance = chatbot_instances.get(instance_id)
-                    if instance:
-                        status_info = await run_in_threadpool(instance.get_status)
-                        status = status_info.get('status', 'unknown')
-                        statuses.append({"filename": filename, "user_id": user_id, "status": status})
-                    else:
-                        statuses.append({"filename": filename, "user_id": user_id, "status": "error"})
+                    status = await run_in_threadpool(instance.get_status) if instance else {"status": "error"}
+                    statuses.append({"user_id": user_id_from_config, "status": status.get('status', 'unknown')})
                 else:
-                    statuses.append({"filename": filename, "user_id": user_id, "status": "disconnected"})
+                    statuses.append({"user_id": user_id_from_config, "status": "disconnected"})
 
             except Exception as e:
-                # Catches validation errors or other issues
-                console_log(f"API_WARN: Could not process config '{filename}': {e}")
-                statuses.append({"filename": filename, "user_id": None, "status": "invalid_config"})
+                # Attempt to find a user_id even if validation fails, for better error reporting
+                uid = "unknown"
+                if isinstance(config_data, list) and config_data and isinstance(config_data[0], dict):
+                    uid = config_data[0].get('user_id', 'unknown')
+                elif isinstance(config_data, dict):
+                    uid = config_data.get('user_id', 'unknown')
+
+                console_log(f"API_WARN: Could not process config for user_id '{uid}': {e}")
+                statuses.append({"user_id": uid, "status": "invalid_config"})
                 continue
 
         return {"configurations": statuses}
@@ -189,93 +215,88 @@ async def get_all_configurations_status():
         raise HTTPException(status_code=500, detail="Could not get configuration statuses.")
 
 
-@app.get("/api/configurations/{filename}")
-async def get_configuration_by_filename(filename: str):
+@app.get("/api/configurations/{user_id}")
+async def get_configuration_by_user_id(user_id: str):
     """
-    Returns the content of a specific configuration from the database.
+    Returns the content of a specific configuration from the database by user_id.
     """
     if configurations_collection is None:
         raise HTTPException(status_code=503, detail="Database connection not available.")
 
-    if not filename.endswith('.json'):
-        raise HTTPException(status_code=400, detail="Invalid file type. Only .json files are supported.")
-
     try:
-        db_config = configurations_collection.find_one({"filename": filename})
+        # The query needs to look inside the config_data field.
+        db_config = configurations_collection.find_one({"config_data.user_id": user_id})
         if not db_config:
-            raise HTTPException(status_code=404, detail="Configuration file not found.")
+            raise HTTPException(status_code=404, detail="Configuration not found.")
 
-        # Return the config_data part of the document.
-        # The frontend expects the raw config, not our DB structure.
         return JSONResponse(content=db_config.get("config_data"))
     except HTTPException:
-        # Re-raise HTTP exceptions to avoid them being caught by the general Exception handler
         raise
     except Exception as e:
-        console_log(f"API_ERROR: Could not retrieve config '{filename}' from DB: {e}")
+        console_log(f"API_ERROR: Could not retrieve config for user_id '{user_id}' from DB: {e}")
         raise HTTPException(status_code=500, detail="Could not retrieve configuration.")
 
 
-@app.put("/api/configurations/{filename}")
-async def save_configuration_by_filename(filename: str, config: Union[UserConfiguration, List[UserConfiguration]] = Body(...)):
+@app.put("/api/configurations/{user_id}")
+async def save_configuration_by_user_id(user_id: str, config: Union[UserConfiguration, List[UserConfiguration]] = Body(...)):
     """
-    Saves/updates a configuration to the database, identified by its filename.
+    Saves/updates a configuration to the database, identified by its user_id.
     """
     if configurations_collection is None:
         raise HTTPException(status_code=503, detail="Database connection not available.")
 
-    if not filename.endswith('.json'):
-        raise HTTPException(status_code=400, detail="Invalid file type. Only .json files are supported.")
-
     try:
-        # Convert the Pydantic model(s) to a dictionary/list of dictionaries
         if isinstance(config, list):
             json_data = [item.model_dump() for item in config]
+            # Ensure the user_id in the body matches the one in the URL
+            if not json_data or json_data[0].get("user_id") != user_id:
+                raise HTTPException(status_code=400, detail="User ID in URL and body do not match.")
         else:
             json_data = config.model_dump()
+            if json_data.get("user_id") != user_id:
+                raise HTTPException(status_code=400, detail="User ID in URL and body do not match.")
 
-        # Create the document to be saved
         db_document = {
-            "filename": filename,
             "config_data": json_data
         }
 
-        # Use update_one with upsert=True to either create a new doc or update an existing one
+        # Use update_one with upsert=True based on the user_id within the config_data
         configurations_collection.update_one(
-            {"filename": filename},
+            {"config_data.user_id": user_id},
             {"$set": db_document},
             upsert=True
         )
 
-        console_log(f"API: Successfully saved configuration '{filename}' to DB.")
-        return {"status": "success", "filename": filename}
+        console_log(f"API: Successfully saved configuration for user_id '{user_id}' to DB.")
+        return {"status": "success", "user_id": user_id}
     except Exception as e:
-        console_log(f"API_ERROR: Could not save configuration '{filename}' to DB: {e}")
+        console_log(f"API_ERROR: Could not save configuration for user_id '{user_id}' to DB: {e}")
+        # Handle potential duplicate key error from the unique index
+        if "E11000 duplicate key error" in str(e):
+            raise HTTPException(status_code=409, detail=f"A configuration with this user_id already exists.")
         raise HTTPException(status_code=500, detail=f"Could not save configuration: {e}")
 
 
-@app.delete("/api/configurations/{filename}")
-async def delete_configuration_by_filename(filename: str):
+@app.delete("/api/configurations/{user_id}")
+async def delete_configuration_by_user_id(user_id: str):
     """
-    Deletes a specific configuration from the database.
+    Deletes a specific configuration from the database by user_id.
     """
     if configurations_collection is None:
         raise HTTPException(status_code=503, detail="Database connection not available.")
 
-    if not filename.endswith('.json'):
-        raise HTTPException(status_code=400, detail="Invalid file type. Only .json files are supported.")
-
     try:
-        result = configurations_collection.delete_one({"filename": filename})
+        # The query needs to look inside the config_data field.
+        result = configurations_collection.delete_one({"config_data.user_id": user_id})
         if result.deleted_count == 0:
-            raise HTTPException(status_code=404, detail="Configuration file not found.")
+            raise HTTPException(status_code=404, detail="Configuration not found.")
 
-        console_log(f"API: Successfully deleted configuration '{filename}' from DB.")
-        return {"status": "success", "filename": filename}
+        console_log(f"API: Successfully deleted configuration for user_id '{user_id}' from DB.")
+        return {"status": "success", "user_id": user_id}
     except HTTPException:
         raise
     except Exception as e:
-        console_log(f"API_ERROR: Could not delete configuration '{filename}' from DB: {e}")
+        console_log(f"API_ERROR: Could not delete configuration for user_id '{user_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Could not delete configuration: {e}")
 
 
