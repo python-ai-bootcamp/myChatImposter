@@ -31,6 +31,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         self.session_ended = False
         self.thread = None
         self.loop = None
+        self.stop_event = None
         self.base_url = os.environ.get("WHATSAPP_SERVER_URL", "http://localhost:9000")
         self.ws_url = self.base_url.replace("http", "ws")
 
@@ -79,31 +80,55 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         """Runs the asyncio event loop for the WebSocket listener."""
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
-        self.loop.run_until_complete(self._listen())
-        self.loop.close()
+        self.stop_event = asyncio.Event()
+        try:
+            self.loop.run_until_complete(self._listen(self.stop_event))
+        finally:
+            if self.logger: self.logger.log("Closing asyncio loop.")
+            # Final cleanup of the loop
+            try:
+                tasks = asyncio.all_tasks(loop=self.loop)
+                for task in tasks:
+                    task.cancel()
+                self.loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
+                self.loop.run_until_complete(self.loop.shutdown_asyncgens())
+            except Exception as e:
+                if self.logger: self.logger.log(f"Error during loop cleanup: {e}")
+            finally:
+                asyncio.set_event_loop(None)
+                self.loop.close()
 
-    async def _listen(self):
+    async def _listen(self, stop_event):
         """The actual WebSocket listening loop."""
         uri = f"{self.ws_url}/{self.user_id}"
-        while self.is_listening:
+        while not stop_event.is_set():
             try:
-                async with websockets.connect(uri) as websocket:
+                async with websockets.connect(uri, open_timeout=10) as websocket:
                     if self.logger: self.logger.log(f"WebSocket connection established to {uri}")
-                    async for message in websocket:
+                    while not stop_event.is_set():
                         try:
-                            messages = json.loads(message)
-                            if self.logger: self.logger.log(f"Fetched {len(messages)} new message(s) via WebSocket.")
-                            self._process_messages(messages)
-                        except json.JSONDecodeError:
-                            if self.logger: self.logger.log(f"ERROR: Could not decode JSON from WebSocket: {message}")
-            except (websockets.exceptions.ConnectionClosed, ConnectionRefusedError) as e:
-                if self.is_listening:
-                    if self.logger: self.logger.log(f"WARN: WebSocket connection closed: {e}. Reconnecting in 5s...")
-                    await asyncio.sleep(5)
+                            message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
+                            self._process_ws_message(message)
+                        except asyncio.TimeoutError:
+                            continue  # No message, just check stop_event again
             except Exception as e:
-                if self.is_listening:
-                    if self.logger: self.logger.log(f"ERROR: Unhandled exception in WebSocket listener: {e}. Retrying in 10s...")
-                    await asyncio.sleep(10)
+                if not stop_event.is_set():
+                    if isinstance(e, (websockets.exceptions.ConnectionClosed, ConnectionRefusedError, asyncio.TimeoutError)):
+                        if self.logger: self.logger.log(f"WARN: WebSocket connection issue: {e}. Reconnecting in 5s...")
+                        await asyncio.sleep(5)
+                    else:
+                        if self.logger: self.logger.log(f"ERROR: Unhandled exception in WebSocket listener: {e}. Retrying in 10s...")
+                        await asyncio.sleep(10)
+        if self.logger: self.logger.log("Listen loop has gracefully exited.")
+
+    def _process_ws_message(self, message: str):
+        """Helper to process a single websocket message."""
+        try:
+            messages = json.loads(message)
+            if self.logger: self.logger.log(f"Fetched {len(messages)} new message(s) via WebSocket.")
+            self._process_messages(messages)
+        except json.JSONDecodeError:
+            if self.logger: self.logger.log(f"ERROR: Could not decode JSON from WebSocket: {message}")
 
     def _process_messages(self, messages):
         """Processes a list of incoming messages."""
@@ -127,14 +152,17 @@ class WhatsAppBaileysProvider(BaseChatProvider):
     def stop_listening(self, cleanup_session: bool = False):
         """Stops the message listening loop."""
         if self.logger: self.logger.log(f"Stopping... (cleanup={cleanup_session})")
-        self.is_listening = False
 
-        if self.loop and self.loop.is_running():
-            self.loop.call_soon_threadsafe(self.loop.stop)
+        if self.stop_event and not self.stop_event.is_set():
+            if self.logger: self.logger.log("Setting stop event for listener thread.")
+            self.loop.call_soon_threadsafe(self.stop_event.set)
 
         if self.thread:
             self.thread.join(timeout=5)
-            if self.logger: self.logger.log("WebSocket listener thread stopped.")
+            if self.thread.is_alive():
+                if self.logger: self.logger.log("WARN: WebSocket listener thread did not stop in time.")
+            else:
+                if self.logger: self.logger.log("WebSocket listener thread stopped.")
 
         if cleanup_session:
             self._cleanup_server_session()

@@ -131,7 +131,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         console.log(`[${userId}] Session already exists. Re-initializing.`);
         try {
             // End the old socket connection without logging out
-            sessions[userId].sock.end(undefined);
+            await sessions[userId].sock.end(undefined);
             console.log(`[${userId}] Old socket connection ended.`);
 
             // Close the WebSocket connection to force the client to reconnect
@@ -213,7 +213,11 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
             const maxRetriesReached = (session.retryCount || 0) >= 3;
 
-            if (isPermanentDisconnection || maxRetriesReached) {
+            if (statusCode === DisconnectReason.restartRequired) {
+                console.log(`[${userId}] Connection requires a restart. Reconnecting immediately.`);
+                connectToWhatsApp(userId, vendorConfig);
+
+            } else if (isPermanentDisconnection || maxRetriesReached) {
                 const reason = isPermanentDisconnection ? `permanent disconnect (code: ${statusCode})` : 'max retries reached';
                 console.log(`[${userId}] Connection closed permanently due to ${reason}. Cleaning up and forcing re-link.`);
 
@@ -228,10 +232,6 @@ async function connectToWhatsApp(userId, vendorConfig) {
                         console.error(`[${userId}] Failed to delete auth info from DB:`, err);
                     });
 
-            } else if (statusCode === DisconnectReason.restartRequired) {
-                console.log(`[${userId}] Connection requires a restart. Reconnecting immediately.`);
-                connectToWhatsApp(userId, vendorConfig);
-
             } else { // Handle other transient errors with retry logic
                 session.retryCount = (session.retryCount || 0) + 1;
                 console.log(`[${userId}] Connection closed transiently (code: ${statusCode}). Retry #${session.retryCount}.`);
@@ -242,7 +242,13 @@ async function connectToWhatsApp(userId, vendorConfig) {
         }
     });
 
-    sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', async () => {
+        try {
+            await saveCreds();
+        } catch(e) {
+            console.error(`[${userId}] Error saving credentials:`, e);
+        }
+    });
 
     sock.ev.on('contacts.update', (updates) => {
         const session = sessions[userId];
@@ -255,14 +261,15 @@ async function connectToWhatsApp(userId, vendorConfig) {
     });
 
     sock.ev.on('messages.upsert', async (m) => {
-        const session = sessions[userId];
-        if (!session) return;
+        try {
+            const session = sessions[userId];
+            if (!session) return;
 
-        // If we are receiving messages, we can consider the connection open
-        if (session.connectionStatus !== 'open') {
-            console.log(`[${userId}] Received messages while not in 'open' state, updating status.`);
-            session.connectionStatus = 'open';
-        }
+            // If we are receiving messages, we can consider the connection open
+            if (session.connectionStatus !== 'open') {
+                console.log(`[${userId}] Received messages while not in 'open' state, updating status.`);
+                session.connectionStatus = 'open';
+            }
 
         const processOffline = session.vendorConfig.process_offline_messages === true;
         const allowGroups = session.vendorConfig.allow_group_messages === true;
@@ -312,6 +319,9 @@ async function connectToWhatsApp(userId, vendorConfig) {
             } else {
                 console.log(`[${userId}] WebSocket not open, cannot send messages.`);
             }
+        }
+        } catch (e) {
+            console.error(`[${userId}] Error in messages.upsert handler:`, e);
         }
     });
 }
