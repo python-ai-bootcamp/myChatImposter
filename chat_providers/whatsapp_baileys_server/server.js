@@ -209,7 +209,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
             const isPermanentDisconnection =
                 statusCode === DisconnectReason.loggedOut ||
                 statusCode === DisconnectReason.connectionReplaced ||
-                statusCode === DisconnectReason.badSession;
+                statusCode === DisconnectReason.badSession ||
+                statusCode === DisconnectReason.restartRequired;
 
             const maxRetriesReached = (session.retryCount || 0) >= 3;
 
