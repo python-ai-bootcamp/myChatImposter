@@ -236,6 +236,12 @@ async function connectToWhatsApp(userId, vendorConfig) {
         const session = sessions[userId];
         if (!session) return;
 
+        // If we are receiving messages, we can consider the connection open
+        if (session.connectionStatus !== 'open') {
+            console.log(`[${userId}] Received messages while not in 'open' state, updating status.`);
+            session.connectionStatus = 'open';
+        }
+
         const processOffline = session.vendorConfig.process_offline_messages === true;
         const allowGroups = session.vendorConfig.allow_group_messages === true;
 
