@@ -206,7 +206,9 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 console.log(`[${userId}] Connection closed permanently due to ${reason}. Cleaning up and forcing re-link.`);
 
                 wsConnections[userId]?.close();
-                delete sessions[userId];
+                // We don't delete the session object here.
+                // The connectToWhatsApp function will handle the cleanup of the old session.
+                // This prevents a race condition where the client reconnects before the new session is ready.
 
                 baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } })
                     .then(() => {
