@@ -193,29 +193,36 @@ async function connectToWhatsApp(userId, vendorConfig) {
         if (connection === 'close') {
             session.currentQR = null;
             const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
-            if (statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.connectionReplaced) {
-                console.log(`[${userId}] Connection closed, user logged out or session replaced.`);
+
+            const isPermanentDisconnection =
+                statusCode === DisconnectReason.loggedOut ||
+                statusCode === DisconnectReason.connectionReplaced ||
+                statusCode === DisconnectReason.badSession;
+
+            const maxRetriesReached = (session.retryCount || 0) >= 3;
+
+            if (isPermanentDisconnection || maxRetriesReached) {
+                const reason = isPermanentDisconnection ? `permanent disconnect (code: ${statusCode})` : 'max retries reached';
+                console.log(`[${userId}] Connection closed permanently due to ${reason}. Cleaning up and forcing re-link.`);
+
                 wsConnections[userId]?.close();
                 delete sessions[userId];
-            } else if (statusCode === DisconnectReason.badSession) {
-                console.log(`[${userId}] Connection closed due to invalid session. Deleting auth info and re-initializing.`);
-                baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } }).then(() => {
-                    connectToWhatsApp(userId, vendorConfig);
-                });
-            } else {
-                session.retryCount = (session.retryCount || 0) + 1;
-                console.log(`[${userId}] Connection closed due to:`, lastDisconnect.error, `(retry #${session.retryCount})`);
 
-                if (session.retryCount >= 3) {
-                    console.log(`[${userId}] Max retries reached. Treating as a bad session.`);
-                    baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } }).then(() => {
-                        console.log(`[${userId}] Auth info deleted. Session will be re-initialized for QR scan.`);
-                        connectToWhatsApp(userId, vendorConfig);
+                baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } })
+                    .then(() => {
+                        console.log(`[${userId}] Auth info deleted. Re-initializing to generate new QR code.`);
+                        setTimeout(() => connectToWhatsApp(userId, vendorConfig), 1000);
+                    })
+                    .catch(err => {
+                        console.error(`[${userId}] Failed to delete auth info from DB:`, err);
                     });
-                } else {
-                    console.log(`[${userId}] Attempting to reconnect in 5s...`);
-                    setTimeout(() => connectToWhatsApp(userId, vendorConfig), 5000); // Wait 5s before reconnecting
-                }
+
+            } else { // Handle transient errors with retry logic
+                session.retryCount = (session.retryCount || 0) + 1;
+                console.log(`[${userId}] Connection closed transiently (code: ${statusCode}). Retry #${session.retryCount}.`);
+                console.log(`[${userId}] Underlying error:`, lastDisconnect.error);
+                console.log(`[${userId}] Attempting to reconnect in 5s...`);
+                setTimeout(() => connectToWhatsApp(userId, vendorConfig), 5000);
             }
         }
     });
