@@ -1,4 +1,21 @@
 const { Boom } = require('@hapi/boom');
+
+// --- Global Error Handlers ---
+process.on('uncaughtException', (err, origin) => {
+  console.error(`\n\n--- UNCAUGHT EXCEPTION ---`);
+  console.error(`Caught exception: ${err}`);
+  console.error(`Exception origin: ${origin}`);
+  console.error(`Stack: ${err.stack}`);
+  console.error(`--- END UNCAUGHT EXCEPTION ---`);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('\n\n--- UNHANDLED REJECTION ---');
+  console.error('Unhandled Rejection at:', promise);
+  console.error('Reason:', reason);
+  console.error('--- END UNHANDLED REJECTION ---');
+});
+
 const express = require('express');
 const qrcodeTerminal = require('qrcode-terminal');
 const QRCode = require('qrcode');
@@ -146,6 +163,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         connectionStatus: 'connecting',
         contactsCache: {},
         vendorConfig: vendorConfig,
+        retryCount: 0,
     };
 
     sock.ev.on('connection.update', (update) => {
@@ -158,6 +176,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         if (connection === 'open') {
             console.log(`[${userId}] WhatsApp connection opened.`);
             session.currentQR = null;
+            session.retryCount = 0; // Reset retry count
         }
 
         if (qr) {
@@ -175,20 +194,28 @@ async function connectToWhatsApp(userId, vendorConfig) {
             session.currentQR = null;
             const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
             if (statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.connectionReplaced) {
-                console.log(`[${userId}] Connection closed, user logged out or session replaced. Deleting auth info.`);
+                console.log(`[${userId}] Connection closed, user logged out or session replaced.`);
                 wsConnections[userId]?.close();
-                baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } }).then(() => {
-                    console.log(`[${userId}] Auth info deleted. Session object will be removed.`);
-                    delete sessions[userId];
-                });
+                delete sessions[userId];
             } else if (statusCode === DisconnectReason.badSession) {
                 console.log(`[${userId}] Connection closed due to invalid session. Deleting auth info and re-initializing.`);
                 baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } }).then(() => {
                     connectToWhatsApp(userId, vendorConfig);
                 });
             } else {
-                 console.log(`[${userId}] Connection closed due to:`, lastDisconnect.error, `... Attempting to reconnect.`);
-                 connectToWhatsApp(userId, vendorConfig);
+                session.retryCount = (session.retryCount || 0) + 1;
+                console.log(`[${userId}] Connection closed due to:`, lastDisconnect.error, `(retry #${session.retryCount})`);
+
+                if (session.retryCount >= 3) {
+                    console.log(`[${userId}] Max retries reached. Treating as a bad session.`);
+                    baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } }).then(() => {
+                        console.log(`[${userId}] Auth info deleted. Session will be re-initialized for QR scan.`);
+                        connectToWhatsApp(userId, vendorConfig);
+                    });
+                } else {
+                    console.log(`[${userId}] Attempting to reconnect in 5s...`);
+                    setTimeout(() => connectToWhatsApp(userId, vendorConfig), 5000); // Wait 5s before reconnecting
+                }
             }
         }
     });
