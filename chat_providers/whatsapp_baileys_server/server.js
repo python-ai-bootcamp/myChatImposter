@@ -181,7 +181,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         const session = sessions[userId];
-        if (!session) return;
+        if (!session || session.isUnlinking) return;
 
         session.connectionStatus = connection;
 
@@ -394,6 +394,7 @@ app.delete('/sessions/:userId', async (req, res) => {
 
     try {
         console.log(`[${userId}] Logging out...`);
+        session.isUnlinking = true;
         await session.sock.logout();
     } catch (error) {
         console.error(`[${userId}] Error during logout:`, error);
