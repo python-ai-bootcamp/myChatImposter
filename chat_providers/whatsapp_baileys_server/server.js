@@ -175,9 +175,12 @@ async function connectToWhatsApp(userId, vendorConfig) {
             session.currentQR = null;
             const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
             if (statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.connectionReplaced) {
-                console.log(`[${userId}] Connection closed, user logged out or session replaced.`);
+                console.log(`[${userId}] Connection closed, user logged out or session replaced. Deleting auth info.`);
                 wsConnections[userId]?.close();
-                delete sessions[userId];
+                baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } }).then(() => {
+                    console.log(`[${userId}] Auth info deleted. Session object will be removed.`);
+                    delete sessions[userId];
+                });
             } else if (statusCode === DisconnectReason.badSession) {
                 console.log(`[${userId}] Connection closed due to invalid session. Deleting auth info and re-initializing.`);
                 baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } }).then(() => {
