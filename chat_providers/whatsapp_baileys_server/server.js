@@ -4,6 +4,7 @@ const qrcodeTerminal = require('qrcode-terminal');
 const QRCode = require('qrcode');
 const fs = require('fs');
 const http = require('http');
+const { WebSocketServer } = require('ws');
 const pino = require('pino');
 const path = require('path');
 const { MongoClient } = require('mongodb');
@@ -17,6 +18,7 @@ const {
 
 // --- Globals ---
 const sessions = {}; // Holds all active user sessions, keyed by userId
+const wsConnections = {}; // Holds all active WebSocket connections, keyed by userId
 const serverStartTime = Date.now();
 let baileysSessionsCollection;
 
@@ -132,7 +134,6 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
     sessions[userId] = {
         sock: sock,
-        incomingMessages: [],
         currentQR: null,
         connectionStatus: 'connecting',
         contactsCache: {},
@@ -238,7 +239,12 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
         const newMessages = (await Promise.all(newMessagesPromises)).filter(Boolean);
         if (newMessages.length > 0) {
-            session.incomingMessages.push(...newMessages);
+            const ws = wsConnections[userId];
+            if (ws && ws.readyState === ws.OPEN) {
+                ws.send(JSON.stringify(newMessages));
+            } else {
+                console.log(`[${userId}] WebSocket not open, cannot send messages.`);
+            }
         }
     });
 }
@@ -286,16 +292,6 @@ app.post('/sessions/:userId/send', async (req, res) => {
         console.error(`[${userId}] Failed to send message:`, error);
         res.status(500).json({ error: 'Failed to send message.' });
     }
-});
-
-app.get('/sessions/:userId/messages', (req, res) => {
-    const { userId } = req.params;
-    const session = sessions[userId];
-    if (!session) {
-        return res.status(404).json({ error: 'Session not found.' });
-    }
-    res.status(200).json(session.incomingMessages);
-    session.incomingMessages = [];
 });
 
 app.get('/sessions/:userId/status', (req, res) => {
@@ -350,6 +346,31 @@ async function startServer() {
         console.log('Successfully connected to MongoDB.');
 
         const server = http.createServer(app);
+        const wss = new WebSocketServer({ server });
+
+        wss.on('connection', (ws, req) => {
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            const userId = url.pathname.split('/')[1];
+
+            if (!userId || !sessions[userId]) {
+                console.log(`[WebSocket] Connection rejected: No session for userId '${userId}'`);
+                ws.close();
+                return;
+            }
+
+            console.log(`[WebSocket] Client connected for userId: ${userId}`);
+            wsConnections[userId] = ws;
+
+            ws.on('close', () => {
+                console.log(`[WebSocket] Client disconnected for userId: ${userId}`);
+                delete wsConnections[userId];
+            });
+
+            ws.on('error', (error) => {
+                console.error(`[WebSocket] Error for userId ${userId}:`, error);
+            });
+        });
+
         server.listen(port, () => {
             console.log(`WhatsApp Baileys multi-user server listening on port ${port}`);
         });
