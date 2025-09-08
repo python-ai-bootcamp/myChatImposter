@@ -209,8 +209,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
             const isPermanentDisconnection =
                 statusCode === DisconnectReason.loggedOut ||
                 statusCode === DisconnectReason.connectionReplaced ||
-                statusCode === DisconnectReason.badSession ||
-                statusCode === DisconnectReason.restartRequired;
+                statusCode === DisconnectReason.badSession;
 
             const maxRetriesReached = (session.retryCount || 0) >= 3;
 
@@ -219,9 +218,6 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 console.log(`[${userId}] Connection closed permanently due to ${reason}. Cleaning up and forcing re-link.`);
 
                 wsConnections[userId]?.close();
-                // We don't delete the session object here.
-                // The connectToWhatsApp function will handle the cleanup of the old session.
-                // This prevents a race condition where the client reconnects before the new session is ready.
 
                 baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } })
                     .then(() => {
@@ -232,7 +228,11 @@ async function connectToWhatsApp(userId, vendorConfig) {
                         console.error(`[${userId}] Failed to delete auth info from DB:`, err);
                     });
 
-            } else { // Handle transient errors with retry logic
+            } else if (statusCode === DisconnectReason.restartRequired) {
+                console.log(`[${userId}] Connection requires a restart. Reconnecting immediately.`);
+                connectToWhatsApp(userId, vendorConfig);
+
+            } else { // Handle other transient errors with retry logic
                 session.retryCount = (session.retryCount || 0) + 1;
                 console.log(`[${userId}] Connection closed transiently (code: ${statusCode}). Retry #${session.retryCount}.`);
                 console.log(`[${userId}] Underlying error:`, lastDisconnect.error);
