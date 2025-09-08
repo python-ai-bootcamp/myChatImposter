@@ -141,10 +141,11 @@ async function connectToWhatsApp(userId, vendorConfig) {
         } catch (e) {
             console.log(`[${userId}] Old socket cleanup failed:`, e);
         }
-        delete sessions[userId];
+        // We don't delete the session object. We will re-use and update it.
+        // This prevents a race condition where the client reconnects before the new session is ready.
     }
 
-    console.log(`[${userId}] Starting new session.`);
+    console.log(`[${userId}] Starting new session connection...`);
 
     const { state, saveCreds } = await useMongoDBAuthState(userId, baileysSessionsCollection);
 
@@ -157,14 +158,25 @@ async function connectToWhatsApp(userId, vendorConfig) {
         printQRInTerminal: false, // We handle QR code generation manually
     });
 
-    sessions[userId] = {
-        sock: sock,
-        currentQR: null,
-        connectionStatus: 'connecting',
-        contactsCache: {},
-        vendorConfig: vendorConfig,
-        retryCount: 0,
-    };
+    // If a session object already exists, update it. Otherwise, create a new one.
+    // This preserves the object reference and prevents race conditions.
+    if (sessions[userId]) {
+        console.log(`[${userId}] Updating existing session object.`);
+        sessions[userId].sock = sock;
+        sessions[userId].currentQR = null;
+        sessions[userId].connectionStatus = 'connecting';
+        sessions[userId].retryCount = 0;
+    } else {
+        console.log(`[${userId}] Creating new session object.`);
+        sessions[userId] = {
+            sock: sock,
+            currentQR: null,
+            connectionStatus: 'connecting',
+            contactsCache: {},
+            vendorConfig: vendorConfig,
+            retryCount: 0,
+        };
+    }
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
