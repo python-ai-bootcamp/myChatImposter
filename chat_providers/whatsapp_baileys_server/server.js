@@ -1,9 +1,27 @@
 const { Boom } = require('@hapi/boom');
+
+// --- Global Error Handlers ---
+process.on('uncaughtException', (err, origin) => {
+  console.error(`\n\n--- UNCAUGHT EXCEPTION ---`);
+  console.error(`Caught exception: ${err}`);
+  console.error(`Exception origin: ${origin}`);
+  console.error(`Stack: ${err.stack}`);
+  console.error(`--- END UNCAUGHT EXCEPTION ---`);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('\n\n--- UNHANDLED REJECTION ---');
+  console.error('Unhandled Rejection at:', promise);
+  console.error('Reason:', reason);
+  console.error('--- END UNHANDLED REJECTION ---');
+});
+
 const express = require('express');
 const qrcodeTerminal = require('qrcode-terminal');
 const QRCode = require('qrcode');
 const fs = require('fs');
 const http = require('http');
+const { WebSocketServer } = require('ws');
 const pino = require('pino');
 const path = require('path');
 const { MongoClient } = require('mongodb');
@@ -17,6 +35,7 @@ const {
 
 // --- Globals ---
 const sessions = {}; // Holds all active user sessions, keyed by userId
+const wsConnections = {}; // Holds all active WebSocket connections, keyed by userId
 const serverStartTime = Date.now();
 let baileysSessionsCollection;
 
@@ -111,13 +130,22 @@ async function connectToWhatsApp(userId, vendorConfig) {
     if (sessions[userId] && sessions[userId].sock) {
         console.log(`[${userId}] Session already exists. Re-initializing.`);
         try {
-            await sessions[userId].sock.logout();
+            // End the old socket connection without logging out
+            await sessions[userId].sock.end(undefined);
+            console.log(`[${userId}] Old socket connection ended.`);
+
+            // Close the WebSocket connection to force the client to reconnect
+            wsConnections[userId]?.close();
+            console.log(`[${userId}] Old WebSocket connection closed.`);
+
         } catch (e) {
-            console.log(`[${userId}] Old socket logout failed, probably already disconnected.`);
+            console.log(`[${userId}] Old socket cleanup failed:`, e);
         }
+        // We don't delete the session object. We will re-use and update it.
+        // This prevents a race condition where the client reconnects before the new session is ready.
     }
 
-    console.log(`[${userId}] Starting new session.`);
+    console.log(`[${userId}] Starting new session connection...`);
 
     const { state, saveCreds } = await useMongoDBAuthState(userId, baileysSessionsCollection);
 
@@ -130,25 +158,37 @@ async function connectToWhatsApp(userId, vendorConfig) {
         printQRInTerminal: false, // We handle QR code generation manually
     });
 
-    sessions[userId] = {
-        sock: sock,
-        incomingMessages: [],
-        currentQR: null,
-        connectionStatus: 'connecting',
-        contactsCache: {},
-        vendorConfig: vendorConfig,
-    };
+    // If a session object already exists, update it. Otherwise, create a new one.
+    // This preserves the object reference and prevents race conditions.
+    if (sessions[userId]) {
+        console.log(`[${userId}] Updating existing session object.`);
+        sessions[userId].sock = sock;
+        sessions[userId].currentQR = null;
+        sessions[userId].connectionStatus = 'connecting';
+        sessions[userId].retryCount = 0;
+    } else {
+        console.log(`[${userId}] Creating new session object.`);
+        sessions[userId] = {
+            sock: sock,
+            currentQR: null,
+            connectionStatus: 'connecting',
+            contactsCache: {},
+            vendorConfig: vendorConfig,
+            retryCount: 0,
+        };
+    }
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         const session = sessions[userId];
-        if (!session) return;
+        if (!session || session.isUnlinking) return;
 
         session.connectionStatus = connection;
 
         if (connection === 'open') {
             console.log(`[${userId}] WhatsApp connection opened.`);
             session.currentQR = null;
+            session.retryCount = 0; // Reset retry count
         }
 
         if (qr) {
@@ -165,22 +205,50 @@ async function connectToWhatsApp(userId, vendorConfig) {
         if (connection === 'close') {
             session.currentQR = null;
             const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
-            if (statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.connectionReplaced) {
-                console.log(`[${userId}] Connection closed, user logged out or session replaced.`);
-                delete sessions[userId];
-            } else if (statusCode === DisconnectReason.badSession) {
-                console.log(`[${userId}] Connection closed due to invalid session. Deleting auth info and re-initializing.`);
-                baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } }).then(() => {
-                    connectToWhatsApp(userId, vendorConfig);
-                });
-            } else {
-                 console.log(`[${userId}] Connection closed due to:`, lastDisconnect.error, `... Attempting to reconnect.`);
-                 connectToWhatsApp(userId, vendorConfig);
+
+            const isPermanentDisconnection =
+                statusCode === DisconnectReason.loggedOut ||
+                statusCode === DisconnectReason.connectionReplaced ||
+                statusCode === DisconnectReason.badSession;
+
+            const maxRetriesReached = (session.retryCount || 0) >= 3;
+
+            if (statusCode === DisconnectReason.restartRequired) {
+                console.log(`[${userId}] Connection requires a restart. Reconnecting immediately.`);
+                connectToWhatsApp(userId, vendorConfig);
+
+            } else if (isPermanentDisconnection || maxRetriesReached) {
+                const reason = isPermanentDisconnection ? `permanent disconnect (code: ${statusCode})` : 'max retries reached';
+                console.log(`[${userId}] Connection closed permanently due to ${reason}. Cleaning up and forcing re-link.`);
+
+                wsConnections[userId]?.close();
+
+                baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } })
+                    .then(() => {
+                        console.log(`[${userId}] Auth info deleted. Re-initializing to generate new QR code.`);
+                        setTimeout(() => connectToWhatsApp(userId, vendorConfig), 1000);
+                    })
+                    .catch(err => {
+                        console.error(`[${userId}] Failed to delete auth info from DB:`, err);
+                    });
+
+            } else { // Handle other transient errors with retry logic
+                session.retryCount = (session.retryCount || 0) + 1;
+                console.log(`[${userId}] Connection closed transiently (code: ${statusCode}). Retry #${session.retryCount}.`);
+                console.log(`[${userId}] Underlying error:`, lastDisconnect.error);
+                console.log(`[${userId}] Attempting to reconnect in 5s...`);
+                setTimeout(() => connectToWhatsApp(userId, vendorConfig), 5000);
             }
         }
     });
 
-    sock.ev.on('creds.update', saveCreds);
+    sock.ev.on('creds.update', async () => {
+        try {
+            await saveCreds();
+        } catch(e) {
+            console.error(`[${userId}] Error saving credentials:`, e);
+        }
+    });
 
     sock.ev.on('contacts.update', (updates) => {
         const session = sessions[userId];
@@ -193,8 +261,15 @@ async function connectToWhatsApp(userId, vendorConfig) {
     });
 
     sock.ev.on('messages.upsert', async (m) => {
-        const session = sessions[userId];
-        if (!session) return;
+        try {
+            const session = sessions[userId];
+            if (!session) return;
+
+            // If we are receiving messages, we can consider the connection open
+            if (session.connectionStatus !== 'open') {
+                console.log(`[${userId}] Received messages while not in 'open' state, updating status.`);
+                session.connectionStatus = 'open';
+            }
 
         const processOffline = session.vendorConfig.process_offline_messages === true;
         const allowGroups = session.vendorConfig.allow_group_messages === true;
@@ -238,7 +313,15 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
         const newMessages = (await Promise.all(newMessagesPromises)).filter(Boolean);
         if (newMessages.length > 0) {
-            session.incomingMessages.push(...newMessages);
+            const ws = wsConnections[userId];
+            if (ws && ws.readyState === ws.OPEN) {
+                ws.send(JSON.stringify(newMessages));
+            } else {
+                console.log(`[${userId}] WebSocket not open, cannot send messages.`);
+            }
+        }
+        } catch (e) {
+            console.error(`[${userId}] Error in messages.upsert handler:`, e);
         }
     });
 }
@@ -288,16 +371,6 @@ app.post('/sessions/:userId/send', async (req, res) => {
     }
 });
 
-app.get('/sessions/:userId/messages', (req, res) => {
-    const { userId } = req.params;
-    const session = sessions[userId];
-    if (!session) {
-        return res.status(404).json({ error: 'Session not found.' });
-    }
-    res.status(200).json(session.incomingMessages);
-    session.incomingMessages = [];
-});
-
 app.get('/sessions/:userId/status', (req, res) => {
     const { userId } = req.params;
     const session = sessions[userId];
@@ -321,6 +394,7 @@ app.delete('/sessions/:userId', async (req, res) => {
 
     try {
         console.log(`[${userId}] Logging out...`);
+        session.isUnlinking = true;
         await session.sock.logout();
     } catch (error) {
         console.error(`[${userId}] Error during logout:`, error);
@@ -350,6 +424,31 @@ async function startServer() {
         console.log('Successfully connected to MongoDB.');
 
         const server = http.createServer(app);
+        const wss = new WebSocketServer({ server });
+
+        wss.on('connection', (ws, req) => {
+            const url = new URL(req.url, `http://${req.headers.host}`);
+            const userId = url.pathname.split('/')[1];
+
+            if (!userId || !sessions[userId]) {
+                console.log(`[WebSocket] Connection rejected: No session for userId '${userId}'`);
+                ws.close();
+                return;
+            }
+
+            console.log(`[WebSocket] Client connected for userId: ${userId}`);
+            wsConnections[userId] = ws;
+
+            ws.on('close', () => {
+                console.log(`[WebSocket] Client disconnected for userId: ${userId}`);
+                delete wsConnections[userId];
+            });
+
+            ws.on('error', (error) => {
+                console.error(`[WebSocket] Error for userId ${userId}:`, error);
+            });
+        });
+
         server.listen(port, () => {
             console.log(`WhatsApp Baileys multi-user server listening on port ${port}`);
         });
