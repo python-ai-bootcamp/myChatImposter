@@ -113,10 +113,18 @@ async function connectToWhatsApp(userId, vendorConfig) {
     if (sessions[userId] && sessions[userId].sock) {
         console.log(`[${userId}] Session already exists. Re-initializing.`);
         try {
-            await sessions[userId].sock.logout();
+            // End the old socket connection without logging out
+            sessions[userId].sock.end(undefined);
+            console.log(`[${userId}] Old socket connection ended.`);
+
+            // Close the WebSocket connection to force the client to reconnect
+            wsConnections[userId]?.close();
+            console.log(`[${userId}] Old WebSocket connection closed.`);
+
         } catch (e) {
-            console.log(`[${userId}] Old socket logout failed, probably already disconnected.`);
+            console.log(`[${userId}] Old socket cleanup failed:`, e);
         }
+        delete sessions[userId];
     }
 
     console.log(`[${userId}] Starting new session.`);
@@ -168,6 +176,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
             const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
             if (statusCode === DisconnectReason.loggedOut || statusCode === DisconnectReason.connectionReplaced) {
                 console.log(`[${userId}] Connection closed, user logged out or session replaced.`);
+                wsConnections[userId]?.close();
                 delete sessions[userId];
             } else if (statusCode === DisconnectReason.badSession) {
                 console.log(`[${userId}] Connection closed due to invalid session. Deleting auth info and re-initializing.`);

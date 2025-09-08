@@ -185,9 +185,12 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             with urllib.request.urlopen(f"{self.base_url}/sessions/{self.user_id}/status", timeout=5) as response:
                 if response.status == 200:
                     return json.loads(response.read().decode('utf-8'))
-                else:
-                    return {"status": "error", "message": f"Failed to get status, HTTP {response.status}"}
+                return {"status": "error", "message": f"Unexpected status code {response.status}"}
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                return {"status": "disconnected", "message": "Session not found on Node.js server."}
+            return {"status": "error", "message": f"HTTP Error {e.code}: {e.reason}"}
         except urllib.error.URLError as e:
-            return {"status": "initializing", "message": "Node.js server is not reachable yet."}
+            return {"status": "initializing", "message": f"Node.js server is not reachable: {e.reason}"}
         except Exception as e:
             return {"status": "error", "message": f"Exception while getting status: {e}"}
