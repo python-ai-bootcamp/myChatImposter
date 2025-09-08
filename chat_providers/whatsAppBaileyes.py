@@ -4,10 +4,10 @@ import json
 import os
 import urllib.request
 import urllib.error
-from typing import Dict
+from typing import Dict, Optional, Callable
 
 from queue_manager import UserQueue, Sender, Group, Message
-from logging_lock import console_log
+from logging_lock import FileLogger
 from .base import BaseChatProvider
 from config_models import ChatProviderConfig
 
@@ -15,14 +15,16 @@ class WhatsAppBaileysProvider(BaseChatProvider):
     """
     A provider that connects to a Node.js Baileys server to send and receive WhatsApp messages.
     """
-    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueue], on_session_end=None):
+    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueue], on_session_end: Optional[Callable[[str], None]] = None, logger: Optional[FileLogger] = None):
         """
         Initializes the provider.
         - user_id: The specific user this provider instance is for.
         - config: The 'provider_config' block from the JSON configuration.
         - user_queues: A dictionary of all user queues, passed by the main application.
+        - on_session_end: Callback to notify when a session ends.
+        - logger: An instance of FileLogger for logging.
         """
-        super().__init__(user_id, config, user_queues, on_session_end)
+        super().__init__(user_id, config, user_queues, on_session_end, logger)
         self.is_listening = False
         self.session_ended = False
         self.thread = None
@@ -30,7 +32,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
         # The Node.js server is now a separate container managed by docker-compose.
         # We just need to know its URL.
-        console_log(f"PROVIDER ({self.user_id}): Connecting to Node.js server at {self.base_url}")
+        if self.logger:
+            self.logger.log(f"Connecting to Node.js server at {self.base_url}")
         self._send_config_to_server()
 
     def _send_config_to_server(self):
@@ -49,24 +52,29 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             )
             with urllib.request.urlopen(req) as response:
                 if response.status == 200:
-                    console_log(f"PROVIDER ({self.user_id}): Successfully sent configuration to Node.js server.")
+                    if self.logger:
+                        self.logger.log("Successfully sent configuration to Node.js server.")
                 else:
                     body = response.read().decode('utf-8', 'backslashreplace')
-                    console_log(f"PROVIDER_ERROR ({self.user_id}): Failed to send config. Status: {response.status}, Body: {body}")
+                    if self.logger:
+                        self.logger.log(f"ERROR: Failed to send config. Status: {response.status}, Body: {body}")
         except Exception as e:
-            console_log(f"PROVIDER_ERROR ({self.user_id}): Exception while sending configuration: {e}")
+            if self.logger:
+                self.logger.log(f"ERROR: Exception while sending configuration: {e}")
 
 
     def start_listening(self):
         """Starts the message listening loop in a background thread."""
         if self.is_listening:
-            console_log(f"PROVIDER ({self.user_id}): Already listening.")
+            if self.logger:
+                self.logger.log("Already listening.")
             return
 
         self.is_listening = True
         self.thread = threading.Thread(target=self._listen, daemon=True)
         self.thread.start()
-        console_log(f"PROVIDER ({self.user_id}): Started polling for messages from Node.js server.")
+        if self.logger:
+            self.logger.log("Started polling for messages from Node.js server.")
 
     def stop_listening(self, cleanup_session: bool = False):
         """
@@ -76,23 +84,28 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             cleanup_session (bool): If True, deletes the session data from the Node.js server.
                                     This should be used for unlinking, not for shutdown.
         """
-        console_log(f"PROVIDER ({self.user_id}): Stopping... (cleanup={cleanup_session})")
+        if self.logger:
+            self.logger.log(f"Stopping... (cleanup={cleanup_session})")
         self.is_listening = False
         if self.thread:
             # The thread will exit on its own since it checks `is_listening`
             self.thread.join()
-            console_log(f"PROVIDER ({self.user_id}): Polling thread stopped.")
+            if self.logger:
+                self.logger.log("Polling thread stopped.")
 
         # If requested, tell the Node.js server to clean up the session.
         if cleanup_session:
-            console_log(f"PROVIDER ({self.user_id}): Requesting session cleanup on Node.js server.")
+            if self.logger:
+                self.logger.log("Requesting session cleanup on Node.js server.")
             try:
                 req = urllib.request.Request(f"{self.base_url}/sessions/{self.user_id}", method='DELETE')
                 with urllib.request.urlopen(req) as response:
                     if response.status == 200:
-                        console_log(f"PROVIDER ({self.user_id}): Successfully requested session cleanup.")
+                        if self.logger:
+                            self.logger.log("Successfully requested session cleanup.")
             except Exception as e:
-                console_log(f"PROVIDER_ERROR ({self.user_id}): Failed to request session cleanup: {e}")
+                if self.logger:
+                    self.logger.log(f"ERROR: Failed to request session cleanup: {e}")
 
         # Call the session end callback to clean up the main application's state
         if self.on_session_end and not self.session_ended:
@@ -111,7 +124,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     if response.status == 200:
                         messages = json.loads(response.read().decode('utf-8'))
                         if messages:
-                            console_log(f"PROVIDER ({self.user_id}): Fetched {len(messages)} new message(s).")
+                            if self.logger:
+                                self.logger.log(f"Fetched {len(messages)} new message(s).")
                             queue = self.user_queues.get(self.user_id)
                             if queue:
                                 for msg in messages:
@@ -127,18 +141,20 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                                         source='user',
                                         group=group
                                     )
-                            else:
-                                console_log(f"PROVIDER_ERROR ({self.user_id}): Could not find a queue for myself.")
+                            elif self.logger:
+                                self.logger.log("ERROR: Could not find a queue for myself.")
                     elif response.status == 404:
-                         console_log(f"PROVIDER_WARN ({self.user_id}): Session not found on Node.js server. It might be initializing.")
+                         if self.logger:
+                            self.logger.log("WARN: Session not found on Node.js server. It might be initializing.")
                          time.sleep(5) # Wait longer if session is not ready
-                    else:
-                        console_log(f"PROVIDER_ERROR ({self.user_id}): Error polling for messages. Status: {response.status}")
+                    elif self.logger:
+                        self.logger.log(f"ERROR: Error polling for messages. Status: {response.status}")
             except urllib.error.URLError as e:
                 time.sleep(2)
                 continue
             except Exception as e:
-                console_log(f"PROVIDER_ERROR ({self.user_id}): Exception while polling for messages: {e}")
+                if self.logger:
+                    self.logger.log(f"ERROR: Exception while polling for messages: {e}")
 
             time.sleep(5)
 
@@ -146,7 +162,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         """
         Sends a message back to the user via the Node.js server for a specific session.
         """
-        console_log(f"PROVIDER ({self.user_id}): Sending reply to {recipient} ---> {message[:50]}...")
+        if self.logger:
+            self.logger.log(f"Sending reply to {recipient} ---> {message[:50]}...")
         try:
             data = json.dumps({"recipient": recipient, "message": message}).encode('utf-8')
             req = urllib.request.Request(
@@ -158,9 +175,11 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             with urllib.request.urlopen(req) as response:
                 if response.status != 200:
                     body = response.read().decode('utf-8', 'backslashreplace')
-                    console_log(f"PROVIDER_ERROR ({self.user_id}): Failed to send message. Status: {response.status}, Body: {body}")
+                    if self.logger:
+                        self.logger.log(f"ERROR: Failed to send message. Status: {response.status}, Body: {body}")
         except Exception as e:
-            console_log(f"PROVIDER_ERROR ({self.user_id}): Exception while sending message: {e}")
+            if self.logger:
+                self.logger.log(f"ERROR: Exception while sending message: {e}")
 
     def get_status(self) -> Dict:
         """

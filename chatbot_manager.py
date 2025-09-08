@@ -6,7 +6,7 @@ import sys
 import inspect
 from typing import Dict, Any, Optional, Type, List
 
-from logging_lock import console_log
+from logging_lock import console_log, FileLogger
 from config_models import UserConfiguration
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -95,11 +95,14 @@ class ChatbotInstance:
         if not ProviderClass:
             raise ImportError(f"Could not find a valid chat provider class in module 'chat_providers.{provider_name}'")
 
+        file_logger = FileLogger(self.user_id, provider_name)
+
         self.provider_instance = ProviderClass(
             user_id=self.user_id,
             config=chat_provider_config,
             user_queues={self.user_id: self.user_queue},
-            on_session_end=self.on_session_end
+            on_session_end=self.on_session_end,
+            logger=file_logger
         )
         console_log(f"INSTANCE ({self.user_id}): Initialized chat provider '{provider_name}'.")
 
@@ -133,10 +136,12 @@ class ChatbotInstance:
             sender_display_name = message.sender.display_name
 
             # Check if any whitelisted string is a substring of either the identifier or display name
-            if not any(
-                whitelisted_sender in sender_identifier or whitelisted_sender in sender_display_name
+            is_whitelisted = any(
+                (whitelisted_sender in sender_identifier if sender_identifier else False) or
+                (whitelisted_sender in sender_display_name if sender_display_name else False)
                 for whitelisted_sender in self.whitelist
-            ):
+            )
+            if not is_whitelisted:
                 console_log(f"INSTANCE ({user_id}): Sender '{message.sender.identifier}' not in whitelist. Ignoring.")
                 return
 
