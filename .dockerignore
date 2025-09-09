@@ -1,0 +1,32 @@
+# Git
+.git/
+.gitignore
+
+# Logs
+# Ignore all files inside the log directory, but not the directory itself.
+# The .gitkeep file is explicitly not ignored so the directory is preserved.
+log/*
+!log/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+.venv/
+venv/
+
+# Node
+node_modules/
+**/node_modules
+npm-debug.log
+yarn-error.log
+
+# IDEs
+.vscode/
+.idea/
+
+# Docker
+Dockerfile
+.dockerignore
