@@ -283,7 +283,6 @@ function EditPage() {
       llm_provider_config: {
         provider_config: {
           "ui:ObjectFieldTemplate": LlmProviderSettingsTemplate,
-          "ui:title": "API Key Source",
           api_key_source: {
             "ui:enumNames": [
               "From Environment",

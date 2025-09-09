@@ -140,6 +140,9 @@ export function CustomObjectFieldTemplate(props) {
 }
 
 export function LlmProviderSettingsTemplate(props) {
+  const apiKeySourceProperty = props.properties.find(p => p.name === 'api_key_source');
+  const otherProperties = props.properties.filter(p => p.name !== 'api_key_source');
+
   const fieldsetStyle = {
     border: '1px solid #ccc',
     borderRadius: '4px',
@@ -152,19 +155,25 @@ export function LlmProviderSettingsTemplate(props) {
   };
 
   return (
-    <fieldset style={fieldsetStyle}>
-        <div style={{display: 'table-caption', captionSide: 'top', textAlign: 'left', paddingBottom: '0.5rem', marginBottom: '1rem', borderBottom: '1px solid #eee'}}>
-            <h3 style={{ margin: 0, padding: 0 }}>
-                LlmProviderSettings
-            </h3>
-        </div>
-      {props.description}
-      {props.properties.map(element => (
-        <React.Fragment key={element.content.key}>
-          {element.content}
-        </React.Fragment>
-      ))}
-    </fieldset>
+    <div>
+      {apiKeySourceProperty && apiKeySourceProperty.content}
+
+      {otherProperties.length > 0 && (
+        <fieldset style={fieldsetStyle}>
+            <div style={{display: 'table-caption', captionSide: 'top', textAlign: 'left', paddingBottom: '0.5rem', marginBottom: '1rem', borderBottom: '1px solid #eee'}}>
+                <h3 style={{ margin: 0, padding: 0 }}>
+                    LlmProviderSettings
+                </h3>
+            </div>
+          {props.description}
+          {otherProperties.map(element => (
+            <React.Fragment key={element.content.key}>
+              {element.content}
+            </React.Fragment>
+          ))}
+        </fieldset>
+      )}
+    </div>
   );
 }
 
