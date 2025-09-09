@@ -155,18 +155,16 @@ async def get_configuration_schema():
                 elif item.get('type') == 'null':
                     item['title'] = "Collection Only"
 
-    # Remove the old, problematic anyOf logic for api_key
+    # This is the correct way to handle conditional fields.
     if defs_key in schema and 'LLMProviderSettings' in schema[defs_key]:
         llm_settings_schema = schema[defs_key]['LLMProviderSettings']
-        if 'properties' in llm_settings_schema and 'api_key' in llm_settings_schema['properties']:
-            # The model is Optional[str], so we make it a simple string field that is not required by default.
-            # Its requirement will be handled by the dependency logic below.
-            llm_settings_schema['properties']['api_key'] = {
-                "title": "API Key",
-                "type": "string"
-            }
 
-        # Add dependency logic: if api_key_source is 'explicit', then api_key is required.
+        # 1. Remove api_key from the main properties block.
+        #    Pydantic adds it by default. We will define it only in the dependency.
+        if 'properties' in llm_settings_schema and 'api_key' in llm_settings_schema['properties']:
+            del llm_settings_schema['properties']['api_key']
+
+        # 2. Add dependency logic: if api_key_source is 'explicit', then define and require api_key.
         llm_settings_schema['dependencies'] = {
             "api_key_source": {
                 "oneOf": [
@@ -178,6 +176,11 @@ async def get_configuration_schema():
                     {
                         "properties": {
                             "api_key_source": {"const": "explicit"},
+                            "api_key": {
+                                "title": "API Key",
+                                "type": "string",
+                                "minLength": 1
+                            }
                         },
                         "required": ["api_key"]
                     }
