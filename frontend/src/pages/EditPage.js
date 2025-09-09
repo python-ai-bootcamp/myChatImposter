@@ -141,6 +141,19 @@ function EditPage() {
           if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');
           const data = await dataResponse.json();
           const originalData = Array.isArray(data) ? data[0] : data;
+
+          // Perform on-the-fly migration for old configs that don't have api_key_source
+          if (originalData.llm_provider_config && originalData.llm_provider_config.provider_config) {
+            const providerConfig = originalData.llm_provider_config.provider_config;
+            if (!providerConfig.hasOwnProperty('api_key_source')) {
+              if (providerConfig.api_key) {
+                providerConfig.api_key_source = 'explicit';
+              } else {
+                providerConfig.api_key_source = 'environment';
+              }
+            }
+          }
+
           initialFormData = transformDataToUI(originalData);
         }
         setFormData(initialFormData);

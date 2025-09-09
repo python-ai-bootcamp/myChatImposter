@@ -12,6 +12,7 @@ from fastapi.concurrency import run_in_threadpool
 from typing import Dict, Any, List, Union
 from uvicorn.config import LOGGING_CONFIG
 from pymongo import MongoClient
+from pymongo.errors import DuplicateKeyError
 
 from chatbot_manager import ChatbotInstance
 from logging_lock import console_log
@@ -50,14 +51,8 @@ async def startup_event():
         db = mongo_client.get_database("chat_manager")
         configurations_collection = db.get_collection("configurations")
 
-        # Create a unique index on the 'user_id' field of the 'config_data'
-        # This is a bit more complex because user_id is inside an array of objects.
-        # To handle both object and array-of-one-object, we need to be careful.
-        # A simple index on "config_data.user_id" works for the object case.
-        # MongoDB can index into arrays, so it should also work for the array case.
         try:
-            # Check if the 'config_data' field is an array and handle accordingly
-            # This is a simplified approach. A more robust solution might involve a schema migration.
+            # This index is on the user_id field *within* the config_data object.
             configurations_collection.create_index("config_data.user_id", unique=True)
             console_log("API: Ensured unique index exists for 'config_data.user_id'.")
         except Exception as index_e:
@@ -108,26 +103,20 @@ async def get_configuration_user_ids():
     if configurations_collection is None:
         raise HTTPException(status_code=503, detail="Database connection not available.")
     try:
-        # Extract the user_id from the config_data field.
-        # This assumes config_data is either a single object or an array with one object.
-        # Using an aggregation pipeline is more robust for this.
-        pipeline = [
-            {"$unwind": "$config_data"}, # Deconstructs the array field
-            {"$project": {"user_id": "$config_data.user_id", "_id": 0}}
-        ]
-        # A more direct approach if config_data is always an object or you need to handle both
-        # For simplicity, we'll assume the structure is consistent and query directly.
-        # Note: a simple find with projection is harder if the data can be an object OR an array.
-        # The aggregation pipeline handles both cases gracefully after an initial check or assumption.
-
-        # Let's try a simpler find and handle the two cases in python
         user_ids = []
-        for doc in configurations_collection.find({}, {"config_data.user_id": 1, "_id": 0}):
+        # Query for documents where config_data is an object, and for documents where it's an array.
+        # This is more robust than trying to handle it in Python code.
+        cursor = configurations_collection.find({}, {"config_data.user_id": 1, "_id": 0})
+        for doc in cursor:
             config_data = doc.get("config_data", {})
             if isinstance(config_data, list) and config_data:
-                user_ids.append(config_data[0].get("user_id"))
+                user_id = config_data[0].get("user_id")
+                if user_id:
+                    user_ids.append(user_id)
             elif isinstance(config_data, dict):
-                user_ids.append(config_data.get("user_id"))
+                user_id = config_data.get("user_id")
+                if user_id:
+                    user_ids.append(user_id)
 
         return {"user_ids": user_ids}
     except Exception as e:
@@ -142,7 +131,6 @@ async def get_configuration_schema():
     for better frontend rendering.
     """
     schema = UserConfiguration.model_json_schema()
-
     defs_key = '$defs' if '$defs' in schema else 'definitions'
 
     # Add descriptive titles to the oneOf choices for llm_provider_config for the dropdown
@@ -227,13 +215,12 @@ async def get_all_configurations_status():
                 if user_id_from_config in active_users:
                     instance_id = active_users[user_id_from_config]
                     instance = chatbot_instances.get(instance_id)
-                    status = await run_in_threadpool(instance.get_status) if instance else {"status": "error"}
-                    statuses.append({"user_id": user_id_from_config, "status": status.get('status', 'unknown')})
+                    status_info = await run_in_threadpool(instance.get_status) if instance else {"status": "error"}
+                    statuses.append({"user_id": user_id_from_config, "status": status_info.get('status', 'unknown')})
                 else:
                     statuses.append({"user_id": user_id_from_config, "status": "disconnected"})
 
             except Exception as e:
-                # Attempt to find a user_id even if validation fails, for better error reporting
                 uid = "unknown"
                 if isinstance(config_data, list) and config_data and isinstance(config_data[0], dict):
                     uid = config_data[0].get('user_id', 'unknown')
@@ -259,8 +246,10 @@ async def get_configuration_by_user_id(user_id: str):
         raise HTTPException(status_code=503, detail="Database connection not available.")
 
     try:
-        # The query needs to look inside the config_data field.
         db_config = configurations_collection.find_one({"config_data.user_id": user_id})
+        if not db_config:
+            db_config = configurations_collection.find_one({"config_data.0.user_id": user_id})
+
         if not db_config:
             raise HTTPException(status_code=404, detail="Configuration not found.")
 
@@ -282,33 +271,33 @@ async def save_configuration_by_user_id(user_id: str, config: Union[UserConfigur
 
     try:
         if isinstance(config, list):
-            json_data = [item.model_dump() for item in config]
-            # Ensure the user_id in the body matches the one in the URL
+            json_data = [item.model_dump(exclude_unset=True) for item in config]
             if not json_data or json_data[0].get("user_id") != user_id:
                 raise HTTPException(status_code=400, detail="User ID in URL and body do not match.")
         else:
-            json_data = config.model_dump()
+            json_data = config.model_dump(exclude_unset=True)
             if json_data.get("user_id") != user_id:
                 raise HTTPException(status_code=400, detail="User ID in URL and body do not match.")
 
-        db_document = {
-            "config_data": json_data
-        }
+        db_document = { "config_data": json_data }
 
         # Use update_one with upsert=True based on the user_id within the config_data
-        configurations_collection.update_one(
-            {"config_data.user_id": user_id},
-            {"$set": db_document},
-            upsert=True
-        )
+        # This handles both object and array-of-one-object cases.
+        query = {
+            "$or": [
+                {"config_data.user_id": user_id},
+                {"config_data.0.user_id": user_id}
+            ]
+        }
+        configurations_collection.update_one(query, {"$set": db_document}, upsert=True)
 
         console_log(f"API: Successfully saved configuration for user_id '{user_id}' to DB.")
         return {"status": "success", "user_id": user_id}
+    except DuplicateKeyError:
+        console_log(f"API_ERROR: Duplicate key error for user_id '{user_id}'.")
+        raise HTTPException(status_code=409, detail=f"A configuration with user_id '{user_id}' already exists.")
     except Exception as e:
         console_log(f"API_ERROR: Could not save configuration for user_id '{user_id}' to DB: {e}")
-        # Handle potential duplicate key error from the unique index
-        if "E11000 duplicate key error" in str(e):
-            raise HTTPException(status_code=409, detail=f"A configuration with this user_id already exists.")
         raise HTTPException(status_code=500, detail=f"Could not save configuration: {e}")
 
 
@@ -321,8 +310,13 @@ async def delete_configuration_by_user_id(user_id: str):
         raise HTTPException(status_code=503, detail="Database connection not available.")
 
     try:
-        # The query needs to look inside the config_data field.
-        result = configurations_collection.delete_one({"config_data.user_id": user_id})
+        query = {
+            "$or": [
+                {"config_data.user_id": user_id},
+                {"config_data.0.user_id": user_id}
+            ]
+        }
+        result = configurations_collection.delete_one(query)
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Configuration not found.")
 
