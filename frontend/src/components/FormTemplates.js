@@ -139,6 +139,35 @@ export function CustomObjectFieldTemplate(props) {
   );
 }
 
+export function LlmProviderSettingsTemplate(props) {
+  const fieldsetStyle = {
+    border: '1px solid #ccc',
+    borderRadius: '4px',
+    padding: '1rem',
+    margin: 0,
+    width: '100%',
+    marginTop: '0.5rem',
+    display: 'table',
+    borderCollapse: 'collapse'
+  };
+
+  return (
+    <fieldset style={fieldsetStyle}>
+        <div style={{display: 'table-caption', captionSide: 'top', textAlign: 'left', paddingBottom: '0.5rem', marginBottom: '1rem', borderBottom: '1px solid #eee'}}>
+            <h3 style={{ margin: 0, padding: 0 }}>
+                LlmProviderSettings
+            </h3>
+        </div>
+      {props.description}
+      {props.properties.map(element => (
+        <React.Fragment key={element.content.key}>
+          {element.content}
+        </React.Fragment>
+      ))}
+    </fieldset>
+  );
+}
+
 export function CustomArrayFieldTemplate(props) {
     const btnStyle = {
         padding: '0.1rem 0.4rem',
