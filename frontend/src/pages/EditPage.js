@@ -89,11 +89,9 @@ const transformDataToUI = (data) => {
 const transformDataToAPI = (uiData) => {
   if (!uiData) return uiData;
 
-  // Destructure to separate the nested UI objects from the rest of the data
   const { general_config, llm_bot_config, ...rest } = uiData;
-  const apiData = { ...rest }; // Start with the flat properties
+  const apiData = { ...rest };
 
-  // Flatten the nested properties back to the top level
   if (general_config) {
     apiData.user_id = general_config.user_id;
     apiData.respond_to_whitelist = general_config.respond_to_whitelist;
@@ -108,7 +106,7 @@ const transformDataToAPI = (uiData) => {
 
 
 function EditPage() {
-  const { filename } = useParams();
+  const { userId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const formRef = useRef(null);
@@ -125,26 +123,37 @@ function EditPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        // Fetch schema
         const schemaResponse = await fetch('/api/configurations/schema');
         if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
         const schemaData = await schemaResponse.json();
         const transformedSchema = transformSchema(schemaData);
         setSchema(transformedSchema);
 
-        // Fetch existing data or set up new data
         let initialFormData;
         if (isNew) {
           const initialData = {
-            user_id: filename.replace('.json', ''),
+            user_id: userId,
             respond_to_whitelist: [],
           };
           initialFormData = transformDataToUI(initialData);
         } else {
-          const dataResponse = await fetch(`/api/configurations/${filename}`);
-          if (!dataResponse.ok) throw new Error('Failed to fetch file content.');
+          const dataResponse = await fetch(`/api/configurations/${userId}`);
+          if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');
           const data = await dataResponse.json();
           const originalData = Array.isArray(data) ? data[0] : data;
+
+          // Perform on-the-fly migration for old configs that don't have api_key_source
+          if (originalData.llm_provider_config && originalData.llm_provider_config.provider_config) {
+            const providerConfig = originalData.llm_provider_config.provider_config;
+            if (!providerConfig.hasOwnProperty('api_key_source')) {
+              if (providerConfig.api_key) {
+                providerConfig.api_key_source = 'explicit';
+              } else {
+                providerConfig.api_key_source = 'environment';
+              }
+            }
+          }
+
           initialFormData = transformDataToUI(originalData);
         }
         setFormData(initialFormData);
@@ -156,14 +165,35 @@ function EditPage() {
     };
 
     fetchData();
-  }, [filename, isNew]);
+  }, [userId, isNew]);
 
-  // Update JSON editor when form data changes
   useEffect(() => {
     if (formData) {
       setJsonString(JSON.stringify(transformDataToAPI(formData), null, 2));
     }
   }, [formData]);
+
+  const handleFormChange = (e) => {
+    const newFormData = e.formData;
+    try {
+      // This handler is needed to work around a limitation in rjsf's handling of oneOf.
+      // It doesn't automatically clear data from a previously selected oneOf branch.
+      const providerConfig = newFormData?.llm_bot_config?.llm_provider_config?.provider_config;
+      if (providerConfig) {
+        if (providerConfig.api_key_source === 'environment') {
+          // If the user selects 'environment', we must explicitly nullify the api_key.
+          providerConfig.api_key = null;
+        } else if (providerConfig.api_key_source === 'explicit' && providerConfig.api_key === null) {
+          // If they switch to 'explicit' and the key is null, initialize it as an empty string
+          // so the input box appears.
+          providerConfig.api_key = "";
+        }
+      }
+    } catch (error) {
+        // ignore
+    }
+    setFormData(newFormData);
+  };
 
   const handleJsonChange = (event) => {
     const newJsonString = event.target.value;
@@ -182,13 +212,20 @@ function EditPage() {
     setIsSaving(true);
     setError(null);
     try {
-      const apiData = transformDataToAPI(formData);
-      const response = await fetch(`/api/configurations/${filename}`, {
+      const apiDataFromUser = transformDataToAPI(formData);
+
+      if (!isNew && apiDataFromUser.user_id !== userId) {
+        throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
+      }
+
+      const finalApiData = { ...apiDataFromUser, user_id: userId };
+
+      const response = await fetch(`/api/configurations/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify([apiData]),
+        body: JSON.stringify([finalApiData]),
       });
 
       if (!response.ok) {
@@ -196,7 +233,7 @@ function EditPage() {
         const detail = typeof errorBody.detail === 'object' && errorBody.detail !== null
             ? JSON.stringify(errorBody.detail, null, 2)
             : errorBody.detail;
-        throw new Error(detail || 'Failed to save file.');
+        throw new Error(detail || 'Failed to save configuration.');
       }
 
       navigate('/');
@@ -233,6 +270,9 @@ function EditPage() {
     "ui:classNames": "form-container",
     general_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
+      user_id: {
+        "ui:widget": "hidden"
+      }
     },
     chat_provider_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
@@ -240,6 +280,16 @@ function EditPage() {
     llm_bot_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       "ui:title": "LlmBotConfig",
+      llm_provider_config: {
+        provider_config: {
+          api_key_source: {
+            "ui:enumNames": [
+              "From Environment",
+              "User Specific Key"
+            ]
+          }
+        }
+      }
     },
     queue_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
@@ -250,23 +300,22 @@ function EditPage() {
     border: '1px solid #ccc',
     borderRadius: '4px',
     padding: '1rem',
-    backgroundColor: '#fff', // Changed to white for a cleaner base
+    backgroundColor: '#fff',
     boxSizing: 'border-box'
   };
 
   const innerPanelStyle = {
       ...panelStyle,
-      backgroundColor: '#f9f9f9', // The light gray for the inner panels
+      backgroundColor: '#f9f9f9',
   };
 
   return (
     <>
-      <div style={{ padding: '20px', paddingBottom: '80px' }}> {/* paddingBottom to make space for footer */}
+      <div style={{ padding: '20px', paddingBottom: '80px' }}>
         <div style={{ maxWidth: '1800px', margin: '0 auto' }}>
           <div style={panelStyle}>
-            <h2>{isNew ? 'Add' : 'Edit'}: {filename}</h2>
+            <h2>{isNew ? 'Add New Configuration' : `Edit Configuration`}: {userId}</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem', minHeight: '75vh' }}>
-              {/* Left Panel: Form Editor */}
               <div style={{...innerPanelStyle, overflowY: 'auto'}}>
                 <Form
                   ref={formRef}
@@ -275,18 +324,16 @@ function EditPage() {
                   formData={formData}
                   validator={validator}
                   onSubmit={handleSave}
-                  onChange={(e) => setFormData(e.formData)}
+                  onChange={handleFormChange}
                   onError={(errors) => console.log('Form validation errors:', errors)}
                   disabled={isSaving}
                   templates={templates}
                   widgets={widgets}
                 >
-                  {/* Buttons are now in the footer */}
                   <div />
                 </Form>
               </div>
 
-              {/* Right Panel: Live JSON Editor */}
               <div style={{ ...innerPanelStyle, display: 'flex', flexDirection: 'column' }}>
                 <h3>Live JSON Editor</h3>
                 <textarea

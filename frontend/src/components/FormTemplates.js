@@ -93,14 +93,14 @@ export function CollapsibleObjectFieldTemplate(props) {
 }
 
 export function CustomObjectFieldTemplate(props) {
-  // Conditionally apply border for the inner provider settings objects.
-  const hasApiKey = props.properties.some(p => p.name === 'api_key');
-  const hasGroupMessages = props.properties.some(p => p.name === 'allow_group_messages');
-  const shouldHaveBorder = hasApiKey || hasGroupMessages;
+  // A more robust way to detect the provider settings objects that need special styling.
+  const isChatProviderSettings = props.properties.some(p => p.name === 'allow_group_messages');
+  const isLlmProviderSettings = props.properties.some(p => p.name === 'api_key_source');
+  const shouldHaveBorder = isChatProviderSettings || isLlmProviderSettings;
 
   const fieldsetStyle = {
     border: shouldHaveBorder ? '1px solid #ccc' : 'none',
-    borderRadius: shouldHaveBorder ? '4px' : '0',
+    borderRadius: '4px',
     padding: shouldHaveBorder ? '1rem' : '0',
     margin: 0,
     width: '100%',
@@ -109,12 +109,23 @@ export function CustomObjectFieldTemplate(props) {
     borderCollapse: 'collapse'
   };
 
+  // Determine the correct title to display.
+  let title = props.title;
+  if (isLlmProviderSettings) {
+    title = 'LlmProviderSettings';
+  } else if (isChatProviderSettings) {
+    title = 'ChatProviderSettings';
+  }
+
+  // Hide the title for the inner oneOf selection, but show our custom one.
+  const shouldShowTitle = (title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm');
+
+
   return (
     <fieldset style={fieldsetStyle}>
-      {/* Render the title fully left-aligned with a separator line, but not if it's the redundant one */}
-      {props.title && props.title !== 'Respond Using Llm' && (
+      {shouldShowTitle && (
         <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
-            {props.title}
+            {title}
         </h3>
       )}
 

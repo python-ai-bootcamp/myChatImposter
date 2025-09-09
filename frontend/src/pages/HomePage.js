@@ -3,23 +3,21 @@ import { useNavigate } from 'react-router-dom';
 
 function HomePage() {
   const [configs, setConfigs] = useState([]);
-  const [selectedFile, setSelectedFile] = useState(null);
+  const [selectedUserId, setSelectedUserId] = useState(null);
   const [isLinking, setIsLinking] = useState(false);
   const [error, setError] = useState(null);
   const navigate = useNavigate();
 
   const fetchStatuses = async () => {
     try {
-      // Don't clear old error, so it persists until next success
       const response = await fetch('/api/configurations/status');
       if (!response.ok) {
-        // Don't throw, just show an error and let polling continue
         setError('Failed to fetch configuration statuses.');
         return;
       }
       const data = await response.json();
       setConfigs(data.configurations || []);
-      setError(null); // Clear error on success
+      setError(null);
     } catch (err) {
       setError(err.message);
     }
@@ -27,25 +25,23 @@ function HomePage() {
 
   useEffect(() => {
     fetchStatuses();
-    const interval = setInterval(fetchStatuses, 3000); // Poll every 3 seconds
+    const interval = setInterval(fetchStatuses, 3000);
     return () => clearInterval(interval);
   }, []);
 
   const handleLink = async () => {
-    if (!selectedFile) return;
+    if (!selectedUserId) return;
 
     setIsLinking(true);
     setError(null);
 
     try {
-      // 1. Fetch the configuration content
-      const configResponse = await fetch(`/api/configurations/${selectedFile}`);
+      const configResponse = await fetch(`/api/configurations/${selectedUserId}`);
       if (!configResponse.ok) {
-        throw new Error('Failed to fetch configuration file.');
+        throw new Error('Failed to fetch configuration.');
       }
       const configData = await configResponse.json();
 
-      // 2. Create the user instance
       const payload = Array.isArray(configData) ? configData[0] : configData;
       const createResponse = await fetch('/chatbot', {
         method: 'PUT',
@@ -59,14 +55,11 @@ function HomePage() {
       }
 
       const createData = await createResponse.json();
-
       if (createData.failed && createData.failed.length > 0) {
         throw new Error(`Failed to create instance: ${createData.failed[0].error}`);
       }
 
       const userId = createData.successful[0].user_id;
-
-      // 3. Navigate to the link page
       navigate(`/link/${userId}`);
 
     } catch (err) {
@@ -77,61 +70,55 @@ function HomePage() {
   };
 
   const handleEdit = () => {
-    if (selectedFile) {
-      navigate(`/edit/${selectedFile}`);
+    if (selectedUserId) {
+      navigate(`/edit/${selectedUserId}`);
     }
   };
 
   const handleAdd = () => {
-    const filename = prompt('Enter new filename (e.g., "my-config.json"):');
-    if (!filename) {
-      return; // User cancelled
-    }
-
-    if (!filename.endsWith('.json')) {
-      alert('Filename must end with .json');
+    const userId = prompt('Enter a new unique user_id:');
+    if (!userId) {
       return;
     }
 
-    if (configs.some(c => c.filename === filename)) {
-      alert(`File "${filename}" already exists.`);
+    if (configs.some(c => c.user_id === userId)) {
+      alert(`Configuration with user_id "${userId}" already exists.`);
       return;
     }
 
-    navigate(`/edit/${filename}`, { state: { isNew: true } });
+    navigate(`/edit/${userId}`, { state: { isNew: true } });
   };
 
   const handleDelete = async () => {
-    if (!selectedFile) {
+    if (!selectedUserId) {
       return;
     }
 
-    if (window.confirm(`Are you sure you want to delete "${selectedFile}"?`)) {
+    if (window.confirm(`Are you sure you want to delete the configuration for "${selectedUserId}"?`)) {
       try {
-        const response = await fetch(`/api/configurations/${selectedFile}`, {
+        const response = await fetch(`/api/configurations/${selectedUserId}`, {
           method: 'DELETE',
         });
 
         if (!response.ok) {
           const errorBody = await response.json();
-          throw new Error(errorBody.detail || 'Failed to delete file.');
+          throw new Error(errorBody.detail || 'Failed to delete configuration.');
         }
 
-        setSelectedFile(null); // Deselect the file
-        await fetchStatuses();   // Refresh the list
+        setSelectedUserId(null);
+        await fetchStatuses();
       } catch (err) {
-        setError(`Failed to delete file: ${err.message}`);
+        setError(`Failed to delete configuration: ${err.message}`);
       }
     }
   };
 
   const handleUnlink = async () => {
-    const config = configs.find(c => c.filename === selectedFile);
-    if (!config || !config.user_id) return;
+    if (!selectedUserId) return;
 
-    if (window.confirm(`Are you sure you want to unlink user "${config.user_id}"?`)) {
+    if (window.confirm(`Are you sure you want to unlink user "${selectedUserId}"?`)) {
       try {
-        const response = await fetch(`/chatbot/${config.user_id}`, {
+        const response = await fetch(`/chatbot/${selectedUserId}`, {
           method: 'DELETE',
         });
         if (!response.ok) {
@@ -149,23 +136,19 @@ function HomePage() {
     return <div>Error: {error}</div>;
   }
 
-  const selectedConfig = configs.find(c => c.filename === selectedFile);
+  const selectedConfig = configs.find(c => c.user_id === selectedUserId);
   const status = selectedConfig?.status || 'disconnected';
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'connected':
-        return 'green';
+      case 'connected': return 'green';
       case 'linking':
       case 'initializing':
       case 'got qr code':
-      case 'waiting':
-        return 'orange';
+      case 'waiting': return 'orange';
       case 'disconnected':
-      case 'invalid_config':
-        return 'gray';
-      default:
-        return 'gray'; // Default for unknown statuses
+      case 'invalid_config': return 'gray';
+      default: return 'gray';
     }
   };
 
@@ -181,20 +164,20 @@ function HomePage() {
 
   return (
     <div style={pageStyle}>
-      <h2 style={{ textAlign: 'center', marginBottom: '2rem' }}>Configuration Files</h2>
+      <h2 style={{ textAlign: 'center', marginBottom: '2rem' }}>User Configurations</h2>
       <div className="file-list-container">
         {configs.length === 0 ? (
-          <p>No configuration files found.</p>
+          <p>No configurations found.</p>
         ) : (
           <ul className="file-list">
             {configs.map(config => (
               <li
-                key={config.filename}
-                className={`file-item ${selectedFile === config.filename ? 'selected' : ''}`}
-                onClick={() => setSelectedFile(config.filename)}
+                key={config.user_id}
+                className={`file-item ${selectedUserId === config.user_id ? 'selected' : ''}`}
+                onClick={() => setSelectedUserId(config.user_id)}
               >
                 <span className={`status-dot ${getStatusColor(config.status)}`}></span>
-                {config.filename}
+                {config.user_id}
               </li>
             ))}
           </ul>
@@ -206,19 +189,19 @@ function HomePage() {
         </button>
 
         {status === 'connected' ? (
-          <button onClick={handleUnlink} disabled={!selectedFile} className="unlink-button">
+          <button onClick={handleUnlink} disabled={!selectedUserId} className="unlink-button">
             Unlink
           </button>
         ) : (
-          <button onClick={handleLink} disabled={!selectedFile || isLinking || status !== 'disconnected'}>
+          <button onClick={handleLink} disabled={!selectedUserId || isLinking || status !== 'disconnected'}>
             {isLinking ? 'Linking...' : 'Link'}
           </button>
         )}
 
-        <button onClick={handleEdit} disabled={!selectedFile}>
+        <button onClick={handleEdit} disabled={!selectedUserId}>
           Edit
         </button>
-        <button onClick={handleDelete} disabled={!selectedFile} className="delete-button">
+        <button onClick={handleDelete} disabled={!selectedUserId} className="delete-button">
           Delete
         </button>
       </div>
