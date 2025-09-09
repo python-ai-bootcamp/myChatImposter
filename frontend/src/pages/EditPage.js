@@ -160,6 +160,28 @@ function EditPage() {
     }
   }, [formData]);
 
+  const handleFormChange = (e) => {
+    const newFormData = e.formData;
+    try {
+      // This handler is needed to work around a limitation in rjsf's handling of oneOf.
+      // It doesn't automatically clear data from a previously selected oneOf branch.
+      const providerConfig = newFormData?.llm_bot_config?.llm_provider_config?.provider_config;
+      if (providerConfig) {
+        if (providerConfig.api_key_source === 'environment') {
+          // If the user selects 'environment', we must explicitly nullify the api_key.
+          providerConfig.api_key = null;
+        } else if (providerConfig.api_key_source === 'explicit' && providerConfig.api_key === null) {
+          // If they switch to 'explicit' and the key is null, initialize it as an empty string
+          // so the input box appears.
+          providerConfig.api_key = "";
+        }
+      }
+    } catch (error) {
+        // ignore
+    }
+    setFormData(newFormData);
+  };
+
   const handleJsonChange = (event) => {
     const newJsonString = event.target.value;
     setJsonString(newJsonString);
@@ -184,11 +206,6 @@ function EditPage() {
       }
 
       const finalApiData = { ...apiDataFromUser, user_id: userId };
-
-      // If the source is environment, ensure the api_key is null.
-      if (finalApiData.llm_provider_config?.provider_config?.api_key_source === 'environment') {
-        finalApiData.llm_provider_config.provider_config.api_key = null;
-      }
 
       const response = await fetch(`/api/configurations/${userId}`, {
         method: 'PUT',
@@ -294,7 +311,7 @@ function EditPage() {
                   formData={formData}
                   validator={validator}
                   onSubmit={handleSave}
-                  onChange={(e) => setFormData(e.formData)}
+                  onChange={handleFormChange}
                   onError={(errors) => console.log('Form validation errors:', errors)}
                   disabled={isSaving}
                   templates={templates}

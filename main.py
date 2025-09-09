@@ -155,36 +155,41 @@ async def get_configuration_schema():
                 elif item.get('type') == 'null':
                     item['title'] = "Collection Only"
 
-    # This is the correct way to handle conditional fields.
+    # To fix the conditional API key, we will restructure the entire LLMProviderSettings schema.
+    # Instead of using dependencies, we will define two distinct objects in a oneOf.
     if defs_key in schema and 'LLMProviderSettings' in schema[defs_key]:
         llm_settings_schema = schema[defs_key]['LLMProviderSettings']
 
-        # 1. Remove api_key from the main properties block.
-        #    Pydantic adds it by default. We will define it only in the dependency.
-        if 'properties' in llm_settings_schema and 'api_key' in llm_settings_schema['properties']:
-            del llm_settings_schema['properties']['api_key']
+        # Get the original properties, remove the ones we are making conditional
+        original_properties = llm_settings_schema.get('properties', {}).copy()
+        original_properties.pop('api_key_source', None)
+        original_properties.pop('api_key', None)
 
-        # 2. Add dependency logic: if api_key_source is 'explicit', then define and require api_key.
-        llm_settings_schema['dependencies'] = {
-            "api_key_source": {
-                "oneOf": [
-                    {
-                        "properties": {
-                            "api_key_source": {"const": "environment"}
-                        }
-                    },
-                    {
-                        "properties": {
-                            "api_key_source": {"const": "explicit"},
-                            "api_key": {
-                                "title": "API Key",
-                                "type": "string"
-                            }
-                        },
-                        "required": ["api_key"]
-                    }
-                ]
+        # Define the two distinct schemas
+        schema_from_env = {
+            "title": "From Environment",
+            "properties": {
+                "api_key_source": {"const": "environment"},
+                **original_properties
             }
+        }
+
+        schema_explicit_key = {
+            "title": "User Specific Key",
+            "properties": {
+                "api_key_source": {"const": "explicit"},
+                "api_key": {"type": "string", "title": "API Key", "minLength": 1},
+                **original_properties
+            },
+            "required": ["api_key"]
+        }
+
+        # Overwrite the LLMProviderSettings definition with our new oneOf structure
+        schema[defs_key]['LLMProviderSettings'] = {
+            "oneOf": [
+                schema_from_env,
+                schema_explicit_key
+            ]
         }
 
     return schema
