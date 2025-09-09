@@ -161,7 +161,8 @@ function EditPage() {
   }, [formData]);
 
   const handleFormChange = (e) => {
-    const newFormData = e.formData;
+    // Create a deep copy to prevent issues with the form library's internal state management.
+    const newFormData = JSON.parse(JSON.stringify(e.formData));
     try {
       const providerConfig = newFormData?.llm_bot_config?.llm_provider_config?.provider_config;
       if (providerConfig) {
