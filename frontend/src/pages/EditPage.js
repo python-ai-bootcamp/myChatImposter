@@ -163,13 +163,19 @@ function EditPage() {
   const handleFormChange = (e) => {
     const newFormData = e.formData;
     try {
-      // This is the special case that needs to be handled.
-      // When switching from the "From Environment" (null) option for api_key to "User Specific Key",
-      // rjsf sets the value to `undefined`. We need to stabilize it to an empty string
-      // so the text input box will appear correctly on the first try.
       const providerConfig = newFormData?.llm_bot_config?.llm_provider_config?.provider_config;
-      if (providerConfig && typeof providerConfig.api_key === 'undefined') {
-        providerConfig.api_key = "";
+      if (providerConfig) {
+        // Case 1: Switching from "From Environment" (null) to "User Specific Key" (string).
+        // The new value becomes `undefined`. We fix this by setting it to an empty string.
+        if (typeof providerConfig.api_key === 'undefined') {
+          providerConfig.api_key = "";
+        }
+        // Case 2: Switching from "User Specific Key" (string) to "From Environment" (null).
+        // The new value becomes an empty string `""`. We fix this by setting it to `null`.
+        // This also means that a user manually clearing the text box will switch the dropdown, which is acceptable UX.
+        else if (providerConfig.api_key === "") {
+          providerConfig.api_key = null;
+        }
       }
     } catch (error) {
       // It's possible the form data structure is not what we expect during some transitions.
