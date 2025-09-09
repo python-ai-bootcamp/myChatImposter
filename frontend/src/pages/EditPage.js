@@ -160,6 +160,24 @@ function EditPage() {
     }
   }, [formData]);
 
+  const handleFormChange = (e) => {
+    const newFormData = e.formData;
+    try {
+      // This is the special case that needs to be handled.
+      // When switching from the "From Environment" (null) option for api_key to "User Specific Key",
+      // rjsf sets the value to `undefined`. We need to stabilize it to an empty string
+      // so the text input box will appear correctly on the first try.
+      const providerConfig = newFormData?.llm_bot_config?.llm_provider_config?.provider_config;
+      if (providerConfig && typeof providerConfig.api_key === 'undefined') {
+        providerConfig.api_key = "";
+      }
+    } catch (error) {
+      // It's possible the form data structure is not what we expect during some transitions.
+      // We can ignore errors here as this is just a stabilization helper.
+    }
+    setFormData(newFormData);
+  };
+
   const handleJsonChange = (event) => {
     const newJsonString = event.target.value;
     setJsonString(newJsonString);
@@ -283,7 +301,7 @@ function EditPage() {
                   formData={formData}
                   validator={validator}
                   onSubmit={handleSave}
-                  onChange={(e) => setFormData(e.formData)}
+                  onChange={handleFormChange}
                   onError={(errors) => console.log('Form validation errors:', errors)}
                   disabled={isSaving}
                   templates={templates}
