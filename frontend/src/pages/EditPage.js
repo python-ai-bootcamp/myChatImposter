@@ -179,11 +179,15 @@ function EditPage() {
     try {
       const apiData = transformDataToAPI(formData);
 
-      if (apiData.user_id !== userId) {
-        throw new Error("The user_id cannot be changed after creation.");
+      // If we are editing, the user_id from the form MUST match the original one from the URL.
+      if (!isNew && apiData.user_id !== userId) {
+        throw new Error("The user_id of an existing configuration cannot be changed.");
       }
 
-      const response = await fetch(`/api/configurations/${userId}`, {
+      // When saving, always use the user_id from the form data.
+      // For a new config, this is the one the user just entered.
+      // For an existing config, the check above ensures it hasn't changed.
+      const response = await fetch(`/api/configurations/${apiData.user_id}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
