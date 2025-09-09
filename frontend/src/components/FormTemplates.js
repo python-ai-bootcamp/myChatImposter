@@ -32,9 +32,10 @@ export function CustomFieldTemplate(props) {
   }
 
   // For object containers, we let the ObjectFieldTemplate handle the title and layout.
-  if (schema.type === 'object') {
-      return children;
-  }
+  // This was causing alignment issues with nested objects from oneOf, so we remove it.
+  // if (schema.type === 'object') {
+  //     return children;
+  // }
 
   // A single, consistent layout for all other fields.
   const rightColumnStyle = {
@@ -99,14 +100,14 @@ export function CollapsibleObjectFieldTemplate(props) {
 }
 
 export function CustomObjectFieldTemplate(props) {
-  // Conditionally apply border for the inner provider settings objects.
-  const hasApiKey = props.properties.some(p => p.name === 'api_key');
-  const hasGroupMessages = props.properties.some(p => p.name === 'allow_group_messages');
-  const shouldHaveBorder = hasApiKey || hasGroupMessages;
+  // Determine if this is one of the main provider settings objects that needs special styling.
+  const isChatProviderSettings = props.properties.some(p => p.name === 'allow_group_messages');
+  const isLlmProviderSettings = props.properties.some(p => p.name === 'api_key_source');
+  const shouldHaveBorder = isChatProviderSettings || isLlmProviderSettings;
 
   const fieldsetStyle = {
     border: shouldHaveBorder ? '1px solid #ccc' : 'none',
-    borderRadius: shouldHaveBorder ? '4px' : '0',
+    borderRadius: '4px', // Keep radius consistent
     padding: shouldHaveBorder ? '1rem' : '0',
     margin: 0,
     width: '100%',
@@ -115,12 +116,19 @@ export function CustomObjectFieldTemplate(props) {
     borderCollapse: 'collapse'
   };
 
+  // Determine the correct title to display.
+  let title = props.title;
+  if (isLlmProviderSettings) {
+    title = 'LlmProviderSettings';
+  } else if (isChatProviderSettings) {
+    title = 'ChatProviderSettings';
+  }
+
   return (
     <fieldset style={fieldsetStyle}>
-      {/* Render the title fully left-aligned with a separator line, but not if it's the redundant one */}
-      {props.title && props.title !== 'Respond Using Llm' && (
+      {shouldHaveBorder && (
         <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
-            {props.title}
+            {title}
         </h3>
       )}
 
