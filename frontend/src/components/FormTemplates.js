@@ -16,13 +16,7 @@ export function CustomCheckboxWidget(props) {
 }
 
 export function CustomFieldTemplate(props) {
-  const { id, label, children, required, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
-
-  // If the widget is hidden, render nothing.
-  // The hidden input is still rendered by the form, but this template prevents any label or layout from appearing.
-  if (uiSchema && uiSchema['ui:widget'] === 'hidden') {
-    return null;
-  }
+  const { id, label, children, required, rawErrors = [], help, description, classNames, schema } = props;
 
   // For items inside an array, we bypass the label/two-column layout in this template.
   // The layout is handled entirely by CustomArrayFieldTemplate.
@@ -32,10 +26,9 @@ export function CustomFieldTemplate(props) {
   }
 
   // For object containers, we let the ObjectFieldTemplate handle the title and layout.
-  // This was causing alignment issues with nested objects from oneOf, so we remove it.
-  // if (schema.type === 'object') {
-  //     return children;
-  // }
+  if (schema.type === 'object') {
+      return children;
+  }
 
   // A single, consistent layout for all other fields.
   const rightColumnStyle = {
@@ -100,14 +93,14 @@ export function CollapsibleObjectFieldTemplate(props) {
 }
 
 export function CustomObjectFieldTemplate(props) {
-  // Determine if this is one of the main provider settings objects that needs special styling.
+  // A more robust way to detect the provider settings objects that need special styling.
   const isChatProviderSettings = props.properties.some(p => p.name === 'allow_group_messages');
   const isLlmProviderSettings = props.properties.some(p => p.name === 'api_key_source');
   const shouldHaveBorder = isChatProviderSettings || isLlmProviderSettings;
 
   const fieldsetStyle = {
     border: shouldHaveBorder ? '1px solid #ccc' : 'none',
-    borderRadius: '4px', // Keep radius consistent
+    borderRadius: '4px',
     padding: shouldHaveBorder ? '1rem' : '0',
     margin: 0,
     width: '100%',
@@ -124,9 +117,13 @@ export function CustomObjectFieldTemplate(props) {
     title = 'ChatProviderSettings';
   }
 
+  // Hide the title for the inner oneOf selection, but show our custom one.
+  const shouldShowTitle = (title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm');
+
+
   return (
     <fieldset style={fieldsetStyle}>
-      {shouldHaveBorder && (
+      {shouldShowTitle && (
         <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
             {title}
         </h3>
