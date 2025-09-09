@@ -177,17 +177,17 @@ function EditPage() {
     setIsSaving(true);
     setError(null);
     try {
-      const apiData = transformDataToAPI(formData);
-
-      // If we are editing, the user_id from the form MUST match the original one from the URL.
-      if (!isNew && apiData.user_id !== userId) {
-        throw new Error("The user_id of an existing configuration cannot be changed.");
+      // Re-insert the user_id before transforming the data, as it's hidden in the form.
+      // The `userId` from the URL is the authoritative ID for this page.
+      if (formData.general_config) {
+        formData.general_config.user_id = userId;
+      } else {
+        formData.general_config = { user_id: userId };
       }
 
-      // When saving, always use the user_id from the form data.
-      // For a new config, this is the one the user just entered.
-      // For an existing config, the check above ensures it hasn't changed.
-      const response = await fetch(`/api/configurations/${apiData.user_id}`, {
+      const apiData = transformDataToAPI(formData);
+
+      const response = await fetch(`/api/configurations/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -238,7 +238,7 @@ function EditPage() {
     general_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       user_id: {
-        "ui:readonly": !isNew // Make user_id readonly if it's not a new config
+        "ui:widget": "hidden"
       }
     },
     chat_provider_config: {
