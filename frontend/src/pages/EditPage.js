@@ -177,22 +177,24 @@ function EditPage() {
     setIsSaving(true);
     setError(null);
     try {
-      // Re-insert the user_id before transforming the data, as it's hidden in the form.
-      // The `userId` from the URL is the authoritative ID for this page.
-      if (formData.general_config) {
-        formData.general_config.user_id = userId;
-      } else {
-        formData.general_config = { user_id: userId };
+      // formData reflects the latest state from the form or the JSON editor.
+      const apiDataFromUser = transformDataToAPI(formData);
+
+      // For existing configs, check if the user tried to change the ID in the JSON editor.
+      if (!isNew && apiDataFromUser.user_id !== userId) {
+        throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
       }
 
-      const apiData = transformDataToAPI(formData);
+      // Ensure the data we send to the API has the correct, authoritative user_id from the URL.
+      const finalApiData = { ...apiDataFromUser, user_id: userId };
 
+      // The PUT request should always go to the URL's userId endpoint.
       const response = await fetch(`/api/configurations/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify([apiData]),
+        body: JSON.stringify([finalApiData]), // Send the cleaned data
       });
 
       if (!response.ok) {
