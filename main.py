@@ -151,11 +151,22 @@ async def get_configuration_schema():
         if 'anyOf' in llm_config_schema:
             for item in llm_config_schema['anyOf']:
                 if '$ref' in item:
-                    # This is the object choice
                     item['title'] = "Respond Using Llm"
                 elif item.get('type') == 'null':
-                    # This is the null choice
                     item['title'] = "Collection Only"
+
+    # Add descriptive titles to the api_key choices
+    if defs_key in schema and 'LLMProviderSettings' in schema[defs_key]:
+        llm_settings_schema = schema[defs_key]['LLMProviderSettings']
+        if 'properties' in llm_settings_schema and 'api_key' in llm_settings_schema['properties']:
+            api_key_schema = llm_settings_schema['properties']['api_key']
+            if 'anyOf' in api_key_schema:
+                for item in api_key_schema['anyOf']:
+                    if item.get('type') == 'string':
+                        item['title'] = "User Specific Key"
+                        item['minLength'] = 1
+                    elif item.get('type') == 'null':
+                        item['title'] = "From Environment"
 
     return schema
 
