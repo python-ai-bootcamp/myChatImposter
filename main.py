@@ -178,8 +178,7 @@ async def get_configuration_schema():
                             "api_key_source": {"const": "explicit"},
                             "api_key": {
                                 "title": "API Key",
-                                "type": "string",
-                                "minLength": 1
+                                "type": "string"
                             }
                         },
                         "required": ["api_key"]

@@ -18,10 +18,10 @@ export function CustomCheckboxWidget(props) {
 export function CustomFieldTemplate(props) {
   const { id, label, children, required, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
 
-  // If the widget is hidden, just render the children (which is the hidden input).
-  // Do not render the label or any of the layout.
+  // If the widget is hidden, render nothing.
+  // The hidden input is still rendered by the form, but this template prevents any label or layout from appearing.
   if (uiSchema && uiSchema['ui:widget'] === 'hidden') {
-    return children;
+    return null;
   }
 
   // For items inside an array, we bypass the label/two-column layout in this template.
