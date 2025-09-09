@@ -155,18 +155,35 @@ async def get_configuration_schema():
                 elif item.get('type') == 'null':
                     item['title'] = "Collection Only"
 
-    # Add descriptive titles to the api_key choices
+    # Remove the old, problematic anyOf logic for api_key
     if defs_key in schema and 'LLMProviderSettings' in schema[defs_key]:
         llm_settings_schema = schema[defs_key]['LLMProviderSettings']
         if 'properties' in llm_settings_schema and 'api_key' in llm_settings_schema['properties']:
-            api_key_schema = llm_settings_schema['properties']['api_key']
-            if 'anyOf' in api_key_schema:
-                for item in api_key_schema['anyOf']:
-                    if item.get('type') == 'string':
-                        item['title'] = "User Specific Key"
-                        item['minLength'] = 1
-                    elif item.get('type') == 'null':
-                        item['title'] = "From Environment"
+            # The model is Optional[str], so we make it a simple string field that is not required by default.
+            # Its requirement will be handled by the dependency logic below.
+            llm_settings_schema['properties']['api_key'] = {
+                "title": "API Key",
+                "type": "string"
+            }
+
+        # Add dependency logic: if api_key_source is 'explicit', then api_key is required.
+        llm_settings_schema['dependencies'] = {
+            "api_key_source": {
+                "oneOf": [
+                    {
+                        "properties": {
+                            "api_key_source": {"const": "environment"}
+                        }
+                    },
+                    {
+                        "properties": {
+                            "api_key_source": {"const": "explicit"},
+                        },
+                        "required": ["api_key"]
+                    }
+                ]
+            }
+        }
 
     return schema
 

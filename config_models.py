@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 
 class ChatProviderSettings(BaseModel):
     allow_group_messages: bool = False
@@ -19,7 +19,15 @@ class QueueConfig(BaseModel):
     max_characters_single_message: int = 300
 
 class LLMProviderSettings(BaseModel):
-    api_key: Optional[str] = None
+    api_key_source: Literal["environment", "explicit"] = Field(
+        default="environment",
+        title="API Key Source",
+        description="Choose how the API key is provided."
+    )
+    api_key: Optional[str] = Field(
+        default=None,
+        title="API Key"
+    )
     model: str
     temperature: float = 0.7
     system: str = ""

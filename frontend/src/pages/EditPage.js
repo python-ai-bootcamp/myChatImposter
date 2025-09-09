@@ -160,31 +160,6 @@ function EditPage() {
     }
   }, [formData]);
 
-  const handleFormChange = (e) => {
-    // Create a deep copy to prevent issues with the form library's internal state management.
-    const newFormData = JSON.parse(JSON.stringify(e.formData));
-    try {
-      const providerConfig = newFormData?.llm_bot_config?.llm_provider_config?.provider_config;
-      if (providerConfig) {
-        // Case 1: Switching from "From Environment" (null) to "User Specific Key" (string).
-        // The new value becomes `undefined`. We fix this by setting it to an empty string.
-        if (typeof providerConfig.api_key === 'undefined') {
-          providerConfig.api_key = "";
-        }
-        // Case 2: Switching from "User Specific Key" (string) to "From Environment" (null).
-        // The new value becomes an empty string `""`. We fix this by setting it to `null`.
-        // This also means that a user manually clearing the text box will switch the dropdown, which is acceptable UX.
-        else if (providerConfig.api_key === "") {
-          providerConfig.api_key = null;
-        }
-      }
-    } catch (error) {
-      // It's possible the form data structure is not what we expect during some transitions.
-      // We can ignore errors here as this is just a stabilization helper.
-    }
-    setFormData(newFormData);
-  };
-
   const handleJsonChange = (event) => {
     const newJsonString = event.target.value;
     setJsonString(newJsonString);
@@ -202,24 +177,25 @@ function EditPage() {
     setIsSaving(true);
     setError(null);
     try {
-      // formData reflects the latest state from the form or the JSON editor.
       const apiDataFromUser = transformDataToAPI(formData);
 
-      // For existing configs, check if the user tried to change the ID in the JSON editor.
       if (!isNew && apiDataFromUser.user_id !== userId) {
         throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
       }
 
-      // Ensure the data we send to the API has the correct, authoritative user_id from the URL.
       const finalApiData = { ...apiDataFromUser, user_id: userId };
 
-      // The PUT request should always go to the URL's userId endpoint.
+      // If the source is environment, ensure the api_key is null.
+      if (finalApiData.llm_provider_config?.provider_config?.api_key_source === 'environment') {
+        finalApiData.llm_provider_config.provider_config.api_key = null;
+      }
+
       const response = await fetch(`/api/configurations/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify([finalApiData]), // Send the cleaned data
+        body: JSON.stringify([finalApiData]),
       });
 
       if (!response.ok) {
@@ -274,6 +250,16 @@ function EditPage() {
     llm_bot_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       "ui:title": "LlmBotConfig",
+      llm_provider_config: {
+        provider_config: {
+          api_key_source: {
+            "ui:enumNames": [
+              "From Environment",
+              "User Specific Key"
+            ]
+          }
+        }
+      }
     },
     queue_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
@@ -308,7 +294,7 @@ function EditPage() {
                   formData={formData}
                   validator={validator}
                   onSubmit={handleSave}
-                  onChange={handleFormChange}
+                  onChange={(e) => setFormData(e.formData)}
                   onError={(errors) => console.log('Form validation errors:', errors)}
                   disabled={isSaving}
                   templates={templates}
