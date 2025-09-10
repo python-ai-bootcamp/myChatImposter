@@ -296,7 +296,7 @@ function EditPage() {
             ]
           },
           api_key: {
-              "ui:label": false
+            "ui:label": false
           }
         }
       }
