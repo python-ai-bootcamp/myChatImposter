@@ -282,6 +282,7 @@ function EditPage() {
       "ui:title": "LlmBotConfig",
       llm_provider_config: {
         provider_config: {
+          "ui:label": false,
           "ui:title": "API Key Source",
           "ui:options": {
             "box": "LlmProviderSettings"
@@ -294,9 +295,6 @@ function EditPage() {
               "From Environment",
               "User Specific Key"
             ]
-          },
-          api_key: {
-            "ui:label": false
           }
         }
       }
