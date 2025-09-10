@@ -16,7 +16,11 @@ export function CustomCheckboxWidget(props) {
 }
 
 export function CustomFieldTemplate(props) {
-  const { id, label, children, required, rawErrors = [], help, description, classNames, schema } = props;
+  const { id, label, children, required, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
+
+  if (uiSchema && uiSchema['ui:options']?.hidden) {
+    return null;
+  }
 
   // For items inside an array, we bypass the label/two-column layout in this template.
   // The layout is handled entirely by CustomArrayFieldTemplate.
@@ -95,7 +99,7 @@ export function CollapsibleObjectFieldTemplate(props) {
 export function CustomObjectFieldTemplate(props) {
   // A more robust way to detect the provider settings objects that need special styling.
   const isChatProviderSettings = props.properties.some(p => p.name === 'allow_group_messages');
-  const isLlmProviderSettings = props.properties.some(p => p.name === 'api_key_source');
+  const isLlmProviderSettings = props.uiSchema['ui:options']?.box === 'LlmProviderSettings';
   const shouldHaveBorder = isChatProviderSettings || isLlmProviderSettings;
 
   const fieldsetStyle = {

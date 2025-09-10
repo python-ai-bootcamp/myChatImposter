@@ -282,7 +282,14 @@ function EditPage() {
       "ui:title": "LlmBotConfig",
       llm_provider_config: {
         provider_config: {
+          "ui:title": "API Key Source",
+          "ui:options": {
+            "box": "LlmProviderSettings"
+          },
           api_key_source: {
+            "ui:options": {
+              "hidden": true
+            },
             "ui:enumNames": [
               "From Environment",
               "User Specific Key"
