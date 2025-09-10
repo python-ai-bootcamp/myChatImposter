@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, LlmProviderSettingsTemplate } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate } from '../components/FormTemplates';
 
 // Helper to transform schema
 const transformSchema = (originalSchema) => {
@@ -282,7 +282,10 @@ function EditPage() {
       "ui:title": "LlmBotConfig",
       llm_provider_config: {
         provider_config: {
-          "ui:ObjectFieldTemplate": LlmProviderSettingsTemplate,
+          "ui:title": "API Key Source",
+          "ui:options": {
+            "box": "LlmProviderSettings"
+          },
           api_key_source: {
             "ui:enumNames": [
               "From Environment",
