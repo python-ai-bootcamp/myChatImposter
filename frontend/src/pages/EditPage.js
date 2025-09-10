@@ -294,6 +294,9 @@ function EditPage() {
               "From Environment",
               "User Specific Key"
             ]
+          },
+          api_key: {
+              "ui:label": false
           }
         }
       }

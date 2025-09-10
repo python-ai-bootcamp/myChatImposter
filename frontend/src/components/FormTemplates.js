@@ -21,6 +21,9 @@ export function CustomFieldTemplate(props) {
   if (uiSchema && uiSchema['ui:options']?.hidden) {
     return null;
   }
+  if (uiSchema && uiSchema['ui:label'] === false) {
+    return children;
+  }
 
   // For items inside an array, we bypass the label/two-column layout in this template.
   // The layout is handled entirely by CustomArrayFieldTemplate.
