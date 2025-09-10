@@ -287,7 +287,9 @@ function EditPage() {
             "box": "LlmProviderSettings"
           },
           api_key_source: {
-            "ui:widget": "hidden",
+            "ui:options": {
+              "hidden": true
+            },
             "ui:enumNames": [
               "From Environment",
               "User Specific Key"
