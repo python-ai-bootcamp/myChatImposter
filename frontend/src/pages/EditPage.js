@@ -1,8 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import Form from '@rjsf/core';
-import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate } from '../components/FormTemplates';
+import UniformsForm from '../components/UniformsForm';
 
 // Helper to transform schema
 const transformSchema = (originalSchema) => {
@@ -173,8 +171,7 @@ function EditPage() {
     }
   }, [formData]);
 
-  const handleFormChange = (e) => {
-    const newFormData = e.formData;
+  const handleFormChange = (newFormData) => {
     try {
       // This handler is needed to work around a limitation in rjsf's handling of oneOf.
       // It doesn't automatically clear data from a previously selected oneOf branch.
@@ -208,7 +205,7 @@ function EditPage() {
     }
   };
 
-  const handleSave = async ({ formData }) => {
+  const handleSave = async (formData) => {
     setIsSaving(true);
     setError(null);
     try {
@@ -256,29 +253,17 @@ function EditPage() {
     return <div>Loading form...</div>;
   }
 
-  const templates = {
-    FieldTemplate: CustomFieldTemplate,
-    ObjectFieldTemplate: CustomObjectFieldTemplate,
-    ArrayFieldTemplate: CustomArrayFieldTemplate
-  };
-
-  const widgets = {
-    CheckboxWidget: CustomCheckboxWidget
-  };
 
   const uiSchema = {
     "ui:classNames": "form-container",
     general_config: {
-      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       user_id: {
         "ui:widget": "hidden"
       }
     },
     chat_provider_config: {
-      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
     },
     llm_bot_config: {
-      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       "ui:title": "LlmBotConfig",
       llm_provider_config: {
         provider_config: {
@@ -299,7 +284,6 @@ function EditPage() {
       }
     },
     queue_config: {
-      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
     }
   };
 
@@ -324,21 +308,15 @@ function EditPage() {
             <h2>{isNew ? 'Add New Configuration' : `Edit Configuration`}: {userId}</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem', minHeight: '75vh' }}>
               <div style={{...innerPanelStyle, overflowY: 'auto'}}>
-                <Form
+                <UniformsForm
                   ref={formRef}
                   schema={schema}
-                  uiSchema={uiSchema}
                   formData={formData}
-                  validator={validator}
-                  onSubmit={handleSave}
                   onChange={handleFormChange}
-                  onError={(errors) => console.log('Form validation errors:', errors)}
+                  onSubmit={handleSave}
+                  uiSchema={uiSchema}
                   disabled={isSaving}
-                  templates={templates}
-                  widgets={widgets}
-                >
-                  <div />
-                </Form>
+                />
               </div>
 
               <div style={{ ...innerPanelStyle, display: 'flex', flexDirection: 'column' }}>
