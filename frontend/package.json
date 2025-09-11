@@ -42,5 +42,9 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "http://backend:8000"
+  "proxy": "http://backend:8000",
+  "overrides": {
+    "ajv": "^8.0.0",
+    "ajv-keywords": "^5.0.0"
+  }
 }
