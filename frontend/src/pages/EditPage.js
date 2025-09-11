@@ -1,9 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import Form from '@rjsf/core';
+import UniformsForm from '../components/UniformsForm';
 import JSONSchemaRefParser from '@stoplight/json-schema-ref-parser';
-import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate } from '../components/FormTemplates';
 
 // Helper to transform schema
 const transformSchema = (originalSchema) => {
