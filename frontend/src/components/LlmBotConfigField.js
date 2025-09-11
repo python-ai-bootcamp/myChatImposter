@@ -1,5 +1,6 @@
 import React from 'react';
-import { connectField, AutoField } from 'uniforms-unstyled';
+import { connectField } from 'uniforms';
+import { AutoField } from 'uniforms-unstyled';
 import CustomSelectField from './CustomSelectField';
 
 const LlmBotConfig = ({ field, enumNames }) => {

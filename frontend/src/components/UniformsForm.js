@@ -3,6 +3,7 @@ import { AutoField, AutoForm, ErrorsField } from 'uniforms-unstyled';
 import CollapsibleObjectField from './CollapsibleObjectField';
 import { JSONSchemaBridge } from 'uniforms-bridge-json-schema';
 import Ajv from 'ajv';
+import LlmBotConfigField from './LlmBotConfigField';
 
 const ajv = new Ajv({ allErrors: true, useDefaults: true });
 
@@ -15,14 +16,19 @@ function createValidator(schema) {
   };
 }
 
-import LlmBotConfigField from './LlmBotConfigField';
-
-const UniformsForm = React.forwardRef(({ schema, formData, onChange, onSubmit, uiSchema, className }, ref) => {
+const UniformsForm = React.forwardRef(({ schema, formData, onChange, onSubmit, uiSchema, className, disabled }, ref) => {
+  const formRef = useRef();
   const schemaValidator = createValidator(schema);
   const bridge = new JSONSchemaBridge(schema, schemaValidator);
 
+  useImperativeHandle(ref, () => ({
+    submit: () => {
+      formRef.current.submit();
+    }
+  }));
+
   return (
-    <AutoForm schema={bridge} model={formData} onChangeModel={onChange} onSubmit={onSubmit} className={className} ref={ref}>
+    <AutoForm schema={bridge} model={formData} onChangeModel={onChange} onSubmit={onSubmit} className={className} ref={formRef} disabled={disabled}>
       <AutoField name="general_config" component={CollapsibleObjectField} hiddenFields={['user_id']} />
       <AutoField
         name="llm_bot_config"

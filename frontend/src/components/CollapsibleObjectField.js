@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { connectField, AutoField } from 'uniforms-unstyled';
+import { connectField } from 'uniforms';
+import { AutoField } from 'uniforms-unstyled';
 
 const Collapsible = ({ label, hiddenFields = [], field }) => {
   const [isOpen, setIsOpen] = useState(false);
