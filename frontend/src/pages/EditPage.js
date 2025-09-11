@@ -4,102 +4,17 @@ import UniformsForm from '../components/UniformsForm';
 
 // Helper to transform schema
 const transformSchema = (originalSchema) => {
-  const newSchema = JSON.parse(JSON.stringify(originalSchema));
-
-  // --- Group GeneralConfig ---
-  const generalConfigFields = ['user_id', 'respond_to_whitelist'];
-  const generalConfigSchema = {
-    type: 'object',
-    title: 'GeneralConfig',
-    properties: {},
-    required: [],
-  };
-  for (const field of generalConfigFields) {
-    if (newSchema.properties[field]) {
-      generalConfigSchema.properties[field] = newSchema.properties[field];
-      delete newSchema.properties[field];
-      if (newSchema.required && newSchema.required.includes(field)) {
-        generalConfigSchema.required.push(field);
-        newSchema.required = newSchema.required.filter(f => f !== field);
-      }
-    }
-  }
-
-  // --- Group LlmBotConfig ---
-  const llmBotConfigFields = ['llm_provider_config'];
-  const llmBotConfigSchema = {
-    type: 'object',
-    title: 'LlmBotConfig',
-    properties: {},
-    required: [],
-  };
-  for (const field of llmBotConfigFields) {
-    if (newSchema.properties[field]) {
-      llmBotConfigSchema.properties[field] = newSchema.properties[field];
-      delete newSchema.properties[field];
-      if (newSchema.required && newSchema.required.includes(field)) {
-        llmBotConfigSchema.required.push(field);
-        newSchema.required = newSchema.required.filter(f => f !== field);
-      }
-    }
-  }
-
-  newSchema.properties = {
-    general_config: generalConfigSchema,
-    llm_bot_config: llmBotConfigSchema,
-    ...newSchema.properties,
-  };
-
-  if (generalConfigSchema.required.length > 0) {
-    if (!newSchema.required) newSchema.required = [];
-    newSchema.required.push('general_config');
-  }
-  if (llmBotConfigSchema.required.length > 0) {
-    if (!newSchema.required) newSchema.required = [];
-    newSchema.required.push('llm_bot_config');
-  }
-
-  newSchema.title = ''; // Remove root title
-  return newSchema;
+  return originalSchema;
 };
 
 // Helper to transform formData to match the new schema
 const transformDataToUI = (data) => {
-  if (!data) return data;
-  const uiData = { ...data };
-
-  uiData.general_config = {
-    user_id: data.user_id,
-    respond_to_whitelist: data.respond_to_whitelist,
-  };
-  delete uiData.user_id;
-  delete uiData.respond_to_whitelist;
-
-  uiData.llm_bot_config = {
-    llm_provider_config: data.llm_provider_config,
-  };
-  delete uiData.llm_provider_config;
-
-  return uiData;
+  return data;
 };
 
 // Helper to transform formData back to the original format for saving
 const transformDataToAPI = (uiData) => {
-  if (!uiData) return uiData;
-
-  const { general_config, llm_bot_config, ...rest } = uiData;
-  const apiData = { ...rest };
-
-  if (general_config) {
-    apiData.user_id = general_config.user_id;
-    apiData.respond_to_whitelist = general_config.respond_to_whitelist;
-  }
-
-  if (llm_bot_config) {
-    apiData.llm_provider_config = llm_bot_config.llm_provider_config;
-  }
-
-  return apiData;
+  return uiData;
 };
 
 
