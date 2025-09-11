@@ -1,20 +1,108 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import UniformsForm from '../components/UniformsForm';
+import Form from '@rjsf/core';
+import JSONSchemaRefParser from '@stoplight/json-schema-ref-parser';
+import validator from '@rjsf/validator-ajv8';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate } from '../components/FormTemplates';
 
 // Helper to transform schema
 const transformSchema = (originalSchema) => {
-  return originalSchema;
+  const newSchema = JSON.parse(JSON.stringify(originalSchema));
+
+  // --- Group GeneralConfig ---
+  const generalConfigFields = ['user_id', 'respond_to_whitelist'];
+  const generalConfigSchema = {
+    type: 'object',
+    title: 'GeneralConfig',
+    properties: {},
+    required: [],
+  };
+  for (const field of generalConfigFields) {
+    if (newSchema.properties[field]) {
+      generalConfigSchema.properties[field] = newSchema.properties[field];
+      delete newSchema.properties[field];
+      if (newSchema.required && newSchema.required.includes(field)) {
+        generalConfigSchema.required.push(field);
+        newSchema.required = newSchema.required.filter(f => f !== field);
+      }
+    }
+  }
+
+  // --- Group LlmBotConfig ---
+  const llmBotConfigFields = ['llm_provider_config'];
+  const llmBotConfigSchema = {
+    type: 'object',
+    title: 'LlmBotConfig',
+    properties: {},
+    required: [],
+  };
+  for (const field of llmBotConfigFields) {
+    if (newSchema.properties[field]) {
+      llmBotConfigSchema.properties[field] = newSchema.properties[field];
+      delete newSchema.properties[field];
+      if (newSchema.required && newSchema.required.includes(field)) {
+        llmBotConfigSchema.required.push(field);
+        newSchema.required = newSchema.required.filter(f => f !== field);
+      }
+    }
+  }
+
+  newSchema.properties = {
+    general_config: generalConfigSchema,
+    llm_bot_config: llmBotConfigSchema,
+    ...newSchema.properties,
+  };
+
+  if (generalConfigSchema.required.length > 0) {
+    if (!newSchema.required) newSchema.required = [];
+    newSchema.required.push('general_config');
+  }
+  if (llmBotConfigSchema.required.length > 0) {
+    if (!newSchema.required) newSchema.required = [];
+    newSchema.required.push('llm_bot_config');
+  }
+
+  newSchema.title = ''; // Remove root title
+  return newSchema;
 };
 
 // Helper to transform formData to match the new schema
 const transformDataToUI = (data) => {
-  return data;
+  if (!data) return data;
+  const uiData = { ...data };
+
+  uiData.general_config = {
+    user_id: data.user_id,
+    respond_to_whitelist: data.respond_to_whitelist,
+  };
+  delete uiData.user_id;
+  delete uiData.respond_to_whitelist;
+
+  uiData.llm_bot_config = {
+    llm_provider_config: data.llm_provider_config,
+  };
+  delete uiData.llm_provider_config;
+
+  return uiData;
 };
 
 // Helper to transform formData back to the original format for saving
 const transformDataToAPI = (uiData) => {
-  return uiData;
+  if (!uiData) return uiData;
+
+  const { general_config, llm_bot_config, ...rest } = uiData;
+  const apiData = { ...rest };
+
+  if (general_config) {
+    apiData.user_id = general_config.user_id;
+    apiData.respond_to_whitelist = general_config.respond_to_whitelist;
+  }
+
+  if (llm_bot_config) {
+    apiData.llm_provider_config = llm_bot_config.llm_provider_config;
+  }
+
+  return apiData;
 };
 
 
@@ -39,7 +127,8 @@ function EditPage() {
         const schemaResponse = await fetch('/api/configurations/schema');
         if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
         const schemaData = await schemaResponse.json();
-        const transformedSchema = transformSchema(schemaData);
+        const dereferencedSchema = await JSONSchemaRefParser.dereference(schemaData);
+        const transformedSchema = transformSchema(dereferencedSchema);
         setSchema(transformedSchema);
 
         let initialFormData;
@@ -86,7 +175,8 @@ function EditPage() {
     }
   }, [formData]);
 
-  const handleFormChange = (newFormData) => {
+  const handleFormChange = (e) => {
+    const newFormData = e.formData;
     try {
       // This handler is needed to work around a limitation in rjsf's handling of oneOf.
       // It doesn't automatically clear data from a previously selected oneOf branch.
@@ -120,7 +210,7 @@ function EditPage() {
     }
   };
 
-  const handleSave = async (formData) => {
+  const handleSave = async ({ formData }) => {
     setIsSaving(true);
     setError(null);
     try {
@@ -168,17 +258,29 @@ function EditPage() {
     return <div>Loading form...</div>;
   }
 
+  const templates = {
+    FieldTemplate: CustomFieldTemplate,
+    ObjectFieldTemplate: CustomObjectFieldTemplate,
+    ArrayFieldTemplate: CustomArrayFieldTemplate
+  };
+
+  const widgets = {
+    CheckboxWidget: CustomCheckboxWidget
+  };
 
   const uiSchema = {
     "ui:classNames": "form-container",
     general_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       user_id: {
         "ui:widget": "hidden"
       }
     },
     chat_provider_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
     },
     llm_bot_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       "ui:title": "LlmBotConfig",
       llm_provider_config: {
         provider_config: {
@@ -199,6 +301,7 @@ function EditPage() {
       }
     },
     queue_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
     }
   };
 
@@ -223,15 +326,21 @@ function EditPage() {
             <h2>{isNew ? 'Add New Configuration' : `Edit Configuration`}: {userId}</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem', minHeight: '75vh' }}>
               <div style={{...innerPanelStyle, overflowY: 'auto'}}>
-                <UniformsForm
+                <Form
                   ref={formRef}
                   schema={schema}
-                  formData={formData}
-                  onChange={handleFormChange}
-                  onSubmit={handleSave}
                   uiSchema={uiSchema}
+                  formData={formData}
+                  validator={validator}
+                  onSubmit={handleSave}
+                  onChange={handleFormChange}
+                  onError={(errors) => console.log('Form validation errors:', errors)}
                   disabled={isSaving}
-                />
+                  templates={templates}
+                  widgets={widgets}
+                >
+                  <div />
+                </Form>
               </div>
 
               <div style={{ ...innerPanelStyle, display: 'flex', flexDirection: 'column' }}>
