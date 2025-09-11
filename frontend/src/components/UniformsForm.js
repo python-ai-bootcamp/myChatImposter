@@ -5,7 +5,7 @@ import { JSONSchemaBridge } from 'uniforms-bridge-json-schema';
 import Ajv from 'ajv';
 import LlmBotConfigField from './LlmBotConfigField';
 
-const ajv = new Ajv({ allErrors: true, useDefaults: true });
+const ajv = new Ajv({ allErrors: true, useDefaults: true, strict: false });
 
 function createValidator(schema) {
   const validator = ajv.compile(schema);
