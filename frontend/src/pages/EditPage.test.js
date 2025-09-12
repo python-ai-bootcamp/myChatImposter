@@ -17,15 +17,27 @@ const mockSchema = {
   type: 'object',
   properties: {
     user_id: { type: 'string', title: 'User ID' },
-    respond_to_whitelist: { type: 'array', items: { type: 'string' } },
+    respond_to_whitelist: { type: 'array', items: { type: 'string', default: '' }, title: 'Whitelist' },
     queue_config: {
         type: 'object',
         title: 'Queue Config',
         properties: {
             max_messages: { type: 'number', title: 'Max Messages' }
-        }
+        },
+        required: ['max_messages']
+    },
+    llm_provider_config: {
+        type: 'object',
+        title: 'LLM Provider',
+        properties: {}
+    },
+    chat_provider_config: {
+        type: 'object',
+        title: 'Chat Provider',
+        properties: {}
     }
   },
+  required: ['user_id', 'queue_config']
 };
 
 const mockInitialData = {
@@ -41,74 +53,73 @@ beforeEach(() => {
   mockedNavigate.mockClear();
 });
 
-const renderComponent = () => {
-    // Setup mock fetches for both schema and data
-    fetch.mockImplementation((url) => {
+const renderComponent = (userId = 'test-user') => {
+    fetch.mockImplementation((url, options) => {
         if (url.includes('/api/configurations/schema')) {
-            return Promise.resolve({
-                ok: true,
-                json: () => Promise.resolve(mockSchema),
-            });
+            return Promise.resolve({ ok: true, json: () => Promise.resolve(mockSchema) });
         }
-        if (url.includes('/api/configurations/test.json')) {
-            return Promise.resolve({
-                ok: true,
-                json: () => Promise.resolve(mockInitialData),
-            });
+        if (options && options.method === 'PUT' && url.includes(`/api/configurations/${userId}`)) {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'success' }) });
         }
-        // Mock the save PUT request
-        if (url.includes('/api/configurations/')) {
-            return Promise.resolve({
-                ok: true,
-                json: () => Promise.resolve({ status: 'success' }),
-            });
+        if (url.includes(`/api/configurations/${userId}`)) {
+            return Promise.resolve({ ok: true, json: () => Promise.resolve(mockInitialData) });
         }
         return Promise.reject(new Error(`Unhandled fetch call: ${url}`));
     });
 
-
   render(
-    <MemoryRouter initialEntries={['/edit/test.json']}>
+    <MemoryRouter initialEntries={[`/edit/${userId}`]}>
       <Routes>
-        <Route path="/edit/:filename" element={<EditPage />} />
+        <Route path="/edit/:userId" element={<EditPage />} />
       </Routes>
     </MemoryRouter>
   );
 };
 
-test('renders the form and saves updated data', async () => {
+test('renders the form with nested fields and saves updated data', async () => {
   renderComponent();
 
-  // Wait for the form to render by finding a field from the schema
   const maxMessagesInput = await screen.findByLabelText('Max Messages');
   expect(maxMessagesInput).toBeInTheDocument();
   expect(maxMessagesInput.value).toBe('10');
 
-  // Change a value
   fireEvent.change(maxMessagesInput, { target: { value: '50' } });
   expect(maxMessagesInput.value).toBe('50');
 
-  // Submit the form
   const saveButton = screen.getByRole('button', { name: /Save/i });
   fireEvent.click(saveButton);
 
-  // Wait for the save operation to complete and check the fetch call
   await waitFor(() => {
-    expect(fetch).toHaveBeenCalledWith(
-      '/api/configurations/test.json',
-      expect.objectContaining({
-        method: 'PUT',
-        body: JSON.stringify([{ // The component now wraps the data in an array
-            ...mockInitialData,
-            queue_config: {
-                ...mockInitialData.queue_config,
-                max_messages: 50, // The updated value
-            }
-        }]),
-      })
-    );
+    const expectedBody = [{
+        ...mockInitialData,
+        queue_config: {
+            ...mockInitialData.queue_config,
+            max_messages: 50,
+        }
+    }];
+
+    const putCall = fetch.mock.calls.find(call => call[1] && call[1].method === 'PUT');
+
+    expect(putCall).toBeDefined();
+    expect(putCall[0]).toBe('/api/configurations/test-user');
+    expect(JSON.parse(putCall[1].body)).toEqual(expectedBody);
   });
 
-  // Check for navigation
   expect(mockedNavigate).toHaveBeenCalledWith('/');
+});
+
+test('displays a validation error for invalid data', async () => {
+    renderComponent();
+
+    const maxMessagesInput = await screen.findByLabelText('Max Messages');
+    expect(maxMessagesInput).toBeInTheDocument();
+
+    fireEvent.change(maxMessagesInput, { target: { value: '' } });
+
+    // The error from AJV for a type mismatch is "must be number"
+    const errorMessage = await screen.findByText('must be number');
+    expect(errorMessage).toBeInTheDocument();
+
+    const saveButton = screen.getByRole('button', { name: /Save/i });
+    expect(saveButton).toBeDisabled();
 });
