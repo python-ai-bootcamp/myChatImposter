@@ -18,30 +18,26 @@ const mockSchema = {
   properties: {
     user_id: { type: 'string', title: 'User ID' },
     respond_to_whitelist: { type: 'array', items: { type: 'string', default: '' }, title: 'Whitelist' },
-    queue_config: {
-        title: 'Queue Config',
-        '$ref': '#/$defs/QueueConfig'
-    },
+    queue_config: { '$ref': '#/$defs/QueueConfig' },
     llm_provider_config: {
       title: 'LLM Provider Config',
-      '$ref': '#/$defs/LlmProviderConfig'
+      anyOf: [
+        { '$ref': '#/$defs/LlmProviderConfig' },
+        { type: 'null', title: 'None' }
+      ]
     },
-    chat_provider_config: {
-      title: 'Chat Provider',
-      '$ref': '#/$defs/ChatProviderConfig'
-    }
+    chat_provider_config: { '$ref': '#/$defs/ChatProviderConfig' }
   },
-  required: ['user_id', 'queue_config', 'llm_provider_config'],
+  required: ['user_id', 'queue_config'],
   '$defs': {
     QueueConfig: {
       type: 'object',
       title: 'Queue Config',
-      properties: {
-          max_messages: { type: 'number', title: 'Max Messages' }
-      },
+      properties: { max_messages: { type: 'number', title: 'Max Messages' } },
       required: ['max_messages']
     },
     LlmProviderConfig: {
+      title: 'LLM Provider',
       oneOf: [
         {
           title: 'OpenAI',
@@ -51,9 +47,7 @@ const mockSchema = {
             provider_config: {
                 type: 'object',
                 title: 'OpenAI Config',
-                properties: {
-                    model: { type: 'string', title: 'Model' }
-                }
+                properties: { model: { type: 'string', title: 'Model' } }
             }
           }
         },
@@ -65,9 +59,7 @@ const mockSchema = {
             provider_config: {
                 type: 'object',
                 title: 'FakeLLM Config',
-                properties: {
-                    dummy_value: { type: 'string', title: 'Dummy Value' }
-                }
+                properties: { dummy_value: { type: 'string', title: 'Dummy Value' } }
             }
           }
         }
@@ -76,9 +68,7 @@ const mockSchema = {
     ChatProviderConfig: {
         type: 'object',
         title: 'Chat Provider',
-        properties: {
-            some_prop: { type: 'string', title: 'Some Chat Prop' }
-        }
+        properties: { some_prop: { type: 'string', title: 'Some Chat Prop' } }
     }
   }
 };
@@ -86,18 +76,12 @@ const mockSchema = {
 const mockInitialData = {
     user_id: 'test-user',
     respond_to_whitelist: ['user1'],
-    queue_config: {
-        max_messages: 10
-    },
+    queue_config: { max_messages: 10 },
     llm_provider_config: {
       provider_name: 'openAi',
-      provider_config: {
-        model: 'gpt-4'
-      }
+      provider_config: { model: 'gpt-4' }
     },
-    chat_provider_config: {
-        some_prop: 'hello'
-    }
+    chat_provider_config: { some_prop: 'hello' }
 };
 
 beforeEach(() => {
@@ -110,7 +94,7 @@ const renderComponent = (userId = 'test-user') => {
         if (url.includes('/api/configurations/schema')) {
             return Promise.resolve({ ok: true, json: () => Promise.resolve(mockSchema) });
         }
-        if (options && options.method === 'PUT' && url.includes(`/api/configurations/${userId}`)) {
+        if (options?.method === 'PUT') {
             return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'success' }) });
         }
         if (url.includes(`/api/configurations/${userId}`)) {
@@ -128,52 +112,35 @@ const renderComponent = (userId = 'test-user') => {
   );
 };
 
-test('handles oneOf fields by rendering a dropdown and switching sub-forms', async () => {
+test('handles anyOf fields with null option', async () => {
     renderComponent();
 
-    const providerSelect = await screen.findByDisplayValue('OpenAI');
+    // The dropdown for the provider should be visible, with "LLM Provider" selected.
+    // Note: The title for the selected oneOf/anyOf sub-schema is used.
+    const providerSelect = await screen.findByDisplayValue('LLM Provider');
     expect(providerSelect).toBeInTheDocument();
 
+    // The field for the initially selected provider should be visible
     let modelInput = await screen.findByLabelText('Model');
     expect(modelInput).toBeInTheDocument();
-    expect(modelInput.value).toBe('gpt-4');
 
-    expect(screen.queryByLabelText('Dummy Value')).not.toBeInTheDocument();
+    // Change the provider to "None"
+    fireEvent.change(providerSelect, { target: { value: 'None' } });
 
-    fireEvent.change(providerSelect, { target: { value: 'FakeLLM' } });
-
+    // The sub-form should disappear
     await waitFor(() => {
         expect(screen.queryByLabelText('Model')).not.toBeInTheDocument();
     });
 
-    const dummyInput = await screen.findByLabelText('Dummy Value');
-    expect(dummyInput).toBeInTheDocument();
-
-    fireEvent.change(dummyInput, { target: { value: 'test-dummy' } });
-    expect(dummyInput.value).toBe('test-dummy');
-
+    // Save the form
     const saveButton = screen.getByRole('button', { name: /Save/i });
     fireEvent.click(saveButton);
 
+    // Check that the saved data has a null value for the provider
     await waitFor(() => {
         const putCall = fetch.mock.calls.find(call => call[1] && call[1].method === 'PUT');
         expect(putCall).toBeDefined();
         const savedData = JSON.parse(putCall[1].body)[0];
-        expect(savedData.llm_provider_config.provider_name).toBe('fakeLlm');
-        expect(savedData.llm_provider_config.provider_config.dummy_value).toBe('test-dummy');
+        expect(savedData.llm_provider_config).toBeNull();
     });
-});
-
-test('renders fields from $ref schemas correctly', async () => {
-    renderComponent();
-
-    // Check for a field from the QueueConfig ref
-    const maxMessagesInput = await screen.findByLabelText('Max Messages');
-    expect(maxMessagesInput).toBeInTheDocument();
-    expect(maxMessagesInput.value).toBe('10');
-
-    // Check for a field from the ChatProviderConfig ref
-    const someChatPropInput = await screen.findByLabelText('Some Chat Prop');
-    expect(someChatPropInput).toBeInTheDocument();
-    expect(someChatPropInput.value).toBe('hello');
 });

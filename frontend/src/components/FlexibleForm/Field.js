@@ -8,8 +8,8 @@ import OneOfField from './fields/OneOfField';
 import { resolveRef } from './utils';
 
 const getFieldComponent = (schema) => {
-  if (schema.oneOf) {
-    return OneOfField;
+  if (schema.oneOf || schema.anyOf) {
+    return OneOfField; // Using OneOfField to handle both oneOf and anyOf
   }
   if (schema.type === 'object' || schema.properties) {
     return ObjectField;
@@ -35,18 +35,7 @@ const Field = ({ name, label, schema, rootSchema, value, onChange, errors = [] }
 
   return (
     <div style={{ marginBottom: '1rem' }}>
-      <details>
-        <summary style={{ fontWeight: 'bold' }}>{label} (Click to see schema)</summary>
-        <pre style={{ backgroundColor: '#eee', padding: '0.5rem', fontSize: '0.7rem' }}>
-          <strong>Original Schema:</strong><br />
-          {JSON.stringify(schema, null, 2)}
-        </pre>
-        <pre style={{ backgroundColor: '#eef', padding: '0.5rem', fontSize: '0.7rem' }}>
-          <strong>Resolved Schema:</strong><br />
-          {JSON.stringify(resolvedSchema, null, 2)}
-        </pre>
-      </details>
-
+      <label htmlFor={name} style={{ fontWeight: 'bold' }}>{label}</label>
       {schema.description && <p style={{ fontSize: '0.8rem', color: '#666', marginTop: 0 }}>{schema.description}</p>}
       <FieldComponent
         name={name}
