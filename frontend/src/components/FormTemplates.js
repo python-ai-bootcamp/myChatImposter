@@ -34,6 +34,8 @@ export function CustomFieldTemplate(props) {
       return children;
   }
 
+  const shouldHideLabel = uiSchema?.['ui:options']?.hideLabel;
+
   // A single, consistent layout for all other fields.
   const rightColumnStyle = {
       boxSizing: 'border-box',
@@ -45,9 +47,13 @@ export function CustomFieldTemplate(props) {
   return (
     <>
       <div className={classNames} style={{ display: 'table-row' }}>
-        <label htmlFor={id} style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
-          {label}{required ? '*' : null}
-        </label>
+        {shouldHideLabel ? (
+          <div style={{ display: 'table-cell' }}></div>
+        ) : (
+          <label htmlFor={id} style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
+            {label}{required ? '*' : null}
+          </label>
+        )}
         <div style={rightColumnStyle}>
           {description}
           {children}

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import UniformsForm from '../components/UniformsForm';
-import JSONSchemaRefParser from '@stoplight/json-schema-ref-parser';
+import Form from '@rjsf/core';
+import validator from '@rjsf/validator-ajv8';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate } from '../components/FormTemplates';
 
 // Helper to transform schema
 const transformSchema = (originalSchema) => {
@@ -125,8 +126,7 @@ function EditPage() {
         const schemaResponse = await fetch('/api/configurations/schema');
         if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
         const schemaData = await schemaResponse.json();
-        const dereferencedSchema = await JSONSchemaRefParser.dereference(schemaData);
-        const transformedSchema = transformSchema(dereferencedSchema);
+        const transformedSchema = transformSchema(schemaData);
         setSchema(transformedSchema);
 
         let initialFormData;
@@ -288,7 +288,8 @@ function EditPage() {
           },
           api_key_source: {
             "ui:options": {
-              "hidden": true
+              "hidden": true,
+              "hideLabel": true
             },
             "ui:enumNames": [
               "From Environment",
