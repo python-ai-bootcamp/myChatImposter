@@ -4,7 +4,7 @@ import FlexibleForm from '../components/FlexibleForm/Form';
 import { editPageLayout } from './EditPageLayout';
 import Ajv from 'ajv';
 
-const ajv = new Ajv({ allErrors: true, verbose: true });
+const ajv = new Ajv({ allErrors: true, verbose: true, strict: false });
 
 function EditPage() {
   const { userId } = useParams();

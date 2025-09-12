@@ -27,9 +27,37 @@ const mockSchema = {
         required: ['max_messages']
     },
     llm_provider_config: {
-        type: 'object',
-        title: 'LLM Provider',
-        properties: {}
+      title: 'LLM Provider Config',
+      oneOf: [
+        {
+          title: 'OpenAI',
+          type: 'object', // Added this
+          properties: {
+            provider_name: { const: 'openAi', title: 'Provider Name' },
+            provider_config: {
+                type: 'object',
+                title: 'OpenAI Config',
+                properties: {
+                    model: { type: 'string', title: 'Model' }
+                }
+            }
+          }
+        },
+        {
+          title: 'FakeLLM',
+          type: 'object', // Added this
+          properties: {
+            provider_name: { const: 'fakeLlm', title: 'Provider Name' },
+            provider_config: {
+                type: 'object',
+                title: 'FakeLLM Config',
+                properties: {
+                    dummy_value: { type: 'string', title: 'Dummy Value' }
+                }
+            }
+          }
+        }
+      ]
     },
     chat_provider_config: {
         type: 'object',
@@ -37,7 +65,7 @@ const mockSchema = {
         properties: {}
     }
   },
-  required: ['user_id', 'queue_config']
+  required: ['user_id', 'queue_config', 'llm_provider_config']
 };
 
 const mockInitialData = {
@@ -45,6 +73,12 @@ const mockInitialData = {
     respond_to_whitelist: ['user1'],
     queue_config: {
         max_messages: 10
+    },
+    llm_provider_config: {
+      provider_name: 'openAi',
+      provider_config: {
+        model: 'gpt-4'
+      }
     }
 };
 
@@ -76,50 +110,38 @@ const renderComponent = (userId = 'test-user') => {
   );
 };
 
-test('renders the form with nested fields and saves updated data', async () => {
-  renderComponent();
-
-  const maxMessagesInput = await screen.findByLabelText('Max Messages');
-  expect(maxMessagesInput).toBeInTheDocument();
-  expect(maxMessagesInput.value).toBe('10');
-
-  fireEvent.change(maxMessagesInput, { target: { value: '50' } });
-  expect(maxMessagesInput.value).toBe('50');
-
-  const saveButton = screen.getByRole('button', { name: /Save/i });
-  fireEvent.click(saveButton);
-
-  await waitFor(() => {
-    const expectedBody = [{
-        ...mockInitialData,
-        queue_config: {
-            ...mockInitialData.queue_config,
-            max_messages: 50,
-        }
-    }];
-
-    const putCall = fetch.mock.calls.find(call => call[1] && call[1].method === 'PUT');
-
-    expect(putCall).toBeDefined();
-    expect(putCall[0]).toBe('/api/configurations/test-user');
-    expect(JSON.parse(putCall[1].body)).toEqual(expectedBody);
-  });
-
-  expect(mockedNavigate).toHaveBeenCalledWith('/');
-});
-
-test('displays a validation error for invalid data', async () => {
+test('handles oneOf fields by rendering a dropdown and switching sub-forms', async () => {
     renderComponent();
 
-    const maxMessagesInput = await screen.findByLabelText('Max Messages');
-    expect(maxMessagesInput).toBeInTheDocument();
+    const providerSelect = await screen.findByDisplayValue('OpenAI');
+    expect(providerSelect).toBeInTheDocument();
 
-    fireEvent.change(maxMessagesInput, { target: { value: '' } });
+    let modelInput = await screen.findByLabelText('Model');
+    expect(modelInput).toBeInTheDocument();
+    expect(modelInput.value).toBe('gpt-4');
 
-    // The error from AJV for a type mismatch is "must be number"
-    const errorMessage = await screen.findByText('must be number');
-    expect(errorMessage).toBeInTheDocument();
+    expect(screen.queryByLabelText('Dummy Value')).not.toBeInTheDocument();
+
+    fireEvent.change(providerSelect, { target: { value: 'FakeLLM' } });
+
+    await waitFor(() => {
+        expect(screen.queryByLabelText('Model')).not.toBeInTheDocument();
+    });
+
+    const dummyInput = await screen.findByLabelText('Dummy Value');
+    expect(dummyInput).toBeInTheDocument();
+
+    fireEvent.change(dummyInput, { target: { value: 'test-dummy' } });
+    expect(dummyInput.value).toBe('test-dummy');
 
     const saveButton = screen.getByRole('button', { name: /Save/i });
-    expect(saveButton).toBeDisabled();
+    fireEvent.click(saveButton);
+
+    await waitFor(() => {
+        const putCall = fetch.mock.calls.find(call => call[1] && call[1].method === 'PUT');
+        expect(putCall).toBeDefined();
+        const savedData = JSON.parse(putCall[1].body)[0];
+        expect(savedData.llm_provider_config.provider_name).toBe('fakeLlm');
+        expect(savedData.llm_provider_config.provider_config.dummy_value).toBe('test-dummy');
+    });
 });

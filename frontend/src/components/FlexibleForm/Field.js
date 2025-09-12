@@ -4,10 +4,13 @@ import NumberField from './fields/NumberField';
 import BooleanField from './fields/BooleanField';
 import ObjectField from './fields/ObjectField';
 import ArrayField from './fields/ArrayField';
+import OneOfField from './fields/OneOfField'; // New import
 
 const getFieldComponent = (schema) => {
+  if (schema.oneOf) {
+    return OneOfField;
+  }
   if (schema.type === 'string') {
-    // Handle special string formats if needed
     return StringField;
   }
   if (schema.type === 'number' || schema.type === 'integer') {
@@ -37,6 +40,7 @@ const Field = ({ name, label, schema, value, onChange, errors = [] }) => {
         schema={schema}
         value={value}
         onChange={onChange}
+        errors={errors}
       />
       {errors.length > 0 && (
         <div style={{ color: 'red', marginTop: '0.5rem' }}>
