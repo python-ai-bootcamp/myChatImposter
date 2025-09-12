@@ -1,27 +1,26 @@
+// This file defines the layout of the Edit Page.
+// By editing this file, you can change which fields appear in which collapsible section.
+
 export const editPageLayout = {
-  sections: [
-    {
-      id: 'general',
-      title: 'General Configuration',
-      fields: [
-        { name: 'user_id', hidden: true },
-        { name: 'respond_to_whitelist' },
-      ],
+  // Each key represents a new group that will be created in the form.
+  // The 'title' will be the display name of the collapsible section.
+  // The 'fields' array lists the top-level properties from the schema that should be moved into this group.
+  groups: {
+    general_config: {
+      title: 'General Config',
+      fields: ['user_id', 'respond_to_whitelist'],
     },
-    {
-      id: 'llm',
-      title: 'LLM Provider',
-      fields: [{ name: 'llm_provider_config' }],
+    llm_bot_config: {
+      title: 'LlmBotConfig',
+      fields: ['llm_provider_config'],
     },
-    {
-      id: 'chat',
-      title: 'Chat Provider',
-      fields: [{ name: 'chat_provider_config' }],
+    chat_provider_config: {
+      title: 'Chat Provider Config',
+      fields: ['chat_provider_config'],
     },
-    {
-      id: 'queue',
-      title: 'Queue',
-      fields: [{ name: 'queue_config' }],
+    queue_config: {
+      title: 'Queue Config',
+      fields: ['queue_config'],
     },
-  ],
+  },
 };

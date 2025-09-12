@@ -17,67 +17,25 @@ const mockSchema = {
   type: 'object',
   properties: {
     user_id: { type: 'string', title: 'User ID' },
-    respond_to_whitelist: { type: 'array', items: { type: 'string', default: '' }, title: 'Whitelist' },
-    queue_config: { '$ref': '#/$defs/QueueConfig' },
-    llm_provider_config: {
-      title: 'LLM Provider Config',
-      anyOf: [
-        { '$ref': '#/$defs/LlmProviderConfig' },
-        { type: 'null', title: 'None' }
-      ]
-    },
-    chat_provider_config: { '$ref': '#/$defs/ChatProviderConfig' }
-  },
-  required: ['user_id', 'queue_config'],
-  '$defs': {
-    QueueConfig: {
-      type: 'object',
-      title: 'Queue Config',
-      properties: { max_messages: { type: 'number', title: 'Max Messages' } },
-      required: ['max_messages']
-    },
-    LlmProviderConfig: {
-      title: 'LLM Provider',
-      oneOf: [
-        {
-          title: 'OpenAI',
-          type: 'object',
-          properties: {
-            provider_name: { const: 'openAi', title: 'Provider Name' },
-            provider_config: {
-                type: 'object',
-                title: 'OpenAI Config',
-                properties: {
-                    model: { type: 'string', title: 'Model' },
-                    api_key_source: { type: 'string', title: 'API Key Source', enum: ['environment', 'explicit'], default: 'environment' },
-                    api_key: { type: 'string', title: 'API Key' }
-                }
-            }
-          }
-        }
-      ]
-    },
-    ChatProviderConfig: {
+    respond_to_whitelist: { type: 'array', items: { type: 'string' } },
+    queue_config: {
         type: 'object',
-        title: 'Chat Provider',
-        properties: { some_prop: { type: 'string', title: 'Some Chat Prop' } }
-    }
-  }
+        title: 'Queue Config',
+        properties: {
+            max_messages: { type: 'number', title: 'Max Messages' }
+        }
+    },
+    llm_provider_config: { type: 'object', title: 'LLM Provider Config' },
+    chat_provider_config: { type: 'object', title: 'Chat Provider Config' },
+  },
 };
 
 const mockInitialData = {
     user_id: 'test-user',
     respond_to_whitelist: ['user1'],
-    queue_config: { max_messages: 10 },
-    llm_provider_config: {
-      provider_name: 'openAi',
-      provider_config: {
-          model: 'gpt-4',
-          api_key_source: 'environment',
-          api_key: null // Initially null because source is environment
-      }
-    },
-    chat_provider_config: { some_prop: 'hello' }
+    queue_config: {
+        max_messages: 10
+    }
 };
 
 beforeEach(() => {
@@ -85,22 +43,32 @@ beforeEach(() => {
   mockedNavigate.mockClear();
 });
 
-const renderComponent = (userId = 'test-user') => {
-    fetch.mockImplementation((url, options) => {
+const renderComponent = () => {
+    fetch.mockImplementation((url) => {
         if (url.includes('/api/configurations/schema')) {
-            return Promise.resolve({ ok: true, json: () => Promise.resolve(mockSchema) });
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve(mockSchema),
+            });
         }
-        if (options?.method === 'PUT') {
-            return Promise.resolve({ ok: true, json: () => Promise.resolve({ status: 'success' }) });
+        if (url.includes('/api/configurations/test-user')) {
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve([mockInitialData]), // The API returns an array
+            });
         }
-        if (url.includes(`/api/configurations/${userId}`)) {
-            return Promise.resolve({ ok: true, json: () => Promise.resolve(mockInitialData) });
+        if (url.includes('/api/configurations/')) {
+            return Promise.resolve({
+                ok: true,
+                json: () => Promise.resolve({ status: 'success' }),
+            });
         }
         return Promise.reject(new Error(`Unhandled fetch call: ${url}`));
     });
 
+
   render(
-    <MemoryRouter initialEntries={[`/edit/${userId}`]}>
+    <MemoryRouter initialEntries={['/edit/test-user']}>
       <Routes>
         <Route path="/edit/:userId" element={<EditPage />} />
       </Routes>
@@ -108,29 +76,42 @@ const renderComponent = (userId = 'test-user') => {
   );
 };
 
-test('conditionally renders api_key field based on api_key_source', async () => {
-    renderComponent();
+test('renders the form and saves updated data', async () => {
+  renderComponent();
 
-    // The API Key Source dropdown should be visible
-    const apiKeySourceSelect = await screen.findByLabelText('API Key Source');
-    expect(apiKeySourceSelect).toBeInTheDocument();
-    expect(apiKeySourceSelect.value).toBe('environment');
+  // Find and click the header for the "Queue Config" section to expand it
+  const queueConfigHeader = await screen.findByText('Queue Config');
+  fireEvent.click(queueConfigHeader);
 
-    // The API Key input should NOT be visible initially
-    expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
+  // Now find the field inside the expanded section
+  const maxMessagesInput = await screen.findByLabelText('Max Messages');
+  expect(maxMessagesInput).toBeInTheDocument();
+  expect(maxMessagesInput.value).toBe('10');
 
-    // Change the source to 'explicit'
-    fireEvent.change(apiKeySourceSelect, { target: { value: 'explicit' } });
+  // Change a value
+  fireEvent.change(maxMessagesInput, { target: { value: '50' } });
+  expect(maxMessagesInput.value).toBe('50');
 
-    // The API Key input should now appear
-    const apiKeyInput = await screen.findByLabelText('API Key');
-    expect(apiKeyInput).toBeInTheDocument();
+  // Submit the form
+  const saveButton = screen.getByRole('button', { name: /Save/i });
+  fireEvent.click(saveButton);
 
-    // Change it back to 'environment'
-    fireEvent.change(apiKeySourceSelect, { target: { value: 'environment' } });
+  // Wait for the save operation to complete and check the fetch call
+  await waitFor(() => {
+    const expectedBody = [{
+        ...mockInitialData,
+        queue_config: {
+            ...mockInitialData.queue_config,
+            max_messages: 50,
+        }
+    }];
 
-    // The API Key input should disappear again
-    await waitFor(() => {
-        expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
-    });
+    const putCall = fetch.mock.calls.find(call => call[1] && call[1].method === 'PUT');
+    expect(putCall).toBeDefined();
+    expect(putCall[0]).toBe('/api/configurations/test-user');
+    expect(JSON.parse(putCall[1].body)).toEqual(expectedBody);
+  });
+
+  // Check for navigation
+  expect(mockedNavigate).toHaveBeenCalledWith('/');
 });

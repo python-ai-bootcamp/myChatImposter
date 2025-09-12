@@ -1,35 +1,103 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import FlexibleForm from '../components/FlexibleForm/Form';
+import Form from '@rjsf/core';
+import validator from '@rjsf/validator-ajv8';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate } from '../components/FormTemplates';
 import { editPageLayout } from './EditPageLayout';
-import Ajv from 'ajv';
 
-const ajv = new Ajv({ allErrors: true, verbose: true, strict: false });
+// Helper to transform schema based on the layout definition
+const transformSchema = (originalSchema) => {
+  const newSchema = JSON.parse(JSON.stringify(originalSchema));
+  const newProperties = {};
+
+  // Create new group schemas based on the layout config
+  for (const groupName in editPageLayout.groups) {
+    const groupConfig = editPageLayout.groups[groupName];
+    const groupSchema = {
+      type: 'object',
+      title: groupConfig.title,
+      properties: {},
+      required: [],
+    };
+
+    // Move fields from the root schema into the new group schema
+    for (const fieldName of groupConfig.fields) {
+      if (newSchema.properties[fieldName]) {
+        groupSchema.properties[fieldName] = newSchema.properties[fieldName];
+        delete newSchema.properties[fieldName]; // Remove from root
+
+        if (newSchema.required && newSchema.required.includes(fieldName)) {
+          groupSchema.required.push(fieldName);
+          newSchema.required = newSchema.required.filter(f => f !== fieldName);
+        }
+      }
+    }
+
+    newProperties[groupName] = groupSchema;
+    if (groupSchema.required.length > 0) {
+      if (!newSchema.required) newSchema.required = [];
+      newSchema.required.push(groupName);
+    }
+  }
+
+  // Combine the new group properties with the remaining root properties
+  newSchema.properties = { ...newProperties, ...newSchema.properties };
+  newSchema.title = ''; // Remove root title
+  return newSchema;
+};
+
+// Helper to transform formData to match the new schema, based on the layout definition
+const transformDataToUI = (data) => {
+  if (!data) return data;
+  const uiData = { ...data };
+
+  for (const groupName in editPageLayout.groups) {
+    const groupConfig = editPageLayout.groups[groupName];
+    uiData[groupName] = {};
+    for (const fieldName of groupConfig.fields) {
+      if (data[fieldName] !== undefined) {
+        uiData[groupName][fieldName] = data[fieldName];
+        delete uiData[fieldName];
+      }
+    }
+  }
+
+  return uiData;
+};
+
+// Helper to transform formData back to the original format for saving
+const transformDataToAPI = (uiData) => {
+  if (!uiData) return uiData;
+  const apiData = { ...uiData };
+
+  for (const groupName in editPageLayout.groups) {
+    const groupData = apiData[groupName];
+    if (groupData) {
+      for (const fieldName in groupData) {
+        apiData[fieldName] = groupData[fieldName];
+      }
+      delete apiData[groupName];
+    }
+  }
+
+  return apiData;
+};
+
 
 function EditPage() {
   const { userId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
+  const formRef = useRef(null);
 
   const [schema, setSchema] = useState(null);
   const [formData, setFormData] = useState(null);
   const [jsonString, setJsonString] = useState('');
   const [jsonError, setJsonError] = useState(null);
-  const [formErrors, setFormErrors] = useState([]);
   const [error, setError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
 
   const isNew = location.state?.isNew;
-
-  const validate = (data, currentSchema) => {
-    if (!currentSchema) return [];
-    const validate = ajv.compile(currentSchema);
-    const valid = validate(data);
-    if (!valid) {
-      return validate.errors;
-    }
-    return [];
-  };
 
   useEffect(() => {
     const fetchData = async () => {
@@ -37,22 +105,25 @@ function EditPage() {
         const schemaResponse = await fetch('/api/configurations/schema');
         if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
         const schemaData = await schemaResponse.json();
-        setSchema(schemaData);
+        const transformedSchema = transformSchema(schemaData);
+        setSchema(transformedSchema);
 
         let initialFormData;
         if (isNew) {
-          initialFormData = {
+          const initialData = {
             user_id: userId,
             respond_to_whitelist: [],
           };
+          initialFormData = transformDataToUI(initialData);
         } else {
           const dataResponse = await fetch(`/api/configurations/${userId}`);
           if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');
           const data = await dataResponse.json();
-          initialFormData = Array.isArray(data) ? data[0] : data;
+          const originalData = Array.isArray(data) ? data[0] : data;
 
-          if (initialFormData.llm_provider_config && initialFormData.llm_provider_config.provider_config) {
-            const providerConfig = initialFormData.llm_provider_config.provider_config;
+          // Perform on-the-fly migration for old configs that don't have api_key_source
+          if (originalData.llm_provider_config && originalData.llm_provider_config.provider_config) {
+            const providerConfig = originalData.llm_provider_config.provider_config;
             if (!providerConfig.hasOwnProperty('api_key_source')) {
               if (providerConfig.api_key) {
                 providerConfig.api_key_source = 'explicit';
@@ -61,10 +132,12 @@ function EditPage() {
               }
             }
           }
+
+          initialFormData = transformDataToUI(originalData);
         }
         setFormData(initialFormData);
-        setJsonString(JSON.stringify(initialFormData, null, 2));
-        setFormErrors(validate(initialFormData, schemaData));
+        setJsonString(JSON.stringify(transformDataToAPI(initialFormData), null, 2));
+
       } catch (err) {
         setError(err.message);
       }
@@ -75,17 +148,23 @@ function EditPage() {
 
   useEffect(() => {
     if (formData) {
-      setJsonString(JSON.stringify(formData, null, 2));
+      setJsonString(JSON.stringify(transformDataToAPI(formData), null, 2));
     }
   }, [formData]);
 
-  const handleFormChange = (newFormData) => {
+  const handleFormChange = (e) => {
+    const newFormData = e.formData;
     try {
-      const providerConfig = newFormData?.llm_provider_config?.provider_config;
+      // This handler is needed to work around a limitation in rjsf's handling of oneOf.
+      // It doesn't automatically clear data from a previously selected oneOf branch.
+      const providerConfig = newFormData?.llm_bot_config?.llm_provider_config?.provider_config;
       if (providerConfig) {
         if (providerConfig.api_key_source === 'environment') {
+          // If the user selects 'environment', we must explicitly nullify the api_key.
           providerConfig.api_key = null;
         } else if (providerConfig.api_key_source === 'explicit' && providerConfig.api_key === null) {
+          // If they switch to 'explicit' and the key is null, initialize it as an empty string
+          // so the input box appears.
           providerConfig.api_key = "";
         }
       }
@@ -93,8 +172,6 @@ function EditPage() {
         // ignore
     }
     setFormData(newFormData);
-    const errors = validate(newFormData, schema);
-    setFormErrors(errors);
   };
 
   const handleJsonChange = (event) => {
@@ -102,29 +179,19 @@ function EditPage() {
     setJsonString(newJsonString);
     try {
       const parsedData = JSON.parse(newJsonString);
-      setFormData(parsedData);
+      const uiData = transformDataToUI(parsedData);
+      setFormData(uiData);
       setJsonError(null);
-      const errors = validate(parsedData, schema);
-      setFormErrors(errors);
     } catch (err) {
       setJsonError('Invalid JSON: ' + err.message);
-      setFormErrors([]);
     }
   };
 
-  const handleSave = async () => {
-    if (jsonError) {
-      setError("Cannot save, the JSON is invalid.");
-      return;
-    }
-    if (formErrors.length > 0) {
-      setError("Cannot save, form has validation errors.");
-      return;
-    }
+  const handleSave = async ({ formData }) => {
     setIsSaving(true);
     setError(null);
     try {
-      const apiDataFromUser = formData;
+      const apiDataFromUser = transformDataToAPI(formData);
 
       if (!isNew && apiDataFromUser.user_id !== userId) {
         throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
@@ -168,6 +235,53 @@ function EditPage() {
     return <div>Loading form...</div>;
   }
 
+  const templates = {
+    FieldTemplate: CustomFieldTemplate,
+    ObjectFieldTemplate: CustomObjectFieldTemplate,
+    ArrayFieldTemplate: CustomArrayFieldTemplate
+  };
+
+  const widgets = {
+    CheckboxWidget: CustomCheckboxWidget
+  };
+
+  const uiSchema = {
+    "ui:classNames": "form-container",
+    general_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
+      user_id: {
+        "ui:widget": "hidden"
+      }
+    },
+    chat_provider_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
+    },
+    llm_bot_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
+      "ui:title": "LlmBotConfig",
+      llm_provider_config: {
+        provider_config: {
+          "ui:title": "API Key Source",
+          "ui:options": {
+            "box": "LlmProviderSettings"
+          },
+          api_key_source: {
+            "ui:options": {
+              "hidden": true
+            },
+            "ui:enumNames": [
+              "From Environment",
+              "User Specific Key"
+            ]
+          }
+        }
+      }
+    },
+    queue_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
+    }
+  };
+
   const panelStyle = {
     border: '1px solid #ccc',
     borderRadius: '4px',
@@ -189,14 +303,21 @@ function EditPage() {
             <h2>{isNew ? 'Add New Configuration' : `Edit Configuration`}: {userId}</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem', minHeight: '75vh' }}>
               <div style={{...innerPanelStyle, overflowY: 'auto'}}>
-                <FlexibleForm
-                  layout={editPageLayout}
+                <Form
+                  ref={formRef}
                   schema={schema}
-                  rootSchema={schema}
+                  uiSchema={uiSchema}
                   formData={formData}
-                  onFormChange={handleFormChange}
-                  errors={formErrors}
-                />
+                  validator={validator}
+                  onSubmit={handleSave}
+                  onChange={handleFormChange}
+                  onError={(errors) => console.log('Form validation errors:', errors)}
+                  disabled={isSaving}
+                  templates={templates}
+                  widgets={widgets}
+                >
+                  <div />
+                </Form>
               </div>
 
               <div style={{ ...innerPanelStyle, display: 'flex', flexDirection: 'column' }}>
@@ -224,7 +345,7 @@ function EditPage() {
       }}>
         {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', marginBottom: '1rem' }}>{error}</p>}
         <div>
-          <button type="button" onClick={handleSave} disabled={isSaving || !!jsonError || formErrors.length > 0} style={{ marginRight: '10px' }}>
+          <button type="button" onClick={() => formRef.current.submit()} disabled={isSaving} style={{ marginRight: '10px' }}>
             {isSaving ? 'Saving...' : 'Save'}
           </button>
           <button type="button" onClick={handleCancel}>
