@@ -53,11 +53,20 @@ const transformDataToUI = (data) => {
 
   for (const groupName in editPageLayout.groups) {
     const groupConfig = editPageLayout.groups[groupName];
-    uiData[groupName] = {};
+    const groupData = {};
+    // Always create the group object.
+    uiData[groupName] = groupData;
+
     for (const fieldName of groupConfig.fields) {
-      if (data[fieldName] !== undefined) {
-        uiData[groupName][fieldName] = data[fieldName];
+      // If the field exists in the raw data, move it to the group.
+      if (uiData[fieldName] !== undefined) {
+        groupData[fieldName] = uiData[fieldName];
         delete uiData[fieldName];
+      }
+      // If the field does not exist in the raw data, we can initialize it with a default value here if needed,
+      // for example, setting a missing llm_provider_config to null so the form renders the field.
+      else if (fieldName === 'llm_provider_config') {
+        groupData[fieldName] = null;
       }
     }
   }
@@ -73,10 +82,8 @@ const transformDataToAPI = (uiData) => {
   for (const groupName in editPageLayout.groups) {
     const groupData = apiData[groupName];
     if (groupData) {
-      for (const fieldName in groupData) {
-        apiData[fieldName] = groupData[fieldName];
-      }
-      delete apiData[groupName];
+        Object.assign(apiData, groupData);
+        delete apiData[groupName];
     }
   }
 

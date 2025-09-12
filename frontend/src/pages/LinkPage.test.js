@@ -37,7 +37,7 @@ test('polls for status and stops when connected', async () => {
   renderComponent('test-user');
 
   // Initial render -> first poll
-  await screen.findByText('Status: connecting');
+  await screen.findByText(/Status: connecting/i);
   expect(fetch).toHaveBeenCalledTimes(1);
 
   // Advance time -> second poll
@@ -49,7 +49,7 @@ test('polls for status and stops when connected', async () => {
 
   // Advance time -> third poll (final status)
   await act(async () => { jest.advanceTimersByTime(2000); });
-  await screen.findByText('Status: connected');
+  await screen.findByText(/Status: connected/i);
   expect(fetch).toHaveBeenCalledTimes(3);
 
   // Advance time again -> polling should have stopped

@@ -25,9 +25,9 @@ afterEach(() => {
 });
 
 const mockStatuses = [
-  { filename: 'disconnected.json', user_id: 'user1', status: 'disconnected' },
-  { filename: 'linking.json', user_id: 'user2', status: 'linking' },
-  { filename: 'connected.json', user_id: 'user3', status: 'connected' },
+  { user_id: 'user1', status: 'disconnected' },
+  { user_id: 'user2', status: 'linking' },
+  { user_id: 'user3', status: 'connected' },
 ];
 
 test('renders files with correct status dots and handles button states', async () => {
@@ -39,27 +39,27 @@ test('renders files with correct status dots and handles button states', async (
   render(<App />);
 
   // Wait for files to be rendered
-  const file1 = await screen.findByText('disconnected.json');
-  const file2 = await screen.findByText('linking.json');
-  const file3 = await screen.findByText('connected.json');
+  const user1 = await screen.findByText('user1');
+  const user2 = await screen.findByText('user2');
+  const user3 = await screen.findByText('user3');
 
   // Check for status dots
-  expect(file1.querySelector('.status-dot')).toHaveClass('gray');
-  expect(file2.querySelector('.status-dot')).toHaveClass('orange');
-  expect(file3.querySelector('.status-dot')).toHaveClass('green');
+  expect(user1.querySelector('.status-dot')).toHaveClass('gray');
+  expect(user2.querySelector('.status-dot')).toHaveClass('orange');
+  expect(user3.querySelector('.status-dot')).toHaveClass('green');
 
   // --- Test button state for DISCONNECTED ---
-  fireEvent.click(file1);
+  fireEvent.click(user1);
   expect(screen.getByRole('button', { name: /Link/i })).toBeEnabled();
   expect(screen.queryByRole('button', { name: /Unlink/i })).not.toBeInTheDocument();
 
   // --- Test button state for LINKING ---
-  fireEvent.click(file2);
+  fireEvent.click(user2);
   expect(screen.getByRole('button', { name: /Link/i })).toBeDisabled();
   expect(screen.queryByRole('button', { name: /Unlink/i })).not.toBeInTheDocument();
 
   // --- Test button state for CONNECTED ---
-  fireEvent.click(file3);
+  fireEvent.click(user3);
   expect(screen.getByRole('button', { name: 'Unlink' })).toBeEnabled();
   expect(screen.queryByRole('button', { name: 'Link' })).not.toBeInTheDocument();
 });
@@ -79,9 +79,9 @@ test('Unlink button successfully unlinks a user', async () => {
   fetch.mockResolvedValueOnce({
     ok: true,
     json: async () => ({ configurations: [
-        { filename: 'disconnected.json', user_id: 'user1', status: 'disconnected' },
-        { filename: 'linking.json', user_id: 'user2', status: 'linking' },
-        { filename: 'connected.json', user_id: 'user3', status: 'disconnected' }, // Status changed
+        { user_id: 'user1', status: 'disconnected' },
+        { user_id: 'user2', status: 'linking' },
+        { user_id: 'user3', status: 'disconnected' }, // Status changed
     ]}),
   });
 
@@ -89,8 +89,8 @@ test('Unlink button successfully unlinks a user', async () => {
 
   render(<App />);
 
-  const connectedFile = await screen.findByText('connected.json');
-  fireEvent.click(connectedFile);
+  const connectedUser = await screen.findByText('user3');
+  fireEvent.click(connectedUser);
 
   // Unlink button should now be visible and enabled
   const unlinkButton = screen.getByRole('button', { name: /Unlink/i });
@@ -103,7 +103,7 @@ test('Unlink button successfully unlinks a user', async () => {
 
   // Check that the status dot has changed to gray after the refresh
   await waitFor(() => {
-    expect(connectedFile.querySelector('.status-dot')).toHaveClass('gray');
+    expect(connectedUser.querySelector('.status-dot')).toHaveClass('gray');
   });
 
   window.confirm.mockRestore();

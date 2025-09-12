@@ -35,7 +35,8 @@ const mockInitialData = {
     respond_to_whitelist: ['user1'],
     queue_config: {
         max_messages: 10
-    }
+    },
+    // llm_provider_config is intentionally missing to test the fix
 };
 
 beforeEach(() => {
@@ -54,7 +55,7 @@ const renderComponent = () => {
         if (url.includes('/api/configurations/test-user')) {
             return Promise.resolve({
                 ok: true,
-                json: () => Promise.resolve([mockInitialData]), // The API returns an array
+                json: () => Promise.resolve([mockInitialData]),
             });
         }
         if (url.includes('/api/configurations/')) {
@@ -76,27 +77,40 @@ const renderComponent = () => {
   );
 };
 
-test('renders the form and saves updated data', async () => {
+test('renders all sections even when data is missing for a group', async () => {
   renderComponent();
 
-  // Find and click the header for the "Queue Config" section to expand it
-  const queueConfigHeader = await screen.findByText('Queue Config');
+  // The LlmBotConfig section should be rendered, even though llm_provider_config is missing from the initial data
+  const llmBotConfigHeader = await screen.findByText(/LlmBotConfig/);
+  expect(llmBotConfigHeader).toBeInTheDocument();
+
+  // Expand the section
+  fireEvent.click(llmBotConfigHeader);
+
+  // The inner field should be rendered (rjsf will handle rendering the field for a null value)
+  // We can check for the title of the field inside the group.
+  const llmProviderField = await screen.findByText(/LLM Provider Config/);
+  expect(llmProviderField).toBeInTheDocument();
+});
+
+test('renders the form and saves updated data', async () => {
+  // Restore the full data for this test
+  mockInitialData.llm_provider_config = { some: 'data' };
+  renderComponent();
+
+  const queueConfigHeader = await screen.findByText(/Queue Config/);
   fireEvent.click(queueConfigHeader);
 
-  // Now find the field inside the expanded section
-  const maxMessagesInput = await screen.findByLabelText('Max Messages');
+  const maxMessagesInput = await screen.findByLabelText(/Max Messages/);
   expect(maxMessagesInput).toBeInTheDocument();
   expect(maxMessagesInput.value).toBe('10');
 
-  // Change a value
   fireEvent.change(maxMessagesInput, { target: { value: '50' } });
   expect(maxMessagesInput.value).toBe('50');
 
-  // Submit the form
   const saveButton = screen.getByRole('button', { name: /Save/i });
   fireEvent.click(saveButton);
 
-  // Wait for the save operation to complete and check the fetch call
   await waitFor(() => {
     const expectedBody = [{
         ...mockInitialData,
@@ -112,6 +126,5 @@ test('renders the form and saves updated data', async () => {
     expect(JSON.parse(putCall[1].body)).toEqual(expectedBody);
   });
 
-  // Check for navigation
   expect(mockedNavigate).toHaveBeenCalledWith('/');
 });
