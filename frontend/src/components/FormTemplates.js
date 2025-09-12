@@ -17,7 +17,6 @@ export function CustomCheckboxWidget(props) {
 
 export function CustomFieldTemplate(props) {
   const { id, label, children, required, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
-  console.log("Field ID:", id);
 
   if (uiSchema && uiSchema['ui:options']?.hidden) {
     return null;
@@ -35,9 +34,17 @@ export function CustomFieldTemplate(props) {
       return children;
   }
 
-  const shouldHideLabel = uiSchema?.['ui:options']?.hideLabel;
-  const modifiedLabel = shouldHideLabel ? `HIDDEN: ${label}` : label;
-
+  // Hard-coded fix to hide the label for the api_key_source field.
+  if (id === 'root_llm_bot_config_llm_provider_config_provider_config_api_key_source') {
+    return (
+        <div className={classNames} style={{ display: 'table-row' }}>
+            <div style={{ display: 'table-cell' }}></div>
+            <div style={{ boxSizing: 'border-box', textAlign: 'left', display: 'table-cell', width: '100%' }}>
+                {children}
+            </div>
+        </div>
+    );
+  }
 
   // A single, consistent layout for all other fields.
   const rightColumnStyle = {
@@ -51,7 +58,7 @@ export function CustomFieldTemplate(props) {
     <>
       <div className={classNames} style={{ display: 'table-row' }}>
         <label htmlFor={id} style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
-          {modifiedLabel}{required ? '*' : null}
+          {label}{required ? '*' : null}
         </label>
         <div style={rightColumnStyle}>
           {description}
