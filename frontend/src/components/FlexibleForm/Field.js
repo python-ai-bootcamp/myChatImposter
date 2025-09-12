@@ -4,11 +4,19 @@ import NumberField from './fields/NumberField';
 import BooleanField from './fields/BooleanField';
 import ObjectField from './fields/ObjectField';
 import ArrayField from './fields/ArrayField';
-import OneOfField from './fields/OneOfField'; // New import
+import OneOfField from './fields/OneOfField';
 
 const getFieldComponent = (schema) => {
   if (schema.oneOf) {
     return OneOfField;
+  }
+  // Be more flexible: if `properties` exists, treat it as an object
+  // even if `type: 'object'` is missing.
+  if (schema.type === 'object' || schema.properties) {
+    return ObjectField;
+  }
+  if (schema.type === 'array') {
+    return ArrayField;
   }
   if (schema.type === 'string') {
     return StringField;
@@ -18,12 +26,6 @@ const getFieldComponent = (schema) => {
   }
   if (schema.type === 'boolean') {
     return BooleanField;
-  }
-  if (schema.type === 'object') {
-    return ObjectField;
-  }
-  if (schema.type === 'array') {
-    return ArrayField;
   }
   return () => <div>Unsupported field type: {schema.type}</div>;
 };
