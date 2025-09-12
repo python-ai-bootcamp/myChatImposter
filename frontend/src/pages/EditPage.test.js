@@ -19,19 +19,33 @@ const mockSchema = {
     user_id: { type: 'string', title: 'User ID' },
     respond_to_whitelist: { type: 'array', items: { type: 'string', default: '' }, title: 'Whitelist' },
     queue_config: {
-        type: 'object',
         title: 'Queue Config',
-        properties: {
-            max_messages: { type: 'number', title: 'Max Messages' }
-        },
-        required: ['max_messages']
+        '$ref': '#/$defs/QueueConfig'
     },
     llm_provider_config: {
       title: 'LLM Provider Config',
+      '$ref': '#/$defs/LlmProviderConfig'
+    },
+    chat_provider_config: {
+      title: 'Chat Provider',
+      '$ref': '#/$defs/ChatProviderConfig'
+    }
+  },
+  required: ['user_id', 'queue_config', 'llm_provider_config'],
+  '$defs': {
+    QueueConfig: {
+      type: 'object',
+      title: 'Queue Config',
+      properties: {
+          max_messages: { type: 'number', title: 'Max Messages' }
+      },
+      required: ['max_messages']
+    },
+    LlmProviderConfig: {
       oneOf: [
         {
           title: 'OpenAI',
-          type: 'object', // Added this
+          type: 'object',
           properties: {
             provider_name: { const: 'openAi', title: 'Provider Name' },
             provider_config: {
@@ -45,7 +59,7 @@ const mockSchema = {
         },
         {
           title: 'FakeLLM',
-          type: 'object', // Added this
+          type: 'object',
           properties: {
             provider_name: { const: 'fakeLlm', title: 'Provider Name' },
             provider_config: {
@@ -59,13 +73,14 @@ const mockSchema = {
         }
       ]
     },
-    chat_provider_config: {
+    ChatProviderConfig: {
         type: 'object',
         title: 'Chat Provider',
-        properties: {}
+        properties: {
+            some_prop: { type: 'string', title: 'Some Chat Prop' }
+        }
     }
-  },
-  required: ['user_id', 'queue_config', 'llm_provider_config']
+  }
 };
 
 const mockInitialData = {
@@ -79,6 +94,9 @@ const mockInitialData = {
       provider_config: {
         model: 'gpt-4'
       }
+    },
+    chat_provider_config: {
+        some_prop: 'hello'
     }
 };
 
@@ -144,4 +162,18 @@ test('handles oneOf fields by rendering a dropdown and switching sub-forms', asy
         expect(savedData.llm_provider_config.provider_name).toBe('fakeLlm');
         expect(savedData.llm_provider_config.provider_config.dummy_value).toBe('test-dummy');
     });
+});
+
+test('renders fields from $ref schemas correctly', async () => {
+    renderComponent();
+
+    // Check for a field from the QueueConfig ref
+    const maxMessagesInput = await screen.findByLabelText('Max Messages');
+    expect(maxMessagesInput).toBeInTheDocument();
+    expect(maxMessagesInput.value).toBe('10');
+
+    // Check for a field from the ChatProviderConfig ref
+    const someChatPropInput = await screen.findByLabelText('Some Chat Prop');
+    expect(someChatPropInput).toBeInTheDocument();
+    expect(someChatPropInput.value).toBe('hello');
 });

@@ -1,9 +1,7 @@
 import React from 'react';
 import Field from '../Field';
 
-const OneOfField = ({ name, schema, value, onChange, errors = [] }) => {
-  // Find the discriminating property (e.g., 'provider_name')
-  // This is a simplification; a robust solution might need to inspect the schemas more deeply.
+const OneOfField = ({ name, schema, rootSchema, value, onChange, errors = [] }) => {
   const discriminator = 'provider_name';
 
   const selectedOption = schema.oneOf.find(option => {
@@ -15,7 +13,6 @@ const OneOfField = ({ name, schema, value, onChange, errors = [] }) => {
     const newSelectedOption = schema.oneOf.find(option => option.title === selectedTitle);
 
     if (newSelectedOption) {
-      // Create a new object with default values for the selected schema
       const newData = {};
       Object.keys(newSelectedOption.properties).forEach(key => {
         const propSchema = newSelectedOption.properties[key];
@@ -24,7 +21,6 @@ const OneOfField = ({ name, schema, value, onChange, errors = [] }) => {
         } else if (propSchema.default !== undefined) {
           newData[key] = propSchema.default;
         } else {
-          // Basic defaults for other types
           newData[key] = undefined;
         }
       });
@@ -48,8 +44,9 @@ const OneOfField = ({ name, schema, value, onChange, errors = [] }) => {
       {selectedOption && (
         <Field
           name={name}
-          label="" // The label is already handled by the parent Field
+          label=""
           schema={selectedOption}
+          rootSchema={rootSchema}
           value={value}
           onChange={onChange}
           errors={errors}

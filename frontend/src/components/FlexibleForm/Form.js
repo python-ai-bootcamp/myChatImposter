@@ -1,7 +1,7 @@
 import React from 'react';
 import Field from './Field';
 
-const FlexibleForm = ({ layout, schema, formData, onFormChange, errors = [], children }) => {
+const FlexibleForm = ({ layout, schema, rootSchema, formData, onFormChange, errors = [], children }) => {
   if (!schema || !formData) {
     return <div>Loading...</div>;
   }
@@ -21,7 +21,6 @@ const FlexibleForm = ({ layout, schema, formData, onFormChange, errors = [], chi
               return <div key={fieldName}>Field "{fieldName}" not found in schema</div>;
             }
 
-            // Pass all errors that start with this field's path
             const fieldErrors = errors.filter(e => e.instancePath.startsWith(`/${fieldName}`));
 
             return (
@@ -30,6 +29,7 @@ const FlexibleForm = ({ layout, schema, formData, onFormChange, errors = [], chi
                 name={fieldName}
                 label={fieldSchema.title || fieldName}
                 schema={fieldSchema}
+                rootSchema={rootSchema}
                 value={formData[fieldName]}
                 onChange={(fieldValue) => {
                   const newFormData = { ...formData, [fieldName]: fieldValue };

@@ -1,10 +1,9 @@
 import React from 'react';
 import Field from '../Field';
 
-const ObjectField = ({ name, schema, value, onChange, errors = [] }) => {
+const ObjectField = ({ name, schema, rootSchema, value, onChange, errors = [] }) => {
   const objectValue = value && typeof value === 'object' ? value : {};
 
-  // Errors for the object itself (e.g. "must be object")
   const selfErrors = errors.filter(e => e.instancePath === `/${name}`);
 
   return (
@@ -23,17 +22,13 @@ const ObjectField = ({ name, schema, value, onChange, errors = [] }) => {
           return null;
         }
 
-        // Find errors for this specific property
         const propertyPath = `/${name}/${propertyName}`;
         const propertyErrors = errors.filter(e => e.instancePath === propertyPath);
 
-        // Also find "required" errors that point to this property
         const requiredError = errors.find(e => e.keyword === 'required' && e.params.missingProperty === propertyName);
         if (requiredError) {
-            // Add a synthetic error object for the property
             propertyErrors.push({ message: 'is required' });
         }
-
 
         return (
           <Field
@@ -41,6 +36,7 @@ const ObjectField = ({ name, schema, value, onChange, errors = [] }) => {
             name={`${name}-${propertyName}`}
             label={propertySchema.title || propertyName}
             schema={propertySchema}
+            rootSchema={rootSchema}
             value={objectValue[propertyName]}
             onChange={(propertyValue) => {
               const newValue = { ...objectValue, [propertyName]: propertyValue };

@@ -1,7 +1,7 @@
 import React from 'react';
 import Field from '../Field';
 
-const ArrayField = ({ name, schema, value, onChange }) => {
+const ArrayField = ({ name, schema, rootSchema, value, onChange, errors = [] }) => {
   const arrayValue = Array.isArray(value) ? value : [];
 
   const handleItemChange = (index, itemValue) => {
@@ -30,9 +30,10 @@ const ArrayField = ({ name, schema, value, onChange }) => {
               name={`${name}-${index}`}
               label={`Item ${index + 1}`}
               schema={schema.items}
+              rootSchema={rootSchema}
               value={item}
               onChange={(itemValue) => handleItemChange(index, itemValue)}
-              // TODO: Pass down errors for array items
+              errors={errors.filter(e => e.instancePath === `/${name}/${index}`)}
             />
           </div>
           <button type="button" onClick={() => handleRemoveItem(index)} style={{ padding: '0.2rem 0.5rem' }}>

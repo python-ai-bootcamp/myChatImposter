@@ -192,6 +192,7 @@ function EditPage() {
                 <FlexibleForm
                   layout={editPageLayout}
                   schema={schema}
+                  rootSchema={schema}
                   formData={formData}
                   onFormChange={handleFormChange}
                   errors={formErrors}
