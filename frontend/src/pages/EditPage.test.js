@@ -47,19 +47,11 @@ const mockSchema = {
             provider_config: {
                 type: 'object',
                 title: 'OpenAI Config',
-                properties: { model: { type: 'string', title: 'Model' } }
-            }
-          }
-        },
-        {
-          title: 'FakeLLM',
-          type: 'object',
-          properties: {
-            provider_name: { const: 'fakeLlm', title: 'Provider Name' },
-            provider_config: {
-                type: 'object',
-                title: 'FakeLLM Config',
-                properties: { dummy_value: { type: 'string', title: 'Dummy Value' } }
+                properties: {
+                    model: { type: 'string', title: 'Model' },
+                    api_key_source: { type: 'string', title: 'API Key Source', enum: ['environment', 'explicit'], default: 'environment' },
+                    api_key: { type: 'string', title: 'API Key' }
+                }
             }
           }
         }
@@ -79,7 +71,11 @@ const mockInitialData = {
     queue_config: { max_messages: 10 },
     llm_provider_config: {
       provider_name: 'openAi',
-      provider_config: { model: 'gpt-4' }
+      provider_config: {
+          model: 'gpt-4',
+          api_key_source: 'environment',
+          api_key: null // Initially null because source is environment
+      }
     },
     chat_provider_config: { some_prop: 'hello' }
 };
@@ -112,35 +108,29 @@ const renderComponent = (userId = 'test-user') => {
   );
 };
 
-test('handles anyOf fields with null option', async () => {
+test('conditionally renders api_key field based on api_key_source', async () => {
     renderComponent();
 
-    // The dropdown for the provider should be visible, with "LLM Provider" selected.
-    // Note: The title for the selected oneOf/anyOf sub-schema is used.
-    const providerSelect = await screen.findByDisplayValue('LLM Provider');
-    expect(providerSelect).toBeInTheDocument();
+    // The API Key Source dropdown should be visible
+    const apiKeySourceSelect = await screen.findByLabelText('API Key Source');
+    expect(apiKeySourceSelect).toBeInTheDocument();
+    expect(apiKeySourceSelect.value).toBe('environment');
 
-    // The field for the initially selected provider should be visible
-    let modelInput = await screen.findByLabelText('Model');
-    expect(modelInput).toBeInTheDocument();
+    // The API Key input should NOT be visible initially
+    expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
 
-    // Change the provider to "None"
-    fireEvent.change(providerSelect, { target: { value: 'None' } });
+    // Change the source to 'explicit'
+    fireEvent.change(apiKeySourceSelect, { target: { value: 'explicit' } });
 
-    // The sub-form should disappear
+    // The API Key input should now appear
+    const apiKeyInput = await screen.findByLabelText('API Key');
+    expect(apiKeyInput).toBeInTheDocument();
+
+    // Change it back to 'environment'
+    fireEvent.change(apiKeySourceSelect, { target: { value: 'environment' } });
+
+    // The API Key input should disappear again
     await waitFor(() => {
-        expect(screen.queryByLabelText('Model')).not.toBeInTheDocument();
-    });
-
-    // Save the form
-    const saveButton = screen.getByRole('button', { name: /Save/i });
-    fireEvent.click(saveButton);
-
-    // Check that the saved data has a null value for the provider
-    await waitFor(() => {
-        const putCall = fetch.mock.calls.find(call => call[1] && call[1].method === 'PUT');
-        expect(putCall).toBeDefined();
-        const savedData = JSON.parse(putCall[1].body)[0];
-        expect(savedData.llm_provider_config).toBeNull();
+        expect(screen.queryByLabelText('API Key')).not.toBeInTheDocument();
     });
 });

@@ -16,6 +16,16 @@ const ObjectField = ({ name, schema, rootSchema, value, onChange, errors = [] })
         </div>
       )}
       {Object.keys(schema.properties).map((propertyName) => {
+        // --- Start of custom conditional logic ---
+        // If we are about to render the 'api_key' field, first check the value of 'api_key_source'.
+        if (propertyName === 'api_key') {
+          // The `objectValue` is the `provider_config` object.
+          if (objectValue.api_key_source !== 'explicit') {
+            return null; // Don't render the api_key field
+          }
+        }
+        // --- End of custom conditional logic ---
+
         const propertySchema = schema.properties[propertyName];
 
         if (propertySchema.ui && propertySchema.ui.hidden) {
