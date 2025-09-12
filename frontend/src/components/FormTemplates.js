@@ -17,6 +17,7 @@ export function CustomCheckboxWidget(props) {
 
 export function CustomFieldTemplate(props) {
   const { id, label, children, required, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
+  console.log("Field ID:", id);
 
   if (uiSchema && uiSchema['ui:options']?.hidden) {
     return null;
