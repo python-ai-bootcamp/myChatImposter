@@ -26,11 +26,17 @@ const mockSchema = {
         }
     },
     llm_provider_config: { type: 'object', title: 'LLM Provider Config' },
-    chat_provider_config: { type: 'object', title: 'Chat Provider Config' },
+    chat_provider_config: {
+      type: 'object',
+      title: 'Chat Provider Config',
+      properties: {
+        allow_group_messages: { type: 'boolean', title: 'Allow Group Messages' }
+      }
+    },
   },
 };
 
-const mockInitialData = {
+let mockInitialData = {
     user_id: 'test-user',
     respond_to_whitelist: ['user1'],
     queue_config: {
@@ -127,4 +133,30 @@ test('renders the form and saves updated data', async () => {
   });
 
   expect(mockedNavigate).toHaveBeenCalledWith('/');
+});
+
+test('renders chat_provider_config data correctly', async () => {
+  // Set up mock data for this specific test
+  mockInitialData = {
+    ...mockInitialData,
+    chat_provider_config: {
+      allow_group_messages: true,
+    },
+  };
+  renderComponent();
+
+  // Expand the section to make the fields visible
+  const chatConfigHeader = await screen.findByText(/Chat Provider Config/);
+  fireEvent.click(chatConfigHeader);
+
+  // Check if the form field is rendered correctly
+  const allowGroupMessagesCheckbox = await screen.findByLabelText('Allow Group Messages');
+  expect(allowGroupMessagesCheckbox).toBeInTheDocument();
+  expect(allowGroupMessagesCheckbox).toBeChecked();
+
+  // Check if the data is present in the live JSON editor
+  const jsonEditor = await screen.findByRole('textbox', { name: /Live JSON Editor/i });
+  const editorData = JSON.parse(jsonEditor.value);
+  expect(editorData.chat_provider_config).toBeDefined();
+  expect(editorData.chat_provider_config.allow_group_messages).toBe(true);
 });
