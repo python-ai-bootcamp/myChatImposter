@@ -57,7 +57,9 @@ export function CustomFieldTemplate(props) {
         </label>
         <div style={rightColumnStyle}>
           {description}
-          {children}
+          <div style={id === 'root_llm_bot_config_llm_provider_config_provider_config' ? { display: 'flex', alignItems: 'baseline', gap: '1rem' } : {}}>
+            {children}
+          </div>
           {rawErrors.length > 0 && <ul>{rawErrors.map((error, i) => <li key={i} className="text-danger">{error}</li>)}</ul>}
           {help}
         </div>
@@ -115,6 +117,7 @@ export function CustomObjectFieldTemplate(props) {
     padding: shouldHaveBorder ? '1rem' : '0',
     margin: 0,
     width: '100%',
+    marginTop: shouldHaveBorder ? '0.5rem' : '0',
     display: 'table',
     borderCollapse: 'collapse'
   };
