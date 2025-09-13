@@ -263,7 +263,10 @@ function EditPage() {
     general_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       user_id: {
-        "ui:widget": "hidden"
+        "ui:widget": "hidden",
+        "ui:options": {
+          "label": false
+        }
       }
     },
     chat_provider_config: {
