@@ -267,7 +267,10 @@ function EditPage() {
       }
     },
     chat_provider_config: {
-      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
+      "chat_provider_config": {
+        "ui:title": " "
+      }
     },
     llm_bot_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
