@@ -300,7 +300,10 @@ function EditPage() {
       }
     },
     queue_config: {
-      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
+      "queue_config": {
+        "ui:title": " "
+      }
     }
   };
 
