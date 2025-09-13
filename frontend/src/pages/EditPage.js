@@ -3,102 +3,97 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
 import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate } from '../components/FormTemplates';
+import { editPageLayout } from './EditPageLayout';
 
-// Helper to transform schema
+// Helper to transform schema based on the layout definition
 const transformSchema = (originalSchema) => {
   const newSchema = JSON.parse(JSON.stringify(originalSchema));
+  const newProperties = {};
 
-  // --- Group GeneralConfig ---
-  const generalConfigFields = ['user_id', 'respond_to_whitelist'];
-  const generalConfigSchema = {
-    type: 'object',
-    title: 'GeneralConfig',
-    properties: {},
-    required: [],
-  };
-  for (const field of generalConfigFields) {
-    if (newSchema.properties[field]) {
-      generalConfigSchema.properties[field] = newSchema.properties[field];
-      delete newSchema.properties[field];
-      if (newSchema.required && newSchema.required.includes(field)) {
-        generalConfigSchema.required.push(field);
-        newSchema.required = newSchema.required.filter(f => f !== field);
+  // Create new group schemas based on the layout config
+  for (const groupName in editPageLayout.groups) {
+    const groupConfig = editPageLayout.groups[groupName];
+    const groupSchema = {
+      type: 'object',
+      title: groupConfig.title,
+      properties: {},
+      required: [],
+    };
+
+    // Move fields from the root schema into the new group schema
+    for (const fieldName of groupConfig.fields) {
+      if (newSchema.properties[fieldName]) {
+        groupSchema.properties[fieldName] = newSchema.properties[fieldName];
+        delete newSchema.properties[fieldName]; // Remove from root
+
+        if (newSchema.required && newSchema.required.includes(fieldName)) {
+          groupSchema.required.push(fieldName);
+          newSchema.required = newSchema.required.filter(f => f !== fieldName);
+        }
       }
+    }
+
+    newProperties[groupName] = groupSchema;
+    if (groupSchema.required.length > 0) {
+      if (!newSchema.required) newSchema.required = [];
+      newSchema.required.push(groupName);
     }
   }
 
-  // --- Group LlmBotConfig ---
-  const llmBotConfigFields = ['llm_provider_config'];
-  const llmBotConfigSchema = {
-    type: 'object',
-    title: 'LlmBotConfig',
-    properties: {},
-    required: [],
-  };
-  for (const field of llmBotConfigFields) {
-    if (newSchema.properties[field]) {
-      llmBotConfigSchema.properties[field] = newSchema.properties[field];
-      delete newSchema.properties[field];
-      if (newSchema.required && newSchema.required.includes(field)) {
-        llmBotConfigSchema.required.push(field);
-        newSchema.required = newSchema.required.filter(f => f !== field);
-      }
-    }
-  }
-
-  newSchema.properties = {
-    general_config: generalConfigSchema,
-    llm_bot_config: llmBotConfigSchema,
-    ...newSchema.properties,
-  };
-
-  if (generalConfigSchema.required.length > 0) {
-    if (!newSchema.required) newSchema.required = [];
-    newSchema.required.push('general_config');
-  }
-  if (llmBotConfigSchema.required.length > 0) {
-    if (!newSchema.required) newSchema.required = [];
-    newSchema.required.push('llm_bot_config');
-  }
-
+  // Combine the new group properties with the remaining root properties
+  newSchema.properties = { ...newProperties, ...newSchema.properties };
   newSchema.title = ''; // Remove root title
   return newSchema;
 };
 
-// Helper to transform formData to match the new schema
+// Helper to transform formData to match the new schema, based on the layout definition
 const transformDataToUI = (data) => {
   if (!data) return data;
-  const uiData = { ...data };
+  const uiData = { ...data }; // Start with a copy of all original fields
 
-  uiData.general_config = {
-    user_id: data.user_id,
-    respond_to_whitelist: data.respond_to_whitelist,
-  };
-  delete uiData.user_id;
-  delete uiData.respond_to_whitelist;
+  for (const groupName in editPageLayout.groups) {
+    const groupConfig = editPageLayout.groups[groupName];
+    const groupData = {}; // This will hold the fields for the new group
 
-  uiData.llm_bot_config = {
-    llm_provider_config: data.llm_provider_config,
-  };
-  delete uiData.llm_provider_config;
+    for (const fieldName of groupConfig.fields) {
+      // Check for the field on the original data object
+      if (data[fieldName] !== undefined) {
+        groupData[fieldName] = data[fieldName]; // Populate the group
+        delete uiData[fieldName]; // Remove the original top-level field from our final UI data
+      }
+      // This logic is to ensure that a section is still rendered even if the data is missing.
+      else if (fieldName === 'llm_provider_config') {
+        groupData[fieldName] = null;
+      }
+    }
+    // Now, assign the fully populated group to the UI data.
+    // This avoids the previous bug where we would overwrite a field with an empty
+    // object before we had a chance to process it (e.g. when groupName === fieldName).
+    uiData[groupName] = groupData;
+  }
 
   return uiData;
 };
 
+// A template that renders nothing, used to completely hide a field including its label and required asterisk
+const NullFieldTemplate = () => null;
+
 // Helper to transform formData back to the original format for saving
 const transformDataToAPI = (uiData) => {
   if (!uiData) return uiData;
+  const apiData = { ...uiData };
 
-  const { general_config, llm_bot_config, ...rest } = uiData;
-  const apiData = { ...rest };
-
-  if (general_config) {
-    apiData.user_id = general_config.user_id;
-    apiData.respond_to_whitelist = general_config.respond_to_whitelist;
-  }
-
-  if (llm_bot_config) {
-    apiData.llm_provider_config = llm_bot_config.llm_provider_config;
+  for (const groupName in editPageLayout.groups) {
+    const groupData = apiData[groupName];
+    if (groupData) {
+      // THE FIX IS HERE:
+      // We must first copy the fields from the group, then delete the group container,
+      // and only then assign the fields back. This avoids the bug where a field name
+      // is the same as the group name, causing the data to be deleted.
+      const fieldsToMove = { ...groupData };
+      delete apiData[groupName];
+      Object.assign(apiData, fieldsToMove);
+    }
   }
 
   return apiData;
@@ -271,16 +266,22 @@ function EditPage() {
     general_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       user_id: {
-        "ui:widget": "hidden"
+        "ui:FieldTemplate": NullFieldTemplate
+      },
+      respond_to_whitelist: {
+        "ui:title": " "
       }
     },
     chat_provider_config: {
-      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
+      "chat_provider_config": {
+        "ui:title": " "
+      }
     },
     llm_bot_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
-      "ui:title": "LlmBotConfig",
       llm_provider_config: {
+        "ui:title": "Llm Mode",
         provider_config: {
           "ui:title": "API Key Source",
           "ui:options": {
@@ -299,7 +300,10 @@ function EditPage() {
       }
     },
     queue_config: {
-      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
+      "queue_config": {
+        "ui:title": " "
+      }
     }
   };
 

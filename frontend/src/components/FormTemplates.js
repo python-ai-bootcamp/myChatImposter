@@ -18,6 +18,13 @@ export function CustomCheckboxWidget(props) {
 export function CustomFieldTemplate(props) {
   const { id, label, children, required, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
 
+  // HACK: This is a very specific fix to prevent a duplicate label for the `provider_config` field.
+  // The rjsf oneOf widget renders its own label, and so does our template, causing a duplicate.
+  // This checks for the specific ID of that field and if it's the inner one rendered as an object.
+  if (id === 'root_llm_bot_config_llm_provider_config_provider_config' && classNames.includes('field-object')) {
+    return children;
+  }
+
   if (uiSchema && uiSchema['ui:options']?.hidden) {
     return null;
   }
@@ -122,7 +129,9 @@ export function CustomObjectFieldTemplate(props) {
   }
 
   // Hide the title for the inner oneOf selection, but show our custom one.
-  const shouldShowTitle = (title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm');
+  // This is the definitive fix: explicitly check for the title we want to hide.
+  const isLlmModeTitle = props.title === 'Llm Mode';
+  const shouldShowTitle = !isLlmModeTitle && ((title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm'));
 
 
   return (
