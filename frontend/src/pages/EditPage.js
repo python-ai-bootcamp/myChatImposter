@@ -283,12 +283,11 @@ function EditPage() {
       llm_provider_config: {
         "ui:title": "Llm Mode",
         provider_config: {
-          "ui:title": " ", // Hide the title of the inner provider_config object
+          "ui:title": "API Key Source",
           "ui:options": {
             "box": "LlmProviderSettings"
           },
           api_key_source: {
-            "ui:title": "API Key Source", // Move the title to the actual field
             "ui:options": {
               "hidden": true
             },
