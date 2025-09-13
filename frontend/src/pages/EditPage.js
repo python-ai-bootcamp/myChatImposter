@@ -83,8 +83,13 @@ const transformDataToAPI = (uiData) => {
   for (const groupName in editPageLayout.groups) {
     const groupData = apiData[groupName];
     if (groupData) {
-        Object.assign(apiData, groupData);
-        delete apiData[groupName];
+      // THE FIX IS HERE:
+      // We must first copy the fields from the group, then delete the group container,
+      // and only then assign the fields back. This avoids the bug where a field name
+      // is the same as the group name, causing the data to be deleted.
+      const fieldsToMove = { ...groupData };
+      delete apiData[groupName];
+      Object.assign(apiData, fieldsToMove);
     }
   }
 
