@@ -75,6 +75,9 @@ const transformDataToUI = (data) => {
   return uiData;
 };
 
+// A template that renders nothing, used to completely hide a field including its label and required asterisk
+const NullFieldTemplate = () => null;
+
 // Helper to transform formData back to the original format for saving
 const transformDataToAPI = (uiData) => {
   if (!uiData) return uiData;
@@ -263,8 +266,7 @@ function EditPage() {
     general_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       user_id: {
-        "ui:widget": "hidden",
-        "ui:title": " "
+        "ui:FieldTemplate": NullFieldTemplate
       },
       respond_to_whitelist: {
         "ui:title": " "
