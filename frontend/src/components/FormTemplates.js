@@ -17,6 +17,7 @@ export function CustomCheckboxWidget(props) {
 
 export function CustomFieldTemplate(props) {
   const { id, label, children, required, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
+  console.log("CustomFieldTemplate props:", { id, label });
 
   if (uiSchema && uiSchema['ui:options']?.hidden) {
     return null;
@@ -97,6 +98,7 @@ export function CollapsibleObjectFieldTemplate(props) {
 }
 
 export function CustomObjectFieldTemplate(props) {
+  console.log("CustomObjectFieldTemplate props:", { id: props.id, title: props.title });
   // A more robust way to detect the provider settings objects that need special styling.
   const isChatProviderSettings = props.properties.some(p => p.name === 'allow_group_messages');
   const isLlmProviderSettings = props.uiSchema['ui:options']?.box === 'LlmProviderSettings';
