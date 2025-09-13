@@ -264,9 +264,10 @@ function EditPage() {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       user_id: {
         "ui:widget": "hidden",
-        "ui:options": {
-          "label": false
-        }
+        "ui:title": " "
+      },
+      respond_to_whitelist: {
+        "ui:title": " "
       }
     },
     chat_provider_config: {
