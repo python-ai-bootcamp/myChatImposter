@@ -97,7 +97,6 @@ export function CollapsibleObjectFieldTemplate(props) {
 }
 
 export function CustomObjectFieldTemplate(props) {
-  console.log("CustomObjectFieldTemplate props:", { id: props.id, title: props.title, schema: props.schema });
   // A more robust way to detect the provider settings objects that need special styling.
   const isChatProviderSettings = props.properties.some(p => p.name === 'allow_group_messages');
   const isLlmProviderSettings = props.uiSchema['ui:options']?.box === 'LlmProviderSettings';
@@ -123,7 +122,9 @@ export function CustomObjectFieldTemplate(props) {
   }
 
   // Hide the title for the inner oneOf selection, but show our custom one.
-  const shouldShowTitle = (title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm');
+  // This is the definitive fix: explicitly check for the title we want to hide.
+  const isLlmModeTitle = props.title === 'Llm Mode';
+  const shouldShowTitle = !isLlmModeTitle && ((title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm'));
 
 
   return (
