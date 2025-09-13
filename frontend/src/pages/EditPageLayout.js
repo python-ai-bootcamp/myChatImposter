@@ -11,7 +11,7 @@ export const editPageLayout = {
       fields: ['user_id', 'respond_to_whitelist'],
     },
     llm_bot_config: {
-      title: 'LlmBotConfig',
+      title: 'Llm Provider Config',
       fields: ['llm_provider_config'],
     },
     chat_provider_config: {

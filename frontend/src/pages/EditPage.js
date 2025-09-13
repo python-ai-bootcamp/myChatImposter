@@ -280,8 +280,8 @@ function EditPage() {
     },
     llm_bot_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
-      "ui:title": "LlmBotConfig",
       llm_provider_config: {
+        "ui:title": "Llm Mode",
         provider_config: {
           "ui:title": "API Key Source",
           "ui:options": {
