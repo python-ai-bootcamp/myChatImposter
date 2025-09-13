@@ -49,30 +49,27 @@ const transformSchema = (originalSchema) => {
 // Helper to transform formData to match the new schema, based on the layout definition
 const transformDataToUI = (data) => {
   if (!data) return data;
-  // Start with a copy of the original data to preserve root-level fields not in the layout.
-  const uiData = { ...data };
+  const uiData = { ...data }; // Start with a copy of all original fields
 
   for (const groupName in editPageLayout.groups) {
     const groupConfig = editPageLayout.groups[groupName];
-    const groupData = {};
-    // Always create the group object in the final UI data.
-    uiData[groupName] = groupData;
+    const groupData = {}; // This will hold the fields for the new group
 
     for (const fieldName of groupConfig.fields) {
-      // **THE FIX IS HERE:**
-      // We must check for the field on the *original, unmodified* `data` object.
-      // The `uiData` object is being mutated, so checking it leads to incorrect behavior.
+      // Check for the field on the original data object
       if (data[fieldName] !== undefined) {
-        // If the field exists in the raw data, move it to the group.
-        groupData[fieldName] = data[fieldName];
-        // Now we can safely delete it from the `uiData` object that we are building.
-        delete uiData[fieldName];
+        groupData[fieldName] = data[fieldName]; // Populate the group
+        delete uiData[fieldName]; // Remove the original top-level field from our final UI data
       }
       // This logic is to ensure that a section is still rendered even if the data is missing.
       else if (fieldName === 'llm_provider_config') {
         groupData[fieldName] = null;
       }
     }
+    // Now, assign the fully populated group to the UI data.
+    // This avoids the previous bug where we would overwrite a field with an empty
+    // object before we had a chance to process it (e.g. when groupName === fieldName).
+    uiData[groupName] = groupData;
   }
 
   return uiData;

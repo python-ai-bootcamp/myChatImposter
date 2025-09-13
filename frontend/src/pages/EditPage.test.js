@@ -135,28 +135,48 @@ test('renders the form and saves updated data', async () => {
   expect(mockedNavigate).toHaveBeenCalledWith('/');
 });
 
-test('renders chat_provider_config data correctly', async () => {
-  // Set up mock data for this specific test
+test('renders complex nested data correctly', async () => {
+  // Set up mock data that includes multiple fields that were failing
   mockInitialData = {
-    ...mockInitialData,
+    user_id: 'test-user',
+    respond_to_whitelist: ['user1'],
+    queue_config: {
+      max_messages: 25,
+    },
     chat_provider_config: {
       allow_group_messages: true,
+    },
+    llm_provider_config: {
+      provider_name: 'test_provider'
     },
   };
   renderComponent();
 
-  // Expand the section to make the fields visible
+  // --- Check Chat Provider Config ---
   const chatConfigHeader = await screen.findByText(/Chat Provider Config/);
   fireEvent.click(chatConfigHeader);
-
-  // Check if the form field is rendered correctly
   const allowGroupMessagesCheckbox = await screen.findByLabelText('Allow Group Messages');
-  expect(allowGroupMessagesCheckbox).toBeInTheDocument();
   expect(allowGroupMessagesCheckbox).toBeChecked();
 
-  // Check if the data is present in the live JSON editor
+  // --- Check Queue Config ---
+  const queueConfigHeader = await screen.findByText(/Queue Config/);
+  fireEvent.click(queueConfigHeader);
+  const maxMessagesInput = await screen.findByLabelText('Max Messages');
+  expect(maxMessagesInput.value).toBe('25');
+
+  // --- Check Live JSON Editor for all data ---
   const jsonEditor = await screen.findByRole('textbox', { name: /Live JSON Editor/i });
   const editorData = JSON.parse(jsonEditor.value);
+
+  // Check that all original top-level keys are present
   expect(editorData.chat_provider_config).toBeDefined();
   expect(editorData.chat_provider_config.allow_group_messages).toBe(true);
+
+  expect(editorData.queue_config).toBeDefined();
+  expect(editorData.queue_config.max_messages).toBe(25);
+
+  expect(editorData.llm_provider_config).toBeDefined();
+  expect(editorData.llm_provider_config.provider_name).toBe('test_provider');
+
+  expect(editorData.respond_to_whitelist).toEqual(['user1']);
 });
