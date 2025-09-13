@@ -285,8 +285,7 @@ function EditPage() {
         provider_config: {
           "ui:title": "API Key Source",
           "ui:options": {
-            "box": "LlmProviderSettings",
-            "label": false
+            "box": "LlmProviderSettings"
           },
           api_key_source: {
             "ui:options": {
