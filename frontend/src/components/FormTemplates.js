@@ -97,6 +97,7 @@ export function CollapsibleObjectFieldTemplate(props) {
 }
 
 export function CustomObjectFieldTemplate(props) {
+  console.log("CustomObjectFieldTemplate props:", { id: props.id, title: props.title, schema: props.schema });
   // A more robust way to detect the provider settings objects that need special styling.
   const isChatProviderSettings = props.properties.some(p => p.name === 'allow_group_messages');
   const isLlmProviderSettings = props.uiSchema['ui:options']?.box === 'LlmProviderSettings';
@@ -122,8 +123,7 @@ export function CustomObjectFieldTemplate(props) {
   }
 
   // Hide the title for the inner oneOf selection, but show our custom one.
-  const isLlmModeField = props.id === 'root_llm_bot_config_llm_provider_config';
-  const shouldShowTitle = !isLlmModeField && ((title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm'));
+  const shouldShowTitle = (title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm');
 
 
   return (
