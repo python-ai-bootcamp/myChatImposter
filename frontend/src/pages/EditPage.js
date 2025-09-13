@@ -281,10 +281,7 @@ function EditPage() {
     llm_bot_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       llm_provider_config: {
-        "ui:title": " ",
-        "ui:options": {
-          "label": "Llm Mode"
-        },
+        "ui:title": "Llm Mode",
         provider_config: {
           "ui:title": "API Key Source",
           "ui:options": {

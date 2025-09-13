@@ -122,7 +122,8 @@ export function CustomObjectFieldTemplate(props) {
   }
 
   // Hide the title for the inner oneOf selection, but show our custom one.
-  const shouldShowTitle = (title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm');
+  const isLlmModeField = props.id === 'root_llm_bot_config_llm_provider_config';
+  const shouldShowTitle = !isLlmModeField && ((title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm'));
 
 
   return (
