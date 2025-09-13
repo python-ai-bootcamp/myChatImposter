@@ -115,7 +115,6 @@ export function CustomObjectFieldTemplate(props) {
     padding: shouldHaveBorder ? '1rem' : '0',
     margin: 0,
     width: '100%',
-    marginTop: shouldHaveBorder ? '0.5rem' : '0',
     display: 'table',
     borderCollapse: 'collapse'
   };
