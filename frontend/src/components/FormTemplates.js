@@ -39,13 +39,31 @@ export function CustomFieldTemplate(props) {
         borderCollapse: 'collapse'
     };
 
+    const childArray = React.Children.toArray(children);
+    const dropdown = childArray[0];
+    const subForm = childArray.slice(1);
+
+    const rightColumnStyle = {
+        boxSizing: 'border-box',
+        textAlign: 'left',
+        display: 'table-cell',
+        width: '100%'
+    };
+
     return (
         <fieldset style={fieldsetStyle}>
             <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
                 LlmProviderSettings
             </h3>
-            {/* The `children` here will be the select dropdown AND the rendered object below it */}
-            {children}
+            <div style={{ display: 'table-row' }}>
+                <label htmlFor={`${id}__oneof_select`} style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
+                    {uiSchema['ui:title']}{required ? '*' : null}
+                </label>
+                <div style={rightColumnStyle}>
+                    {dropdown}
+                </div>
+            </div>
+            {subForm}
         </fieldset>
     );
   }
