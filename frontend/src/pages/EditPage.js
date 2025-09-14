@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, CustomMultiSchemaFieldTemplate } from '../components/FormTemplates';
 import { editPageLayout } from './EditPageLayout';
 
 // Helper to transform schema based on the layout definition
@@ -254,7 +254,8 @@ function EditPage() {
   const templates = {
     FieldTemplate: CustomFieldTemplate,
     ObjectFieldTemplate: CustomObjectFieldTemplate,
-    ArrayFieldTemplate: CustomArrayFieldTemplate
+    ArrayFieldTemplate: CustomArrayFieldTemplate,
+    MultiSchemaFieldTemplate: CustomMultiSchemaFieldTemplate
   };
 
   const widgets = {
