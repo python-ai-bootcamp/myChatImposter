@@ -16,7 +16,6 @@ export function CustomCheckboxWidget(props) {
 }
 
 export function CustomFieldTemplate(props) {
-  console.log('CustomFieldTemplate props:', props);
   const { id, label, children, required, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
 
   // Special handling for the LLM provider config section
@@ -40,13 +39,37 @@ export function CustomFieldTemplate(props) {
         borderCollapse: 'collapse'
     };
 
+    const wrapperStyle = {
+        position: 'relative',
+        paddingLeft: '150px', // Make space for the absolutely positioned label
+    };
+
+    const labelStyle = {
+        position: 'absolute',
+        left: 0,
+        top: '0.5rem', // A reasonable guess for vertical alignment
+        // Copy styles from the standard label to maintain consistency
+        whiteSpace: 'nowrap',
+        verticalAlign: 'top',
+        textAlign: 'left',
+        paddingRight: '1rem',
+        boxSizing: 'border-box',
+        margin: 0,
+        fontWeight: 'bold' // Standard labels are bold
+    };
+
     return (
         <fieldset style={fieldsetStyle}>
             <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
                 LlmProviderSettings
             </h3>
-            {/* The `children` here will be the select dropdown AND the rendered object below it */}
-            {children}
+            <div style={wrapperStyle}>
+                <label htmlFor={`${id}__oneof_select`} style={labelStyle}>
+                    {uiSchema['ui:title']}{required ? '*' : null}
+                </label>
+                {/* The `children` here will be the select dropdown AND the rendered object below it */}
+                {children}
+            </div>
         </fieldset>
     );
   }
@@ -246,29 +269,3 @@ export function CustomArrayFieldTemplate(props) {
       </div>
     );
   }
-
-export function CustomMultiSchemaFieldTemplate(props) {
-  console.log('CustomMultiSchemaFieldTemplate props:', props);
-  const { selector, optionSchemaField, idSchema, uiSchema, required } = props;
-
-  const rightColumnStyle = {
-      boxSizing: 'border-box',
-      textAlign: 'left',
-      display: 'table-cell',
-      width: '100%'
-  };
-
-  return (
-      <>
-          <div style={{ display: 'table-row' }}>
-              <label htmlFor={`${idSchema.$id}__oneof_select`} style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
-                  {uiSchema['ui:title']}{required ? '*' : null}
-              </label>
-              <div style={rightColumnStyle}>
-                  {selector}
-              </div>
-          </div>
-          {optionSchemaField}
-      </>
-  );
-}
