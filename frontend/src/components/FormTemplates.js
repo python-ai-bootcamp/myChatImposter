@@ -18,11 +18,36 @@ export function CustomCheckboxWidget(props) {
 export function CustomFieldTemplate(props) {
   const { id, label, children, required, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
 
-  // HACK: This is a very specific fix to prevent a duplicate label for the `provider_config` field.
-  // The rjsf oneOf widget renders its own label, and so does our template, causing a duplicate.
-  // This checks for the specific ID of that field and if it's the inner one rendered as an object.
-  if (id === 'root_llm_bot_config_llm_provider_config_provider_config' && classNames.includes('field-object')) {
-    return children;
+  // Special handling for the LLM provider config section
+  if (id === 'root_llm_bot_config_llm_provider_config_provider_config') {
+    // This is for the object *inside* the oneOf. We don't want a label for it,
+    // because the dropdown serves as the label. This preserves the original HACK's purpose.
+    if (classNames.includes('field-object')) {
+      return children;
+    }
+
+    // This is the container for the `oneOf` selection. It includes the dropdown
+    // and the fields for the selected provider. We wrap it in a fieldset.
+    const fieldsetStyle = {
+        border: '1px solid #ccc',
+        borderRadius: '4px',
+        padding: '1rem',
+        margin: 0,
+        width: '100%',
+        marginTop: '0.5rem',
+        display: 'table',
+        borderCollapse: 'collapse'
+    };
+
+    return (
+        <fieldset style={fieldsetStyle}>
+            <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
+                LlmProviderSettings
+            </h3>
+            {/* The `children` here will be the select dropdown AND the rendered object below it */}
+            {children}
+        </fieldset>
+    );
   }
 
   if (uiSchema && uiSchema['ui:options']?.hidden) {
@@ -107,7 +132,7 @@ export function CustomObjectFieldTemplate(props) {
   // A more robust way to detect the provider settings objects that need special styling.
   const isChatProviderSettings = props.properties.some(p => p.name === 'allow_group_messages');
   const isLlmProviderSettings = props.uiSchema['ui:options']?.box === 'LlmProviderSettings';
-  const shouldHaveBorder = isChatProviderSettings || isLlmProviderSettings;
+  const shouldHaveBorder = isChatProviderSettings; // LlmProviderSettings is now handled by the wrapper
 
   const fieldsetStyle = {
     border: shouldHaveBorder ? '1px solid #ccc' : 'none',
@@ -123,7 +148,8 @@ export function CustomObjectFieldTemplate(props) {
   // Determine the correct title to display.
   let title = props.title;
   if (isLlmProviderSettings) {
-    title = 'LlmProviderSettings';
+    // The title is now handled by the wrapper in CustomFieldTemplate
+    title = null;
   } else if (isChatProviderSettings) {
     title = 'ChatProviderSettings';
   }
@@ -131,7 +157,7 @@ export function CustomObjectFieldTemplate(props) {
   // Hide the title for the inner oneOf selection, but show our custom one.
   // This is the definitive fix: explicitly check for the title we want to hide.
   const isLlmModeTitle = props.title === 'Llm Mode';
-  const shouldShowTitle = !isLlmModeTitle && ((title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm'));
+  const shouldShowTitle = !isLlmModeTitle && title && ((title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm'));
 
 
   return (
