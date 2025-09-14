@@ -292,8 +292,8 @@ function EditPage() {
               "hidden": true
             },
             "ui:enumNames": [
-              "From Environment",
-              "User Specific Key"
+              "API Key From Environment",
+              "API Key From User Input"
             ]
           }
         }

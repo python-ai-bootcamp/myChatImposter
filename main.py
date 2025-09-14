@@ -155,7 +155,7 @@ async def get_configuration_schema():
 
         # Define the two distinct schemas
         schema_from_env = {
-            "title": "From Environment",
+            "title": "API Key From Environment",
             "properties": {
                 "api_key_source": {"const": "environment"},
                 **original_properties
@@ -163,7 +163,7 @@ async def get_configuration_schema():
         }
 
         schema_explicit_key = {
-            "title": "User Specific Key",
+            "title": "API Key From User Input",
             "properties": {
                 "api_key_source": {"const": "explicit"},
                 "api_key": {"type": "string", "title": "API Key", "minLength": 1},
