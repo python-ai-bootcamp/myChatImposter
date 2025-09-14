@@ -16,6 +16,7 @@ export function CustomCheckboxWidget(props) {
 }
 
 export function CustomFieldTemplate(props) {
+  console.log('CustomFieldTemplate props:', props);
   const { id, label, children, required, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
 
   // Special handling for the LLM provider config section
@@ -247,6 +248,7 @@ export function CustomArrayFieldTemplate(props) {
   }
 
 export function CustomMultiSchemaFieldTemplate(props) {
+  console.log('CustomMultiSchemaFieldTemplate props:', props);
   const { selector, optionSchemaField, idSchema, uiSchema, required } = props;
 
   const rightColumnStyle = {
