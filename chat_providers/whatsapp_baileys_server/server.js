@@ -277,6 +277,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         sessions[userId].currentQR = null;
         sessions[userId].connectionStatus = 'connecting';
         sessions[userId].retryCount = 0;
+        sessions[userId].lidCache = {}; // Also reset cache on reconnect
         resetHttp405Tracker(sessions[userId]);
     } else {
         console.log(`[${userId}] Creating new session object.`);
@@ -285,6 +286,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
             currentQR: null,
             connectionStatus: 'connecting',
             contactsCache: {},
+            lidCache: {},
             vendorConfig: vendorConfig,
             retryCount: 0,
             http405Tracker: createHttp405Tracker(),
@@ -428,6 +430,11 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
             const senderId = isGroup ? (msg.participant || msg.key.participant) : msg.key.remoteJid;
             const senderPn = msg?.key?.senderPn || msg?.messageKey?.senderPn || msg?.key?.senderJid || null;
+            if (senderId && senderId.endsWith('@lid') && senderPn) {
+                if (!session.lidCache) session.lidCache = {};
+                session.lidCache[senderId] = senderPn;
+                console.log(`[${userId}] Cached LID mapping: ${senderId} -> ${senderPn}`);
+            }
             if (!senderPn && !isGroup) {
                 const normalizedRemote = jidNormalizedUser?.(msg.key.remoteJid);
                 if (normalizedRemote && normalizedRemote !== msg.key.remoteJid) {
@@ -512,9 +519,15 @@ app.post('/sessions/:userId/send', async (req, res) => {
 
     try {
         if (recipient.endsWith('@lid')) {
-            const normalized = recipient.replace('@lid', '@s.whatsapp.net');
-            console.log(`[${userId}] Normalized recipient ${recipient} -> ${normalized}`);
-            recipient = normalized;
+            const cachedJid = session.lidCache && session.lidCache[recipient];
+            if (cachedJid) {
+                console.log(`[${userId}] Resolved LID ${recipient} -> ${cachedJid} from cache.`);
+                recipient = cachedJid;
+            } else {
+                const normalized = recipient.replace('@lid', '@s.whatsapp.net');
+                console.log(`[${userId}] WARN: No cache for LID ${recipient}. Falling back to normalization: ${normalized}`);
+                recipient = normalized;
+            }
         }
 
         if (!recipient.endsWith('@g.us') && !recipient.endsWith('@s.whatsapp.net')) {
