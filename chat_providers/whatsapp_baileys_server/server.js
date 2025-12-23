@@ -499,7 +499,8 @@ app.post('/initialize', async (req, res) => {
 
 app.post('/sessions/:userId/send', async (req, res) => {
     const { userId } = req.params;
-    const { recipient, message } = req.body;
+    let { recipient } = req.body;
+    const { message } = req.body;
     const session = sessions[userId];
 
     if (!session || !session.sock) {
@@ -510,17 +511,26 @@ app.post('/sessions/:userId/send', async (req, res) => {
     }
 
     try {
-        if (!recipient.endsWith('@g.us')) {
+        if (recipient.endsWith('@lid')) {
+            const normalized = recipient.replace('@lid', '@s.whatsapp.net');
+            console.log(`[${userId}] Normalized recipient ${recipient} -> ${normalized}`);
+            recipient = normalized;
+        }
+
+        if (!recipient.endsWith('@g.us') && !recipient.endsWith('@s.whatsapp.net')) {
             const [result] = await session.sock.onWhatsApp(recipient);
             if (!result?.exists) {
                 return res.status(400).json({ error: `Recipient ${recipient} is not on WhatsApp.` });
             }
         }
         await session.sock.sendMessage(recipient, { text: message });
-        res.status(200).json({ status: 'Message sent' });
+        console.log(`[${userId}] sendMessage() invoked for ${recipient}`);
+        res.status(200).json({ status: 'Message sent', recipient, message });
     } catch (error) {
+        const statusCode = error?.output?.statusCode || (error?.response?.status) || 500;
+        const messageText = error?.response?.data || error?.message || 'Failed to send message.';
         console.error(`[${userId}] Failed to send message:`, error);
-        res.status(500).json({ error: 'Failed to send message.' });
+        res.status(statusCode).json({ error: messageText });
     }
 });
 
