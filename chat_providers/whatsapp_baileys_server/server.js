@@ -30,14 +30,107 @@ const {
     DisconnectReason,
     jidNormalizedUser,
     initAuthCreds,
-    proto
+    proto,
+    fetchLatestBaileysVersion,
 } = require('@whiskeysockets/baileys');
 
 // --- Globals ---
 const sessions = {}; // Holds all active user sessions, keyed by userId
 const wsConnections = {}; // Holds all active WebSocket connections, keyed by userId
 const serverStartTime = Date.now();
+const DEFAULT_BROWSER = ['Ubuntu', 'Chrome', '22.04.4'];
+const MAX_HTTP405_RETRIES = 3;
+const HTTP405_WINDOW_MS = 30 * 1000;
+const RETRY_DELAY_MS = 5000;
 let baileysSessionsCollection;
+
+const createHttp405Tracker = () => ({
+    count: 0,
+    firstTimestamp: 0,
+    locations: [],
+});
+
+const resetHttp405Tracker = (session) => {
+    session.http405Tracker = createHttp405Tracker();
+};
+
+const trackHttp405 = (session, lastDisconnect) => {
+    const now = Date.now();
+    if (!session.http405Tracker) {
+        resetHttp405Tracker(session);
+    }
+    const tracker = session.http405Tracker;
+    const location = lastDisconnect?.error?.data?.location || lastDisconnect?.error?.data?.reason || 'unknown';
+
+    if (!tracker.firstTimestamp || now - tracker.firstTimestamp > HTTP405_WINDOW_MS) {
+        tracker.firstTimestamp = now;
+        tracker.count = 1;
+        tracker.locations = [location];
+    } else {
+        tracker.count += 1;
+        tracker.locations.push(location);
+    }
+};
+
+const shouldForceRelink = (statusCode, session) => {
+    if (statusCode !== 405) return false;
+    const tracker = session.http405Tracker;
+    if (!tracker || tracker.count < MAX_HTTP405_RETRIES) {
+        return false;
+    }
+    const withinWindow = tracker.firstTimestamp && (Date.now() - tracker.firstTimestamp) <= HTTP405_WINDOW_MS;
+    return withinWindow && tracker.count >= MAX_HTTP405_RETRIES;
+};
+
+const logPersistent405 = (userId, session) => {
+    const tracker = session.http405Tracker;
+    if (!tracker) return;
+    const duration = tracker.firstTimestamp ? (Date.now() - tracker.firstTimestamp) : 0;
+    const locations = tracker.locations.length ? tracker.locations.join(', ') : 'unknown';
+    console.log(`[${userId}] Persistent 405 errors: ${tracker.count} hits over ${duration}ms. POPs: ${locations}`);
+};
+
+const addIdentifierVariant = (set, value) => {
+    if (!value || typeof value !== 'string') {
+        return;
+    }
+    set.add(value);
+    if (value.includes('@')) {
+        const bare = value.split('@')[0];
+        if (bare) {
+            set.add(bare);
+        }
+    }
+    try {
+        const normalized = jidNormalizedUser(value);
+        if (normalized) {
+            set.add(normalized);
+        }
+    } catch (err) {
+        // ignore normalization errors
+    }
+};
+
+const collectSenderIdentifiers = (msg, primaryIdentifier) => {
+    const identifiers = new Set();
+    addIdentifierVariant(identifiers, primaryIdentifier);
+    const potentialValues = [
+        msg?.key?.remoteJid,
+        msg?.messageKey?.remoteJid,
+        msg?.participant,
+        msg?.key?.participant,
+        msg?.messageKey?.participant,
+        msg?.key?.senderJid,
+        msg?.messageKey?.senderJid,
+        msg?.messageKey?.senderPn,
+    ];
+    potentialValues.forEach((value) => addIdentifierVariant(identifiers, value));
+    return Array.from(identifiers).filter(Boolean);
+};
+
+
+
+
 
 // --- Command Line Arguments ---
 const args = process.argv.slice(2);
@@ -126,7 +219,22 @@ const useMongoDBAuthState = async (userId, collection) => {
 
 
 // --- Baileys Connection Logic ---
+let cachedWaVersion;
+let cachedWaVersionLogged = false;
+
+async function getLatestWaVersion() {
+    if (!cachedWaVersion) {
+        const { version, isLatest } = await fetchLatestBaileysVersion();
+        cachedWaVersion = version;
+        console.log(`[Baileys] Using WhatsApp Web version ${version.join('.')}${isLatest ? '' : ' (not latest - update Baileys!)'}`);
+    }
+    return cachedWaVersion;
+}
+
 async function connectToWhatsApp(userId, vendorConfig) {
+    const waVersion = await getLatestWaVersion();
+
+
     if (sessions[userId] && sessions[userId].sock) {
         console.log(`[${userId}] Session already exists. Re-initializing.`);
         try {
@@ -154,9 +262,12 @@ async function connectToWhatsApp(userId, vendorConfig) {
     const sock = makeWASocket({
         auth: state,
         logger: logger,
+        version: waVersion,
+        browser: DEFAULT_BROWSER,
         syncFullHistory: vendorConfig.sync_full_history === true,
         printQRInTerminal: false, // We handle QR code generation manually
     });
+
 
     // If a session object already exists, update it. Otherwise, create a new one.
     // This preserves the object reference and prevents race conditions.
@@ -166,6 +277,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         sessions[userId].currentQR = null;
         sessions[userId].connectionStatus = 'connecting';
         sessions[userId].retryCount = 0;
+        resetHttp405Tracker(sessions[userId]);
     } else {
         console.log(`[${userId}] Creating new session object.`);
         sessions[userId] = {
@@ -175,8 +287,10 @@ async function connectToWhatsApp(userId, vendorConfig) {
             contactsCache: {},
             vendorConfig: vendorConfig,
             retryCount: 0,
+            http405Tracker: createHttp405Tracker(),
         };
     }
+
 
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
@@ -189,7 +303,9 @@ async function connectToWhatsApp(userId, vendorConfig) {
             console.log(`[${userId}] WhatsApp connection opened.`);
             session.currentQR = null;
             session.retryCount = 0; // Reset retry count
+            resetHttp405Tracker(session);
         }
+
 
         if (qr) {
             console.log(`[${userId}] QR code received, generating data URL...`);
@@ -217,8 +333,11 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 console.log(`[${userId}] Connection requires a restart. Reconnecting immediately.`);
                 connectToWhatsApp(userId, vendorConfig);
 
-            } else if (isPermanentDisconnection || maxRetriesReached) {
-                const reason = isPermanentDisconnection ? `permanent disconnect (code: ${statusCode})` : 'max retries reached';
+            } else if (isPermanentDisconnection || shouldForceRelink(statusCode, session)) {
+                if (!isPermanentDisconnection) {
+                    logPersistent405(userId, session);
+                }
+                const reason = isPermanentDisconnection ? `permanent disconnect (code: ${statusCode})` : 'persistent 405 errors';
                 console.log(`[${userId}] Connection closed permanently due to ${reason}. Cleaning up and forcing re-link.`);
 
                 wsConnections[userId]?.close();
@@ -234,10 +353,13 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
             } else { // Handle other transient errors with retry logic
                 session.retryCount = (session.retryCount || 0) + 1;
+                if (statusCode === 405) {
+                    trackHttp405(session, lastDisconnect);
+                }
                 console.log(`[${userId}] Connection closed transiently (code: ${statusCode}). Retry #${session.retryCount}.`);
                 console.log(`[${userId}] Underlying error:`, lastDisconnect.error);
                 console.log(`[${userId}] Attempting to reconnect in 5s...`);
-                setTimeout(() => connectToWhatsApp(userId, vendorConfig), 5000);
+                setTimeout(() => connectToWhatsApp(userId, vendorConfig), RETRY_DELAY_MS);
             }
         }
     });
@@ -275,6 +397,21 @@ async function connectToWhatsApp(userId, vendorConfig) {
         const allowGroups = session.vendorConfig.allow_group_messages === true;
 
         const newMessagesPromises = m.messages.map(async (msg) => {
+            if (msg?.key?.senderPn) {
+                console.log(`[${userId}] Normalized senderPn detected: ${msg.key.senderPn}`);
+            }
+            if (msg?.messageKey?.senderPn) {
+                console.log(`[${userId}] messageKey senderPn present: ${msg.messageKey.senderPn}`);
+            }
+            console.log(`[${userId}] Raw message key info:`, {
+                remoteJid: msg?.key?.remoteJid,
+                senderJid: msg?.key?.senderJid,
+                senderPn: msg?.key?.senderPn || msg?.messageKey?.senderPn,
+                participant: msg?.participant || msg?.key?.participant,
+                pushName: msg?.pushName,
+                contactsCacheName: (msg?.key?.remoteJid && session.contactsCache[msg.key.remoteJid]?.name) || null,
+            });
+            console.log("entire msg object::\n----------", msg, "\n--------");
             if (!msg.message || msg.key.fromMe) return null;
 
             const isGroup = msg.key.remoteJid.endsWith('@g.us');
@@ -290,6 +427,14 @@ async function connectToWhatsApp(userId, vendorConfig) {
             }
 
             const senderId = isGroup ? (msg.participant || msg.key.participant) : msg.key.remoteJid;
+            const senderPn = msg?.key?.senderPn || msg?.messageKey?.senderPn || msg?.key?.senderJid || null;
+            if (!senderPn && !isGroup) {
+                const normalizedRemote = jidNormalizedUser?.(msg.key.remoteJid);
+                if (normalizedRemote && normalizedRemote !== msg.key.remoteJid) {
+                    msg.messageKey = msg.messageKey || {};
+                    msg.messageKey.senderPn = normalizedRemote;
+                }
+            }
             const senderName = msg.pushName || session.contactsCache[senderId]?.name || null;
 
             let groupInfo = null;
@@ -302,12 +447,20 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 }
             }
 
+            const alternateIdentifiers = collectSenderIdentifiers(msg, senderId);
+            if (senderPn && !alternateIdentifiers.includes(senderPn)) {
+                alternateIdentifiers.push(senderPn);
+            }
+
+            console.log(`[${userId}] Derived alternate identifiers:`, alternateIdentifiers);
+
             return {
                 sender: senderId,
                 display_name: senderName,
                 message: messageContent,
                 timestamp: new Date().toISOString(),
-                group: groupInfo
+                group: groupInfo,
+                alternate_identifiers: alternateIdentifiers,
             };
         });
 

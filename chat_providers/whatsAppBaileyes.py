@@ -140,7 +140,16 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             group_info = msg.get('group')
             if group_info and not self.config.provider_config.allow_group_messages:
                 continue
-            sender = Sender(identifier=msg['sender'], display_name=msg.get('display_name', msg['sender']))
+
+            alternate_identifiers = msg.get('alternate_identifiers') or []
+            if not isinstance(alternate_identifiers, list):
+                alternate_identifiers = []
+
+            sender = Sender(
+                identifier=msg['sender'],
+                display_name=msg.get('display_name', msg['sender']),
+                alternate_identifiers=alternate_identifiers
+            )
             group = Group(identifier=group_info['id'], display_name=group_info.get('name') or group_info['id']) if group_info else None
             queue.add_message(
                 content=msg['message'],

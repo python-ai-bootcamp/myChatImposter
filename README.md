@@ -155,7 +155,20 @@ Your class must implement the following abstract methods:
 
 The application will discover your new LLM provider class automatically.
 
+## Troubleshooting WhatsApp Baileys sessions
+
+If a WhatsApp session oscillates between `connecting` and `closed`, check the Node container logs (`whatsapp_baileys_server`). The server now auto-fetches the most recent WhatsApp Web version via `fetchLatestBaileysVersion`, so version drift should resolve automatically when the container restarts.
+
+If you still see rapid-fire HTTP 405 disconnects, the server will retry up to three times within 30 seconds. When every attempt fails with 405, it logs a message such as:
+
+```
+[tal] Persistent 405 errors: 3 hits over 12000ms. POPs: vll, lla, cln
+```
+
+At that point the server deletes the stored auth keys for the user and starts a fresh session so a new QR can be presented. This usually resolves real protocol mismatches or WhatsApp forcing a relink. If 405 errors continue even after a relink, double-check that your network/firewall allows WebSocket traffic, and consider restarting the entire Docker stack to force a clean environment.
+
 ## How to Run
+
 
 1.  Install the required Python dependencies:
     ```bash
