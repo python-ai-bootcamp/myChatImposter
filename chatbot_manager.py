@@ -134,13 +134,20 @@ class ChatbotInstance:
         if self.whitelist:
             sender_identifier = message.sender.identifier
             sender_display_name = message.sender.display_name
+            alternate_identifiers = []
+            if hasattr(message.sender, 'alternate_identifiers') and isinstance(message.sender.alternate_identifiers, list):
+                alternate_identifiers = [value for value in message.sender.alternate_identifiers if isinstance(value, str)]
 
-            # Check if any whitelisted string is a substring of either the identifier or display name
-            is_whitelisted = any(
-                (whitelisted_sender in sender_identifier if sender_identifier else False) or
-                (whitelisted_sender in sender_display_name if sender_display_name else False)
-                for whitelisted_sender in self.whitelist
-            )
+            def is_match(whitelisted_sender: str) -> bool:
+                if not whitelisted_sender:
+                    return False
+                candidates = [sender_identifier, sender_display_name, *alternate_identifiers]
+                return any(
+                    (whitelisted_sender in candidate) if candidate else False
+                    for candidate in candidates
+                )
+
+            is_whitelisted = any(is_match(whitelisted_sender) for whitelisted_sender in self.whitelist)
             if not is_whitelisted:
                 console_log(f"INSTANCE ({user_id}): Sender '{message.sender.identifier}' not in whitelist. Ignoring.")
                 return

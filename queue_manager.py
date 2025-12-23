@@ -13,6 +13,7 @@ from config_models import QueueConfig
 class Sender:
     identifier: str
     display_name: str
+    alternate_identifiers: List[str] = field(default_factory=list)
 
 @dataclass
 class Group:
