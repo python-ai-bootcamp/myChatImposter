@@ -30,6 +30,7 @@ class Message:
     message_size: int = 0
     originating_time: Optional[int] = None
     group: Optional[Group] = None
+    provider_message_id: Optional[str] = None
 
     def __post_init__(self):
         self.message_size = len(self.content)
@@ -47,6 +48,7 @@ class UserQueue:
         self._next_message_id = 1
         self._total_chars = 0
         self._callbacks: List[Callable[[str, Message], None]] = []
+        self._recent_provider_message_ids: deque[str] = deque(maxlen=20)
 
     def register_callback(self, callback: Callable[[str, Message], None]):
         """Register a callback function to be triggered on new messages."""
@@ -83,8 +85,14 @@ class UserQueue:
             self._log_retention_event(evicted_msg, "message_count", new_message_size)
             console_log(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to message count limit.")
 
-    def add_message(self, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None):
+    def add_message(self, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None, provider_message_id: Optional[str] = None):
         """Create, add, and process a new message for the queue."""
+        if provider_message_id:
+            if provider_message_id in self._recent_provider_message_ids:
+                console_log(f"QUEUE DUPE ({self.user_id}): Duplicate message ID {provider_message_id} received, ignoring.")
+                return
+            self._recent_provider_message_ids.append(provider_message_id)
+
         # Truncate the message if it exceeds the single message character limit.
         if len(content) > self.max_characters_single_message:
             console_log(f"QUEUE TRUNCATE ({self.user_id}): Message from {sender.display_name} is larger than the single message character limit ({self.max_characters_single_message}), truncating.")
@@ -100,7 +108,8 @@ class UserQueue:
             sender=sender,
             source=source,
             originating_time=originating_time,
-            group=group
+            group=group,
+            provider_message_id=provider_message_id
         )
 
         self._messages.append(message)

@@ -155,7 +155,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 content=msg['message'],
                 sender=sender,
                 source='user',
-                group=group
+                group=group,
+                provider_message_id=msg.get('provider_message_id')
             )
 
     def stop_listening(self, cleanup_session: bool = False):

@@ -462,6 +462,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
             console.log(`[${userId}] Derived alternate identifiers:`, alternateIdentifiers);
 
             return {
+                provider_message_id: msg.key.id,
                 sender: senderId,
                 display_name: senderName,
                 message: messageContent,
