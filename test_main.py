@@ -8,6 +8,7 @@ import os
 # It's better to use a separate test database
 # For this example, we'll use the same DB but clean up after.
 # A more robust solution would use a dedicated test DB and mock the client.
+os.environ["MONGODB_URL"] = "mongodb://localhost:27017/"
 client = TestClient(app)
 mongo_client: MongoClient = None
 
@@ -18,7 +19,7 @@ def setup_and_teardown_module():
     global mongo_client
 
     # Use the service name from docker-compose, which is the correct way to connect between containers.
-    mongodb_url = os.environ.get("MONGODB_URL", "mongodb://mongodb:27017/")
+    mongodb_url = os.environ.get("MONGODB_URL_TEST", "mongodb://localhost:27017/")
 
     # Add a retry loop to wait for the MongoDB container to be ready.
     retries = 5
