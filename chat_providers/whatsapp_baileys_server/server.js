@@ -459,6 +459,11 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 alternateIdentifiers.push(senderPn);
             }
 
+            const participantPn = msg?.key?.participantPn;
+            if (participantPn && !alternateIdentifiers.includes(participantPn)) {
+                alternateIdentifiers.push(participantPn);
+            }
+
             console.log(`[${userId}] Derived alternate identifiers:`, alternateIdentifiers);
 
             return {
