@@ -6,6 +6,7 @@ import time
 import os
 import json
 from pathlib import Path
+import dataclasses
 from fastapi import FastAPI, HTTPException, Body, Request
 from fastapi.responses import JSONResponse
 from fastapi.concurrency import run_in_threadpool
@@ -401,6 +402,37 @@ async def get_chatbot_status(user_id: str):
     except Exception as e:
         console_log(f"API_ERROR: Failed to get status for instance {instance_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get status: {e}")
+
+
+@app.get("/api/queue/{user_id}")
+async def get_user_queue(user_id: str):
+    """
+    Returns all of the user correspondance queues (per chat provider it had correspondance on) in json format.
+    """
+    if user_id not in active_users:
+        raise HTTPException(status_code=404, detail=f"No active session found for user_id '{user_id}'.")
+
+    instance_id = active_users[user_id]
+    instance = chatbot_instances.get(instance_id)
+
+    if not instance:
+        console_log(f"API_ERROR: Inconsistency detected. user_id '{user_id}' is in active_users but instance '{instance_id}' not found.")
+        raise HTTPException(status_code=500, detail="Internal server error: instance not found for active user.")
+
+    try:
+        user_queue = instance.user_queue
+        if not user_queue:
+            return JSONResponse(content=[])
+
+        messages = user_queue.get_messages()
+
+        # Convert message objects to dictionaries for JSON serialization
+        messages_as_dict = [dataclasses.asdict(msg) for msg in messages]
+
+        return JSONResponse(content=messages_as_dict)
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to get queue for instance {instance_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get queue: {e}")
 
 
 @app.delete("/chatbot/{user_id}")
