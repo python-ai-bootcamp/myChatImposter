@@ -126,3 +126,35 @@ def test_delete_configuration():
     # Verify it's gone
     response_get = client.get(f"/api/configurations/{user_id}")
     assert response_get.status_code == 404
+
+
+from unittest.mock import patch, MagicMock
+from queue_manager import Message, Sender
+
+def test_get_user_queue_not_found(client):
+    response = client.get("/api/queue/non_existent_user")
+    assert response.status_code == 404
+    assert "No active session found" in response.json()["detail"]
+
+def test_get_user_queue_success(client):
+    user_id = "test_user_queue_success"
+
+    # Mock the chatbot instance and its queue
+    mock_queue = MagicMock()
+    mock_queue.get_messages.return_value = [
+        Message(id=1, content="Hello", sender=Sender(identifier="user1", display_name="User 1"), source="user"),
+        Message(id=2, content="Hi there", sender=Sender(identifier="bot", display_name="Bot"), source="bot")
+    ]
+
+    mock_instance = MagicMock()
+    mock_instance.user_queue = mock_queue
+
+    with patch('main.active_users', {user_id: "instance_1"}), \
+         patch('main.chatbot_instances', {"instance_1": mock_instance}):
+        response = client.get(f"/api/queue/{user_id}")
+        assert response.status_code == 200
+
+        data = response.json()
+        assert len(data) == 2
+        assert data[0]["content"] == "Hello"
+        assert data[1]["source"] == "bot"
