@@ -1,6 +1,8 @@
 import json
 from fastapi.testclient import TestClient
-from main import app
+from main import app, active_users, chatbot_instances
+from queue_manager import Message, Sender
+from unittest.mock import MagicMock
 import pytest
 from pymongo import MongoClient
 import os
@@ -126,3 +128,63 @@ def test_delete_configuration():
     # Verify it's gone
     response_get = client.get(f"/api/configurations/{user_id}")
     assert response_get.status_code == 404
+
+
+def test_get_user_queue_success():
+    user_id = "test_user"
+    instance_id = "test_instance"
+
+    # Mock the chatbot instance and its queue
+    mock_instance = MagicMock()
+    mock_queue = MagicMock()
+    mock_instance.user_queue = mock_queue
+
+    # Mock the return value of get_messages
+    mock_messages = [
+        Message(id=1, content="Hello", sender=Sender(identifier="user1", display_name="User 1"), source="user"),
+        Message(id=2, content="Hi there", sender=Sender(identifier="bot1", display_name="Bot 1"), source="bot")
+    ]
+    mock_queue.get_messages.return_value = mock_messages
+
+    # Add the mock instance to the active users and chatbot instances
+    active_users[user_id] = instance_id
+    chatbot_instances[instance_id] = mock_instance
+
+    response = client.get(f"/api/queue/{user_id}")
+
+    assert response.status_code == 200
+
+    # Convert mock_messages to a JSON-serializable format
+    response_json = response.json()
+
+    # We need to manually construct the expected JSON because the dataclass-to-JSON
+    # conversion is handled by FastAPI, and we need to match its output.
+    # The `accepted_time` is dynamic, so we'll copy it from the response.
+    expected_json = [
+        {
+            "id": msg.id,
+            "content": msg.content,
+            "sender": {
+                "identifier": msg.sender.identifier,
+                "display_name": msg.sender.display_name,
+                "alternate_identifiers": msg.sender.alternate_identifiers
+            },
+            "source": msg.source,
+            "accepted_time": resp_msg["accepted_time"], # Use the actual timestamp from the response
+            "message_size": msg.message_size,
+            "originating_time": msg.originating_time,
+            "group": msg.group,
+            "provider_message_id": msg.provider_message_id
+        } for msg, resp_msg in zip(mock_messages, response_json)
+    ]
+
+    assert response_json == expected_json
+
+    # Clean up
+    del active_users[user_id]
+    del chatbot_instances[instance_id]
+
+
+def test_get_user_queue_not_found():
+    response = client.get("/api/queue/non_existent_user")
+    assert response.status_code == 404

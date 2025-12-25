@@ -403,6 +403,30 @@ async def get_chatbot_status(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get status: {e}")
 
 
+@app.get("/api/queue/{user_id}")
+async def get_user_queue(user_id: str):
+    """
+    Returns all of the user correspondance queues for a given user_id.
+    """
+    if user_id not in active_users:
+        raise HTTPException(status_code=404, detail=f"No active session found for user_id '{user_id}'.")
+
+    instance_id = active_users[user_id]
+    instance = chatbot_instances.get(instance_id)
+
+    if not instance or not instance.user_queue:
+        console_log(f"API_ERROR: Inconsistency detected. user_id '{user_id}' is in active_users but instance '{instance_id}' or its queue not found.")
+        raise HTTPException(status_code=500, detail="Internal server error: instance or queue not found for active user.")
+
+    try:
+        messages = instance.user_queue.get_messages()
+        # The Message dataclass should be automatically serialized to JSON by FastAPI
+        return messages
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to get queue for instance {instance_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get queue: {e}")
+
+
 @app.delete("/chatbot/{user_id}")
 async def unlink_chatbot(user_id: str):
     """
