@@ -142,23 +142,28 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             if group_info and not self.config.provider_config.allow_group_messages:
                 continue
 
-            # Determine the correspondent ID (group ID or sender ID)
-            correspondent_id = group_info['id'] if group_info else msg['sender']
-
+            # Determine the correspondent ID and primary sender ID
             alternate_identifiers = msg.get('alternate_identifiers') or []
             if not isinstance(alternate_identifiers, list):
                 alternate_identifiers = []
 
-            # Prefer the permanent ID (@s.whatsapp.net) if available
-            for alt_id in alternate_identifiers:
-                if alt_id.endswith('@s.whatsapp.net'):
-                    correspondent_id = alt_id
-                    break
-                alternate_identifiers = []
+            # The default sender identifier is the one from the message key
+            sender_identifier = msg['sender']
+
+            # Find the permanent ID (ending in @s.whatsapp.net) if it exists
+            permanent_id = next((alt for alt in alternate_identifiers if alt.endswith('@s.whatsapp.net')), None)
+
+            if permanent_id:
+                # If a permanent ID is found, it becomes the primary identifier for the sender
+                sender_identifier = permanent_id
+
+            # The correspondent for the queue is the group ID in a group chat,
+            # otherwise it's the permanent sender ID we just determined.
+            correspondent_id = group_info['id'] if group_info else sender_identifier
 
             sender = Sender(
-                identifier=msg['sender'],
-                display_name=msg.get('pushName', msg['sender']),
+                identifier=sender_identifier,
+                display_name=msg.get('pushName', sender_identifier),
                 alternate_identifiers=alternate_identifiers
             )
             group = Group(identifier=group_info['id'], display_name=group_info.get('name') or group_info['id']) if group_info else None
