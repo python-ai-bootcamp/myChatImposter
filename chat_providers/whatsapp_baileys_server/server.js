@@ -470,6 +470,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 provider_message_id: msg.key.id,
                 sender: senderId,
                 display_name: senderName,
+                pushName: msg.pushName,
                 message: messageContent,
                 timestamp: new Date().toISOString(),
                 group: groupInfo,
