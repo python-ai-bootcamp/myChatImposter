@@ -13,12 +13,15 @@ mongo_client: MongoClient = None
 
 import time
 
-@pytest.fixture(scope="module", autouse=True)
-def setup_and_teardown_module():
+@pytest.fixture(scope="function", autouse=True)
+def setup_and_teardown_function(monkeypatch):
     global mongo_client
 
-    # Use the service name from docker-compose, which is the correct way to connect between containers.
-    mongodb_url = os.environ.get("MONGODB_URL", "mongodb://mongodb:27017/")
+    # Set the environment variable for the application to use the correct MongoDB URL for tests.
+    monkeypatch.setenv("MONGODB_URL", "mongodb://localhost:27017/")
+
+    # When running tests from outside the docker-compose network, we connect via localhost.
+    mongodb_url = os.environ.get("MONGODB_URL", "mongodb://localhost:27017/")
 
     # Add a retry loop to wait for the MongoDB container to be ready.
     retries = 5
@@ -44,8 +47,8 @@ def setup_and_teardown_module():
     # Teardown: clean up any created test data
     if mongo_client:
         db = mongo_client.get_database("chat_manager")
-        collection = db.get_collection("configurations")
-        collection.delete_many({"config_data.user_id": {"$regex": "^test_user_"}})
+        db.get_collection("configurations").delete_many({"config_data.user_id": {"$regex": "^test_user_"}})
+        db.get_collection("queues").delete_many({"user_id": {"$regex": "^test_user_"}})
         mongo_client.close()
 
 
@@ -95,21 +98,31 @@ def test_save_and_get_array_configuration():
     assert len(saved_data) == 1
     assert saved_data[0]["user_id"] == user_id
 
-def test_get_configuration_schema_allows_null_api_key():
+def test_get_configuration_schema_api_key_logic():
     response = client.get("/api/configurations/schema")
     assert response.status_code == 200
     schema = response.json()
 
     defs_key = '$defs' if '$defs' in schema else 'definitions'
+    llm_settings_schema = schema[defs_key]['LLMProviderSettings']
 
-    llm_provider_settings = schema[defs_key]['LLMProviderSettings']
-    api_key_schema = llm_provider_settings['properties']['api_key']
+    # Check that the top level is a oneOf
+    assert 'oneOf' in llm_settings_schema
+    assert len(llm_settings_schema['oneOf']) == 2
 
-    assert 'anyOf' in api_key_schema
+    # Find the 'environment' and 'explicit' schemas
+    env_schema = next((s for s in llm_settings_schema['oneOf'] if s['properties']['api_key_source']['const'] == 'environment'), None)
+    explicit_schema = next((s for s in llm_settings_schema['oneOf'] if s['properties']['api_key_source']['const'] == 'explicit'), None)
 
-    type_options = [item.get('type') for item in api_key_schema['anyOf']]
-    assert 'string' in type_options
-    assert 'null' in type_options
+    assert env_schema is not None
+    assert explicit_schema is not None
+
+    # The environment schema should NOT have 'api_key' as a property
+    assert 'api_key' not in env_schema['properties']
+
+    # The explicit schema SHOULD have 'api_key' as a required property
+    assert 'api_key' in explicit_schema['properties']
+    assert 'api_key' in explicit_schema['required']
 
 def test_delete_configuration():
     user_id = "test_user_to_delete"
@@ -129,32 +142,34 @@ def test_delete_configuration():
 
 
 from unittest.mock import patch, MagicMock
-from queue_manager import Message, Sender
 
-def test_get_user_queue_not_found(client):
+def test_get_user_queue_empty():
+    """ Test getting a queue for a user with no messages, should return 200 OK and an empty list. """
     response = client.get("/api/queue/non_existent_user")
-    assert response.status_code == 404
-    assert "No active session found" in response.json()["detail"]
+    assert response.status_code == 200
+    assert response.json() == []
 
-def test_get_user_queue_success(client):
+def test_get_user_queue_success():
+    """ Test getting a queue for a user with persisted messages in the database. """
     user_id = "test_user_queue_success"
+    db = mongo_client.get_database("chat_manager")
+    queues_collection = db.get_collection("queues")
 
-    # Mock the chatbot instance and its queue
-    mock_queue = MagicMock()
-    mock_queue.get_messages.return_value = [
-        Message(id=1, content="Hello", sender=Sender(identifier="user1", display_name="User 1"), source="user"),
-        Message(id=2, content="Hi there", sender=Sender(identifier="bot", display_name="Bot"), source="bot")
+    # Insert some mock messages for the test user
+    mock_messages = [
+        {"id": 1, "content": "Hello", "sender": {"identifier": "user1", "display_name": "User 1"}, "source": "user", "user_id": user_id, "provider_name": "test"},
+        {"id": 2, "content": "Hi there", "sender": {"identifier": "bot", "display_name": "Bot"}, "source": "bot", "user_id": user_id, "provider_name": "test"}
     ]
+    queues_collection.insert_many(mock_messages)
 
-    mock_instance = MagicMock()
-    mock_instance.user_queue = mock_queue
+    response = client.get(f"/api/queue/{user_id}")
+    assert response.status_code == 200
 
-    with patch('main.active_users', {user_id: "instance_1"}), \
-         patch('main.chatbot_instances', {"instance_1": mock_instance}):
-        response = client.get(f"/api/queue/{user_id}")
-        assert response.status_code == 200
-
-        data = response.json()
-        assert len(data) == 2
-        assert data[0]["content"] == "Hello"
-        assert data[1]["source"] == "bot"
+    data = response.json()
+    assert len(data) == 2
+    assert data[0]["content"] == "Hello"
+    assert data[1]["source"] == "bot"
+    # The API should not return the internal DB fields
+    assert "user_id" not in data[0]
+    assert "provider_name" not in data[0]
+    assert "_id" not in data[0]

@@ -1,10 +1,15 @@
 import unittest
 import os
 import re
+from unittest.mock import MagicMock, patch
 from queue_manager import UserQueue, Sender
 from config_models import QueueConfig
 
 class TestUserQueueUpdated(unittest.TestCase):
+    def setUp(self):
+        # Create a mock for the MongoDB collection
+        self.mock_queues_collection = MagicMock()
+
     def tearDown(self):
         # Clean up any log files created during tests
         log_dir = 'log'
@@ -12,6 +17,37 @@ class TestUserQueueUpdated(unittest.TestCase):
             for filename in os.listdir(log_dir):
                 if filename.startswith('test_vendor_'):
                     os.remove(os.path.join(log_dir, filename))
+
+    def test_message_id_initialization(self):
+        """
+        Test that the UserQueue correctly initializes its message ID from the DB.
+        """
+        # 1. Test initialization with an existing message in the DB
+        self.mock_queues_collection.find_one.return_value = {'id': 100}
+
+        queue_config = QueueConfig(max_messages=5, max_characters=200, max_days=1, max_characters_single_message=50)
+        user_queue = UserQueue(
+            user_id='test_user_db',
+            provider_name='test_vendor',
+            queue_config=queue_config,
+            queues_collection=self.mock_queues_collection
+        )
+
+        # Verify it queried the database to initialize the next message ID
+        self.mock_queues_collection.find_one.assert_called_once()
+        self.assertEqual(user_queue._next_message_id, 101, "Next message ID should be initialized to 101")
+
+        # 2. Test initialization with an empty DB
+        self.mock_queues_collection.reset_mock()
+        self.mock_queues_collection.find_one.return_value = None
+
+        user_queue_empty = UserQueue(
+            user_id='test_user_db_empty',
+            provider_name='test_vendor',
+            queue_config=queue_config,
+            queues_collection=self.mock_queues_collection
+        )
+        self.assertEqual(user_queue_empty._next_message_id, 1, "Next message ID should default to 1 for an empty DB")
 
     def test_single_message_truncation(self):
         """
@@ -26,7 +62,8 @@ class TestUserQueueUpdated(unittest.TestCase):
         user_queue = UserQueue(
             user_id='test_user_truncate',
             provider_name='test_vendor',
-            queue_config=queue_config
+            queue_config=queue_config,
+            queues_collection=self.mock_queues_collection
         )
         sender = Sender(identifier='test_sender', display_name='Test Sender')
 
@@ -51,7 +88,8 @@ class TestUserQueueUpdated(unittest.TestCase):
         user_queue = UserQueue(
             user_id='test_user_char_limit',
             provider_name='test_vendor',
-            queue_config=queue_config
+            queue_config=queue_config,
+            queues_collection=self.mock_queues_collection
         )
         sender = Sender(identifier='test_sender', display_name='Test Sender')
 
@@ -86,7 +124,8 @@ class TestUserQueueUpdated(unittest.TestCase):
         user_queue = UserQueue(
             user_id='test_user_msg_limit',
             provider_name='test_vendor',
-            queue_config=queue_config
+            queue_config=queue_config,
+            queues_collection=self.mock_queues_collection
         )
         sender = Sender(identifier='test_sender', display_name='Test Sender')
 
@@ -125,7 +164,8 @@ class TestUserQueueUpdated(unittest.TestCase):
         user_queue = UserQueue(
             user_id=user_id,
             provider_name=provider_name,
-            queue_config=queue_config
+            queue_config=queue_config,
+            queues_collection=self.mock_queues_collection
         )
         sender = Sender(identifier='test_sender', display_name='Test Sender')
 
