@@ -149,6 +149,13 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             if not isinstance(alternate_identifiers, list):
                 alternate_identifiers = []
 
+            # Prefer the permanent ID (@s.whatsapp.net) if available
+            for alt_id in alternate_identifiers:
+                if alt_id.endswith('@s.whatsapp.net'):
+                    correspondent_id = alt_id
+                    break
+                alternate_identifiers = []
+
             sender = Sender(
                 identifier=msg['sender'],
                 display_name=msg.get('display_name', msg['sender']),
