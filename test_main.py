@@ -144,21 +144,22 @@ def test_delete_configuration():
 from unittest.mock import patch, MagicMock
 
 def test_get_user_queue_empty():
-    """ Test getting a queue for a user with no messages, should return 200 OK and an empty list. """
+    """ Test getting a queue for a user with no messages, should return 200 OK and an empty object. """
     response = client.get("/api/queue/non_existent_user")
     assert response.status_code == 200
-    assert response.json() == []
+    assert response.json() == {}
 
 def test_get_user_queue_success():
-    """ Test getting a queue for a user with persisted messages in the database. """
+    """ Test getting queues for a user, which should be grouped by correspondent ID. """
     user_id = "test_user_queue_success"
     db = mongo_client.get_database("chat_manager")
     queues_collection = db.get_collection("queues")
 
-    # Insert some mock messages for the test user
+    # Insert some mock messages for the test user from different correspondents
     mock_messages = [
-        {"id": 1, "content": "Hello", "sender": {"identifier": "user1", "display_name": "User 1"}, "source": "user", "user_id": user_id, "provider_name": "test"},
-        {"id": 2, "content": "Hi there", "sender": {"identifier": "bot", "display_name": "Bot"}, "source": "bot", "user_id": user_id, "provider_name": "test"}
+        {"id": 1, "content": "Hello from cor1", "sender": {"identifier": "user1", "display_name": "User 1"}, "source": "user", "user_id": user_id, "provider_name": "test", "correspondent_id": "cor1"},
+        {"id": 1, "content": "Hello from cor2", "sender": {"identifier": "user2", "display_name": "User 2"}, "source": "user", "user_id": user_id, "provider_name": "test", "correspondent_id": "cor2"},
+        {"id": 2, "content": "Hi there from cor1", "sender": {"identifier": "bot", "display_name": "Bot"}, "source": "bot", "user_id": user_id, "provider_name": "test", "correspondent_id": "cor1"}
     ]
     queues_collection.insert_many(mock_messages)
 
@@ -166,10 +167,21 @@ def test_get_user_queue_success():
     assert response.status_code == 200
 
     data = response.json()
-    assert len(data) == 2
-    assert data[0]["content"] == "Hello"
-    assert data[1]["source"] == "bot"
+
+    # We should have keys for each correspondent
+    assert "cor1" in data
+    assert "cor2" in data
+
+    # Check the contents of each correspondent's queue
+    assert len(data["cor1"]) == 2
+    assert data["cor1"][0]["content"] == "Hello from cor1"
+    assert data["cor1"][1]["id"] == 2
+
+    assert len(data["cor2"]) == 1
+    assert data["cor2"][0]["content"] == "Hello from cor2"
+
     # The API should not return the internal DB fields
-    assert "user_id" not in data[0]
-    assert "provider_name" not in data[0]
-    assert "_id" not in data[0]
+    assert "user_id" not in data["cor1"][0]
+    assert "provider_name" not in data["cor1"][0]
+    assert "correspondent_id" not in data["cor1"][0]
+    assert "_id" not in data["cor1"][0]

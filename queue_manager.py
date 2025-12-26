@@ -37,10 +37,11 @@ class Message:
     def __post_init__(self):
         self.message_size = len(self.content)
 
-class UserQueue:
-    def __init__(self, user_id: str, provider_name: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None):
+class CorrespondentQueue:
+    def __init__(self, user_id: str, provider_name: str, correspondent_id: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None):
         self.user_id = user_id
         self.provider_name = provider_name
+        self.correspondent_id = correspondent_id
         self.max_messages = queue_config.max_messages
         self.max_characters = queue_config.max_characters
         self.max_characters_single_message = queue_config.max_characters_single_message
@@ -58,19 +59,19 @@ class UserQueue:
             self._initialize_next_message_id()
 
     def _initialize_next_message_id(self):
-        """Sets the next message ID based on the last message in the database."""
+        """Sets the next message ID based on the last message in the database for this correspondent."""
         try:
             last_message = self._queues_collection.find_one(
-                {"user_id": self.user_id, "provider_name": self.provider_name},
+                {"user_id": self.user_id, "provider_name": self.provider_name, "correspondent_id": self.correspondent_id},
                 sort=[("id", DESCENDING)]
             )
             if last_message and 'id' in last_message:
                 self._next_message_id = last_message['id'] + 1
-                console_log(f"QUEUE INIT ({self.user_id}): Initialized next message ID to {self._next_message_id} from database.")
+                console_log(f"QUEUE INIT ({self.user_id}/{self.correspondent_id}): Initialized next message ID to {self._next_message_id} from database.")
             else:
-                console_log(f"QUEUE INIT ({self.user_id}): No previous messages found in DB. Starting message ID at 1.")
+                console_log(f"QUEUE INIT ({self.user_id}/{self.correspondent_id}): No previous messages found in DB. Starting message ID at 1.")
         except Exception as e:
-            console_log(f"QUEUE DB_ERROR ({self.user_id}): Could not initialize next message ID from DB: {e}")
+            console_log(f"QUEUE DB_ERROR ({self.user_id}/{self.correspondent_id}): Could not initialize next message ID from DB: {e}")
 
     def register_callback(self, callback: Callable[[str, Message], None]):
         """Register a callback function to be triggered on new messages."""
@@ -80,7 +81,7 @@ class UserQueue:
         """Trigger all registered callbacks with the new message."""
         for callback in self._callbacks:
             # The callback itself will handle its own exceptions and logging
-            callback(self.user_id, message)
+            callback(self.user_id, self.correspondent_id, message)
 
     def _enforce_limits(self, new_message_size: int):
         """Evict old messages until the new message can be added."""
@@ -188,9 +189,9 @@ class UserQueue:
 
             user_log_line = get_timestamp() + "::".join(log_line_parts)
 
-            # User-specific log
-            user_log_path = os.path.join('log', f"{self.provider_name}_{self.user_id}.log")
-            with open(user_log_path, 'a', encoding='utf-8') as f:
+            # Correspondent-specific log
+            correspondent_log_path = os.path.join('log', f"{self.provider_name}_{self.user_id}_{self.correspondent_id}.log")
+            with open(correspondent_log_path, 'a', encoding='utf-8') as f:
                 f.write(user_log_line)
 
             # Global log
@@ -200,6 +201,7 @@ class UserQueue:
                 f"[accepted_time={message.accepted_time}]",
                 f"[provider_name={self.provider_name}]",
                 f"[user_id={self.user_id}]",
+                f"[correspondent_id={self.correspondent_id}]",
                 f"[message_id={message.id}]",
                 f"[sending_user={sender_str}]"
             ]
@@ -217,11 +219,11 @@ class UserQueue:
 
     def _log_retention_event(self, evicted_message: Message, reason: str, new_message_size: int = 0):
         """
-        Logs a retention event to the user-specific log file. This method is thread-safe.
+        Logs a retention event to the correspondent-specific log file. This method is thread-safe.
         """
         with lock:
             os.makedirs('log', exist_ok=True)
-            user_log_path = os.path.join('log', f"{self.provider_name}_{self.user_id}.log")
+            correspondent_log_path = os.path.join('log', f"{self.provider_name}_{self.user_id}_{self.correspondent_id}.log")
 
             log_line = f"{get_timestamp()}[retention_event_time={int(time.time() * 1000)}]::" \
                        f"[event_type=EVICT]::" \
@@ -236,5 +238,52 @@ class UserQueue:
                        f"[current_chars={self._total_chars + evicted_message.message_size}]::" \
                        f"[new_message_size={new_message_size}]\n"
 
-            with open(user_log_path, 'a', encoding='utf-8') as f:
+            with open(correspondent_log_path, 'a', encoding='utf-8') as f:
                 f.write(log_line)
+
+class UserQueuesManager:
+    def __init__(self, user_id: str, provider_name: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None):
+        self.user_id = user_id
+        self.provider_name = provider_name
+        self.queue_config = queue_config
+        self.queues_collection = queues_collection
+        self._queues: dict[str, CorrespondentQueue] = {}
+        self._callbacks: List[Callable[[str, str, Message], None]] = []
+        self._lock = threading.Lock()
+
+    def get_or_create_queue(self, correspondent_id: str) -> CorrespondentQueue:
+        with self._lock:
+            if correspondent_id not in self._queues:
+                console_log(f"QUEUE_MANAGER ({self.user_id}): Creating new queue for correspondent '{correspondent_id}'.")
+                queue = CorrespondentQueue(
+                    user_id=self.user_id,
+                    provider_name=self.provider_name,
+                    correspondent_id=correspondent_id,
+                    queue_config=self.queue_config,
+                    queues_collection=self.queues_collection
+                )
+                # Register all existing manager-level callbacks to the new queue
+                for callback in self._callbacks:
+                    queue.register_callback(callback)
+                self._queues[correspondent_id] = queue
+            return self._queues[correspondent_id]
+
+    def add_message(self, correspondent_id: str, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None, provider_message_id: Optional[str] = None):
+        queue = self.get_or_create_queue(correspondent_id)
+        queue.add_message(content, sender, source, originating_time, group, provider_message_id)
+
+    def register_callback(self, callback: Callable[[str, str, Message], None]):
+        """Register a callback to be added to all queues."""
+        with self._lock:
+            self._callbacks.append(callback)
+            # Add this new callback to all already-existing queues
+            for queue in self._queues.values():
+                queue.register_callback(callback)
+
+    def get_all_queues(self) -> List[CorrespondentQueue]:
+        with self._lock:
+            return list(self._queues.values())
+
+    def get_queue(self, correspondent_id: str) -> Optional[CorrespondentQueue]:
+        with self._lock:
+            return self._queues.get(correspondent_id)

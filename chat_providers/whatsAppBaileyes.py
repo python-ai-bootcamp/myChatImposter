@@ -8,7 +8,7 @@ import asyncio
 import websockets
 from typing import Dict, Optional, Callable
 
-from queue_manager import UserQueue, Sender, Group, Message
+from queue_manager import UserQueuesManager, Sender, Group, Message
 from logging_lock import FileLogger
 from .base import BaseChatProvider
 from config_models import ChatProviderConfig
@@ -17,7 +17,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
     """
     A provider that connects to a Node.js Baileys server to send and receive WhatsApp messages.
     """
-    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueue], on_session_end: Optional[Callable[[str], None]] = None, logger: Optional[FileLogger] = None):
+    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, logger: Optional[FileLogger] = None):
         """
         Initializes the provider.
         - user_id: The specific user this provider instance is for.
@@ -132,14 +132,18 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
     def _process_messages(self, messages):
         """Processes a list of incoming messages."""
-        queue = self.user_queues.get(self.user_id)
-        if not queue:
-            if self.logger: self.logger.log("ERROR: Could not find a queue for myself.")
+        queues_manager = self.user_queues.get(self.user_id)
+        if not queues_manager:
+            if self.logger: self.logger.log("ERROR: Could not find a queues manager for myself.")
             return
+
         for msg in messages:
             group_info = msg.get('group')
             if group_info and not self.config.provider_config.allow_group_messages:
                 continue
+
+            # Determine the correspondent ID (group ID or sender ID)
+            correspondent_id = group_info['id'] if group_info else msg['sender']
 
             alternate_identifiers = msg.get('alternate_identifiers') or []
             if not isinstance(alternate_identifiers, list):
@@ -151,7 +155,9 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 alternate_identifiers=alternate_identifiers
             )
             group = Group(identifier=group_info['id'], display_name=group_info.get('name') or group_info['id']) if group_info else None
-            queue.add_message(
+
+            queues_manager.add_message(
+                correspondent_id=correspondent_id,
                 content=msg['message'],
                 sender=sender,
                 source='user',

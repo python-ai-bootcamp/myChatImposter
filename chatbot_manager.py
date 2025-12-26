@@ -14,7 +14,7 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.output_parsers import StrOutputParser
 
-from queue_manager import UserQueue, Message, Sender, Group
+from queue_manager import UserQueuesManager, Message, Sender, Group
 from chat_providers.base import BaseChatProvider
 from llm_providers.base import BaseLlmProvider
 
@@ -59,13 +59,13 @@ from dataclasses import asdict
 
 class CorrespondenceIngester:
     """
-    A threaded worker that pulls messages from a UserQueue, normalizes them,
-    and persists them to the database.
+    A threaded worker that pulls messages from all of a user's correspondent queues,
+    normalizes them, and persists them to the database.
     """
-    def __init__(self, user_id: str, provider_name: str, user_queue: UserQueue, queues_collection: Collection):
+    def __init__(self, user_id: str, provider_name: str, user_queues_manager: UserQueuesManager, queues_collection: Collection):
         self.user_id = user_id
         self.provider_name = provider_name
-        self.user_queue = user_queue
+        self.user_queues_manager = user_queues_manager
         self.queues_collection = queues_collection
         self._stop_event = threading.Event()
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -83,15 +83,19 @@ class CorrespondenceIngester:
         """The main loop for the ingester thread."""
         console_log(f"INGESTER ({self.user_id}): Starting up.")
         while not self._stop_event.is_set():
-            # Wait for a new message to be available, with a timeout to allow
-            # for graceful shutdown checks.
-            if self.user_queue.wait_for_message(timeout=1):
-                while True:
-                    message = self.user_queue.pop_message()
-                    if not message:
-                        # No more messages in the queue, go back to waiting.
-                        break
+            any_message_processed = False
 
+            # Get a snapshot of all current queues
+            all_queues = self.user_queues_manager.get_all_queues()
+
+            for queue in all_queues:
+                # Process all available messages in the current queue
+                while True:
+                    message = queue.pop_message()
+                    if not message:
+                        break  # No more messages in this queue
+
+                    any_message_processed = True
                     try:
                         normalized_content = self._normalize_to_text(message)
                         # In the future, we might want to store the normalized content separately
@@ -100,13 +104,18 @@ class CorrespondenceIngester:
                         message_doc = asdict(message)
                         message_doc['user_id'] = self.user_id
                         message_doc['provider_name'] = self.provider_name
+                        message_doc['correspondent_id'] = queue.correspondent_id  # Add correspondent ID
                         self.queues_collection.insert_one(message_doc)
-                        console_log(f"INGESTER ({self.user_id}): Successfully persisted message {message.id}.")
+                        console_log(f"INGESTER ({self.user_id}/{queue.correspondent_id}): Successfully persisted message {message.id}.")
 
                     except Exception as e:
-                        console_log(f"INGESTER_ERROR ({self.user_id}): Failed to process or save message {message.id}: {e}")
-                        # Here, we might want to add the message back to the queue or handle the error in another way.
-                        # For now, we'll just log the error and move on.
+                        console_log(f"INGESTER_ERROR ({self.user_id}/{queue.correspondent_id}): Failed to process or save message {message.id}: {e}")
+                        # Error handling: might want to add message back to queue or log to a dead-letter queue
+
+            # If no messages were processed in any queue, wait a bit to prevent busy-looping
+            if not any_message_processed:
+                self._stop_event.wait(timeout=1.0)
+
         console_log(f"INGESTER ({self.user_id}): Shutting down.")
 
     def start(self):
@@ -124,7 +133,7 @@ class ChatbotInstance:
         self.user_id = config.user_id
         self.config = config
         self.on_session_end = on_session_end
-        self.user_queue: Optional[UserQueue] = None
+        self.user_queues_manager: Optional[UserQueuesManager] = None
         self.chatbot_model: Optional[ChatbotModel] = None
         self.provider_instance: Optional[Any] = None
         self.ingester: Optional[CorrespondenceIngester] = None
@@ -147,20 +156,20 @@ class ChatbotInstance:
         self.whitelist = self.config.respond_to_whitelist
         chat_provider_config = self.config.chat_provider_config
         provider_name = chat_provider_config.provider_name
-        self.user_queue = UserQueue(
+        self.user_queues_manager = UserQueuesManager(
             user_id=self.user_id,
             provider_name=provider_name,
             queue_config=self.config.queue_config,
             queues_collection=self._queues_collection
         )
-        console_log(f"INSTANCE ({self.user_id}): Initialized queue.")
+        console_log(f"INSTANCE ({self.user_id}): Initialized queue manager.")
 
         # 2. Initialize Ingester (if DB is available)
         if self._queues_collection is not None:
             self.ingester = CorrespondenceIngester(
                 user_id=self.user_id,
                 provider_name=provider_name,
-                user_queue=self.user_queue,
+                user_queues_manager=self.user_queues_manager,
                 queues_collection=self._queues_collection
             )
             console_log(f"INSTANCE ({self.user_id}): Initialized correspondence ingester.")
@@ -178,7 +187,7 @@ class ChatbotInstance:
         self.provider_instance = ProviderClass(
             user_id=self.user_id,
             config=chat_provider_config,
-            user_queues={self.user_id: self.user_queue},
+            user_queues={self.user_id: self.user_queues_manager},
             on_session_end=self.on_session_end,
             logger=file_logger
         )
@@ -202,9 +211,9 @@ class ChatbotInstance:
             self.mode = "collection_only"
             console_log(f"INSTANCE_WARNING ({self.user_id}): No 'llm_provider_config' found. Instance will run in collection-only mode.")
 
-    def _message_callback(self, user_id: str, message: Message):
-        """Processes a new message from the queue."""
-        console_log(f"INSTANCE ({user_id}): Callback received for message {message.id}.")
+    def _message_callback(self, user_id: str, correspondent_id: str, message: Message):
+        """Processes a new message from a correspondent's queue."""
+        console_log(f"INSTANCE ({user_id}/{correspondent_id}): Callback received for message {message.id}.")
 
         if message.source == 'bot':
             return
@@ -238,12 +247,15 @@ class ChatbotInstance:
             response_text = self.chatbot_model.get_response(message.content)
 
             # If the message is from a group, reply to the group. Otherwise, reply to the sender.
+            # If the message is from a group, reply to the group. Otherwise, reply to the sender.
             recipient = message.group.identifier if message.group else message.sender.identifier
             self.provider_instance.sendMessage(recipient, response_text)
 
             bot_sender = Sender(identifier=f"bot_{user_id}", display_name=f"Bot ({user_id})")
-            if self.user_queue:
-                self.user_queue.add_message(
+            if self.user_queues_manager:
+                # Add the bot's response back to the same correspondent's queue
+                self.user_queues_manager.add_message(
+                    correspondent_id=correspondent_id,
                     content=response_text,
                     sender=bot_sender,
                     source='bot',
@@ -258,13 +270,13 @@ class ChatbotInstance:
         Wires up and starts the instance.
         Raises an exception if essential components like the queue or provider are not initialized.
         """
-        if not self.user_queue or not self.provider_instance:
+        if not self.user_queues_manager or not self.provider_instance:
             # This is a critical error, as the instance cannot function at all without these.
             # This will be caught by the exception handler in main.py and reported to the user.
-            raise RuntimeError(f"Instance {self.user_id} cannot start: queue or provider not initialized.")
+            raise RuntimeError(f"Instance {self.user_id} cannot start: queue manager or provider not initialized.")
 
         console_log(f"INSTANCE ({self.user_id}): Registering callback and starting provider listener...")
-        self.user_queue.register_callback(self._message_callback)
+        self.user_queues_manager.register_callback(self._message_callback)
 
         if self.ingester:
             self.ingester.start()

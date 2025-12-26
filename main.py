@@ -409,21 +409,27 @@ async def get_chatbot_status(user_id: str):
 @app.get("/api/queue/{user_id}")
 async def get_user_queue(user_id: str):
     """
-    Returns all of the user correspondance queues (per chat provider it had correspondance on) in json format.
+    Returns a dictionary of all correspondent queues for a user, with the
+    correspondent ID as the key and a list of messages as the value.
     """
     if queues_collection is None:
         raise HTTPException(status_code=503, detail="Database connection not available.")
 
     try:
-        # Fetch all messages for the user, sorted by ID.
-        # We exclude the MongoDB-specific '_id' and the internal 'user_id' and 'provider_name' fields.
         messages_cursor = queues_collection.find(
             {"user_id": user_id},
             {"_id": 0, "user_id": 0, "provider_name": 0}
         ).sort("id", 1)
 
-        messages = list(messages_cursor)
-        return JSONResponse(content=messages)
+        # Group messages by correspondent_id
+        grouped_messages = {}
+        for message in messages_cursor:
+            correspondent_id = message.pop("correspondent_id", "unknown")
+            if correspondent_id not in grouped_messages:
+                grouped_messages[correspondent_id] = []
+            grouped_messages[correspondent_id].append(message)
+
+        return JSONResponse(content=grouped_messages)
     except Exception as e:
         console_log(f"API_ERROR: Failed to get queue for user '{user_id}' from DB: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get queue from database: {e}")

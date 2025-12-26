@@ -3,7 +3,7 @@ import threading
 from typing import Dict, Optional, Any, Callable
 
 from .base import BaseChatProvider
-from queue_manager import UserQueue, Sender, Group
+from queue_manager import UserQueuesManager, Sender, Group
 from config_models import ChatProviderConfig
 from logging_lock import FileLogger
 
@@ -12,7 +12,7 @@ class DummyProvider(BaseChatProvider):
     A template and simulation provider. It demonstrates the required interface
     and simulates receiving messages for a user in a background thread.
     """
-    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueue], on_session_end: Optional[Callable[[str], None]] = None, logger: Optional[FileLogger] = None):
+    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, logger: Optional[FileLogger] = None):
         """
         Initializes the provider.
         - user_id: The specific user this provider instance is for.
@@ -65,43 +65,50 @@ class DummyProvider(BaseChatProvider):
                 "message": "Hello there!", "sleep_time": 1000,
                 "sender": Sender(identifier="user1@c.us", display_name="User One"),
                 "group": None,
-                "originating_time": now - 20000
+                "originating_time": now - 20000,
+                "correspondent_id": "user1@c.us"
             },
             {
                 "message": "I have a question about my account.", "sleep_time": 2500,
                 "sender": Sender(identifier="user2@c.us", display_name="User Two"),
                 "group": Group(identifier="group1@g.us", display_name="Test Group"),
-                "originating_time": now - 15000
+                "originating_time": now - 15000,
+                "correspondent_id": "group1@g.us"
             },
             {
                 "message": "Can you tell me a joke?", "sleep_time": 500,
                 "sender": Sender(identifier="user1@c.us", display_name="User One"),
                 "group": None,
-                "originating_time": now - 10000
+                "originating_time": now - 10000,
+                "correspondent_id": "user1@c.us"
             },
             {
                 "message": "This is a very long message to test the character limits of the queue and see if it triggers an eviction policy if the limits are set low enough for this user.", "sleep_time": 4000,
                 "sender": Sender(identifier="user3@c.us", display_name="User Three"),
                 "group": None,
-                "originating_time": now - 5000
+                "originating_time": now - 5000,
+                "correspondent_id": "user3@c.us"
             },
             {
                 "message": "another message", "sleep_time": 1000,
                 "sender": Sender(identifier="user3@c.us", display_name="User Three"),
                 "group": None,
-                "originating_time": now - 1000
+                "originating_time": now - 1000,
+                "correspondent_id": "user3@c.us"
             },
             {
                 "message": "yet another message", "sleep_time": 1000,
                 "sender": Sender(identifier="user3@c.us", display_name="User Three"),
                 "group": None,
-                "originating_time": now - 1000
+                "originating_time": now - 1000,
+                "correspondent_id": "user3@c.us"
             },
             {
                 "message": "yet yet another message", "sleep_time": 1000,
                 "sender": Sender(identifier="user3@c.us", display_name="User Three"),
                 "group": None,
-                "originating_time": now - 1000
+                "originating_time": now - 1000,
+                "correspondent_id": "user3@c.us"
             },
         ]
         for item in simulated_messages:
@@ -116,11 +123,12 @@ class DummyProvider(BaseChatProvider):
 
             # CRITICAL: When a message is received, it's added to the user's
             # queue. This is how the provider communicates with the main application.
-            queue = self.user_queues.get(self.user_id)
-            if queue:
+            queues_manager = self.user_queues.get(self.user_id)
+            if queues_manager:
                 if self.logger:
-                    self.logger.log(f"Received a new message: '{item['message'][:30]}...'")
-                queue.add_message(
+                    self.logger.log(f"Received a new message: '{item['message'][:30]}...' for correspondent {item['correspondent_id']}")
+                queues_manager.add_message(
+                    correspondent_id=item["correspondent_id"],
                     content=item["message"],
                     sender=item["sender"],
                     source='user',
@@ -128,7 +136,7 @@ class DummyProvider(BaseChatProvider):
                     group=item["group"]
                 )
             elif self.logger:
-                self.logger.log(f"ERROR: Could not find a queue for myself.")
+                self.logger.log(f"ERROR: Could not find a queues manager for myself.")
 
         if self.logger:
             self.logger.log("Finished simulating messages.")
