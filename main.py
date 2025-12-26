@@ -37,13 +37,14 @@ app = FastAPI()
 mongo_client: MongoClient = None
 db = None
 configurations_collection = None
+queues_collection = None
 
 @app.on_event("startup")
 async def startup_event():
     """
     Connect to MongoDB and create a unique index on startup.
     """
-    global mongo_client, db, configurations_collection
+    global mongo_client, db, configurations_collection, queues_collection
     mongodb_url = os.environ.get("MONGODB_URL", "mongodb://mongodb:27017/")
     console_log(f"API: Connecting to MongoDB at {mongodb_url}")
     try:
@@ -51,6 +52,7 @@ async def startup_event():
         mongo_client.admin.command('ismaster')
         db = mongo_client.get_database("chat_manager")
         configurations_collection = db.get_collection("configurations")
+        queues_collection = db.get_collection("queues")
 
         try:
             # This index is on the user_id field *within* the config_data object.
@@ -352,7 +354,7 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
             This function contains the synchronous, blocking code.
             It returns the created instance so its mode can be inspected.
             """
-            instance = ChatbotInstance(config=current_config, on_session_end=remove_active_user)
+            instance = ChatbotInstance(config=current_config, on_session_end=remove_active_user, queues_collection=queues_collection)
             chatbot_instances[current_instance_id] = instance
             instance.start()
             return instance
@@ -409,30 +411,22 @@ async def get_user_queue(user_id: str):
     """
     Returns all of the user correspondance queues (per chat provider it had correspondance on) in json format.
     """
-    if user_id not in active_users:
-        raise HTTPException(status_code=404, detail=f"No active session found for user_id '{user_id}'.")
-
-    instance_id = active_users[user_id]
-    instance = chatbot_instances.get(instance_id)
-
-    if not instance:
-        console_log(f"API_ERROR: Inconsistency detected. user_id '{user_id}' is in active_users but instance '{instance_id}' not found.")
-        raise HTTPException(status_code=500, detail="Internal server error: instance not found for active user.")
+    if queues_collection is None:
+        raise HTTPException(status_code=503, detail="Database connection not available.")
 
     try:
-        user_queue = instance.user_queue
-        if not user_queue:
-            return JSONResponse(content=[])
+        # Fetch all messages for the user, sorted by ID.
+        # We exclude the MongoDB-specific '_id' and the internal 'user_id' and 'provider_name' fields.
+        messages_cursor = queues_collection.find(
+            {"user_id": user_id},
+            {"_id": 0, "user_id": 0, "provider_name": 0}
+        ).sort("id", 1)
 
-        messages = user_queue.get_messages()
-
-        # Convert message objects to dictionaries for JSON serialization
-        messages_as_dict = [dataclasses.asdict(msg) for msg in messages]
-
-        return JSONResponse(content=messages_as_dict)
+        messages = list(messages_cursor)
+        return JSONResponse(content=messages)
     except Exception as e:
-        console_log(f"API_ERROR: Failed to get queue for instance {instance_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to get queue: {e}")
+        console_log(f"API_ERROR: Failed to get queue for user '{user_id}' from DB: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get queue from database: {e}")
 
 
 @app.delete("/chatbot/{user_id}")

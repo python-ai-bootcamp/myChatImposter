@@ -5,6 +5,8 @@ import threading
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Callable, List
+from pymongo.collection import Collection
+from pymongo import DESCENDING
 
 from logging_lock import lock, get_timestamp, console_log
 from config_models import QueueConfig
@@ -36,19 +38,39 @@ class Message:
         self.message_size = len(self.content)
 
 class UserQueue:
-    def __init__(self, user_id: str, provider_name: str, queue_config: QueueConfig):
+    def __init__(self, user_id: str, provider_name: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None):
         self.user_id = user_id
         self.provider_name = provider_name
         self.max_messages = queue_config.max_messages
         self.max_characters = queue_config.max_characters
         self.max_characters_single_message = queue_config.max_characters_single_message
         self.max_age_seconds = queue_config.max_days * 24 * 60 * 60
+        self._queues_collection = queues_collection
 
         self._messages: deque[Message] = deque()
         self._next_message_id = 1
         self._total_chars = 0
         self._callbacks: List[Callable[[str, Message], None]] = []
         self._recent_provider_message_ids: deque[str] = deque(maxlen=20)
+        self._new_message_event = threading.Event()
+
+        if self._queues_collection is not None:
+            self._initialize_next_message_id()
+
+    def _initialize_next_message_id(self):
+        """Sets the next message ID based on the last message in the database."""
+        try:
+            last_message = self._queues_collection.find_one(
+                {"user_id": self.user_id, "provider_name": self.provider_name},
+                sort=[("id", DESCENDING)]
+            )
+            if last_message and 'id' in last_message:
+                self._next_message_id = last_message['id'] + 1
+                console_log(f"QUEUE INIT ({self.user_id}): Initialized next message ID to {self._next_message_id} from database.")
+            else:
+                console_log(f"QUEUE INIT ({self.user_id}): No previous messages found in DB. Starting message ID at 1.")
+        except Exception as e:
+            console_log(f"QUEUE DB_ERROR ({self.user_id}): Could not initialize next message ID from DB: {e}")
 
     def register_callback(self, callback: Callable[[str, Message], None]):
         """Register a callback function to be triggered on new messages."""
@@ -121,7 +143,26 @@ class UserQueue:
 
         console_log(f"QUEUE ADD ({self.user_id}): Added message {message.id} from {message.sender.display_name}. Queue stats: {len(self._messages)} msgs, {self._total_chars} chars.")
 
+        self._new_message_event.set()
         self._trigger_callbacks(message)
+
+    def pop_message(self) -> Optional[Message]:
+        """Pops the oldest message from the queue in a thread-safe manner."""
+        try:
+            message = self._messages.popleft()
+            self._total_chars -= message.message_size
+            return message
+        except IndexError:
+            # The queue is empty, so we clear the event.
+            self._new_message_event.clear()
+            return None
+
+    def wait_for_message(self, timeout: Optional[float] = None) -> bool:
+        """
+        Waits for a new message to be added to the queue. Returns True if an event was
+        triggered, False if it timed out.
+        """
+        return self._new_message_event.wait(timeout)
 
     def _log_message(self, message: Message):
         """

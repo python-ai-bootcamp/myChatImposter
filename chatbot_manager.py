@@ -54,19 +54,84 @@ class ChatbotModel:
 from typing import Dict, Any, Optional, List
 
 from typing import Dict, Any, Optional, List, Callable
+from pymongo.collection import Collection
+from dataclasses import asdict
+
+class CorrespondenceIngester:
+    """
+    A threaded worker that pulls messages from a UserQueue, normalizes them,
+    and persists them to the database.
+    """
+    def __init__(self, user_id: str, provider_name: str, user_queue: UserQueue, queues_collection: Collection):
+        self.user_id = user_id
+        self.provider_name = provider_name
+        self.user_queue = user_queue
+        self.queues_collection = queues_collection
+        self._stop_event = threading.Event()
+        self._thread = threading.Thread(target=self._run, daemon=True)
+
+    def _normalize_to_text(self, message: Message) -> str:
+        """
+        A placeholder for a future normalization function. For now, it just
+        returns the message content as is.
+        """
+        # In the future, this method will handle complex normalization tasks,
+        # such as converting audio/video to text, extracting metadata, etc.
+        return message.content
+
+    def _run(self):
+        """The main loop for the ingester thread."""
+        console_log(f"INGESTER ({self.user_id}): Starting up.")
+        while not self._stop_event.is_set():
+            # Wait for a new message to be available, with a timeout to allow
+            # for graceful shutdown checks.
+            if self.user_queue.wait_for_message(timeout=1):
+                while True:
+                    message = self.user_queue.pop_message()
+                    if not message:
+                        # No more messages in the queue, go back to waiting.
+                        break
+
+                    try:
+                        normalized_content = self._normalize_to_text(message)
+                        # In the future, we might want to store the normalized content separately
+                        # or replace the original content. For now, we'll just log it.
+
+                        message_doc = asdict(message)
+                        message_doc['user_id'] = self.user_id
+                        message_doc['provider_name'] = self.provider_name
+                        self.queues_collection.insert_one(message_doc)
+                        console_log(f"INGESTER ({self.user_id}): Successfully persisted message {message.id}.")
+
+                    except Exception as e:
+                        console_log(f"INGESTER_ERROR ({self.user_id}): Failed to process or save message {message.id}: {e}")
+                        # Here, we might want to add the message back to the queue or handle the error in another way.
+                        # For now, we'll just log the error and move on.
+        console_log(f"INGESTER ({self.user_id}): Shutting down.")
+
+    def start(self):
+        """Starts the ingester thread."""
+        self._thread.start()
+
+    def stop(self):
+        """Signals the ingester thread to stop."""
+        self._stop_event.set()
+        self._thread.join()
 
 class ChatbotInstance:
     """Manages all components for a single chatbot instance."""
-    def __init__(self, config: UserConfiguration, on_session_end: Optional[Callable[[str], None]] = None):
+    def __init__(self, config: UserConfiguration, on_session_end: Optional[Callable[[str], None]] = None, queues_collection: Optional[Collection] = None):
         self.user_id = config.user_id
         self.config = config
         self.on_session_end = on_session_end
         self.user_queue: Optional[UserQueue] = None
         self.chatbot_model: Optional[ChatbotModel] = None
         self.provider_instance: Optional[Any] = None
+        self.ingester: Optional[CorrespondenceIngester] = None
         self.whitelist: list = []
         self.mode: str = "fully_functional"  # Default mode
         self.warnings: List[str] = []
+        self._queues_collection = queues_collection
 
         self._initialize_components()
 
@@ -85,11 +150,24 @@ class ChatbotInstance:
         self.user_queue = UserQueue(
             user_id=self.user_id,
             provider_name=provider_name,
-            queue_config=self.config.queue_config
+            queue_config=self.config.queue_config,
+            queues_collection=self._queues_collection
         )
         console_log(f"INSTANCE ({self.user_id}): Initialized queue.")
 
-        # 2. Initialize Chat Provider (Essential)
+        # 2. Initialize Ingester (if DB is available)
+        if self._queues_collection is not None:
+            self.ingester = CorrespondenceIngester(
+                user_id=self.user_id,
+                provider_name=provider_name,
+                user_queue=self.user_queue,
+                queues_collection=self._queues_collection
+            )
+            console_log(f"INSTANCE ({self.user_id}): Initialized correspondence ingester.")
+        else:
+            console_log(f"INSTANCE_WARNING ({self.user_id}): No database collection provided. Ingester will not run.")
+
+        # 3. Initialize Chat Provider (Essential)
         provider_module = importlib.import_module(f"chat_providers.{provider_name}")
         ProviderClass = _find_provider_class(provider_module, BaseChatProvider)
         if not ProviderClass:
@@ -187,6 +265,10 @@ class ChatbotInstance:
 
         console_log(f"INSTANCE ({self.user_id}): Registering callback and starting provider listener...")
         self.user_queue.register_callback(self._message_callback)
+
+        if self.ingester:
+            self.ingester.start()
+
         self.provider_instance.start_listening()
         console_log(f"INSTANCE ({self.user_id}): System is running.")
 
@@ -198,6 +280,9 @@ class ChatbotInstance:
             cleanup_session (bool): If True, instructs the provider to also clean up
                                     the session data (e.g., on user unlink).
         """
+        if self.ingester:
+            self.ingester.stop()
+
         if self.provider_instance:
             console_log(f"INSTANCE ({self.user_id}): Shutting down... (cleanup={cleanup_session})")
             self.provider_instance.stop_listening(cleanup_session=cleanup_session)
