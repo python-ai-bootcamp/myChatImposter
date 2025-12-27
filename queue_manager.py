@@ -173,7 +173,14 @@ class UserQueue:
 
             originating_time_str = str(message.originating_time) if message.originating_time is not None else 'None'
 
-            sender_str = f"{message.sender.display_name} ({message.sender.identifier})"
+            # --- Start of Change ---
+            # Prioritize a permanent-looking identifier for logging
+            all_ids = [message.sender.identifier] + message.sender.alternate_identifiers
+            # Find an ID that looks like a permanent WhatsApp JID, otherwise default to the primary identifier
+            log_identifier = next((id for id in all_ids if id and '@s.whatsapp.net' in id), message.sender.identifier)
+            sender_str = f"{message.sender.display_name} ({log_identifier})"
+            # --- End of Change ---
+
             group_str = f"[group={message.group.display_name} ({message.group.identifier})]" if message.group else ""
 
             log_line_parts = [

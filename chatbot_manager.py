@@ -212,22 +212,30 @@ class ChatbotInstance:
         if self.whitelist:
             sender_identifier = message.sender.identifier
             sender_display_name = message.sender.display_name
-            alternate_identifiers = []
-            if hasattr(message.sender, 'alternate_identifiers') and isinstance(message.sender.alternate_identifiers, list):
-                alternate_identifiers = [value for value in message.sender.alternate_identifiers if isinstance(value, str)]
+            alternate_identifiers = [
+                value for value in getattr(message.sender, 'alternate_identifiers', [])
+                if isinstance(value, str)
+            ]
+
+            all_sender_ids = list(set([sender_identifier, sender_display_name, *alternate_identifiers]))
+            console_log(f"INSTANCE ({user_id}): Evaluating sender against whitelist. Identifiers: {all_sender_ids}")
 
             def is_match(whitelisted_sender: str) -> bool:
                 if not whitelisted_sender:
                     return False
-                candidates = [sender_identifier, sender_display_name, *alternate_identifiers]
                 return any(
                     (whitelisted_sender in candidate) if candidate else False
-                    for candidate in candidates
+                    for candidate in all_sender_ids
                 )
 
             is_whitelisted = any(is_match(whitelisted_sender) for whitelisted_sender in self.whitelist)
-            if not is_whitelisted:
-                console_log(f"INSTANCE ({user_id}): Sender '{message.sender.identifier}' not in whitelist. Ignoring.")
+
+            if is_whitelisted:
+                # Find which whitelisted entry caused the match for better logging
+                matched_by = next((ws for ws in self.whitelist if is_match(ws)), "unknown")
+                console_log(f"INSTANCE ({user_id}): Sender is whitelisted (matched by '{matched_by}'). Processing message.")
+            else:
+                console_log(f"INSTANCE ({user_id}): Sender not in whitelist. Ignoring message.")
                 return
 
         if not self.chatbot_model or not self.provider_instance:

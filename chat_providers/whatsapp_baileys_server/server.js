@@ -428,21 +428,25 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 messageContent = `[User sent a non-text message: ${messageType}]`;
             }
 
-            const senderId = isGroup ? (msg.participant || msg.key.participant) : msg.key.remoteJid;
-            const senderPn = msg?.key?.senderPn || msg?.messageKey?.senderPn || msg?.key?.senderJid || null;
-            if (senderId && senderId.endsWith('@lid') && senderPn) {
+            const tempId = isGroup ? (msg.participant || msg.key.participant) : msg.key.remoteJid;
+            let permanentId = msg?.key?.senderPn || msg?.messageKey?.senderPn || msg?.key?.senderJid || null;
+
+            if (tempId && tempId.endsWith('@lid') && permanentId) {
                 if (!session.lidCache) session.lidCache = {};
-                session.lidCache[senderId] = senderPn;
-                console.log(`[${userId}] Cached LID mapping: ${senderId} -> ${senderPn}`);
+                session.lidCache[tempId] = permanentId;
+                console.log(`[${userId}] Cached LID mapping: ${tempId} -> ${permanentId}`);
             }
-            if (!senderPn && !isGroup) {
+
+            // Attempt to normalize the remoteJid if no permanentId is found
+            if (!permanentId && !isGroup) {
                 const normalizedRemote = jidNormalizedUser?.(msg.key.remoteJid);
                 if (normalizedRemote && normalizedRemote !== msg.key.remoteJid) {
-                    msg.messageKey = msg.messageKey || {};
-                    msg.messageKey.senderPn = normalizedRemote;
+                    permanentId = normalizedRemote; // Treat the normalized JID as a permanentId
                 }
             }
-            const senderName = msg.pushName || session.contactsCache[senderId]?.name || null;
+
+            const primaryIdentifier = permanentId || tempId;
+            const senderName = msg.pushName || session.contactsCache[tempId]?.name || session.contactsCache[primaryIdentifier]?.name || null;
 
             let groupInfo = null;
             if (isGroup) {
@@ -454,21 +458,30 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 }
             }
 
-            const alternateIdentifiers = collectSenderIdentifiers(msg, senderId);
-            if (senderPn && !alternateIdentifiers.includes(senderPn)) {
-                alternateIdentifiers.push(senderPn);
-            }
+            // Use a Set to automatically handle duplicates
+            const alternateIdentifiersSet = new Set();
+            // Add all potential identifiers
+            [
+                tempId,
+                permanentId,
+                msg?.key?.remoteJid,
+                msg?.participant,
+                msg?.key?.participant,
+                msg?.key?.senderJid,
+                msg?.key?.participantPn
+            ].forEach(id => {
+                if (id) addIdentifierVariant(alternateIdentifiersSet, id);
+            });
 
-            const participantPn = msg?.key?.participantPn;
-            if (participantPn && !alternateIdentifiers.includes(participantPn)) {
-                alternateIdentifiers.push(participantPn);
-            }
+            // Remove the primary identifier from the set of alternates
+            alternateIdentifiersSet.delete(primaryIdentifier);
+            const alternateIdentifiers = Array.from(alternateIdentifiersSet);
 
-            console.log(`[${userId}] Derived alternate identifiers:`, alternateIdentifiers);
+            console.log(`[${userId}] Primary: ${primaryIdentifier}, Alternates: [${alternateIdentifiers.join(', ')}]`);
 
             return {
                 provider_message_id: msg.key.id,
-                sender: senderId,
+                sender: primaryIdentifier,
                 display_name: senderName,
                 message: messageContent,
                 timestamp: new Date().toISOString(),
