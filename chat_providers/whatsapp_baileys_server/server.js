@@ -95,12 +95,6 @@ const addIdentifierVariant = (set, value) => {
         return;
     }
     set.add(value);
-    if (value.includes('@')) {
-        const bare = value.split('@')[0];
-        if (bare) {
-            set.add(bare);
-        }
-    }
     try {
         const normalized = jidNormalizedUser(value);
         if (normalized) {

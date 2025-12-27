@@ -224,8 +224,10 @@ class ChatbotInstance:
             if self.whitelist_group:
                 group = message.group
                 all_identifiers = [group.identifier, group.display_name]
+                console_log(f"INSTANCE ({user_id}): Evaluating group '{group.display_name}' against group whitelist. Identifiers: {all_identifiers}, Whitelist: {self.whitelist_group}")
 
                 matching_identifier = None
+                matching_whitelist_entry = None
                 is_whitelisted = False
 
                 for whitelisted_group in self.whitelist_group:
@@ -235,20 +237,23 @@ class ChatbotInstance:
                         if identifier and whitelisted_group in identifier:
                             is_whitelisted = True
                             matching_identifier = identifier
+                            matching_whitelist_entry = whitelisted_group
                             break
                     if is_whitelisted:
                         break
 
                 if is_whitelisted:
-                    console_log(f"INSTANCE ({user_id}): Group '{group.display_name}' ({matching_identifier}) is in group whitelist. Processing message.")
+                    console_log(f"INSTANCE ({user_id}): Group whitelist check passed for group '{group.display_name}'. Identifier '{matching_identifier}' matched whitelist entry '{matching_whitelist_entry}'.")
                 else:
-                    console_log(f"INSTANCE ({user_id}): Group '{group.display_name}' not in group whitelist. Checked identifiers: {all_identifiers}. Ignoring.")
+                    console_log(f"INSTANCE ({user_id}): Group '{group.display_name}' not in group whitelist. Ignoring.")
                     return
         elif self.whitelist:
             sender = message.sender
             all_identifiers = [sender.identifier] + getattr(sender, 'alternate_identifiers', [])
+            console_log(f"INSTANCE ({user_id}): Evaluating sender '{sender.display_name}' against direct message whitelist. Identifiers: {all_identifiers}, Whitelist: {self.whitelist}")
 
             matching_identifier = None
+            matching_whitelist_entry = None
             is_whitelisted = False
 
             for whitelisted_sender in self.whitelist:
@@ -258,14 +263,15 @@ class ChatbotInstance:
                     if identifier and whitelisted_sender in identifier:
                         is_whitelisted = True
                         matching_identifier = identifier
+                        matching_whitelist_entry = whitelisted_sender
                         break
                 if is_whitelisted:
                     break
 
             if is_whitelisted:
-                console_log(f"INSTANCE ({user_id}): Sender '{sender.display_name}' ({matching_identifier}) is in whitelist. Processing message.")
+                console_log(f"INSTANCE ({user_id}): Whitelist check passed for sender '{sender.display_name}'. Identifier '{matching_identifier}' matched whitelist entry '{matching_whitelist_entry}'.")
             else:
-                console_log(f"INSTANCE ({user_id}): Sender '{sender.display_name}' not in whitelist. Checked identifiers: {all_identifiers}. Ignoring.")
+                console_log(f"INSTANCE ({user_id}): Sender '{sender.display_name}' not in whitelist. Ignoring.")
                 return
 
         if not self.chatbot_model or not self.provider_instance:
