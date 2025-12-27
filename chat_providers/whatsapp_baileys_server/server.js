@@ -445,11 +445,12 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 }
             }
 
-            // Cache the pushName whenever it's available
+            // Cache the pushName whenever it's available, keyed by the permanent JID if possible
+            const cacheKey = senderPn || senderId;
             if (msg.pushName) {
-                session.pushNameCache[senderId] = msg.pushName;
+                session.pushNameCache[cacheKey] = msg.pushName;
             }
-            const senderName = msg.pushName || session.pushNameCache[senderId] || session.contactsCache[senderId]?.name || null;
+            const senderName = msg.pushName || session.pushNameCache[senderId] || session.pushNameCache[senderPn] || session.contactsCache[senderId]?.name || null;
 
             let groupInfo = null;
             if (isGroup) {
