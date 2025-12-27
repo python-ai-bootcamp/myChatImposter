@@ -448,7 +448,9 @@ async function connectToWhatsApp(userId, vendorConfig) {
             if (isGroup) {
                 try {
                     const metadata = await sock.groupMetadata(msg.key.remoteJid);
+                    console.log("entire metadata object::\n----------", metadata, "\n--------");
                     groupInfo = { id: msg.key.remoteJid, name: metadata.subject };
+                    console.log("entire groupInfo object::\n----------", groupInfo, "\n--------");
                 } catch (e) {
                     groupInfo = { id: msg.key.remoteJid, name: null };
                 }

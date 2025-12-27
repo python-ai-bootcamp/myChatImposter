@@ -39,12 +39,7 @@ class FileLogger:
             os.path.join(self.log_directory, "all_providers.log")
         )
 
-        # Specific logger for this user/provider instance
-        log_filename = f"{self.provider_name}_{self.user_id}.log"
-        self.specific_logger = self._create_logger(
-            f"{self.provider_name}_{self.user_id}",
-            os.path.join(self.log_directory, log_filename)
-        )
+        pass
 
     def _create_logger(self, name: str, log_file: str) -> logging.Logger:
         logger = logging.getLogger(name)
@@ -68,4 +63,3 @@ class FileLogger:
     def log(self, message: str):
         # Log to both the general and the specific log file
         self.all_providers_logger.info(f"[{self.provider_name.upper()}:{self.user_id}] {message}")
-        self.specific_logger.info(message)
