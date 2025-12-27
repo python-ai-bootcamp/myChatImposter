@@ -278,6 +278,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         sessions[userId].connectionStatus = 'connecting';
         sessions[userId].retryCount = 0;
         sessions[userId].lidCache = {}; // Also reset cache on reconnect
+        sessions[userId].pushNameCache = {}; // Reset pushName cache
         resetHttp405Tracker(sessions[userId]);
     } else {
         console.log(`[${userId}] Creating new session object.`);
@@ -287,6 +288,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
             connectionStatus: 'connecting',
             contactsCache: {},
             lidCache: {},
+            pushNameCache: {},
             vendorConfig: vendorConfig,
             retryCount: 0,
             http405Tracker: createHttp405Tracker(),
@@ -442,13 +444,21 @@ async function connectToWhatsApp(userId, vendorConfig) {
                     msg.messageKey.senderPn = normalizedRemote;
                 }
             }
-            const senderName = msg.pushName || session.contactsCache[senderId]?.name || null;
+
+            // Cache the pushName whenever it's available, keyed by the permanent JID if possible
+            const cacheKey = senderPn || senderId;
+            if (msg.pushName) {
+                session.pushNameCache[cacheKey] = msg.pushName;
+            }
+            const senderName = msg.pushName || session.pushNameCache[senderId] || session.pushNameCache[senderPn] || session.contactsCache[senderId]?.name || null;
 
             let groupInfo = null;
             if (isGroup) {
                 try {
                     const metadata = await sock.groupMetadata(msg.key.remoteJid);
+                    console.log("entire metadata object::\n----------", metadata, "\n--------");
                     groupInfo = { id: msg.key.remoteJid, name: metadata.subject };
+                    console.log("entire groupInfo object::\n----------", groupInfo, "\n--------");
                 } catch (e) {
                     groupInfo = { id: msg.key.remoteJid, name: null };
                 }

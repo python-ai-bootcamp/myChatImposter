@@ -138,6 +138,7 @@ class ChatbotInstance:
         self.provider_instance: Optional[Any] = None
         self.ingester: Optional[CorrespondenceIngester] = None
         self.whitelist: list = []
+        self.whitelist_group: list = []
         self.mode: str = "fully_functional"  # Default mode
         self.warnings: List[str] = []
         self._queues_collection = queues_collection
@@ -154,6 +155,7 @@ class ChatbotInstance:
 
         # 1. Initialize Queue (Essential)
         self.whitelist = self.config.respond_to_whitelist
+        self.whitelist_group = self.config.respond_to_whitelist_group
         chat_provider_config = self.config.chat_provider_config
         provider_name = chat_provider_config.provider_name
         self.user_queues_manager = UserQueuesManager(
@@ -218,7 +220,31 @@ class ChatbotInstance:
         if message.source == 'bot':
             return
 
-        if self.whitelist:
+        if message.group:
+            if self.whitelist_group:
+                group = message.group
+                all_identifiers = [group.identifier, group.display_name]
+
+                matching_identifier = None
+                is_whitelisted = False
+
+                for whitelisted_group in self.whitelist_group:
+                    if not whitelisted_group:
+                        continue
+                    for identifier in all_identifiers:
+                        if identifier and whitelisted_group in identifier:
+                            is_whitelisted = True
+                            matching_identifier = identifier
+                            break
+                    if is_whitelisted:
+                        break
+
+                if is_whitelisted:
+                    console_log(f"INSTANCE ({user_id}): Group '{group.display_name}' ({matching_identifier}) is in group whitelist. Processing message.")
+                else:
+                    console_log(f"INSTANCE ({user_id}): Group '{group.display_name}' not in group whitelist. Checked identifiers: {all_identifiers}. Ignoring.")
+                    return
+        elif self.whitelist:
             sender = message.sender
             all_identifiers = [sender.identifier] + getattr(sender, 'alternate_identifiers', [])
 
@@ -262,7 +288,8 @@ class ChatbotInstance:
                     content=response_text,
                     sender=bot_sender,
                     source='bot',
-                    originating_time=int(time.time() * 1000)
+                    originating_time=int(time.time() * 1000),
+                    group=message.group  # Carry over the group object to the bot's response
                 )
         except Exception as e:
             console_log(f"Error in callback for user {user_id}: {e}")

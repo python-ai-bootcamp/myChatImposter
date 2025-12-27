@@ -143,10 +143,16 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 continue
 
             # Determine the correspondent ID (group ID or sender ID)
-            correspondent_id = group_info['id'] if group_info else msg['sender']
+            group = Group(identifier=group_info['id'], display_name=group_info.get('name') or group_info['id']) if group_info else None
+
+            if group:
+                correspondent_id = group.identifier
+                primary_identifier = msg['sender'] # The user who sent the message in the group
+            else:
+                correspondent_id = msg['sender']
+                primary_identifier = msg['sender']
 
             # Prepare identifiers
-            primary_identifier = msg['sender']
             all_alternates = msg.get('alternate_identifiers') or []
             if not isinstance(all_alternates, list):
                 all_alternates = []
@@ -161,13 +167,12 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             # If a permanent JID is found, make it the primary identifier
             # and ensure the original sender ID (LID) is in the alternates list.
             if permanent_jid:
+                if not group: # Only override correspondent_id if it's not a group chat
+                    correspondent_id = permanent_jid
                 primary_identifier = permanent_jid
                 # Add the original sender ID to alternates if it's not already there
                 if msg['sender'] not in all_alternates:
                     all_alternates.append(msg['sender'])
-
-            # The correspondent_id should be the primary, permanent identifier
-            correspondent_id = primary_identifier
 
             # Create the Sender object with the corrected identifiers
             sender = Sender(
@@ -175,7 +180,6 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 display_name=msg.get('display_name', msg['sender']),
                 alternate_identifiers=all_alternates
             )
-            group = Group(identifier=group_info['id'], display_name=group_info.get('name') or group_info['id']) if group_info else None
 
             queues_manager.add_message(
                 correspondent_id=correspondent_id,
