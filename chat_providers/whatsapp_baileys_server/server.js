@@ -114,9 +114,13 @@ const addIdentifierVariant = (set, value) => {
 const collectSenderIdentifiers = (msg, primaryIdentifier) => {
     const identifiers = new Set();
     addIdentifierVariant(identifiers, primaryIdentifier);
+    const isGroup = msg?.key?.remoteJid?.endsWith('@g.us');
+
     const potentialValues = [
-        msg?.key?.remoteJid,
-        msg?.messageKey?.remoteJid,
+        // remoteJid is the correspondent ID. Only add if not a group.
+        isGroup ? null : msg?.key?.remoteJid,
+        isGroup ? null : msg?.messageKey?.remoteJid,
+        // participant is the sender in a group context
         msg?.participant,
         msg?.key?.participant,
         msg?.messageKey?.participant,
@@ -125,6 +129,16 @@ const collectSenderIdentifiers = (msg, primaryIdentifier) => {
         msg?.messageKey?.senderPn,
     ];
     potentialValues.forEach((value) => addIdentifierVariant(identifiers, value));
+    return Array.from(identifiers).filter(Boolean);
+};
+
+const collectGroupIdentifiers = (groupInfo) => {
+    if (!groupInfo) {
+        return [];
+    }
+    const identifiers = new Set();
+    addIdentifierVariant(identifiers, groupInfo.id);
+    addIdentifierVariant(identifiers, groupInfo.name);
     return Array.from(identifiers).filter(Boolean);
 };
 
@@ -456,25 +470,21 @@ async function connectToWhatsApp(userId, vendorConfig) {
             if (isGroup) {
                 try {
                     const metadata = await sock.groupMetadata(msg.key.remoteJid);
-                    console.log("entire metadata object::\n----------", metadata, "\n--------");
                     groupInfo = { id: msg.key.remoteJid, name: metadata.subject };
-                    console.log("entire groupInfo object::\n----------", groupInfo, "\n--------");
+                    groupInfo.alternate_identifiers = collectGroupIdentifiers(groupInfo);
                 } catch (e) {
                     groupInfo = { id: msg.key.remoteJid, name: null };
+                    groupInfo.alternate_identifiers = collectGroupIdentifiers(groupInfo);
                 }
             }
 
-            const alternateIdentifiers = collectSenderIdentifiers(msg, senderId);
-            if (senderPn && !alternateIdentifiers.includes(senderPn)) {
-                alternateIdentifiers.push(senderPn);
-            }
+            const alternateIdentifiers = new Set(collectSenderIdentifiers(msg, senderId));
+            addIdentifierVariant(alternateIdentifiers, senderPn);
+            addIdentifierVariant(alternateIdentifiers, msg?.key?.participantPn);
+            addIdentifierVariant(alternateIdentifiers, senderName); // Add display name
 
-            const participantPn = msg?.key?.participantPn;
-            if (participantPn && !alternateIdentifiers.includes(participantPn)) {
-                alternateIdentifiers.push(participantPn);
-            }
-
-            console.log(`[${userId}] Derived alternate identifiers:`, alternateIdentifiers);
+            const finalSenderIdentifiers = Array.from(alternateIdentifiers).filter(Boolean);
+            console.log(`[${userId}] Derived alternate identifiers:`, finalSenderIdentifiers);
 
             return {
                 provider_message_id: msg.key.id,
@@ -483,7 +493,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 message: messageContent,
                 timestamp: new Date().toISOString(),
                 group: groupInfo,
-                alternate_identifiers: alternateIdentifiers,
+                alternate_identifiers: finalSenderIdentifiers,
             };
         });
 
