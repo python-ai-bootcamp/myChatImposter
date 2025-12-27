@@ -288,7 +288,8 @@ class ChatbotInstance:
                     content=response_text,
                     sender=bot_sender,
                     source='bot',
-                    originating_time=int(time.time() * 1000)
+                    originating_time=int(time.time() * 1000),
+                    group=message.group  # Carry over the group object to the bot's response
                 )
         except Exception as e:
             console_log(f"Error in callback for user {user_id}: {e}")

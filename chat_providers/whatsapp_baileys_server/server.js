@@ -278,6 +278,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         sessions[userId].connectionStatus = 'connecting';
         sessions[userId].retryCount = 0;
         sessions[userId].lidCache = {}; // Also reset cache on reconnect
+        sessions[userId].pushNameCache = {}; // Reset pushName cache
         resetHttp405Tracker(sessions[userId]);
     } else {
         console.log(`[${userId}] Creating new session object.`);
@@ -287,6 +288,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
             connectionStatus: 'connecting',
             contactsCache: {},
             lidCache: {},
+            pushNameCache: {},
             vendorConfig: vendorConfig,
             retryCount: 0,
             http405Tracker: createHttp405Tracker(),
@@ -442,7 +444,12 @@ async function connectToWhatsApp(userId, vendorConfig) {
                     msg.messageKey.senderPn = normalizedRemote;
                 }
             }
-            const senderName = msg.pushName || session.contactsCache[senderId]?.name || null;
+
+            // Cache the pushName whenever it's available
+            if (msg.pushName) {
+                session.pushNameCache[senderId] = msg.pushName;
+            }
+            const senderName = msg.pushName || session.pushNameCache[senderId] || session.contactsCache[senderId]?.name || null;
 
             let groupInfo = null;
             if (isGroup) {
