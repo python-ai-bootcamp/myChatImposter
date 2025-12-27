@@ -219,24 +219,27 @@ class ChatbotInstance:
             return
 
         if self.whitelist:
-            sender_identifier = message.sender.identifier
-            sender_display_name = message.sender.display_name
-            alternate_identifiers = []
-            if hasattr(message.sender, 'alternate_identifiers') and isinstance(message.sender.alternate_identifiers, list):
-                alternate_identifiers = [value for value in message.sender.alternate_identifiers if isinstance(value, str)]
+            sender = message.sender
+            all_identifiers = [sender.identifier] + getattr(sender, 'alternate_identifiers', [])
 
-            def is_match(whitelisted_sender: str) -> bool:
+            matching_identifier = None
+            is_whitelisted = False
+
+            for whitelisted_sender in self.whitelist:
                 if not whitelisted_sender:
-                    return False
-                candidates = [sender_identifier, sender_display_name, *alternate_identifiers]
-                return any(
-                    (whitelisted_sender in candidate) if candidate else False
-                    for candidate in candidates
-                )
+                    continue
+                for identifier in all_identifiers:
+                    if identifier and whitelisted_sender in identifier:
+                        is_whitelisted = True
+                        matching_identifier = identifier
+                        break
+                if is_whitelisted:
+                    break
 
-            is_whitelisted = any(is_match(whitelisted_sender) for whitelisted_sender in self.whitelist)
-            if not is_whitelisted:
-                console_log(f"INSTANCE ({user_id}): Sender '{message.sender.identifier}' not in whitelist. Ignoring.")
+            if is_whitelisted:
+                console_log(f"INSTANCE ({user_id}): Sender '{sender.display_name}' ({matching_identifier}) is in whitelist. Processing message.")
+            else:
+                console_log(f"INSTANCE ({user_id}): Sender '{sender.display_name}' not in whitelist. Checked identifiers: {all_identifiers}. Ignoring.")
                 return
 
         if not self.chatbot_model or not self.provider_instance:

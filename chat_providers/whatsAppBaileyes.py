@@ -145,21 +145,35 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             # Determine the correspondent ID (group ID or sender ID)
             correspondent_id = group_info['id'] if group_info else msg['sender']
 
-            alternate_identifiers = msg.get('alternate_identifiers') or []
-            if not isinstance(alternate_identifiers, list):
-                alternate_identifiers = []
+            # Prepare identifiers
+            primary_identifier = msg['sender']
+            all_alternates = msg.get('alternate_identifiers') or []
+            if not isinstance(all_alternates, list):
+                all_alternates = []
 
-            # Prefer the permanent ID (@s.whatsapp.net) if available
-            for alt_id in alternate_identifiers:
+            # Find a permanent JID (@s.whatsapp.net) to use as the primary identifier
+            permanent_jid = None
+            for alt_id in all_alternates:
                 if alt_id.endswith('@s.whatsapp.net'):
-                    correspondent_id = alt_id
+                    permanent_jid = alt_id
                     break
-                alternate_identifiers = []
 
+            # If a permanent JID is found, make it the primary identifier
+            # and ensure the original sender ID (LID) is in the alternates list.
+            if permanent_jid:
+                primary_identifier = permanent_jid
+                # Add the original sender ID to alternates if it's not already there
+                if msg['sender'] not in all_alternates:
+                    all_alternates.append(msg['sender'])
+
+            # The correspondent_id should be the primary, permanent identifier
+            correspondent_id = primary_identifier
+
+            # Create the Sender object with the corrected identifiers
             sender = Sender(
-                identifier=msg['sender'],
+                identifier=primary_identifier,
                 display_name=msg.get('display_name', msg['sender']),
-                alternate_identifiers=alternate_identifiers
+                alternate_identifiers=all_alternates
             )
             group = Group(identifier=group_info['id'], display_name=group_info.get('name') or group_info['id']) if group_info else None
 
