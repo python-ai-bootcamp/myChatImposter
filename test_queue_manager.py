@@ -1,6 +1,6 @@
 import unittest
 import os
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from pymongo import DESCENDING
 from queue_manager import CorrespondentQueue, UserQueuesManager, Sender
 from config_models import QueueConfig
@@ -201,11 +201,13 @@ class TestUserQueuesManager(unittest.TestCase):
     def setUp(self):
         self.mock_queues_collection = MagicMock()
         self.queue_config = QueueConfig(max_messages=10, max_characters=1000, max_days=1, max_characters_single_message=100)
+        self.mock_loop = MagicMock()
         self.manager = UserQueuesManager(
             user_id='manager_user',
             provider_name='manager_vendor',
             queue_config=self.queue_config,
-            queues_collection=self.mock_queues_collection
+            queues_collection=self.mock_queues_collection,
+            main_loop=self.mock_loop
         )
 
     def test_get_or_create_queue(self):
@@ -244,6 +246,8 @@ class TestUserQueuesManager(unittest.TestCase):
     def test_callback_registration(self):
         """Test that callbacks are registered with all queues, including future ones."""
         mock_callback = MagicMock()
+        mock_coroutine = MagicMock()
+        mock_callback.return_value = mock_coroutine
 
         # Register callback before any queues are created
         self.manager.register_callback(mock_callback)
@@ -254,14 +258,18 @@ class TestUserQueuesManager(unittest.TestCase):
 
         # Trigger a message
         sender = Sender(identifier='test_sender', display_name='Test Sender')
-        self.manager.add_message('cor1', "Test message", sender, 'user')
+        with patch('asyncio.run_coroutine_threadsafe') as mock_run_coroutine:
+            self.manager.add_message('cor1', "Test message", sender, 'user')
 
-        # Callback should have been called with user_id, correspondent_id, and the message
-        mock_callback.assert_called_once()
-        args, _ = mock_callback.call_args
-        self.assertEqual(args[0], 'manager_user')
-        self.assertEqual(args[1], 'cor1')
-        self.assertEqual(args[2].content, "Test message")
+            # 1. Assert that our mock callback was called to create the coroutine
+            mock_callback.assert_called_once()
+            args, _ = mock_callback.call_args
+            self.assertEqual(args[0], 'manager_user')
+            self.assertEqual(args[1], 'cor1')
+            self.assertEqual(args[2].content, "Test message")
+
+            # 2. Assert that the created coroutine was passed to run_coroutine_threadsafe
+            mock_run_coroutine.assert_called_once_with(mock_coroutine, self.mock_loop)
 
         # Create a second queue, it should also have the callback
         queue2 = self.manager.get_or_create_queue('cor2')

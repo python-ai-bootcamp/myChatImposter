@@ -129,10 +129,11 @@ class CorrespondenceIngester:
 
 class ChatbotInstance:
     """Manages all components for a single chatbot instance."""
-    def __init__(self, config: UserConfiguration, on_session_end: Optional[Callable[[str], None]] = None, queues_collection: Optional[Collection] = None):
+    def __init__(self, config: UserConfiguration, on_session_end: Optional[Callable[[str], None]] = None, queues_collection: Optional[Collection] = None, main_loop = None):
         self.user_id = config.user_id
         self.config = config
         self.on_session_end = on_session_end
+        self.main_loop = main_loop
         self.user_queues_manager: Optional[UserQueuesManager] = None
         self.chatbot_model: Optional[ChatbotModel] = None
         self.provider_instance: Optional[Any] = None
@@ -162,7 +163,8 @@ class ChatbotInstance:
             user_id=self.user_id,
             provider_name=provider_name,
             queue_config=self.config.queue_config,
-            queues_collection=self._queues_collection
+            queues_collection=self._queues_collection,
+            main_loop=self.main_loop
         )
         console_log(f"INSTANCE ({self.user_id}): Initialized queue manager.")
 
@@ -213,7 +215,7 @@ class ChatbotInstance:
             self.mode = "collection_only"
             console_log(f"INSTANCE_WARNING ({self.user_id}): No 'llm_provider_config' found. Instance will run in collection-only mode.")
 
-    def _message_callback(self, user_id: str, correspondent_id: str, message: Message):
+    async def _message_callback(self, user_id: str, correspondent_id: str, message: Message):
         """Processes a new message from a correspondent's queue."""
         console_log(f"INSTANCE ({user_id}/{correspondent_id}): Callback received for message {message.id}.")
 
@@ -285,7 +287,7 @@ class ChatbotInstance:
             # If the message is from a group, reply to the group. Otherwise, reply to the sender.
             # If the message is from a group, reply to the group. Otherwise, reply to the sender.
             recipient = message.group.identifier if message.group else message.sender.identifier
-            self.provider_instance.sendMessage(recipient, response_text)
+            await self.provider_instance.sendMessage(recipient, response_text)
 
             bot_sender = Sender(identifier=f"bot_{user_id}", display_name=f"Bot ({user_id})")
             if self.user_queues_manager:
@@ -302,7 +304,7 @@ class ChatbotInstance:
             console_log(f"Error in callback for user {user_id}: {e}")
 
 
-    def start(self):
+    async def start(self):
         """
         Wires up and starts the instance.
         Raises an exception if essential components like the queue or provider are not initialized.
@@ -318,10 +320,10 @@ class ChatbotInstance:
         if self.ingester:
             self.ingester.start()
 
-        self.provider_instance.start_listening()
+        await self.provider_instance.start_listening()
         console_log(f"INSTANCE ({self.user_id}): System is running.")
 
-    def stop(self, cleanup_session: bool = False):
+    async def stop(self, cleanup_session: bool = False):
         """
         Stops the provider listener gracefully.
 
@@ -334,11 +336,11 @@ class ChatbotInstance:
 
         if self.provider_instance:
             console_log(f"INSTANCE ({self.user_id}): Shutting down... (cleanup={cleanup_session})")
-            self.provider_instance.stop_listening(cleanup_session=cleanup_session)
+            await self.provider_instance.stop_listening(cleanup_session=cleanup_session)
             console_log(f"INSTANCE ({self.user_id}): Shutdown complete.")
 
-    def get_status(self):
+    async def get_status(self):
         """Gets the connection status from the provider."""
         if self.provider_instance and hasattr(self.provider_instance, 'get_status'):
-            return self.provider_instance.get_status()
+            return await self.provider_instance.get_status()
         return {"status": "unknown", "message": "Provider does not support status checks."}

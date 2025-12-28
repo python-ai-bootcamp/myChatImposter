@@ -27,7 +27,7 @@ class DummyProvider(BaseChatProvider):
         if self.logger:
             self.logger.log("Initialized DummyProvider")
 
-    def start_listening(self):
+    async def start_listening(self):
         """
         Starts the message listening loop in a background thread.
         A real provider would establish a connection to a service here.
@@ -45,7 +45,7 @@ class DummyProvider(BaseChatProvider):
         if self.logger:
             self.logger.log("Started listening for messages.")
 
-    def stop_listening(self, cleanup_session: bool = False):
+    async def stop_listening(self, cleanup_session: bool = False):
         """Stops the message listening loop."""
         self.is_listening = False
         if self.thread and self.logger:

@@ -5,6 +5,7 @@ import logging
 import time
 import os
 import json
+import asyncio
 from pathlib import Path
 import dataclasses
 from fastapi import FastAPI, HTTPException, Body, Request
@@ -218,7 +219,7 @@ async def get_all_configurations_status():
                 if user_id_from_config in active_users:
                     instance_id = active_users[user_id_from_config]
                     instance = chatbot_instances.get(instance_id)
-                    status_info = await run_in_threadpool(instance.get_status) if instance else {"status": "error"}
+                    status_info = await instance.get_status() if instance else {"status": "error"}
                     statuses.append({"user_id": user_id_from_config, "status": status_info.get('status', 'unknown')})
                 else:
                     statuses.append({"user_id": user_id_from_config, "status": "disconnected"})
@@ -349,18 +350,10 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
     console_log(f"API: Received request to create instance {instance_id} for user {user_id}")
 
     try:
-        def blocking_init_and_start(current_config, current_instance_id) -> ChatbotInstance:
-            """
-            This function contains the synchronous, blocking code.
-            It returns the created instance so its mode can be inspected.
-            """
-            instance = ChatbotInstance(config=current_config, on_session_end=remove_active_user, queues_collection=queues_collection)
-            chatbot_instances[current_instance_id] = instance
-            instance.start()
-            return instance
-
-        # Run the blocking code in a thread pool to avoid blocking the event loop
-        instance = await run_in_threadpool(blocking_init_and_start, config, instance_id)
+        loop = asyncio.get_running_loop()
+        instance = ChatbotInstance(config=config, on_session_end=remove_active_user, queues_collection=queues_collection, main_loop=loop)
+        chatbot_instances[instance_id] = instance
+        await instance.start()
 
         # Add the new instance to our active user tracking
         active_users[user_id] = instance_id
@@ -399,7 +392,7 @@ async def get_chatbot_status(user_id: str):
         raise HTTPException(status_code=500, detail="Internal server error: instance not found for active user.")
 
     try:
-        status = instance.get_status()
+        status = await instance.get_status()
         return status
     except Exception as e:
         console_log(f"API_ERROR: Failed to get status for instance {instance_id}: {e}")
@@ -456,11 +449,77 @@ async def unlink_chatbot(user_id: str):
 
     try:
         # Stop the instance and clean up the session data on the provider.
-        instance.stop(cleanup_session=True)
+        await instance.stop(cleanup_session=True)
         return {"status": "success", "message": f"Session for user '{user_id}' is being terminated and cleaned up."}
     except Exception as e:
         console_log(f"API_ERROR: Failed to stop instance for user '{user_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to stop instance: {e}")
+
+
+@app.post("/chatbot/{user_id}/reload")
+async def reload_chatbot(user_id: str):
+    """
+    Gracefully stops and restarts a chatbot instance to apply new configuration.
+    The session data is preserved to avoid having to re-link the provider.
+    """
+    if user_id not in active_users:
+        raise HTTPException(status_code=404, detail=f"No active session found for user_id '{user_id}' to reload.")
+
+    console_log(f"API: Received request to reload instance for user '{user_id}'.")
+
+    try:
+        # Step 1: Gracefully stop the current instance, preserving the session
+        instance_id = active_users[user_id]
+        instance = chatbot_instances.get(instance_id)
+        if instance:
+            await instance.stop(cleanup_session=False)
+            console_log(f"API: Gracefully stopped instance {instance_id} for user '{user_id}' for reload.")
+        else:
+            # Clean up the active_users entry if the instance is missing for some reason
+            remove_active_user(user_id)
+            raise HTTPException(status_code=500, detail="Internal server error: instance not found for active user.")
+
+
+        # Step 2: Fetch the latest configuration from the database
+        if configurations_collection is None:
+            raise HTTPException(status_code=503, detail="Database connection not available.")
+
+        db_config = await run_in_threadpool(configurations_collection.find_one, {"config_data.user_id": user_id})
+        if not db_config:
+            db_config = await run_in_threadpool(configurations_collection.find_one, {"config_data.0.user_id": user_id})
+
+        if not db_config:
+            raise HTTPException(status_code=404, detail="Configuration not found in database for reload.")
+
+        config_data = db_config.get("config_data")
+        if isinstance(config_data, list):
+            config_data = config_data[0] # Handle legacy array format
+
+        config = UserConfiguration.model_validate(config_data)
+
+
+        # Step 3: Create and start a new instance with the latest configuration
+        new_instance_id = str(uuid.uuid4())
+        console_log(f"API: Restarting instance for user {user_id} as {new_instance_id}")
+
+        loop = asyncio.get_running_loop()
+        new_instance = ChatbotInstance(config=config, on_session_end=remove_active_user, queues_collection=queues_collection, main_loop=loop)
+        chatbot_instances[new_instance_id] = new_instance
+        await new_instance.start()
+
+        # Update the active user tracking
+        active_users[user_id] = new_instance_id
+
+        console_log(f"API: Instance {new_instance_id} for user '{user_id}' has been successfully reloaded.")
+
+        return {"status": "success", "message": f"Chatbot for user '{user_id}' is being reloaded."}
+
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to reload instance for user '{user_id}': {e}")
+        # Attempt to clean up if the reload failed midway
+        if user_id in active_users:
+            del active_users[user_id]
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.on_event("shutdown")
@@ -474,7 +533,7 @@ def shutdown_event():
     for instance_id, instance in list(chatbot_instances.items()):
         console_log(f"API: Stopping instance {instance_id} for user '{instance.user_id}' (no cleanup)...")
         # We call stop() without cleanup to ensure sessions are persisted.
-        instance.stop(cleanup_session=False)
+        asyncio.run(instance.stop(cleanup_session=False))
         # Clean up the dictionaries
         if instance.user_id in active_users:
             del active_users[instance.user_id]

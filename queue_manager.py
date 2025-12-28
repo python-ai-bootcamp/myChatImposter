@@ -2,6 +2,7 @@ import time
 import os
 import sys
 import threading
+import asyncio
 from collections import deque
 from dataclasses import dataclass, field
 from typing import Optional, Callable, List
@@ -39,10 +40,11 @@ class Message:
         self.message_size = len(self.content)
 
 class CorrespondentQueue:
-    def __init__(self, user_id: str, provider_name: str, correspondent_id: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None):
+    def __init__(self, user_id: str, provider_name: str, correspondent_id: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None, main_loop = None):
         self.user_id = user_id
         self.provider_name = provider_name
         self.correspondent_id = correspondent_id
+        self.main_loop = main_loop
         self.max_messages = queue_config.max_messages
         self.max_characters = queue_config.max_characters
         self.max_characters_single_message = queue_config.max_characters_single_message
@@ -81,8 +83,10 @@ class CorrespondentQueue:
     def _trigger_callbacks(self, message: Message):
         """Trigger all registered callbacks with the new message."""
         for callback in self._callbacks:
-            # The callback itself will handle its own exceptions and logging
-            callback(self.user_id, self.correspondent_id, message)
+            if self.main_loop:
+                asyncio.run_coroutine_threadsafe(callback(self.user_id, self.correspondent_id, message), self.main_loop)
+            else:
+                console_log(f"QUEUE ERROR ({self.user_id}/{self.correspondent_id}): No main event loop provided to run async callback.")
 
     def _enforce_limits(self, new_message_size: int):
         """Evict old messages until the new message can be added."""
@@ -243,10 +247,11 @@ class CorrespondentQueue:
                 f.write(log_line)
 
 class UserQueuesManager:
-    def __init__(self, user_id: str, provider_name: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None):
+    def __init__(self, user_id: str, provider_name: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None, main_loop = None):
         self.user_id = user_id
         self.provider_name = provider_name
         self.queue_config = queue_config
+        self.main_loop = main_loop
         self.queues_collection = queues_collection
         self._queues: dict[str, CorrespondentQueue] = {}
         self._callbacks: List[Callable[[str, str, Message], None]] = []
@@ -261,7 +266,8 @@ class UserQueuesManager:
                     provider_name=self.provider_name,
                     correspondent_id=correspondent_id,
                     queue_config=self.queue_config,
-                    queues_collection=self.queues_collection
+                    queues_collection=self.queues_collection,
+                    main_loop=self.main_loop
                 )
                 # Register all existing manager-level callbacks to the new queue
                 for callback in self._callbacks:
