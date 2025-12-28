@@ -302,7 +302,7 @@ class ChatbotInstance:
             console_log(f"Error in callback for user {user_id}: {e}")
 
 
-    def start(self):
+    async def start(self):
         """
         Wires up and starts the instance.
         Raises an exception if essential components like the queue or provider are not initialized.
@@ -318,10 +318,10 @@ class ChatbotInstance:
         if self.ingester:
             self.ingester.start()
 
-        self.provider_instance.start_listening()
+        await self.provider_instance.start_listening()
         console_log(f"INSTANCE ({self.user_id}): System is running.")
 
-    def stop(self, cleanup_session: bool = False):
+    async def stop(self, cleanup_session: bool = False):
         """
         Stops the provider listener gracefully.
 
@@ -334,7 +334,7 @@ class ChatbotInstance:
 
         if self.provider_instance:
             console_log(f"INSTANCE ({self.user_id}): Shutting down... (cleanup={cleanup_session})")
-            self.provider_instance.stop_listening(cleanup_session=cleanup_session)
+            await self.provider_instance.stop_listening(cleanup_session=cleanup_session)
             console_log(f"INSTANCE ({self.user_id}): Shutdown complete.")
 
     def get_status(self):

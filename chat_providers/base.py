@@ -18,7 +18,7 @@ class BaseChatProvider(ABC):
         super().__init__()
 
     @abstractmethod
-    def start_listening(self):
+    async def start_listening(self):
         """
         Starts the provider's message listening process.
         This should be a non-blocking method (e.g., run in a separate thread).
@@ -26,7 +26,7 @@ class BaseChatProvider(ABC):
         pass
 
     @abstractmethod
-    def stop_listening(self):
+    async def stop_listening(self, cleanup_session: bool = False):
         """
         Stops the provider's message listening process gracefully.
         """

@@ -2,11 +2,14 @@ import time
 import threading
 import json
 import os
-import urllib.request
-import urllib.error
 import asyncio
-import websockets
+import json
+import os
+import threading
 from typing import Dict, Optional, Callable
+
+import httpx
+import websockets
 
 from queue_manager import UserQueuesManager, Sender, Group, Message
 from logging_lock import FileLogger
@@ -35,41 +38,38 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         self.base_url = os.environ.get("WHATSAPP_SERVER_URL", "http://localhost:9000")
         self.ws_url = self.base_url.replace("http", "ws")
 
+    async def _send_config_to_server(self):
+        """Sends the user-specific configuration to the Node.js server."""
         if self.logger:
             self.logger.log(f"Connecting to Node.js server at {self.base_url}")
-        self._send_config_to_server()
-
-    def _send_config_to_server(self):
-        """Sends the user-specific configuration to the Node.js server."""
         try:
             config_data = {
                 "userId": self.user_id,
                 "config": self.config.provider_config.model_dump()
             }
-            data = json.dumps(config_data).encode('utf-8')
-            req = urllib.request.Request(
-                f"{self.base_url}/initialize",
-                data=data,
-                headers={'Content-Type': 'application/json'},
-                method='POST'
-            )
-            with urllib.request.urlopen(req) as response:
-                if response.status == 200:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.base_url}/initialize",
+                    json=config_data,
+                    headers={'Content-Type': 'application/json'}
+                )
+                if response.status_code == 200:
                     if self.logger:
                         self.logger.log("Successfully sent configuration to Node.js server.")
                 else:
-                    body = response.read().decode('utf-8', 'backslashreplace')
                     if self.logger:
-                        self.logger.log(f"ERROR: Failed to send config. Status: {response.status}, Body: {body}")
+                        self.logger.log(f"ERROR: Failed to send config. Status: {response.status_code}, Body: {response.text}")
         except Exception as e:
             if self.logger:
                 self.logger.log(f"ERROR: Exception while sending configuration: {e}")
 
-    def start_listening(self):
+    async def start_listening(self):
         """Starts the message listening loop in a background thread."""
         if self.is_listening:
             if self.logger: self.logger.log("Already listening.")
             return
+
+        await self._send_config_to_server()
 
         self.is_listening = True
         self.thread = threading.Thread(target=self._run_listen_loop, daemon=True)
@@ -196,76 +196,74 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 provider_message_id=msg.get('provider_message_id')
             )
 
-    def stop_listening(self, cleanup_session: bool = False):
+    async def stop_listening(self, cleanup_session: bool = False):
         """Stops the message listening loop."""
         if self.logger: self.logger.log(f"Stopping... (cleanup={cleanup_session})")
 
         if self.stop_event and not self.stop_event.is_set():
             if self.logger: self.logger.log("Setting stop event for listener thread.")
-            self.loop.call_soon_threadsafe(self.stop_event.set)
+            if self.loop and self.loop.is_running():
+                 self.loop.call_soon_threadsafe(self.stop_event.set)
 
         if self.thread:
-            self.thread.join(timeout=5)
-            if self.thread.is_alive():
-                if self.logger: self.logger.log("WARN: WebSocket listener thread did not stop in time.")
-            else:
-                if self.logger: self.logger.log("WebSocket listener thread stopped.")
+            # We cannot join a daemon thread from an async function in a clean way.
+            # The graceful shutdown of the websocket is the important part.
+            # The thread will exit automatically.
+            pass
 
         if cleanup_session:
-            self._cleanup_server_session()
+            await self._cleanup_server_session()
 
         if self.on_session_end and not self.session_ended:
             self.session_ended = True
             self.on_session_end(self.user_id)
 
-    def _cleanup_server_session(self):
+    async def _cleanup_server_session(self):
         """Requests session cleanup on the Node.js server."""
         if self.logger: self.logger.log("Requesting session cleanup on Node.js server.")
         try:
-            req = urllib.request.Request(f"{self.base_url}/sessions/{self.user_id}", method='DELETE')
-            with urllib.request.urlopen(req) as response:
-                if response.status == 200:
+            async with httpx.AsyncClient() as client:
+                response = await client.delete(f"{self.base_url}/sessions/{self.user_id}")
+                if response.status_code == 200:
                     if self.logger: self.logger.log("Successfully requested session cleanup.")
         except Exception as e:
             if self.logger: self.logger.log(f"ERROR: Failed to request session cleanup: {e}")
 
-    def sendMessage(self, recipient: str, message: str):
+    async def sendMessage(self, recipient: str, message: str):
         """
         Sends a message back to the user via the Node.js server for a specific session.
         """
         if self.logger:
             self.logger.log(f"Sending reply to {recipient} ---> {message[:50]}...")
         try:
-            data = json.dumps({"recipient": recipient, "message": message}).encode('utf-8')
-            req = urllib.request.Request(
-                f"{self.base_url}/sessions/{self.user_id}/send",
-                data=data,
-                headers={'Content-Type': 'application/json'},
-                method='POST'
-            )
-            with urllib.request.urlopen(req) as response:
-                if response.status != 200:
-                    body = response.read().decode('utf-8', 'backslashreplace')
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.base_url}/sessions/{self.user_id}/send",
+                    json={"recipient": recipient, "message": message},
+                    headers={'Content-Type': 'application/json'}
+                )
+                if response.status_code != 200:
                     if self.logger:
-                        self.logger.log(f"ERROR: Failed to send message. Status: {response.status}, Body: {body}")
+                        self.logger.log(f"ERROR: Failed to send message. Status: {response.status_code}, Body: {response.text}")
         except Exception as e:
             if self.logger:
                 self.logger.log(f"ERROR: Exception while sending message: {e}")
 
-    def get_status(self) -> Dict:
+    async def get_status(self) -> Dict:
         """
         Gets the connection status from the Node.js server for a specific session.
         """
         try:
-            with urllib.request.urlopen(f"{self.base_url}/sessions/{self.user_id}/status", timeout=5) as response:
-                if response.status == 200:
-                    return json.loads(response.read().decode('utf-8'))
-                return {"status": "error", "message": f"Unexpected status code {response.status}"}
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
+            async with httpx.AsyncClient() as client:
+                response = await client.get(f"{self.base_url}/sessions/{self.user_id}/status", timeout=5)
+                if response.status_code == 200:
+                    return response.json()
+                return {"status": "error", "message": f"Unexpected status code {response.status_code}"}
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 404:
                 return {"status": "disconnected", "message": "Session not found on Node.js server."}
-            return {"status": "error", "message": f"HTTP Error {e.code}: {e.reason}"}
-        except urllib.error.URLError as e:
-            return {"status": "initializing", "message": f"Node.js server is not reachable: {e.reason}"}
+            return {"status": "error", "message": f"HTTP Error {e.response.status_code}: {e.response.text}"}
+        except httpx.RequestError as e:
+            return {"status": "initializing", "message": f"Node.js server is not reachable: {e}"}
         except Exception as e:
             return {"status": "error", "message": f"Exception while getting status: {e}"}
