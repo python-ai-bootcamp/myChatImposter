@@ -213,7 +213,7 @@ class ChatbotInstance:
             self.mode = "collection_only"
             console_log(f"INSTANCE_WARNING ({self.user_id}): No 'llm_provider_config' found. Instance will run in collection-only mode.")
 
-    def _message_callback(self, user_id: str, correspondent_id: str, message: Message):
+    async def _message_callback(self, user_id: str, correspondent_id: str, message: Message):
         """Processes a new message from a correspondent's queue."""
         console_log(f"INSTANCE ({user_id}/{correspondent_id}): Callback received for message {message.id}.")
 
@@ -285,7 +285,7 @@ class ChatbotInstance:
             # If the message is from a group, reply to the group. Otherwise, reply to the sender.
             # If the message is from a group, reply to the group. Otherwise, reply to the sender.
             recipient = message.group.identifier if message.group else message.sender.identifier
-            self.provider_instance.sendMessage(recipient, response_text)
+            await self.provider_instance.sendMessage(recipient, response_text)
 
             bot_sender = Sender(identifier=f"bot_{user_id}", display_name=f"Bot ({user_id})")
             if self.user_queues_manager:
