@@ -223,7 +223,7 @@ class ChatbotInstance:
         if message.group:
             if self.whitelist_group:
                 group = message.group
-                all_identifiers = [group.identifier, group.display_name]
+                all_identifiers = getattr(group, 'alternate_identifiers', [group.identifier])
 
                 matching_identifier = None
                 is_whitelisted = False
