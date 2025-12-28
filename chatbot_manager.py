@@ -226,6 +226,7 @@ class ChatbotInstance:
                 all_identifiers = [group.identifier, group.display_name]
                 console_log(f"INSTANCE ({user_id}): Evaluating group '{group.display_name}' against group whitelist. Identifiers: {all_identifiers}, Whitelist: {self.whitelist_group}")
 
+
                 matching_identifier = None
                 matching_whitelist_entry = None
                 is_whitelisted = False

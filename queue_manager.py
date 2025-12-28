@@ -21,6 +21,7 @@ class Sender:
 class Group:
     identifier: str
     display_name: str
+    alternate_identifiers: List[str] = field(default_factory=list)
 
 @dataclass
 class Message:

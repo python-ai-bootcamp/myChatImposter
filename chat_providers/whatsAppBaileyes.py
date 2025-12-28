@@ -143,7 +143,13 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 continue
 
             # Determine the correspondent ID (group ID or sender ID)
-            group = Group(identifier=group_info['id'], display_name=group_info.get('name') or group_info['id']) if group_info else None
+            group = None
+            if group_info:
+                group = Group(
+                    identifier=group_info['id'],
+                    display_name=group_info.get('name') or group_info['id'],
+                    alternate_identifiers=group_info.get('alternate_identifiers', [])
+                )
 
             if group:
                 correspondent_id = group.identifier
