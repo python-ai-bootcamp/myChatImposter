@@ -129,10 +129,11 @@ class CorrespondenceIngester:
 
 class ChatbotInstance:
     """Manages all components for a single chatbot instance."""
-    def __init__(self, config: UserConfiguration, on_session_end: Optional[Callable[[str], None]] = None, queues_collection: Optional[Collection] = None):
+    def __init__(self, config: UserConfiguration, on_session_end: Optional[Callable[[str], None]] = None, queues_collection: Optional[Collection] = None, main_loop = None):
         self.user_id = config.user_id
         self.config = config
         self.on_session_end = on_session_end
+        self.main_loop = main_loop
         self.user_queues_manager: Optional[UserQueuesManager] = None
         self.chatbot_model: Optional[ChatbotModel] = None
         self.provider_instance: Optional[Any] = None
@@ -162,7 +163,8 @@ class ChatbotInstance:
             user_id=self.user_id,
             provider_name=provider_name,
             queue_config=self.config.queue_config,
-            queues_collection=self._queues_collection
+            queues_collection=self._queues_collection,
+            main_loop=self.main_loop
         )
         console_log(f"INSTANCE ({self.user_id}): Initialized queue manager.")
 
