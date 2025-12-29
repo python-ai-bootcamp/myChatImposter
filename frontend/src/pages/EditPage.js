@@ -112,6 +112,7 @@ function EditPage() {
   const [jsonError, setJsonError] = useState(null);
   const [error, setError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [isLinked, setIsLinked] = useState(false);
 
   const isNew = location.state?.isNew;
 
@@ -167,6 +168,23 @@ function EditPage() {
       setJsonString(JSON.stringify(transformDataToAPI(formData), null, 2));
     }
   }, [formData]);
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+        try {
+            const response = await fetch(`/chatbot/${userId}/status`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.status && data.status.toLowerCase() === 'connected') {
+                    setIsLinked(true);
+                }
+            }
+        } catch (error) {
+            console.error("Failed to fetch user status:", error);
+        }
+    };
+    fetchStatus();
+  }, [userId]);
 
   const handleFormChange = (e) => {
     const newFormData = e.formData;
@@ -236,6 +254,50 @@ function EditPage() {
       setError(`Failed to save: ${err.message}`);
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleSaveAndReload = async () => {
+    setIsSaving(true);
+    setError(null);
+    try {
+        // First, save the configuration. We get the form data from the ref.
+        const apiDataFromUser = transformDataToAPI(formRef.current.state.formData);
+
+        if (!isNew && apiDataFromUser.user_id !== userId) {
+            throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
+        }
+
+        const finalApiData = { ...apiDataFromUser, user_id: userId };
+
+        const saveResponse = await fetch(`/api/configurations/${userId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify([finalApiData]),
+        });
+
+        if (!saveResponse.ok) {
+            const errorBody = await saveResponse.json();
+            throw new Error(errorBody.detail || 'Failed to save configuration.');
+        }
+
+        // If save is successful, then reload
+        const reloadResponse = await fetch(`/chatbot/${userId}/reload`, {
+            method: 'POST',
+        });
+
+        if (!reloadResponse.ok) {
+            const errorBody = await reloadResponse.json();
+            throw new Error(errorBody.detail || 'Failed to reload configuration.');
+        }
+
+        // If both are successful, navigate to the link page
+        navigate(`/link/${userId}`);
+
+    } catch (err) {
+        setError(`Failed to save and reload: ${err.message}`);
+    } finally {
+        setIsSaving(false);
     }
   };
 
@@ -373,6 +435,11 @@ function EditPage() {
           <button type="button" onClick={() => formRef.current.submit()} disabled={isSaving} style={{ marginRight: '10px' }}>
             {isSaving ? 'Saving...' : 'Save'}
           </button>
+          {isLinked && (
+            <button type="button" onClick={handleSaveAndReload} disabled={isSaving} style={{ marginRight: '10px' }}>
+              {isSaving ? 'Saving...' : 'Save & Reload'}
+            </button>
+          )}
           <button type="button" onClick={handleCancel}>
             Cancel
           </button>

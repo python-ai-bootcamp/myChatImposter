@@ -334,6 +334,12 @@ async function connectToWhatsApp(userId, vendorConfig) {
             session.currentQR = null;
             const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
 
+            if (session.isGracefulDisconnect) {
+                console.log(`[${userId}] Graceful disconnect detected. Skipping reconnect logic.`);
+                session.isGracefulDisconnect = false; // Reset the flag
+                return;
+            }
+
             const isPermanentDisconnection =
                 statusCode === DisconnectReason.loggedOut ||
                 statusCode === DisconnectReason.connectionReplaced ||
@@ -634,6 +640,31 @@ async function startServer() {
 
             console.log(`[WebSocket] Client connected for userId: ${userId}`);
             wsConnections[userId] = ws;
+
+            ws.on('message', async (message) => {
+                try {
+                    const data = JSON.parse(message);
+                    if (data.action === 'disconnect') {
+                        console.log(`[${userId}] Received disconnect command (cleanup: ${data.cleanup_session}).`);
+                        const session = sessions[userId];
+                        if (session && session.sock) {
+                            if (data.cleanup_session) {
+                                session.isUnlinking = true;
+                                await session.sock.logout();
+                                const deleteResult = await baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } });
+                                console.log(`[${userId}] Deleted ${deleteResult.deletedCount} auth entries from MongoDB.`);
+                                delete sessions[userId];
+                            } else {
+                                // Graceful disconnect without clearing session
+                                session.isGracefulDisconnect = true;
+                                session.sock.end(undefined);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error(`[WebSocket] Error processing message for userId ${userId}:`, e);
+                }
+            });
 
             ws.on('close', () => {
                 console.log(`[WebSocket] Client disconnected for userId: ${userId}`);
