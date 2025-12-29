@@ -4,6 +4,7 @@ import json
 import os
 import asyncio
 from typing import Dict, Optional, Callable
+from concurrent.futures import TimeoutError as FuturesTimeoutError
 
 import httpx
 import websockets
@@ -24,25 +25,17 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         self.thread = None
         self.loop = None
         self.stop_event = None
-        self.websocket = None  # Add a placeholder for the websocket connection
+        self.websocket: Optional[websockets.WebSocketClientProtocol] = None
         self.base_url = os.environ.get("WHATSAPP_SERVER_URL", "http://localhost:9000")
         self.ws_url = self.base_url.replace("http", "ws")
 
     async def _send_config_to_server(self):
         """Sends the user-specific configuration to the Node.js server."""
-        if self.logger:
-            self.logger.log(f"Connecting to Node.js server at {self.base_url}")
+        if self.logger: self.logger.log(f"Connecting to Node.js server at {self.base_url}")
         try:
-            config_data = {
-                "userId": self.user_id,
-                "config": self.config.provider_config.model_dump()
-            }
+            config_data = {"userId": self.user_id, "config": self.config.provider_config.model_dump()}
             async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    f"{self.base_url}/initialize",
-                    json=config_data,
-                    headers={'Content-Type': 'application/json'}
-                )
+                response = await client.post(f"{self.base_url}/initialize", json=config_data, headers={'Content-Type': 'application/json'})
                 if response.status_code == 200:
                     if self.logger: self.logger.log("Successfully sent configuration to Node.js server.")
                 else:
@@ -55,9 +48,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         if self.is_listening:
             if self.logger: self.logger.log("Already listening.")
             return
-
         await self._send_config_to_server()
-
         self.is_listening = True
         self.thread = threading.Thread(target=self._run_listen_loop, daemon=True)
         self.thread.start()
@@ -71,7 +62,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         try:
             self.loop.run_until_complete(self._listen(self.stop_event))
         finally:
-            self.websocket = None # Clear websocket on exit
+            self.websocket = None
             if self.logger: self.logger.log("Closing asyncio loop.")
             try:
                 tasks = asyncio.all_tasks(loop=self.loop)
@@ -83,6 +74,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             finally:
                 asyncio.set_event_loop(None)
                 self.loop.close()
+                if self.logger: self.logger.log("Listener thread event loop closed.")
+
 
     async def _listen(self, stop_event):
         """The actual WebSocket listening loop."""
@@ -100,6 +93,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                             continue
             except Exception as e:
                 if not stop_event.is_set():
+                    self.websocket = None
                     if isinstance(e, (websockets.exceptions.ConnectionClosed, ConnectionRefusedError, asyncio.TimeoutError)):
                         if self.logger: self.logger.log(f"WARN: WebSocket connection issue: {e}. Reconnecting in 5s...")
                         await asyncio.sleep(5)
@@ -111,9 +105,11 @@ class WhatsAppBaileysProvider(BaseChatProvider):
     def _process_ws_message(self, message: str):
         """Helper to process a single websocket message."""
         try:
-            messages = json.loads(message)
-            if self.logger: self.logger.log(f"Fetched {len(messages)} new message(s) via WebSocket.")
-            self._process_messages(messages)
+            data = json.loads(message)
+            if isinstance(data, list): # It's a list of messages
+                if self.logger: self.logger.log(f"Fetched {len(data)} new message(s) via WebSocket.")
+                self._process_messages(data)
+            # It could be a status update or other command in the future
         except json.JSONDecodeError:
             if self.logger: self.logger.log(f"ERROR: Could not decode JSON from WebSocket: {message}")
 
@@ -130,7 +126,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
             group = Group(identifier=group_info['id'], display_name=group_info.get('name') or group_info['id'], alternate_identifiers=group_info.get('alternate_identifiers', [])) if group_info else None
             correspondent_id = group.identifier if group else msg['sender']
-            primary_identifier = msg['sender'] if group else msg['sender']
+            primary_identifier = msg['sender']
 
             all_alternates = msg.get('alternate_identifiers') or []
             if not isinstance(all_alternates, list): all_alternates = []
@@ -146,31 +142,52 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
             queues_manager.add_message(correspondent_id=correspondent_id, content=msg['message'], sender=sender, source='user', group=group, provider_message_id=msg.get('provider_message_id'))
 
+    async def _send_disconnect_and_stop(self, cleanup_session: bool):
+        """Coroutine to be run on the listener's event loop to gracefully disconnect."""
+        if self.websocket and self.websocket.open:
+            try:
+                if self.logger: self.logger.log(f"Sending graceful disconnect message (cleanup={cleanup_session}).")
+                payload = json.dumps({"action": "disconnect", "cleanup_session": cleanup_session})
+                await self.websocket.send(payload)
+                await asyncio.sleep(0.5)  # Give it a moment to process
+            except Exception as e:
+                if self.logger: self.logger.log(f"WARN: Could not send disconnect message: {e}")
+        else:
+            if self.logger: self.logger.log("No active websocket to send disconnect message.")
+
+        if self.stop_event:
+            self.stop_event.set()
+
     async def stop_listening(self, cleanup_session: bool = False):
         """Stops the message listening loop."""
         if self.logger: self.logger.log(f"Stopping... (cleanup={cleanup_session})")
 
-        # Before stopping the loop, send a graceful disconnect message
-        if self.websocket and self.websocket.open:
+        # Schedule the disconnect message and stop event on the listener thread's loop
+        if self.loop and self.loop.is_running() and self.thread and self.thread.is_alive():
+            if self.logger: self.logger.log("Scheduling graceful disconnect on listener thread.")
+            future = asyncio.run_coroutine_threadsafe(
+                self._send_disconnect_and_stop(cleanup_session),
+                self.loop
+            )
             try:
-                if self.logger: self.logger.log("Sending graceful disconnect message to Node.js server.")
-                payload = json.dumps({"action": "disconnect", "cleanup_session": cleanup_session})
-                await self.websocket.send(payload)
-                await asyncio.sleep(0.5) # Give it a moment to process
-            except Exception as e:
-                if self.logger: self.logger.log(f"WARN: Could not send disconnect message: {e}")
+                future.result(timeout=5) # Block until the message is sent and event is set
+                if self.logger: self.logger.log("Disconnect message sent and stop event set.")
+            except FuturesTimeoutError:
+                if self.logger: self.logger.log("WARN: Timed out waiting for disconnect message to be sent.")
+                # Fallback to setting the event directly if the coroutine times out
+                if self.stop_event and not self.stop_event.is_set():
+                    self.loop.call_soon_threadsafe(self.stop_event.set)
 
-        if self.stop_event and not self.stop_event.is_set():
-            if self.logger: self.logger.log("Setting stop event for listener thread.")
-            if self.loop and self.loop.is_running():
-                 self.loop.call_soon_threadsafe(self.stop_event.set)
+            # Now that the stop event is set, wait for the thread to terminate
+            self.thread.join(timeout=5)
+            if self.thread.is_alive():
+                if self.logger: self.logger.log("WARN: Listener thread did not terminate in time.")
+            else:
+                if self.logger: self.logger.log("Listener thread terminated successfully.")
 
-        if self.thread:
-            pass # The thread will exit automatically on its own
-
-        # The old cleanup logic is now handled by the disconnect message
-        if cleanup_session:
-            # We keep this for cases where the websocket was never established
+        # Fallback for when the websocket connection was never made (e.g., server was down)
+        if cleanup_session and not self.websocket:
+            if self.logger: self.logger.log("No websocket was active, calling HTTP cleanup as a fallback.")
             await self._cleanup_server_session()
 
         if self.on_session_end and not self.session_ended:
@@ -178,22 +195,18 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             self.on_session_end(self.user_id)
 
     async def _cleanup_server_session(self):
-        """Requests session cleanup on the Node.js server."""
+        """Requests session cleanup on the Node.js server via HTTP DELETE."""
         if self.logger: self.logger.log("Requesting session cleanup on Node.js server.")
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.delete(f"{self.base_url}/sessions/{self.user_id}")
                 if response.status_code == 200:
-                    if self.logger: self.logger.log("Successfully requested session cleanup.")
+                    if self.logger: self.logger.log("Successfully requested session cleanup via HTTP.")
         except Exception as e:
-            if self.logger: self.logger.log(f"ERROR: Failed to request session cleanup: {e}")
+            if self.logger: self.logger.log(f"ERROR: Failed to request session cleanup via HTTP: {e}")
 
     async def sendMessage(self, recipient: str, message: str):
-        """
-        Sends a message back to the user via the Node.js server for a specific session.
-        """
-        if self.logger:
-            self.logger.log(f"Sending reply to {recipient} ---> {message[:50]}...")
+        if self.logger: self.logger.log(f"Sending reply to {recipient} ---> {message[:50]}...")
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -202,16 +215,11 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     headers={'Content-Type': 'application/json'}
                 )
                 if response.status_code != 200:
-                    if self.logger:
-                        self.logger.log(f"ERROR: Failed to send message. Status: {response.status_code}, Body: {response.text}")
+                    if self.logger: self.logger.log(f"ERROR: Failed to send message. Status: {response.status_code}, Body: {response.text}")
         except Exception as e:
-            if self.logger:
-                self.logger.log(f"ERROR: Exception while sending message: {e}")
+            if self.logger: self.logger.log(f"ERROR: Exception while sending message: {e}")
 
     async def get_status(self) -> Dict:
-        """
-        Gets the connection status from the Node.js server for a specific session.
-        """
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.get(f"{self.base_url}/sessions/{self.user_id}/status", timeout=5)
