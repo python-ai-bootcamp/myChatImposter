@@ -170,23 +170,21 @@ function EditPage() {
   }, [formData]);
 
   useEffect(() => {
-    if (!isNew) {
-        const fetchStatus = async () => {
-            try {
-                const response = await fetch(`/chatbot/${userId}/status`);
-                if (response.ok) {
-                    const data = await response.json();
-                    if (data.status && data.status.toLowerCase() === 'connected') {
-                        setIsLinked(true);
-                    }
+    const fetchStatus = async () => {
+        try {
+            const response = await fetch(`/chatbot/${userId}/status`);
+            if (response.ok) {
+                const data = await response.json();
+                if (data.status && data.status.toLowerCase() === 'connected') {
+                    setIsLinked(true);
                 }
-            } catch (error) {
-                console.error("Failed to fetch user status:", error);
             }
-        };
-        fetchStatus();
-    }
-  }, [userId, isNew]);
+        } catch (error) {
+            console.error("Failed to fetch user status:", error);
+        }
+    };
+    fetchStatus();
+  }, [userId]);
 
   const handleFormChange = (e) => {
     const newFormData = e.formData;
