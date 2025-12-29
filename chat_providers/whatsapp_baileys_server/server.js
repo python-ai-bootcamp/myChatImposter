@@ -635,6 +635,30 @@ async function startServer() {
             console.log(`[WebSocket] Client connected for userId: ${userId}`);
             wsConnections[userId] = ws;
 
+            ws.on('message', async (message) => {
+                try {
+                    const data = JSON.parse(message);
+                    if (data.action === 'disconnect') {
+                        console.log(`[${userId}] Received disconnect command (cleanup: ${data.cleanup_session}).`);
+                        const session = sessions[userId];
+                        if (session && session.sock) {
+                            if (data.cleanup_session) {
+                                session.isUnlinking = true;
+                                await session.sock.logout();
+                                const deleteResult = await baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } });
+                                console.log(`[${userId}] Deleted ${deleteResult.deletedCount} auth entries from MongoDB.`);
+                                delete sessions[userId];
+                            } else {
+                                // Graceful disconnect without clearing session
+                                session.sock.end(undefined);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error(`[WebSocket] Error processing message for userId ${userId}:`, e);
+                }
+            });
+
             ws.on('close', () => {
                 console.log(`[WebSocket] Client disconnected for userId: ${userId}`);
                 delete wsConnections[userId];

@@ -3,9 +3,6 @@ import threading
 import json
 import os
 import asyncio
-import json
-import os
-import threading
 from typing import Dict, Optional, Callable
 
 import httpx
@@ -21,20 +18,13 @@ class WhatsAppBaileysProvider(BaseChatProvider):
     A provider that connects to a Node.js Baileys server to send and receive WhatsApp messages.
     """
     def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, logger: Optional[FileLogger] = None):
-        """
-        Initializes the provider.
-        - user_id: The specific user this provider instance is for.
-        - config: The 'provider_config' block from the JSON configuration.
-        - user_queues: A dictionary of all user queues, passed by the main application.
-        - on_session_end: Callback to notify when a session ends.
-        - logger: An instance of FileLogger for logging.
-        """
         super().__init__(user_id, config, user_queues, on_session_end, logger)
         self.is_listening = False
         self.session_ended = False
         self.thread = None
         self.loop = None
         self.stop_event = None
+        self.websocket = None  # Add a placeholder for the websocket connection
         self.base_url = os.environ.get("WHATSAPP_SERVER_URL", "http://localhost:9000")
         self.ws_url = self.base_url.replace("http", "ws")
 
@@ -54,14 +44,11 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     headers={'Content-Type': 'application/json'}
                 )
                 if response.status_code == 200:
-                    if self.logger:
-                        self.logger.log("Successfully sent configuration to Node.js server.")
+                    if self.logger: self.logger.log("Successfully sent configuration to Node.js server.")
                 else:
-                    if self.logger:
-                        self.logger.log(f"ERROR: Failed to send config. Status: {response.status_code}, Body: {response.text}")
+                    if self.logger: self.logger.log(f"ERROR: Failed to send config. Status: {response.status_code}, Body: {response.text}")
         except Exception as e:
-            if self.logger:
-                self.logger.log(f"ERROR: Exception while sending configuration: {e}")
+            if self.logger: self.logger.log(f"ERROR: Exception while sending configuration: {e}")
 
     async def start_listening(self):
         """Starts the message listening loop in a background thread."""
@@ -84,12 +71,11 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         try:
             self.loop.run_until_complete(self._listen(self.stop_event))
         finally:
+            self.websocket = None # Clear websocket on exit
             if self.logger: self.logger.log("Closing asyncio loop.")
-            # Final cleanup of the loop
             try:
                 tasks = asyncio.all_tasks(loop=self.loop)
-                for task in tasks:
-                    task.cancel()
+                for task in tasks: task.cancel()
                 self.loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
                 self.loop.run_until_complete(self.loop.shutdown_asyncgens())
             except Exception as e:
@@ -104,13 +90,14 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         while not stop_event.is_set():
             try:
                 async with websockets.connect(uri, open_timeout=10) as websocket:
+                    self.websocket = websocket
                     if self.logger: self.logger.log(f"WebSocket connection established to {uri}")
                     while not stop_event.is_set():
                         try:
                             message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
                             self._process_ws_message(message)
                         except asyncio.TimeoutError:
-                            continue  # No message, just check stop_event again
+                            continue
             except Exception as e:
                 if not stop_event.is_set():
                     if isinstance(e, (websockets.exceptions.ConnectionClosed, ConnectionRefusedError, asyncio.TimeoutError)):
@@ -139,66 +126,39 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
         for msg in messages:
             group_info = msg.get('group')
-            if group_info and not self.config.provider_config.allow_group_messages:
-                continue
+            if group_info and not self.config.provider_config.allow_group_messages: continue
 
-            # Determine the correspondent ID (group ID or sender ID)
-            group = None
-            if group_info:
-                group = Group(
-                    identifier=group_info['id'],
-                    display_name=group_info.get('name') or group_info['id'],
-                    alternate_identifiers=group_info.get('alternate_identifiers', [])
-                )
+            group = Group(identifier=group_info['id'], display_name=group_info.get('name') or group_info['id'], alternate_identifiers=group_info.get('alternate_identifiers', [])) if group_info else None
+            correspondent_id = group.identifier if group else msg['sender']
+            primary_identifier = msg['sender'] if group else msg['sender']
 
-            if group:
-                correspondent_id = group.identifier
-                primary_identifier = msg['sender'] # The user who sent the message in the group
-            else:
-                correspondent_id = msg['sender']
-                primary_identifier = msg['sender']
-
-            # Prepare identifiers
             all_alternates = msg.get('alternate_identifiers') or []
-            if not isinstance(all_alternates, list):
-                all_alternates = []
+            if not isinstance(all_alternates, list): all_alternates = []
 
-            # Find a permanent JID (@s.whatsapp.net) to use as the primary identifier
-            permanent_jid = None
-            for alt_id in all_alternates:
-                if alt_id.endswith('@s.whatsapp.net'):
-                    permanent_jid = alt_id
-                    break
+            permanent_jid = next((alt_id for alt_id in all_alternates if alt_id.endswith('@s.whatsapp.net')), None)
 
-            # If a permanent JID is found, make it the primary identifier
-            # and ensure the original sender ID (LID) is in the alternates list.
             if permanent_jid:
-                if not group: # Only override correspondent_id if it's not a group chat
-                    correspondent_id = permanent_jid
+                if not group: correspondent_id = permanent_jid
                 primary_identifier = permanent_jid
-                # Add the original sender ID to alternates if it's not already there
-                if msg['sender'] not in all_alternates:
-                    all_alternates.append(msg['sender'])
+                if msg['sender'] not in all_alternates: all_alternates.append(msg['sender'])
 
-            # Create the Sender object with the corrected identifiers
-            sender = Sender(
-                identifier=primary_identifier,
-                display_name=msg.get('display_name', msg['sender']),
-                alternate_identifiers=all_alternates
-            )
+            sender = Sender(identifier=primary_identifier, display_name=msg.get('display_name', msg['sender']), alternate_identifiers=all_alternates)
 
-            queues_manager.add_message(
-                correspondent_id=correspondent_id,
-                content=msg['message'],
-                sender=sender,
-                source='user',
-                group=group,
-                provider_message_id=msg.get('provider_message_id')
-            )
+            queues_manager.add_message(correspondent_id=correspondent_id, content=msg['message'], sender=sender, source='user', group=group, provider_message_id=msg.get('provider_message_id'))
 
     async def stop_listening(self, cleanup_session: bool = False):
         """Stops the message listening loop."""
         if self.logger: self.logger.log(f"Stopping... (cleanup={cleanup_session})")
+
+        # Before stopping the loop, send a graceful disconnect message
+        if self.websocket and self.websocket.open:
+            try:
+                if self.logger: self.logger.log("Sending graceful disconnect message to Node.js server.")
+                payload = json.dumps({"action": "disconnect", "cleanup_session": cleanup_session})
+                await self.websocket.send(payload)
+                await asyncio.sleep(0.5) # Give it a moment to process
+            except Exception as e:
+                if self.logger: self.logger.log(f"WARN: Could not send disconnect message: {e}")
 
         if self.stop_event and not self.stop_event.is_set():
             if self.logger: self.logger.log("Setting stop event for listener thread.")
@@ -206,12 +166,11 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                  self.loop.call_soon_threadsafe(self.stop_event.set)
 
         if self.thread:
-            # We cannot join a daemon thread from an async function in a clean way.
-            # The graceful shutdown of the websocket is the important part.
-            # The thread will exit automatically.
-            pass
+            pass # The thread will exit automatically on its own
 
+        # The old cleanup logic is now handled by the disconnect message
         if cleanup_session:
+            # We keep this for cases where the websocket was never established
             await self._cleanup_server_session()
 
         if self.on_session_end and not self.session_ended:
