@@ -244,24 +244,24 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
 
     if (sessions[userId] && sessions[userId].sock) {
-        console.log(`[${userId}] DEBUG: connectToWhatsApp called but session and socket already exist. Ending old connection.`);
+        console.log(`[${userId}] Session already exists. Re-initializing.`);
         try {
             // End the old socket connection without logging out
             await sessions[userId].sock.end(undefined);
-            console.log(`[${userId}] DEBUG: Old socket connection ended.`);
+            console.log(`[${userId}] Old socket connection ended.`);
 
             // Close the WebSocket connection to force the client to reconnect
             wsConnections[userId]?.close();
-            console.log(`[${userId}] DEBUG: Old WebSocket connection closed.`);
+            console.log(`[${userId}] Old WebSocket connection closed.`);
 
         } catch (e) {
-            console.log(`[${userId}] DEBUG: Old socket cleanup failed:`, e);
+            console.log(`[${userId}] Old socket cleanup failed:`, e);
         }
         // We don't delete the session object. We will re-use and update it.
         // This prevents a race condition where the client reconnects before the new session is ready.
     }
 
-    console.log(`[${userId}] DEBUG: Starting new session connection...`);
+    console.log(`[${userId}] Starting new session connection...`);
 
     const { state, saveCreds } = await useMongoDBAuthState(userId, baileysSessionsCollection);
 
@@ -280,7 +280,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
     // If a session object already exists, update it. Otherwise, create a new one.
     // This preserves the object reference and prevents race conditions.
     if (sessions[userId]) {
-        console.log(`[${userId}] DEBUG: Updating existing session object.`);
+        console.log(`[${userId}] Updating existing session object.`);
         sessions[userId].sock = sock;
         sessions[userId].currentQR = null;
         sessions[userId].connectionStatus = 'connecting';
@@ -289,7 +289,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         sessions[userId].pushNameCache = {}; // Reset pushName cache
         resetHttp405Tracker(sessions[userId]);
     } else {
-        console.log(`[${userId}] DEBUG: Creating new session object.`);
+        console.log(`[${userId}] Creating new session object.`);
         sessions[userId] = {
             sock: sock,
             currentQR: null,
@@ -309,7 +309,6 @@ async function connectToWhatsApp(userId, vendorConfig) {
         const session = sessions[userId];
         if (!session || session.isUnlinking) return;
 
-        console.log(`[${userId}] DEBUG: Connection update: ${connection}`);
         session.connectionStatus = connection;
 
         if (connection === 'open') {
@@ -334,7 +333,12 @@ async function connectToWhatsApp(userId, vendorConfig) {
         if (connection === 'close') {
             session.currentQR = null;
             const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
-            console.log(`[${userId}] DEBUG: Connection closed with status code ${statusCode}`);
+
+            if (session.isGracefulDisconnect) {
+                console.log(`[${userId}] Graceful disconnect detected. Skipping reconnect logic.`);
+                session.isGracefulDisconnect = false; // Reset the flag
+                return;
+            }
 
             const isPermanentDisconnection =
                 statusCode === DisconnectReason.loggedOut ||
@@ -641,19 +645,19 @@ async function startServer() {
                 try {
                     const data = JSON.parse(message);
                     if (data.action === 'disconnect') {
-                        console.log(`[${userId}] DEBUG: Received disconnect command (cleanup: ${data.cleanup_session}).`);
+                        console.log(`[${userId}] Received disconnect command (cleanup: ${data.cleanup_session}).`);
                         const session = sessions[userId];
                         if (session && session.sock) {
                             if (data.cleanup_session) {
                                 session.isUnlinking = true;
                                 await session.sock.logout();
                                 const deleteResult = await baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } });
-                                console.log(`[${userId}] DEBUG: Deleted ${deleteResult.deletedCount} auth entries from MongoDB.`);
+                                console.log(`[${userId}] Deleted ${deleteResult.deletedCount} auth entries from MongoDB.`);
                                 delete sessions[userId];
                             } else {
                                 // Graceful disconnect without clearing session
+                                session.isGracefulDisconnect = true;
                                 session.sock.end(undefined);
-                                console.log(`[${userId}] DEBUG: Graceful disconnect initiated.`);
                             }
                         }
                     }
@@ -663,7 +667,7 @@ async function startServer() {
             });
 
             ws.on('close', () => {
-                console.log(`[WebSocket] DEBUG: Client disconnected for userId: ${userId}`);
+                console.log(`[WebSocket] Client disconnected for userId: ${userId}`);
                 delete wsConnections[userId];
             });
 
