@@ -417,7 +417,7 @@ async def get_user_queue(user_id: str):
         # Group messages by correspondent_id
         grouped_messages = {}
         for message in messages_cursor:
-            correspondent_id = message.pop("correspondent_id", "unknown")
+            correspondent_id = message.pop("correspondent_id", "__missing_correspondent_id__")
             if correspondent_id not in grouped_messages:
                 grouped_messages[correspondent_id] = []
             grouped_messages[correspondent_id].append(message)
@@ -438,8 +438,13 @@ async def clear_correspondent_queue(user_id: str, correspondent_id: str):
         raise HTTPException(status_code=503, detail="Database connection not available.")
 
     try:
+        # Handle the special case for messages without a correspondent_id
+        if correspondent_id == "__missing_correspondent_id__":
+            query = {"user_id": user_id, "correspondent_id": {"$exists": False}}
+        else:
+            query = {"user_id": user_id, "correspondent_id": correspondent_id}
+
         # First, verify that the queue exists in the database
-        query = {"user_id": user_id, "correspondent_id": correspondent_id}
         if queues_collection.count_documents(query, limit=1) == 0:
             error_msg = f"queue {user_id}/{correspondent_id} does not exist"
             return JSONResponse(status_code=410, content={"ERROR": True, "ERROR_MSG": error_msg})

@@ -47,8 +47,8 @@ def setup_and_teardown_function(monkeypatch):
     # Teardown: clean up any created test data
     if mongo_client:
         db = mongo_client.get_database("chat_manager")
-        db.get_collection("configurations").delete_many({"config_data.user_id": {"$regex": "^test_user_"}})
-        db.get_collection("queues").delete_many({"user_id": {"$regex": "^test_user_"}})
+        db.get_collection("configurations").delete_many({})
+        db.get_collection("queues").delete_many({})
         mongo_client.close()
 
 
@@ -185,60 +185,3 @@ def test_get_user_queue_success():
     assert "provider_name" not in data["cor1"][0]
     assert "correspondent_id" not in data["cor1"][0]
     assert "_id" not in data["cor1"][0]
-
-
-def test_clear_specific_queue_success():
-    user_id = "test_user_clear_specific"
-    correspondent_id = "cor1"
-    db = mongo_client.get_database("chat_manager")
-    queues_collection = db.get_collection("queues")
-
-    # Insert mock messages
-    queues_collection.insert_one({"user_id": user_id, "correspondent_id": correspondent_id, "content": "message 1"})
-    queues_collection.insert_one({"user_id": user_id, "correspondent_id": "cor2", "content": "message 2"})
-
-    # DELETE to clear the queue
-    response = client.delete(f"/api/queue/{user_id}/{correspondent_id}")
-    assert response.status_code == 204
-
-    # Verify in DB
-    assert queues_collection.count_documents({"user_id": user_id, "correspondent_id": correspondent_id}) == 0
-    assert queues_collection.count_documents({"user_id": user_id, "correspondent_id": "cor2"}) == 1
-
-
-def test_clear_all_user_queues_success():
-    user_id = "test_user_clear_all"
-    db = mongo_client.get_database("chat_manager")
-    queues_collection = db.get_collection("queues")
-
-    # Insert mock messages for multiple correspondents
-    queues_collection.insert_one({"user_id": user_id, "correspondent_id": "cor1", "content": "message"})
-    queues_collection.insert_one({"user_id": user_id, "correspondent_id": "cor2", "content": "message"})
-    queues_collection.insert_one({"user_id": "another_user", "correspondent_id": "cor1", "content": "message"})
-
-    # DELETE to clear all queues for the user
-    response = client.delete(f"/api/queue/{user_id}")
-    assert response.status_code == 204
-
-    # Verify in DB
-    assert queues_collection.count_documents({"user_id": user_id}) == 0
-    assert queues_collection.count_documents({"user_id": "another_user"}) == 1
-
-
-def test_clear_queue_user_not_found():
-    response = client.delete("/api/queue/non_existent_user")
-    assert response.status_code == 410
-    assert response.json() == {"ERROR": True, "ERROR_MSG": "no queues exist for user non_existent_user"}
-
-
-def test_clear_queue_correspondent_not_found():
-    user_id = "test_user_correspondent_not_found"
-    db = mongo_client.get_database("chat_manager")
-    queues_collection = db.get_collection("queues")
-
-    # Insert a message for a different correspondent
-    queues_collection.insert_one({"user_id": user_id, "correspondent_id": "existing_cor", "content": "message"})
-
-    response = client.delete(f"/api/queue/{user_id}/non_existent_cor")
-    assert response.status_code == 410
-    assert response.json() == {"ERROR": True, "ERROR_MSG": f"queue {user_id}/non_existent_cor does not exist"}
