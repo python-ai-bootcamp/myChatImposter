@@ -222,6 +222,13 @@ class CorrespondentQueue:
     def get_messages(self) -> List[Message]:
         return list(self._messages)
 
+    def clear(self):
+        """Clears all messages from the in-memory queue and resets the message ID."""
+        self._messages.clear()
+        self._total_chars = 0
+        self._next_message_id = 1
+        console_log(f"QUEUE CLEAR ({self.user_id}/{self.correspondent_id}): In-memory queue cleared and message ID reset.")
+
     def _log_retention_event(self, evicted_message: Message, reason: str, new_message_size: int = 0):
         """
         Logs a retention event to the correspondent-specific log file. This method is thread-safe.
