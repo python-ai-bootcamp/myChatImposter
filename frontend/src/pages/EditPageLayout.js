@@ -8,7 +8,7 @@ export const editPageLayout = {
   groups: {
     general_config: {
       title: 'General Config',
-      fields: ['user_id', 'respond_to_whitelist'],
+      fields: ['user_id', 'respond_to_whitelist', 'respond_to_whitelist_group'],
     },
     llm_bot_config: {
       title: 'Llm Provider Config',
