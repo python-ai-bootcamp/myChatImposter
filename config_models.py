@@ -41,8 +41,8 @@ class LLMProviderConfig(BaseModel):
 
 class UserConfiguration(BaseModel):
     user_id: str
-    respond_to_whitelist: List[str] = Field(default_factory=list)
-    respond_to_whitelist_group: List[str] = Field(default_factory=list)
+    respond_to_whitelist: List[str] = Field(default_factory=list, title="Respond To Direct Contact Whitelist")
+    respond_to_whitelist_group: List[str] = Field(default_factory=list, title="Respond To Group Whitelist")
     chat_provider_config: ChatProviderConfig
     queue_config: QueueConfig
     llm_provider_config: Optional[LLMProviderConfig] = None

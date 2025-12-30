@@ -410,7 +410,6 @@ function EditPage() {
               <div style={{ ...innerPanelStyle, display: 'flex', flexDirection: 'column' }}>
                 <h3>Live JSON Editor</h3>
                 <textarea
-                  aria-label="Live JSON Editor"
                   style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.9rem', border: jsonError ? '1px solid red' : '1px solid #ccc', resize: 'vertical', padding: '0.5rem' }}
                   value={jsonString}
                   onChange={handleJsonChange}
