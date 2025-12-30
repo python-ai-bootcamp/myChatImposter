@@ -8,7 +8,7 @@ import json
 import asyncio
 from pathlib import Path
 import dataclasses
-from fastapi import FastAPI, HTTPException, Body, Request
+from fastapi import FastAPI, HTTPException, Body, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.concurrency import run_in_threadpool
 from typing import Dict, Any, List, Union
@@ -417,7 +417,7 @@ async def get_user_queue(user_id: str):
         # Group messages by correspondent_id
         grouped_messages = {}
         for message in messages_cursor:
-            correspondent_id = message.pop("correspondent_id", "unknown")
+            correspondent_id = message.pop("correspondent_id", "__missing_correspondent_id__")
             if correspondent_id not in grouped_messages:
                 grouped_messages[correspondent_id] = []
             grouped_messages[correspondent_id].append(message)
@@ -426,6 +426,85 @@ async def get_user_queue(user_id: str):
     except Exception as e:
         console_log(f"API_ERROR: Failed to get queue for user '{user_id}' from DB: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get queue from database: {e}")
+
+
+@app.delete("/api/queue/{user_id}/{correspondent_id}", status_code=204)
+async def clear_correspondent_queue(user_id: str, correspondent_id: str):
+    """
+    Clears a specific correspondent's queue for a user, both in the database
+    and in the active in-memory queue if a session is running.
+    """
+    if queues_collection is None:
+        raise HTTPException(status_code=503, detail="Database connection not available.")
+
+    try:
+        # Handle the special case for messages without a correspondent_id
+        if correspondent_id == "__missing_correspondent_id__":
+            query = {"user_id": user_id, "correspondent_id": {"$exists": False}}
+        else:
+            query = {"user_id": user_id, "correspondent_id": correspondent_id}
+
+        # First, verify that the queue exists in the database
+        if queues_collection.count_documents(query, limit=1) == 0:
+            error_msg = f"queue {user_id}/{correspondent_id} does not exist"
+            return JSONResponse(status_code=410, content={"ERROR": True, "ERROR_MSG": error_msg})
+
+        # Delete messages from MongoDB
+        result = queues_collection.delete_many(query)
+        console_log(f"API: Deleted {result.deleted_count} messages from DB for user '{user_id}', correspondent '{correspondent_id}'.")
+
+        # If there's an active session, clear the in-memory queue as well
+        if user_id in active_users:
+            instance_id = active_users[user_id]
+            instance = chatbot_instances.get(instance_id)
+            if instance and instance.user_queues_manager:
+                queue = instance.user_queues_manager.get_queue(correspondent_id)
+                if queue:
+                    queue.clear()
+                    console_log(f"API: Cleared in-memory queue for user '{user_id}', correspondent '{correspondent_id}'.")
+
+        return Response(status_code=204)
+
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to clear queue for user '{user_id}', correspondent '{correspondent_id}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to clear queue.")
+
+
+@app.delete("/api/queue/{user_id}", status_code=204)
+async def clear_all_user_queues(user_id: str):
+    """
+    Clears all of a user's queues, both in the database and in the active
+    in-memory queues if a session is running.
+    """
+    if queues_collection is None:
+        raise HTTPException(status_code=503, detail="Database connection not available.")
+
+    try:
+        # First, verify that the user has any queues in the database
+        query = {"user_id": user_id}
+        if queues_collection.count_documents(query, limit=1) == 0:
+            error_msg = f"no queues exist for user {user_id}"
+            return JSONResponse(status_code=410, content={"ERROR": True, "ERROR_MSG": error_msg})
+
+        # Delete all user's messages from MongoDB
+        result = queues_collection.delete_many(query)
+        console_log(f"API: Deleted {result.deleted_count} total messages from DB for user '{user_id}'.")
+
+        # If there's an active session, clear all in-memory queues for the user
+        if user_id in active_users:
+            instance_id = active_users[user_id]
+            instance = chatbot_instances.get(instance_id)
+            if instance and instance.user_queues_manager:
+                all_queues = instance.user_queues_manager.get_all_queues()
+                for queue in all_queues:
+                    queue.clear()
+                console_log(f"API: Cleared all {len(all_queues)} in-memory queues for user '{user_id}'.")
+
+        return Response(status_code=204)
+
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to clear queues for user '{user_id}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to clear queues.")
 
 
 @app.delete("/chatbot/{user_id}")

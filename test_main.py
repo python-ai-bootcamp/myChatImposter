@@ -47,8 +47,8 @@ def setup_and_teardown_function(monkeypatch):
     # Teardown: clean up any created test data
     if mongo_client:
         db = mongo_client.get_database("chat_manager")
-        db.get_collection("configurations").delete_many({"config_data.user_id": {"$regex": "^test_user_"}})
-        db.get_collection("queues").delete_many({"user_id": {"$regex": "^test_user_"}})
+        db.get_collection("configurations").delete_many({})
+        db.get_collection("queues").delete_many({})
         mongo_client.close()
 
 
