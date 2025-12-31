@@ -20,6 +20,8 @@ from chatbot_manager import ChatbotInstance
 from logging_lock import console_log
 from config_models import UserConfiguration
 
+console_log("--- JULES DEBUG: MAIN.PY V3 ---")
+
 # Suppress the default uvicorn access logger
 access_logger = logging.getLogger("uvicorn.access")
 access_logger.disabled = True
