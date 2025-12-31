@@ -301,7 +301,7 @@ class ChatbotInstance:
         try:
             # Prepend the sender's name to the message content before sending it to the model
             message_content_with_sender = f"{message.sender.display_name}: {message.content}"
-            response_text = self.chatbot_model.get_response(message_content_with_sender)
+            response_text = await self.chatbot_model.get_response_async(message_content_with_sender)
 
             # If the message is from a group, reply to the group. Otherwise, reply to the sender.
             recipient = message.group.identifier if message.group else message.sender.identifier
