@@ -1,6 +1,7 @@
 import unittest
 from unittest.mock import MagicMock, patch
 import time
+import asyncio
 from chatbot_manager import CorrespondenceIngester, Message, Sender, ChatbotModel
 from queue_manager import UserQueuesManager
 from config_models import QueueConfig
@@ -33,7 +34,7 @@ class TestChatbotModel(unittest.TestCase):
         prefixed_user_message = f"{sender_display_name}: {user_message_content}"
 
         # This call will trigger the conversation chain
-        response = self.chatbot_model.get_response(prefixed_user_message)
+        response = self.chatbot_model.get_response_sync(prefixed_user_message)
 
         # 2. Verify the response from the mock LLM
         self.assertEqual(response, "This is a mock response.")
