@@ -39,10 +39,5 @@
       "last 1 safari version"
     ]
   },
-  "proxy": "http://backend:8000",
-  "jest": {
-    "roots": [
-      "<rootDir>/src"
-    ]
-  }
+  "proxy": "http://backend:8000"
 }

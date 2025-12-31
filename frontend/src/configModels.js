@@ -118,9 +118,10 @@ class LLMProviderConfig {
 }
 
 class UserConfiguration {
-  constructor({ user_id, respond_to_whitelist = [], chat_provider_config, queue_config, llm_provider_config = null }) {
+  constructor({ user_id, respond_to_whitelist = [], respond_to_whitelist_group = [], chat_provider_config, queue_config, llm_provider_config = null }) {
     this.user_id = user_id;
     this.respond_to_whitelist = respond_to_whitelist;
+    this.respond_to_whitelist_group = respond_to_whitelist_group;
     this.chat_provider_config = new ChatProviderConfig(chat_provider_config);
     this.queue_config = new QueueConfig(queue_config);
     if (llm_provider_config) {
@@ -136,6 +137,9 @@ class UserConfiguration {
     }
     if (!Array.isArray(data.respond_to_whitelist)) {
       throw new ValidationError('respond_to_whitelist must be an array.', 'respond_to_whitelist');
+    }
+    if (!Array.isArray(data.respond_to_whitelist_group)) {
+      throw new ValidationError('respond_to_whitelist_group must be an array.', 'respond_to_whitelist_group');
     }
     if (!data.chat_provider_config || typeof data.chat_provider_config !== 'object') {
       throw new ValidationError('chat_provider_config is required.', 'chat_provider_config');

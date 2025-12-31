@@ -332,6 +332,9 @@ function EditPage() {
       },
       respond_to_whitelist: {
         "ui:title": " "
+      },
+      respond_to_whitelist_group: {
+        "ui:title": " "
       }
     },
     chat_provider_config: {
