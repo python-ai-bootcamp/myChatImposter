@@ -45,6 +45,9 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             if self.logger: self.logger.log("Already listening.")
             return
         await self._send_config_to_server()
+        # Add a small delay to allow the Node.js server to create the session
+        # object before the WebSocket connection is attempted.
+        await asyncio.sleep(2)
         self.is_listening = True
         self.listen_task = self.main_loop.create_task(self._listen())
         if self.logger: self.logger.log("Started WebSocket listener for messages.")
