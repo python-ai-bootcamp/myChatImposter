@@ -15,14 +15,13 @@ from config_models import ChatProviderConfig
 
 
 class WhatsAppBaileysProvider(BaseChatProvider):
-    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, logger: Optional[FileLogger] = None):
+    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, logger: Optional[FileLogger] = None, main_loop=None):
         super().__init__(user_id, config, user_queues, on_session_end, logger)
         self.is_listening = False
         self.session_ended = False
-        self.thread = None
-        self.loop = None
-        self.stop_event = None
-        self.cleanup_on_stop = False  # New flag to signal cleanup action
+        self.main_loop = main_loop
+        self.cleanup_on_stop = False
+        self.listen_task = None
         self.base_url = os.environ.get("WHATSAPP_SERVER_URL", "http://localhost:9000")
         self.ws_url = self.base_url.replace("http", "ws")
 
@@ -45,67 +44,45 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             return
         await self._send_config_to_server()
         self.is_listening = True
-        self.thread = threading.Thread(target=self._run_listen_loop, daemon=True)
-        self.thread.start()
+        self.listen_task = self.main_loop.create_task(self._listen())
         if self.logger: self.logger.log("Started WebSocket listener for messages.")
 
-    def _run_listen_loop(self):
-        self.loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(self.loop)
-        self.stop_event = asyncio.Event()
-        try:
-            self.loop.run_until_complete(self._listen(self.stop_event))
-        finally:
-            if self.logger: self.logger.log("Closing asyncio loop.")
-            try:
-                tasks = asyncio.all_tasks(loop=self.loop)
-                for task in tasks: task.cancel()
-                self.loop.run_until_complete(asyncio.gather(*tasks, return_exceptions=True))
-                self.loop.run_until_complete(self.loop.shutdown_asyncgens())
-            except Exception as e:
-                if self.logger: self.logger.log(f"Error during loop cleanup: {e}")
-            finally:
-                asyncio.set_event_loop(None)
-                self.loop.close()
-                if self.logger: self.logger.log("Listener thread event loop closed.")
-
-    async def _listen(self, stop_event):
+    async def _listen(self):
         uri = f"{self.ws_url}/{self.user_id}"
-        websocket = None
-        while not stop_event.is_set():
+        while self.is_listening:
             try:
-                async with websockets.connect(uri, open_timeout=10) as ws:
-                    websocket = ws
+                async with websockets.connect(uri, open_timeout=10) as websocket:
                     if self.logger: self.logger.log(f"WebSocket connection established to {uri}")
-                    while not stop_event.is_set():
+                    while self.is_listening:
                         try:
                             message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
                             self._process_ws_message(message)
                         except asyncio.TimeoutError:
                             continue
+                        except websockets.exceptions.ConnectionClosed:
+                            if self.logger: self.logger.log("WARN: WebSocket connection closed unexpectedly.")
+                            break
+            except asyncio.CancelledError:
+                if self.logger: self.logger.log("Listen task cancelled.")
+                break
             except Exception as e:
-                if not stop_event.is_set():
+                if self.is_listening:
                     if isinstance(e, (websockets.exceptions.ConnectionClosed, ConnectionRefusedError, asyncio.TimeoutError)):
                         if self.logger: self.logger.log(f"WARN: WebSocket connection issue: {e}. Reconnecting in 5s...")
                     else:
                         if self.logger: self.logger.log(f"ERROR: Unhandled exception in WebSocket listener: {e}. Retrying in 10s...")
                     await asyncio.sleep(5)
-            finally:
-                websocket = None
 
-        # Loop has been stopped, now perform cleanup
-        if self.logger: self.logger.log("Listen loop stop event received.")
-        # Re-establish a temporary connection to send the final disconnect message
+        if self.logger: self.logger.log("Listen loop is stopping. Performing cleanup...")
         try:
             async with websockets.connect(uri, open_timeout=5) as ws:
                 if self.logger: self.logger.log(f"Temporary WebSocket connection established for cleanup.")
                 payload = json.dumps({"action": "disconnect", "cleanup_session": self.cleanup_on_stop})
                 await ws.send(payload)
-                await asyncio.sleep(0.5) # Give it a moment
+                await asyncio.sleep(0.5)
                 if self.logger: self.logger.log(f"Sent final disconnect message (cleanup={self.cleanup_on_stop}).")
         except Exception as e:
-            if self.logger: self.logger.log(f"WARN: Could not send final disconnect message: {e}")
-            # Fallback to HTTP if websocket fails
+            if self.logger: self.logger.log(f"WARN: Could not send final disconnect message via WebSocket: {e}")
             if self.cleanup_on_stop:
                 await self._cleanup_server_session()
 
@@ -143,18 +120,15 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
     async def stop_listening(self, cleanup_session: bool = False):
         if self.logger: self.logger.log(f"Stopping... (cleanup={cleanup_session})")
+        self.is_listening = False
         self.cleanup_on_stop = cleanup_session
-        if self.stop_event and not self.stop_event.is_set():
-            if self.logger: self.logger.log("Setting stop event for listener thread.")
-            if self.loop and self.loop.is_running():
-                 self.loop.call_soon_threadsafe(self.stop_event.set)
 
-        if self.thread:
-            self.thread.join(timeout=10)
-            if self.thread.is_alive():
-                if self.logger: self.logger.log("WARN: Listener thread did not terminate in time.")
-            else:
-                if self.logger: self.logger.log("Listener thread terminated successfully.")
+        if self.listen_task:
+            self.listen_task.cancel()
+            try:
+                await self.listen_task
+            except asyncio.CancelledError:
+                if self.logger: self.logger.log("Listen task successfully cancelled.")
 
         if self.on_session_end and not self.session_ended:
             self.session_ended = True

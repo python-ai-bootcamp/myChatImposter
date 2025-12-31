@@ -430,9 +430,24 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 contactsCacheName: (msg?.key?.remoteJid && session.contactsCache[msg.key.remoteJid]?.name) || null,
             });
             console.log("entire msg object::\n----------", msg, "\n--------");
-            if (!msg.message || msg.key.fromMe) return null;
 
             const isGroup = msg.key.remoteJid.endsWith('@g.us');
+            const senderId = isGroup ? (msg.participant || msg.key.participant) : msg.key.remoteJid;
+            const senderPn = msg?.key?.senderPn || msg?.messageKey?.senderPn || msg?.key?.senderJid || null;
+
+            // Cache pushName and LID mappings from ANY message, even stubs
+            const cacheKey = senderPn || senderId;
+            if (msg.pushName) {
+                session.pushNameCache[cacheKey] = msg.pushName;
+            }
+            if (senderId && senderId.endsWith('@lid') && senderPn) {
+                if (!session.lidCache) session.lidCache = {};
+                session.lidCache[senderId] = senderPn;
+                console.log(`[${userId}] Cached LID mapping: ${senderId} -> ${senderPn}`);
+            }
+
+            if (!msg.message || msg.key.fromMe) return null;
+
             if (isGroup && !allowGroups) return null;
 
             const messageTimestamp = (typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp * 1000 : msg.messageTimestamp.toNumber() * 1000);
@@ -444,13 +459,6 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 messageContent = `[User sent a non-text message: ${messageType}]`;
             }
 
-            const senderId = isGroup ? (msg.participant || msg.key.participant) : msg.key.remoteJid;
-            const senderPn = msg?.key?.senderPn || msg?.messageKey?.senderPn || msg?.key?.senderJid || null;
-            if (senderId && senderId.endsWith('@lid') && senderPn) {
-                if (!session.lidCache) session.lidCache = {};
-                session.lidCache[senderId] = senderPn;
-                console.log(`[${userId}] Cached LID mapping: ${senderId} -> ${senderPn}`);
-            }
             if (!senderPn && !isGroup) {
                 const normalizedRemote = jidNormalizedUser?.(msg.key.remoteJid);
                 if (normalizedRemote && normalizedRemote !== msg.key.remoteJid) {
@@ -459,11 +467,6 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 }
             }
 
-            // Cache the pushName whenever it's available, keyed by the permanent JID if possible
-            const cacheKey = senderPn || senderId;
-            if (msg.pushName) {
-                session.pushNameCache[cacheKey] = msg.pushName;
-            }
             const senderName = msg.pushName || session.pushNameCache[senderId] || session.pushNameCache[senderPn] || session.contactsCache[senderId]?.name || null;
 
             let groupInfo = null;

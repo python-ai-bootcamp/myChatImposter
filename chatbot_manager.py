@@ -188,13 +188,17 @@ class ChatbotInstance:
 
         file_logger = FileLogger(self.user_id, provider_name)
 
-        self.provider_instance = ProviderClass(
-            user_id=self.user_id,
-            config=chat_provider_config,
-            user_queues={self.user_id: self.user_queues_manager},
-            on_session_end=self.on_session_end,
-            logger=file_logger
-        )
+        provider_init_params = {
+            "user_id": self.user_id,
+            "config": chat_provider_config,
+            "user_queues": {self.user_id: self.user_queues_manager},
+            "on_session_end": self.on_session_end,
+            "logger": file_logger,
+        }
+        if provider_name == "whatsAppBaileyes":
+            provider_init_params["main_loop"] = self.main_loop
+
+        self.provider_instance = ProviderClass(**provider_init_params)
         console_log(f"INSTANCE ({self.user_id}): Initialized chat provider '{provider_name}'.")
 
         # 3. Initialize Chatbot Model (Optional)
