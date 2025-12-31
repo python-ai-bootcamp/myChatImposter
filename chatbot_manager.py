@@ -13,6 +13,7 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.output_parsers import StrOutputParser
+from langchain_core.messages import AIMessage, BaseMessage
 
 from queue_manager import UserQueuesManager, Message, Sender, Group
 from chat_providers.base import BaseChatProvider
@@ -27,12 +28,26 @@ def _find_provider_class(module, base_class: Type) -> Optional[Type]:
             return obj
     return None
 
+class PrefixedChatMessageHistory(ChatMessageHistory):
+    """
+    A ChatMessageHistory that prefixes AI messages with 'Bot: '.
+    """
+    def add_message(self, message: BaseMessage) -> None:
+        """Add a message to the history, prefixing AI messages."""
+        if isinstance(message, AIMessage):
+            # Create a new AIMessage with the prefixed content
+            prefixed_message = AIMessage(content=f"Bot: {message.content}")
+            super().add_message(prefixed_message)
+        else:
+            # For all other message types, add them as is
+            super().add_message(message)
+
 class ChatbotModel:
     """A wrapper for the LangChain conversation model for a single user."""
     def __init__(self, user_id: str, llm: Any, system_prompt: str):
         self.user_id = user_id
         self.llm = llm
-        self.message_history = ChatMessageHistory()
+        self.message_history = PrefixedChatMessageHistory()
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", system_prompt),
@@ -282,9 +297,10 @@ class ChatbotInstance:
             return
 
         try:
-            response_text = self.chatbot_model.get_response(message.content)
+            # Prepend the sender's name to the message content before sending it to the model
+            message_content_with_sender = f"{message.sender.display_name}: {message.content}"
+            response_text = self.chatbot_model.get_response(message_content_with_sender)
 
-            # If the message is from a group, reply to the group. Otherwise, reply to the sender.
             # If the message is from a group, reply to the group. Otherwise, reply to the sender.
             recipient = message.group.identifier if message.group else message.sender.identifier
             await self.provider_instance.sendMessage(recipient, response_text)
