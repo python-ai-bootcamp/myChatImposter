@@ -1,9 +1,58 @@
 import unittest
 from unittest.mock import MagicMock, patch
 import time
-from chatbot_manager import CorrespondenceIngester, Message, Sender
+from chatbot_manager import CorrespondenceIngester, Message, Sender, ChatbotModel
 from queue_manager import UserQueuesManager
 from config_models import QueueConfig
+from langchain_core.messages import HumanMessage, AIMessage
+from langchain_core.runnables import Runnable
+
+# A fake LLM class to have more control over the mock's behavior
+class FakeLlm(Runnable):
+    def invoke(self, *args, **kwargs):
+        # The LLM's output is an AIMessage, which the StrOutputParser then handles.
+        return AIMessage(content="This is a mock response.")
+
+class TestChatbotModel(unittest.TestCase):
+    def setUp(self):
+        # Instantiate the ChatbotModel with the fake LLM
+        self.chatbot_model = ChatbotModel(
+            user_id='test_user',
+            llm=FakeLlm(),
+            system_prompt='You are a helpful assistant.'
+        )
+
+    def test_message_history_prefixing(self):
+        """
+        Tests that the user's message and the bot's response are correctly
+        prefixed before being added to the message history.
+        """
+        # 1. Simulate a user sending a message
+        user_message_content = "Hello, bot!"
+        sender_display_name = "Test User"
+        prefixed_user_message = f"{sender_display_name}: {user_message_content}"
+
+        # This call will trigger the conversation chain
+        response = self.chatbot_model.get_response(prefixed_user_message)
+
+        # 2. Verify the response from the mock LLM
+        self.assertEqual(response, "This is a mock response.")
+
+        # 3. Verify the message history
+        history = self.chatbot_model.message_history.messages
+
+        # Expected history:
+        # - A HumanMessage with the user's prefixed message
+        # - An AIMessage with the bot's prefixed response
+        self.assertEqual(len(history), 2)
+
+        # Check the user's message in the history
+        self.assertIsInstance(history[0], HumanMessage)
+        self.assertEqual(history[0].content, prefixed_user_message)
+
+        # Check the bot's message in the history
+        self.assertIsInstance(history[1], AIMessage)
+        self.assertEqual(history[1].content, "Bot: This is a mock response.")
 
 class TestCorrespondenceIngester(unittest.TestCase):
     def setUp(self):
