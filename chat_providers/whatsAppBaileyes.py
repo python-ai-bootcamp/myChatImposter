@@ -51,10 +51,16 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
     async def _listen(self):
         uri = f"{self.ws_url}/{self.user_id}"
-        while self.is_listening:
+        max_retries = 3
+        retry_delay = 2  # seconds
+
+        for attempt in range(max_retries):
+            if not self.is_listening:
+                break
             try:
                 async with websockets.connect(uri, open_timeout=10) as websocket:
                     if self.logger: self.logger.log(f"WebSocket connection established to {uri}")
+                    # Connection successful, now enter the main listening loop
                     while self.is_listening:
                         try:
                             message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
@@ -63,7 +69,24 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                             continue
                         except websockets.exceptions.ConnectionClosed:
                             if self.logger: self.logger.log("WARN: WebSocket connection closed unexpectedly.")
-                            break
+                            break # Break inner loop to reconnect
+
+                    if self.is_listening: # If we broke due to connection closed, retry
+                        if self.logger: self.logger.log("Attempting to re-establish WebSocket connection...")
+                        continue # Go to the next attempt in the outer loop
+                    else: # If we broke because listening stopped, exit
+                        break
+
+            except websockets.exceptions.InvalidStatusCode as e:
+                # This is the key change: catch specific connection rejection errors
+                if e.status_code == 404 and attempt < max_retries - 1:
+                     if self.logger: self.logger.log(f"WARN: WebSocket connection rejected (404), likely a race condition. Retrying in {retry_delay}s... ({attempt + 1}/{max_retries})")
+                     await asyncio.sleep(retry_delay)
+                     continue # Go to the next attempt
+                else:
+                    if self.logger: self.logger.log(f"ERROR: WebSocket connection failed with status {e.status_code}. Giving up after {attempt + 1} attempts.")
+                    break # Give up
+
             except asyncio.CancelledError:
                 if self.logger: self.logger.log("Listen task cancelled.")
                 break
@@ -120,15 +143,26 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             source = 'user'  # Default source
 
             if direction == 'outgoing':
-                correspondent_id = msg.get('recipient_id')
-                # For outgoing messages, the 'sender' is the bot/user itself.
-                sender = Sender(identifier=f"bot_{self.user_id}", display_name=f"Bot ({self.user_id})")
+                recipient_id = msg.get('recipient_id')
+                permanent_jid = next((alt_id for alt_id in (msg.get('alternate_identifiers') or []) if alt_id.endswith('@s.whatsapp.net')), None)
+                correspondent_id = permanent_jid or recipient_id
 
                 if provider_message_id and provider_message_id in self.sent_message_ids:
-                    source = 'bot'  # This is an echo of a message the bot sent
+                    source = 'bot'
+                    sender = Sender(identifier=f"bot_{self.user_id}", display_name=f"Bot ({self.user_id})")
                     self.sent_message_ids.remove(provider_message_id)
                 else:
-                    source = 'user_outgoing'  # This is a message the user sent from their device
+                    source = 'user_outgoing'
+                    actual_sender_data = msg.get('actual_sender')
+                    if actual_sender_data:
+                        sender = Sender(
+                            identifier=actual_sender_data.get('identifier'),
+                            display_name=actual_sender_data.get('display_name'),
+                            alternate_identifiers=actual_sender_data.get('alternate_identifiers', [])
+                        )
+                    else:
+                        # Fallback for safety, though actual_sender should always be present for outgoing
+                        sender = Sender(identifier=f"user_{self.user_id}", display_name=f"User ({self.user_id})")
             else:  # incoming
                 correspondent_id = group.identifier if group else msg['sender']
                 primary_identifier = msg['sender']
