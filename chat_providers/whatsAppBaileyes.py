@@ -31,8 +31,10 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         if self.logger: self.logger.log(f"Connecting to Node.js server at {self.base_url}")
         try:
             config_data = {"userId": self.user_id, "config": self.config.provider_config.model_dump()}
+            url = f"{self.base_url}/initialize"
+            if self.logger: self.logger.log(f"DEBUG: Sending POST to {url} with data: {config_data}")
             async with httpx.AsyncClient() as client:
-                response = await client.post(f"{self.base_url}/initialize", json=config_data, headers={'Content-Type': 'application/json'})
+                response = await client.post(url, json=config_data, headers={'Content-Type': 'application/json'})
                 if response.status_code == 200:
                     if self.logger: self.logger.log("Successfully sent configuration to Node.js server.")
                 else:
@@ -45,9 +47,6 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             if self.logger: self.logger.log("Already listening.")
             return
         await self._send_config_to_server()
-        # Add a small delay to allow the Node.js server to create the session
-        # object before the WebSocket connection is attempted.
-        await asyncio.sleep(2)
         self.is_listening = True
         self.listen_task = self.main_loop.create_task(self._listen())
         if self.logger: self.logger.log("Started WebSocket listener for messages.")
