@@ -54,9 +54,11 @@ class TestChatbotModel(unittest.TestCase):
         self.assertIsInstance(history[1], AIMessage)
         self.assertEqual(history[1].content, "Bot: This is a mock response.")
 
-class TestCorrespondenceIngester(unittest.TestCase):
-    def setUp(self):
+class TestCorrespondenceIngester(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
         self.mock_queues_collection = MagicMock()
+        self.mock_queues_collection.insert_one = MagicMock()
+
         self.queue_config = QueueConfig(max_messages=10, max_characters=1000, max_days=1)
         self.user_queues_manager = UserQueuesManager(
             user_id='test_ingester_user',
@@ -68,10 +70,11 @@ class TestCorrespondenceIngester(unittest.TestCase):
             user_id='test_ingester_user',
             provider_name='test_vendor',
             user_queues_manager=self.user_queues_manager,
-            queues_collection=self.mock_queues_collection
+            queues_collection=self.mock_queues_collection,
+            main_loop=asyncio.get_running_loop()
         )
 
-    def test_ingester_processes_message(self):
+    async def test_ingester_processes_message(self):
         """
         Test that the ingester pulls a message from the queue and persists it to the database.
         """
@@ -84,10 +87,10 @@ class TestCorrespondenceIngester(unittest.TestCase):
         self.ingester.start()
 
         # Give the ingester a moment to process the message
-        time.sleep(1.5)
+        await asyncio.sleep(1.5)
 
         # Stop the ingester
-        self.ingester.stop()
+        await self.ingester.stop()
 
         # Verify that insert_one was called on the mock collection
         self.mock_queues_collection.insert_one.assert_called_once()
