@@ -500,6 +500,21 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 }
             }
 
+            let actualSender = null;
+            if (msg.key.fromMe) {
+                const selfJid = session.sock?.user?.id;
+                const selfName = msg.pushName;
+                const selfAlternate = new Set();
+                addIdentifierVariant(selfAlternate, selfJid);
+                addIdentifierVariant(selfAlternate, selfName);
+
+                actualSender = {
+                    identifier: selfJid,
+                    display_name: selfName,
+                    alternate_identifiers: Array.from(selfAlternate).filter(Boolean),
+                };
+            }
+
 
             return {
                 provider_message_id: msg.key.id,
@@ -511,6 +526,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 alternate_identifiers: finalSenderIdentifiers,
                 direction: msg.key.fromMe ? 'outgoing' : 'incoming',
                 recipient_id: recipientId,
+                actual_sender: actualSender
             };
         });
 

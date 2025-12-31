@@ -144,18 +144,25 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
             if direction == 'outgoing':
                 recipient_id = msg.get('recipient_id')
-                # Resolve the LID to a permanent JID if possible to ensure messages
-                # land in the correct correspondent queue.
                 permanent_jid = next((alt_id for alt_id in (msg.get('alternate_identifiers') or []) if alt_id.endswith('@s.whatsapp.net')), None)
                 correspondent_id = permanent_jid or recipient_id
 
-                sender = Sender(identifier=f"bot_{self.user_id}", display_name=f"Bot ({self.user_id})")
-
                 if provider_message_id and provider_message_id in self.sent_message_ids:
-                    source = 'bot'  # This is an echo of a message the bot sent
+                    source = 'bot'
+                    sender = Sender(identifier=f"bot_{self.user_id}", display_name=f"Bot ({self.user_id})")
                     self.sent_message_ids.remove(provider_message_id)
                 else:
-                    source = 'user_outgoing'  # This is a message the user sent from their device
+                    source = 'user_outgoing'
+                    actual_sender_data = msg.get('actual_sender')
+                    if actual_sender_data:
+                        sender = Sender(
+                            identifier=actual_sender_data.get('identifier'),
+                            display_name=actual_sender_data.get('display_name'),
+                            alternate_identifiers=actual_sender_data.get('alternate_identifiers', [])
+                        )
+                    else:
+                        # Fallback for safety, though actual_sender should always be present for outgoing
+                        sender = Sender(identifier=f"user_{self.user_id}", display_name=f"User ({self.user_id})")
             else:  # incoming
                 correspondent_id = group.identifier if group else msg['sender']
                 primary_identifier = msg['sender']
