@@ -351,6 +351,7 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
 
     try:
         loop = asyncio.get_running_loop()
+        loop = asyncio.get_running_loop()
         instance = ChatbotInstance(config=config, on_session_end=remove_active_user, queues_collection=queues_collection, main_loop=loop)
         chatbot_instances[instance_id] = instance
         await instance.start()
@@ -581,6 +582,7 @@ async def reload_chatbot(user_id: str):
         new_instance_id = str(uuid.uuid4())
         console_log(f"API: Restarting instance for user {user_id} as {new_instance_id}")
 
+        loop = asyncio.get_running_loop()
         loop = asyncio.get_running_loop()
         new_instance = ChatbotInstance(config=config, on_session_end=remove_active_user, queues_collection=queues_collection, main_loop=loop)
         chatbot_instances[new_instance_id] = new_instance
