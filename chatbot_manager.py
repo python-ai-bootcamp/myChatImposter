@@ -4,6 +4,7 @@ import time
 import threading
 import sys
 import inspect
+import asyncio
 from typing import Dict, Any, Optional, Type, List
 
 from logging_lock import console_log, FileLogger
@@ -48,8 +49,11 @@ class ChatbotModel:
             history_messages_key="history",
         )
 
-    def get_response(self, message: str) -> str:
+    def get_response_sync(self, message: str) -> str:
         return self.conversation.invoke({"question": message}, config={"configurable": {"session_id": self.user_id}})
+
+    async def get_response_async(self, message: str) -> str:
+        return await self.conversation.ainvoke({"question": message}, config={"configurable": {"session_id": self.user_id}})
 
 from typing import Dict, Any, Optional, List
 
@@ -59,73 +63,66 @@ from dataclasses import asdict
 
 class CorrespondenceIngester:
     """
-    A threaded worker that pulls messages from all of a user's correspondent queues,
-    normalizes them, and persists them to the database.
+    An asynchronous worker that pulls messages from queues and persists them to the database.
     """
-    def __init__(self, user_id: str, provider_name: str, user_queues_manager: UserQueuesManager, queues_collection: Collection):
+    def __init__(self, user_id: str, provider_name: str, user_queues_manager: UserQueuesManager, queues_collection: Collection, main_loop):
         self.user_id = user_id
         self.provider_name = provider_name
         self.user_queues_manager = user_queues_manager
         self.queues_collection = queues_collection
-        self._stop_event = threading.Event()
-        self._thread = threading.Thread(target=self._run, daemon=True)
+        self.main_loop = main_loop
+        self._stop_event = asyncio.Event()
+        self._task = None
 
     def _normalize_to_text(self, message: Message) -> str:
-        """
-        A placeholder for a future normalization function. For now, it just
-        returns the message content as is.
-        """
-        # In the future, this method will handle complex normalization tasks,
-        # such as converting audio/video to text, extracting metadata, etc.
         return message.content
 
-    def _run(self):
-        """The main loop for the ingester thread."""
+    async def _run(self):
+        """The main async loop for the ingester."""
         console_log(f"INGESTER ({self.user_id}): Starting up.")
         while not self._stop_event.is_set():
             any_message_processed = False
-
-            # Get a snapshot of all current queues
             all_queues = self.user_queues_manager.get_all_queues()
 
             for queue in all_queues:
-                # Process all available messages in the current queue
                 while True:
                     message = queue.pop_message()
                     if not message:
-                        break  # No more messages in this queue
+                        break
 
                     any_message_processed = True
                     try:
-                        normalized_content = self._normalize_to_text(message)
-                        # In the future, we might want to store the normalized content separately
-                        # or replace the original content. For now, we'll just log it.
-
                         message_doc = asdict(message)
                         message_doc['user_id'] = self.user_id
                         message_doc['provider_name'] = self.provider_name
-                        message_doc['correspondent_id'] = queue.correspondent_id  # Add correspondent ID
-                        self.queues_collection.insert_one(message_doc)
-                        console_log(f"INGESTER ({self.user_id}/{queue.correspondent_id}): Successfully persisted message {message.id}.")
+                        message_doc['correspondent_id'] = queue.correspondent_id
 
+                        # Run the blocking DB call in a separate thread to not block the event loop
+                        await asyncio.to_thread(self.queues_collection.insert_one, message_doc)
+
+                        console_log(f"INGESTER ({self.user_id}/{queue.correspondent_id}): Successfully persisted message {message.id}.")
                     except Exception as e:
                         console_log(f"INGESTER_ERROR ({self.user_id}/{queue.correspondent_id}): Failed to process or save message {message.id}: {e}")
-                        # Error handling: might want to add message back to queue or log to a dead-letter queue
 
-            # If no messages were processed in any queue, wait a bit to prevent busy-looping
             if not any_message_processed:
-                self._stop_event.wait(timeout=1.0)
+                try:
+                    await asyncio.wait_for(self._stop_event.wait(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    pass
 
         console_log(f"INGESTER ({self.user_id}): Shutting down.")
 
     def start(self):
-        """Starts the ingester thread."""
-        self._thread.start()
+        """Starts the ingester task."""
+        if not self._task:
+            self._task = self.main_loop.create_task(self._run())
 
-    def stop(self):
-        """Signals the ingester thread to stop."""
-        self._stop_event.set()
-        self._thread.join()
+    async def stop(self):
+        """Signals the ingester task to stop and waits for it to finish."""
+        if self._task:
+            self._stop_event.set()
+            await self._task
+            self._task = None
 
 class ChatbotInstance:
     """Manages all components for a single chatbot instance."""
@@ -174,7 +171,8 @@ class ChatbotInstance:
                 user_id=self.user_id,
                 provider_name=provider_name,
                 user_queues_manager=self.user_queues_manager,
-                queues_collection=self._queues_collection
+                queues_collection=self._queues_collection,
+                main_loop=self.main_loop
             )
             console_log(f"INSTANCE ({self.user_id}): Initialized correspondence ingester.")
         else:
@@ -195,7 +193,7 @@ class ChatbotInstance:
             "on_session_end": self.on_session_end,
             "logger": file_logger,
         }
-        if provider_name == "whatsAppBaileyes":
+        if provider_name == "whatsAppBaileys":
             provider_init_params["main_loop"] = self.main_loop
 
         self.provider_instance = ProviderClass(**provider_init_params)
@@ -286,9 +284,8 @@ class ChatbotInstance:
             return
 
         try:
-            response_text = self.chatbot_model.get_response(message.content)
+            response_text = await self.chatbot_model.get_response_async(message.content)
 
-            # If the message is from a group, reply to the group. Otherwise, reply to the sender.
             # If the message is from a group, reply to the group. Otherwise, reply to the sender.
             recipient = message.group.identifier if message.group else message.sender.identifier
             await self.provider_instance.sendMessage(recipient, response_text)
@@ -336,7 +333,7 @@ class ChatbotInstance:
                                     the session data (e.g., on user unlink).
         """
         if self.ingester:
-            self.ingester.stop()
+            await self.ingester.stop()
 
         if self.provider_instance:
             console_log(f"INSTANCE ({self.user_id}): Shutting down... (cleanup={cleanup_session})")
