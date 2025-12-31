@@ -446,7 +446,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 console.log(`[${userId}] Cached LID mapping: ${senderId} -> ${senderPn}`);
             }
 
-            if (!msg.message) return null;
+            const messageType = Object.keys(msg.message)[0];
+            if (!msg.message || messageType === 'protocolMessage' || messageType === 'senderKeyDistributionMessage') return null;
 
             if (isGroup && !allowGroups) return null;
 
@@ -455,8 +456,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
             let messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text;
             if (!messageContent) {
-                const messageType = Object.keys(msg.message)[0] || 'unknown';
-                messageContent = `[User sent a non-text message: ${messageType}]`;
+                const type = Object.keys(msg.message)[0] || 'unknown';
+                messageContent = `[User sent a non-text message: ${type}]`;
             }
 
             if (!senderPn && !isGroup) {
@@ -489,6 +490,17 @@ async function connectToWhatsApp(userId, vendorConfig) {
             const finalSenderIdentifiers = Array.from(alternateIdentifiers).filter(Boolean);
             console.log(`[${userId}] Derived alternate identifiers:`, finalSenderIdentifiers);
 
+            let recipientId = msg.key.remoteJid;
+            if (msg.key.fromMe && recipientId.endsWith('@lid')) {
+                const resolvedJid = session.lidCache && session.lidCache[recipientId];
+                if (resolvedJid) {
+                    recipientId = resolvedJid;
+                } else {
+                    recipientId = recipientId.replace('@lid', '@s.whatsapp.net');
+                }
+            }
+
+
             return {
                 provider_message_id: msg.key.id,
                 sender: senderId,
@@ -498,7 +510,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 group: groupInfo,
                 alternate_identifiers: finalSenderIdentifiers,
                 direction: msg.key.fromMe ? 'outgoing' : 'incoming',
-                recipient_id: msg.key.remoteJid,
+                recipient_id: recipientId,
             };
         });
 
