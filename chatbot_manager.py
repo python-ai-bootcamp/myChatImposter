@@ -193,7 +193,7 @@ class ChatbotInstance:
             "on_session_end": self.on_session_end,
             "logger": file_logger,
         }
-        if provider_name == "whatsAppBaileys":
+        if provider_name == "whatsAppBaileyes":
             provider_init_params["main_loop"] = self.main_loop
 
         self.provider_instance = ProviderClass(**provider_init_params)

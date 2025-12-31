@@ -373,8 +373,7 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
         }
 
     except Exception as e:
-        import traceback
-        console_log(f"API_ERROR: Failed to create instance for user {user_id}: {e}\n{traceback.format_exc()}")
+        console_log(f"API_ERROR: Failed to create instance for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/chatbot/{user_id}/status")
@@ -599,8 +598,7 @@ async def reload_chatbot(user_id: str):
         return {"status": "success", "message": f"Chatbot for user '{user_id}' is being reloaded."}
 
     except Exception as e:
-        import traceback
-        console_log(f"API_ERROR: Failed to reload instance for user '{user_id}': {e}\n{traceback.format_exc()}")
+        console_log(f"API_ERROR: Failed to reload instance for user '{user_id}': {e}")
         # Attempt to clean up if the reload failed midway
         if user_id in active_users:
             del active_users[user_id]
