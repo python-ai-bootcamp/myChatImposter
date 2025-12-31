@@ -446,7 +446,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 console.log(`[${userId}] Cached LID mapping: ${senderId} -> ${senderPn}`);
             }
 
-            if (!msg.message || msg.key.fromMe) return null;
+            if (!msg.message) return null;
 
             if (isGroup && !allowGroups) return null;
 
@@ -497,6 +497,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 timestamp: new Date().toISOString(),
                 group: groupInfo,
                 alternate_identifiers: finalSenderIdentifiers,
+                direction: msg.key.fromMe ? 'outgoing' : 'incoming',
+                recipient_id: msg.key.remoteJid,
             };
         });
 
@@ -565,9 +567,14 @@ app.post('/sessions/:userId/send', async (req, res) => {
                 return res.status(400).json({ error: `Recipient ${recipient} is not on WhatsApp.` });
             }
         }
-        await session.sock.sendMessage(recipient, { text: message });
+        const sentMsgData = await session.sock.sendMessage(recipient, { text: message });
         console.log(`[${userId}] sendMessage() invoked for ${recipient}`);
-        res.status(200).json({ status: 'Message sent', recipient, message });
+        res.status(200).json({
+            status: 'Message sent',
+            recipient,
+            message,
+            provider_message_id: sentMsgData.key.id
+        });
     } catch (error) {
         const statusCode = error?.output?.statusCode || (error?.response?.status) || 500;
         const messageText = error?.response?.data || error?.message || 'Failed to send message.';

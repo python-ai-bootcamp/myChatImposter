@@ -307,17 +307,8 @@ class ChatbotInstance:
             recipient = message.group.identifier if message.group else message.sender.identifier
             await self.provider_instance.sendMessage(recipient, response_text)
 
-            bot_sender = Sender(identifier=f"bot_{user_id}", display_name=f"Bot ({user_id})")
-            if self.user_queues_manager:
-                # Add the bot's response back to the same correspondent's queue
-                self.user_queues_manager.add_message(
-                    correspondent_id=correspondent_id,
-                    content=response_text,
-                    sender=bot_sender,
-                    source='bot',
-                    originating_time=int(time.time() * 1000),
-                    group=message.group  # Carry over the group object to the bot's response
-                )
+            # The bot's response is no longer added directly to the queue.
+            # It will be processed when it comes back from the WebSocket as an outgoing message.
         except Exception as e:
             console_log(f"Error in callback for user {user_id}: {e}")
 

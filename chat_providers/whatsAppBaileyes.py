@@ -4,6 +4,7 @@ import os
 import threading
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Dict, Optional, Callable
+from collections import deque
 
 import httpx
 import websockets
@@ -24,6 +25,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         self.listen_task = None
         self.base_url = os.environ.get("WHATSAPP_SERVER_URL", "http://localhost:9000")
         self.ws_url = self.base_url.replace("http", "ws")
+        self.sent_message_ids = deque(maxlen=100)
 
     async def _send_config_to_server(self):
         if self.logger: self.logger.log(f"Connecting to Node.js server at {self.base_url}")
@@ -102,21 +104,62 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         if not queues_manager:
             if self.logger: self.logger.log("ERROR: Could not find a queues manager for myself.")
             return
+
         for msg in messages:
             group_info = msg.get('group')
-            if group_info and not self.config.provider_config.allow_group_messages: continue
-            group = Group(identifier=group_info['id'], display_name=group_info.get('name') or group_info['id'], alternate_identifiers=group_info.get('alternate_identifiers', [])) if group_info else None
-            correspondent_id = group.identifier if group else msg['sender']
-            primary_identifier = msg['sender']
-            all_alternates = msg.get('alternate_identifiers') or []
-            if not isinstance(all_alternates, list): all_alternates = []
-            permanent_jid = next((alt_id for alt_id in all_alternates if alt_id.endswith('@s.whatsapp.net')), None)
-            if permanent_jid:
-                if not group: correspondent_id = permanent_jid
-                primary_identifier = permanent_jid
-                if msg['sender'] not in all_alternates: all_alternates.append(msg['sender'])
-            sender = Sender(identifier=primary_identifier, display_name=msg.get('display_name', msg['sender']), alternate_identifiers=all_alternates)
-            queues_manager.add_message(correspondent_id=correspondent_id, content=msg['message'], sender=sender, source='user', group=group, provider_message_id=msg.get('provider_message_id'))
+            if group_info and not self.config.provider_config.allow_group_messages:
+                continue
+            group = Group(
+                identifier=group_info['id'],
+                display_name=group_info.get('name') or group_info['id'],
+                alternate_identifiers=group_info.get('alternate_identifiers', [])
+            ) if group_info else None
+
+            direction = msg.get('direction', 'incoming')
+            provider_message_id = msg.get('provider_message_id')
+            source = 'user'  # Default source
+
+            if direction == 'outgoing':
+                correspondent_id = msg.get('recipient_id')
+                # For outgoing messages, the 'sender' is the bot/user itself.
+                sender = Sender(identifier=f"bot_{self.user_id}", display_name=f"Bot ({self.user_id})")
+
+                if provider_message_id and provider_message_id in self.sent_message_ids:
+                    source = 'bot'  # This is an echo of a message the bot sent
+                    self.sent_message_ids.remove(provider_message_id)
+                else:
+                    source = 'user_outgoing'  # This is a message the user sent from their device
+            else:  # incoming
+                correspondent_id = group.identifier if group else msg['sender']
+                primary_identifier = msg['sender']
+                all_alternates = msg.get('alternate_identifiers') or []
+                if not isinstance(all_alternates, list): all_alternates = []
+
+                permanent_jid = next((alt_id for alt_id in all_alternates if alt_id.endswith('@s.whatsapp.net')), None)
+                if permanent_jid:
+                    if not group: correspondent_id = permanent_jid
+                    primary_identifier = permanent_jid
+                    if msg['sender'] not in all_alternates: all_alternates.append(msg['sender'])
+
+                sender = Sender(
+                    identifier=primary_identifier,
+                    display_name=msg.get('display_name', msg['sender']),
+                    alternate_identifiers=all_alternates
+                )
+                source = 'user'
+
+            if not correspondent_id:
+                if self.logger: self.logger.log(f"ERROR: Could not determine correspondent_id for message. Skipping. Data: {msg}")
+                continue
+
+            queues_manager.add_message(
+                correspondent_id=correspondent_id,
+                content=msg['message'],
+                sender=sender,
+                source=source,
+                group=group,
+                provider_message_id=provider_message_id
+            )
 
     async def stop_listening(self, cleanup_session: bool = False):
         if self.logger: self.logger.log(f"Stopping... (cleanup={cleanup_session})")
@@ -148,8 +191,19 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         if self.logger: self.logger.log(f"Sending reply to {recipient} ---> {message[:50]}...")
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(f"{self.base_url}/sessions/{self.user_id}/send", json={"recipient": recipient, "message": message}, headers={'Content-Type': 'application/json'})
-                if response.status_code != 200:
+                response = await client.post(
+                    f"{self.base_url}/sessions/{self.user_id}/send",
+                    json={"recipient": recipient, "message": message},
+                    headers={'Content-Type': 'application/json'},
+                    timeout=30
+                )
+                if response.status_code == 200:
+                    response_data = response.json()
+                    provider_message_id = response_data.get('provider_message_id')
+                    if provider_message_id:
+                        self.sent_message_ids.append(provider_message_id)
+                        if self.logger: self.logger.log(f"Successfully sent message. Tracking provider_message_id: {provider_message_id}")
+                else:
                     if self.logger: self.logger.log(f"ERROR: Failed to send message. Status: {response.status_code}, Body: {response.text}")
         except Exception as e:
             if self.logger: self.logger.log(f"ERROR: Exception while sending message: {e}")
