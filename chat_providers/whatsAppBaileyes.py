@@ -31,10 +31,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         if self.logger: self.logger.log(f"Connecting to Node.js server at {self.base_url}")
         try:
             config_data = {"userId": self.user_id, "config": self.config.provider_config.model_dump()}
-            url = f"{self.base_url}/initialize"
-            if self.logger: self.logger.log(f"DEBUG: Sending POST to {url} with data: {config_data}")
             async with httpx.AsyncClient() as client:
-                response = await client.post(url, json=config_data, headers={'Content-Type': 'application/json'})
+                response = await client.post(f"{self.base_url}/initialize", json=config_data, headers={'Content-Type': 'application/json'})
                 if response.status_code == 200:
                     if self.logger: self.logger.log("Successfully sent configuration to Node.js server.")
                 else:
@@ -53,10 +51,16 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
     async def _listen(self):
         uri = f"{self.ws_url}/{self.user_id}"
-        while self.is_listening:
+        max_retries = 3
+        retry_delay = 2  # seconds
+
+        for attempt in range(max_retries):
+            if not self.is_listening:
+                break
             try:
                 async with websockets.connect(uri, open_timeout=10) as websocket:
                     if self.logger: self.logger.log(f"WebSocket connection established to {uri}")
+                    # Connection successful, now enter the main listening loop
                     while self.is_listening:
                         try:
                             message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
@@ -65,7 +69,24 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                             continue
                         except websockets.exceptions.ConnectionClosed:
                             if self.logger: self.logger.log("WARN: WebSocket connection closed unexpectedly.")
-                            break
+                            break # Break inner loop to reconnect
+
+                    if self.is_listening: # If we broke due to connection closed, retry
+                        if self.logger: self.logger.log("Attempting to re-establish WebSocket connection...")
+                        continue # Go to the next attempt in the outer loop
+                    else: # If we broke because listening stopped, exit
+                        break
+
+            except websockets.exceptions.InvalidStatusCode as e:
+                # This is the key change: catch specific connection rejection errors
+                if e.status_code == 404 and attempt < max_retries - 1:
+                     if self.logger: self.logger.log(f"WARN: WebSocket connection rejected (404), likely a race condition. Retrying in {retry_delay}s... ({attempt + 1}/{max_retries})")
+                     await asyncio.sleep(retry_delay)
+                     continue # Go to the next attempt
+                else:
+                    if self.logger: self.logger.log(f"ERROR: WebSocket connection failed with status {e.status_code}. Giving up after {attempt + 1} attempts.")
+                    break # Give up
+
             except asyncio.CancelledError:
                 if self.logger: self.logger.log("Listen task cancelled.")
                 break

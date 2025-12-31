@@ -519,13 +519,6 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
 // --- Express Server ---
 const app = express();
-
-// Middleware to log all incoming requests for debugging
-app.use((req, res, next) => {
-    console.log(`[HTTP] Received request: ${req.method} ${req.url}`);
-    next();
-});
-
 app.use(express.json());
 
 app.post('/initialize', async (req, res) => {
