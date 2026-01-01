@@ -12,6 +12,7 @@ from config_models import UserConfiguration, ContextConfig
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_core.runnables import RunnableLambda
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.output_parsers import StrOutputParser
 from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
@@ -67,7 +68,14 @@ class ChatbotModel:
                 ("human", "{question}"),
             ]
         )
-        runnable = prompt | self.llm | StrOutputParser()
+
+        def _truncate_output(text: str) -> str:
+            limit = self.context_config.max_characters_single_message
+            if limit and limit > 0 and len(text) > limit:
+                return text[:limit]
+            return text
+
+        runnable = prompt | self.llm | StrOutputParser() | RunnableLambda(_truncate_output)
         self.conversation = RunnableWithMessageHistory(
             runnable,
             self._get_session_history,
@@ -113,7 +121,7 @@ class ChatbotModel:
             history.message_timestamps.pop(0)
             total_chars -= len(evicted_msg.content)
 
-    async def get_response_async(self, message: str, correspondent_id: str) -> str:
+    async def get_response_async(self, content: str, sender_name: str, correspondent_id: str) -> str:
         """
         Gets a response from the model, using the context for the given correspondent.
         """
@@ -123,12 +131,16 @@ class ChatbotModel:
         # Before getting a response, trim the history
         self._trim_history(history)
 
-        # Also, truncate the incoming message if it's too long
-        if len(message) > self.context_config.max_characters_single_message:
-            message = message[:self.context_config.max_characters_single_message]
+        # Truncate the incoming message content if it's too long
+        limit = self.context_config.max_characters_single_message
+        if limit and limit > 0 and len(content) > limit:
+            content = content[:limit]
+
+        # Format the message for the model
+        formatted_message = f"{sender_name}: {content}"
 
         response = await self.conversation.ainvoke(
-            {"question": message},
+            {"question": formatted_message},
             config={"configurable": {"session_id": session_id}}
         )
         return response
@@ -373,9 +385,11 @@ class ChatbotInstance:
             return
 
         try:
-            # Prepend the sender's name to the message content before sending it to the model
-            message_content_with_sender = f"{message.sender.display_name}: {message.content}"
-            response_text = await self.chatbot_model.get_response_async(message_content_with_sender, correspondent_id)
+            response_text = await self.chatbot_model.get_response_async(
+                content=message.content,
+                sender_name=message.sender.display_name,
+                correspondent_id=correspondent_id
+            )
 
             # If the message is from a group, reply to the group. Otherwise, reply to the sender.
             recipient = message.group.identifier if message.group else message.sender.identifier
