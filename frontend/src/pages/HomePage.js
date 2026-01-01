@@ -193,7 +193,7 @@ function HomePage() {
             Unlink
           </button>
         ) : (
-          <button onClick={handleLink} disabled={!selectedUserId || isLinking || status !== 'disconnected'}>
+          <button onClick={handleLink} disabled={!selectedUserId || isLinking || !['disconnected', 'close', 'error'].includes(status)}>
             {isLinking ? 'Linking...' : 'Link'}
           </button>
         )}
