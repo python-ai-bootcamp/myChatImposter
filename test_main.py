@@ -185,3 +185,26 @@ def test_get_user_queue_success():
     assert "provider_name" not in data["cor1"][0]
     assert "correspondent_id" not in data["cor1"][0]
     assert "_id" not in data["cor1"][0]
+
+def test_get_user_context():
+    user_id = "test_user_context"
+    with patch('main.active_users', {user_id: "instance_id"}), \
+         patch('main.chatbot_instances') as mock_instances:
+
+        # Mock instance and model
+        mock_instance = MagicMock()
+        mock_model = MagicMock()
+        mock_instance.chatbot_model = mock_model
+        mock_instances.get.return_value = mock_instance
+
+        # Mock history
+        mock_history = MagicMock()
+        mock_history.messages = [
+            MagicMock(type='human', content='Hello'),
+            MagicMock(type='ai', content='Bot: Hi')
+        ]
+        mock_model.get_all_histories.return_value = {"corr1": mock_history}
+
+        response = client.get(f"/api/context/{user_id}")
+        assert response.status_code == 200
+        assert response.json() == {"corr1": ["Human: Hello", "AI: Bot: Hi"]}

@@ -133,6 +133,12 @@ class ChatbotModel:
         )
         return response
 
+    def get_all_histories(self) -> Dict[str, TimestampedAndPrefixedChatMessageHistory]:
+        """Returns all message histories, shared or per-correspondent."""
+        if self.context_config.shared_context:
+            return {"shared_context": self.shared_history}
+        return self.histories
+
 from typing import Dict, Any, Optional, List
 
 from typing import Dict, Any, Optional, List, Callable
