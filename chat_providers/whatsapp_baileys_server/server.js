@@ -446,8 +446,16 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 console.log(`[${userId}] Cached LID mapping: ${senderId} -> ${senderPn}`);
             }
 
+            // --- Robustness Fix ---
+            // If msg.message is null or undefined, it's likely a stub message (e.g., decryption error notification)
+            // We should log it and skip processing to prevent a server crash.
+            if (!msg.message) {
+                console.log(`[${userId}] Received a stub message or an event with no message body. Type: ${msg.messageStubType}, Params: ${msg.messageStubParameters?.join(', ')}. Skipping.`);
+                return null;
+            }
+
             const messageType = Object.keys(msg.message)[0];
-            if (!msg.message || messageType === 'protocolMessage' || messageType === 'senderKeyDistributionMessage') return null;
+            if (messageType === 'protocolMessage' || messageType === 'senderKeyDistributionMessage') return null;
 
             if (isGroup && !allowGroups) return null;
 
