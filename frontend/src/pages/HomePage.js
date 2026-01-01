@@ -36,36 +36,47 @@ function HomePage() {
     setError(null);
 
     try {
-      const configResponse = await fetch(`/api/configurations/${selectedUserId}`);
-      if (!configResponse.ok) {
-        throw new Error('Failed to fetch configuration.');
-      }
-      const configData = await configResponse.json();
+        const selectedConfig = configs.find(c => c.user_id === selectedUserId);
+        const status = selectedConfig?.status || 'disconnected';
 
-      const payload = Array.isArray(configData) ? configData[0] : configData;
-      const createResponse = await fetch('/chatbot', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
+        if (status === 'disconnected') {
+            // If the user is fully disconnected, we need to create a new session.
+            const configResponse = await fetch(`/api/configurations/${selectedUserId}`);
+            if (!configResponse.ok) {
+                throw new Error('Failed to fetch configuration.');
+            }
+            const configData = await configResponse.json();
+            const payload = Array.isArray(configData) ? configData[0] : configData;
+            const createResponse = await fetch('/chatbot', {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
 
-      if (!createResponse.ok) {
-        const errorBody = await createResponse.json();
-        throw new Error(errorBody.detail || `Failed to create session (HTTP ${createResponse.status})`);
-      }
+            if (!createResponse.ok) {
+                const errorBody = await createResponse.json();
+                throw new Error(errorBody.detail || `Failed to create session (HTTP ${createResponse.status})`);
+            }
+        } else {
+            // If the status is 'close' or 'error', the instance exists but is not running.
+            // We should reload it to restart the connection process.
+            const reloadResponse = await fetch(`/chatbot/${selectedUserId}/reload`, {
+                method: 'POST',
+            });
 
-      const createData = await createResponse.json();
-      if (createData.failed && createData.failed.length > 0) {
-        throw new Error(`Failed to create instance: ${createData.failed[0].error}`);
-      }
+            if (!reloadResponse.ok) {
+                const errorBody = await reloadResponse.json();
+                throw new Error(errorBody.detail || 'Failed to reload configuration.');
+            }
+        }
 
-      const userId = createData.successful[0].user_id;
-      navigate(`/link/${userId}`);
+        // If either action is successful, navigate to the link page.
+        navigate(`/link/${selectedUserId}`);
 
     } catch (err) {
-      setError(err.message);
+        setError(err.message);
     } finally {
-      setIsLinking(false);
+        setIsLinking(false);
     }
   };
 
