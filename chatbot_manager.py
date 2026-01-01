@@ -8,13 +8,15 @@ import asyncio
 from typing import Dict, Any, Optional, Type, List
 
 from logging_lock import console_log, FileLogger
-from config_models import UserConfiguration
+from config_models import UserConfiguration, ContextConfig
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
+from langchain_core.runnables import RunnableLambda
 from langchain_community.chat_message_histories import ChatMessageHistory
 from langchain_core.output_parsers import StrOutputParser
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from pydantic import Field
 
 from queue_manager import UserQueuesManager, Message, Sender, Group
 from chat_providers.base import BaseChatProvider
@@ -29,26 +31,62 @@ def _find_provider_class(module, base_class: Type) -> Optional[Type]:
             return obj
     return None
 
-class PrefixedChatMessageHistory(ChatMessageHistory):
+class TimestampedAndPrefixedChatMessageHistory(ChatMessageHistory):
     """
-    A ChatMessageHistory that prefixes AI messages with 'Bot: '.
+    A ChatMessageHistory that stores messages with timestamps, prefixes, and handles truncation.
     """
+    message_timestamps: List[float] = Field(default_factory=list)
+    context_config: ContextConfig = Field(default_factory=ContextConfig)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Pop context_config from kwargs to prevent it from being passed to Pydantic's ChatMessageHistory
+        self.context_config = kwargs.pop('context_config', ContextConfig())
+
     def add_message(self, message: BaseMessage) -> None:
-        """Add a message to the history, prefixing AI messages."""
+        """Add a message to the history with a timestamp and apply truncation."""
+        limit = self.context_config.max_characters_single_message
+
+        # Truncate content if necessary
+        truncated_content = message.content
+        if limit and limit > 0 and len(truncated_content) > limit:
+            truncated_content = truncated_content[:limit]
+
+        # Create a new message with the potentially truncated content
         if isinstance(message, AIMessage):
-            # Create a new AIMessage with the prefixed content
-            prefixed_message = AIMessage(content=f"Bot: {message.content}")
-            super().add_message(prefixed_message)
+            new_message = AIMessage(content=f"Bot: {truncated_content}")
+        elif isinstance(message, HumanMessage):
+            # Human messages are already formatted with the sender's name at this point.
+            # We need to find the content part and truncate it.
+            parts = message.content.split(": ", 1)
+            if len(parts) == 2:
+                sender, original_content = parts
+                if limit and limit > 0 and len(original_content) > limit:
+                    original_content = original_content[:limit]
+                new_content = f"{sender}: {original_content}"
+                new_message = HumanMessage(content=new_content)
+            else: # Fallback for unexpected format
+                 new_message = HumanMessage(content=truncated_content)
         else:
-            # For all other message types, add them as is
-            super().add_message(message)
+            new_message = message.__class__(content=truncated_content)
+
+        super().add_message(new_message)
+        self.message_timestamps.append(time.time())
+
+    def clear(self) -> None:
+        """Clear messages and their timestamps."""
+        super().clear()
+        self.message_timestamps = []
 
 class ChatbotModel:
     """A wrapper for the LangChain conversation model for a single user."""
-    def __init__(self, user_id: str, llm: Any, system_prompt: str):
+    def __init__(self, user_id: str, llm: Any, system_prompt: str, context_config: ContextConfig):
         self.user_id = user_id
         self.llm = llm
-        self.message_history = PrefixedChatMessageHistory()
+        self.context_config = context_config
+        self.histories: Dict[str, TimestampedAndPrefixedChatMessageHistory] = {}
+        self.shared_history = TimestampedAndPrefixedChatMessageHistory(context_config=self.context_config)
+
         prompt = ChatPromptTemplate.from_messages(
             [
                 ("system", system_prompt),
@@ -56,19 +94,77 @@ class ChatbotModel:
                 ("human", "{question}"),
             ]
         )
+
         runnable = prompt | self.llm | StrOutputParser()
         self.conversation = RunnableWithMessageHistory(
             runnable,
-            lambda session_id: self.message_history,
+            self._get_session_history,
             input_messages_key="question",
             history_messages_key="history",
         )
 
-    def get_response_sync(self, message: str) -> str:
-        return self.conversation.invoke({"question": message}, config={"configurable": {"session_id": self.user_id}})
+    def _get_session_history(self, session_id: str) -> TimestampedAndPrefixedChatMessageHistory:
+        """
+        Returns the appropriate message history based on the shared_context flag.
+        """
+        if self.context_config.shared_context:
+            return self.shared_history
+        if session_id not in self.histories:
+            self.histories[session_id] = TimestampedAndPrefixedChatMessageHistory()
+        return self.histories[session_id]
 
-    async def get_response_async(self, message: str) -> str:
-        return await self.conversation.ainvoke({"question": message}, config={"configurable": {"session_id": self.user_id}})
+    def _trim_history(self, history: TimestampedAndPrefixedChatMessageHistory):
+        """
+        Trims the message history based on the context_config settings.
+        This is analogous to the _enforce_limits method in CorrespondentQueue.
+        """
+        now = time.time()
+        max_age_seconds = self.context_config.max_days * 24 * 60 * 60
+        total_chars = sum(len(msg.content) for msg in history.messages)
+
+        # 1. Evict by age
+        while history.messages and (now - history.message_timestamps[0]) > max_age_seconds:
+            evicted_msg = history.messages.pop(0)
+            history.message_timestamps.pop(0)
+            total_chars -= len(evicted_msg.content)
+
+        # 2. Evict by total characters (if new message would exceed)
+        # In this context, we trim *before* adding the new message, so we check against the current limit.
+        while history.messages and total_chars > self.context_config.max_characters:
+            evicted_msg = history.messages.pop(0)
+            history.message_timestamps.pop(0)
+            total_chars -= len(evicted_msg.content)
+
+        # 3. Evict by total message count
+        while len(history.messages) > self.context_config.max_messages:
+            evicted_msg = history.messages.pop(0)
+            history.message_timestamps.pop(0)
+            total_chars -= len(evicted_msg.content)
+
+    async def get_response_async(self, content: str, sender_name: str, correspondent_id: str) -> str:
+        """
+        Gets a response from the model, using the context for the given correspondent.
+        """
+        session_id = self.user_id if self.context_config.shared_context else correspondent_id
+        history = self._get_session_history(session_id)
+
+        # Before getting a response, trim the history
+        self._trim_history(history)
+
+        # Format the message for the model
+        formatted_message = f"{sender_name}: {content}"
+
+        response = await self.conversation.ainvoke(
+            {"question": formatted_message},
+            config={"configurable": {"session_id": session_id}}
+        )
+        return response
+
+    def get_all_histories(self) -> Dict[str, TimestampedAndPrefixedChatMessageHistory]:
+        """Returns all message histories, shared or per-correspondent."""
+        if self.context_config.shared_context:
+            return {"shared_context": self.shared_history}
+        return self.histories
 
 from typing import Dict, Any, Optional, List
 
@@ -226,7 +322,12 @@ class ChatbotInstance:
             llm_provider = LlmProviderClass(config=self.config.llm_provider_config, user_id=self.user_id)
             llm_instance = llm_provider.get_llm()
             system_prompt = llm_provider.get_system_prompt()
-            self.chatbot_model = ChatbotModel(self.user_id, llm_instance, system_prompt)
+            self.chatbot_model = ChatbotModel(
+                self.user_id,
+                llm_instance,
+                system_prompt,
+                self.config.context_config
+            )
             console_log(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.")
         else:
             self.mode = "collection_only"
@@ -299,9 +400,11 @@ class ChatbotInstance:
             return
 
         try:
-            # Prepend the sender's name to the message content before sending it to the model
-            message_content_with_sender = f"{message.sender.display_name}: {message.content}"
-            response_text = await self.chatbot_model.get_response_async(message_content_with_sender)
+            response_text = await self.chatbot_model.get_response_async(
+                content=message.content,
+                sender_name=message.sender.display_name,
+                correspondent_id=correspondent_id
+            )
 
             # If the message is from a group, reply to the group. Otherwise, reply to the sender.
             recipient = message.group.identifier if message.group else message.sender.identifier

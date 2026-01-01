@@ -430,6 +430,32 @@ async def get_user_queue(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get queue from database: {e}")
 
 
+@app.get("/api/context/{user_id}")
+async def get_user_context(user_id: str):
+    """
+    Returns a dictionary of all correspondent contexts for a user.
+    """
+    if user_id not in active_users:
+        raise HTTPException(status_code=404, detail=f"No active session found for user_id '{user_id}'.")
+
+    instance_id = active_users[user_id]
+    instance = chatbot_instances.get(instance_id)
+    if not instance or not instance.chatbot_model:
+        raise HTTPException(status_code=404, detail="Chatbot model not found for this user.")
+
+    try:
+        histories = instance.chatbot_model.get_all_histories()
+        # Format the histories for JSON response
+        formatted_histories = {
+            correspondent: [f"{'AI' if msg.type == 'ai' else 'Human'}: {msg.content}" for msg in history.messages]
+            for correspondent, history in histories.items()
+        }
+        return JSONResponse(content=formatted_histories)
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to get context for user '{user_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get context: {e}")
+
+
 @app.delete("/api/queue/{user_id}/{correspondent_id}", status_code=204)
 async def clear_correspondent_queue(user_id: str, correspondent_id: str):
     """

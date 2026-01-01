@@ -4,56 +4,134 @@ import time
 import asyncio
 from chatbot_manager import CorrespondenceIngester, Message, Sender, ChatbotModel
 from queue_manager import UserQueuesManager
-from config_models import QueueConfig
+from config_models import QueueConfig, ContextConfig
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables import Runnable
 
 # A fake LLM class to have more control over the mock's behavior
 class FakeLlm(Runnable):
+    async def ainvoke(self, *args, **kwargs):
+        # The LLM's output is an AIMessage, which the StrOutputParser then handles.
+        return AIMessage(content="This is a mock response.")
+
     def invoke(self, *args, **kwargs):
         # The LLM's output is an AIMessage, which the StrOutputParser then handles.
         return AIMessage(content="This is a mock response.")
 
-class TestChatbotModel(unittest.TestCase):
-    def setUp(self):
-        # Instantiate the ChatbotModel with the fake LLM
-        self.chatbot_model = ChatbotModel(
-            user_id='test_user',
-            llm=FakeLlm(),
-            system_prompt='You are a helpful assistant.'
+class TestChatbotModelWithContext(unittest.IsolatedAsyncioTestCase):
+    async def asyncSetUp(self):
+        self.llm = FakeLlm()
+
+    async def test_shared_context(self):
+        """Test that context is shared between correspondents when shared_context is True."""
+        context_config = ContextConfig(shared_context=True)
+        model = ChatbotModel('user1', self.llm, 'system', context_config)
+
+        await model.get_response_async(content="My name is Bob", sender_name="Test", correspondent_id='c1')
+        self.assertEqual(len(model.shared_history.messages), 2)
+
+        # c2 should know Bob's name
+        await model.get_response_async(content="What is my name?", sender_name="Test", correspondent_id='c2')
+        self.assertEqual(len(model.shared_history.messages), 4)
+        self.assertIn("Test: My name is Bob", model.shared_history.messages[0].content)
+
+    async def test_isolated_context(self):
+        """Test that context is isolated between correspondents when shared_context is False."""
+        context_config = ContextConfig(shared_context=False)
+        model = ChatbotModel('user1', self.llm, 'system', context_config)
+
+        await model.get_response_async(content="My name is Bob", sender_name="Test", correspondent_id='c1')
+        self.assertIn('c1', model.histories)
+        self.assertEqual(len(model.histories['c1'].messages), 2)
+        self.assertEqual(len(model.shared_history.messages), 0) # Shared history should be unused
+
+        await model.get_response_async(content="My name is Alice", sender_name="Test", correspondent_id='c2')
+        self.assertIn('c2', model.histories)
+        self.assertEqual(len(model.histories['c2'].messages), 2)
+
+        # History of c1 should be separate from c2
+        self.assertIn("Test: My name is Bob", model.histories['c1'].messages[0].content)
+        self.assertIn("Test: My name is Alice", model.histories['c2'].messages[0].content)
+
+    async def test_trimming_by_max_messages(self):
+        """Test that history is trimmed to max_messages."""
+        context_config = ContextConfig(max_messages=2, shared_context=True)
+        model = ChatbotModel('user1', self.llm, 'system', context_config)
+
+        await model.get_response_async(content="Message 1", sender_name="Test", correspondent_id='c1')
+        await model.get_response_async(content="Message 2", sender_name="Test", correspondent_id='c1')
+
+        # This call should trigger trimming.
+        await model.get_response_async(content="Message 3", sender_name="Test", correspondent_id='c1')
+
+        history = model.shared_history.messages
+        # After trimming, history should contain (human: msg2), (ai_response), (human: msg3), (ai_response)
+        # But the model trims *before* invoking, so the history checked has (human: msg2), (ai_response)
+        # Then the new message is added. So it becomes (human: msg2), (ai_response), (human: msg3)
+        # And after the response, it's 4 messages long.
+        self.assertEqual(len(history), 4)
+        self.assertEqual(history[0].content, "Test: Message 2")
+        self.assertEqual(history[1].content, "Bot: This is a mock response.")
+        self.assertEqual(history[2].content, "Test: Message 3")
+
+    async def test_trimming_by_max_characters(self):
+        """Test that history is trimmed by total characters."""
+        # Total chars for "Test: 123456789" (15) + "Bot: This is a mock response." (26) is 41
+        context_config = ContextConfig(max_characters=40, shared_context=True)
+        model = ChatbotModel('user1', self.llm, 'system', context_config)
+
+        await model.get_response_async(content="123456789", sender_name="Test", correspondent_id='c1')
+        await model.get_response_async(content="short", sender_name="Test", correspondent_id='c1')
+
+        history = model.shared_history.messages
+        self.assertEqual(len(history), 3)
+        self.assertEqual(history[0].content, "Bot: This is a mock response.")
+        self.assertEqual(history[1].content, "Test: short")
+
+    @patch('time.time')
+    async def test_trimming_by_age(self, mock_time):
+        """Test that history is trimmed by message age."""
+        start_time = 1700000000.0
+        mock_time.return_value = start_time
+
+        context_config = ContextConfig(max_days=1, shared_context=True)
+        model = ChatbotModel('user1', self.llm, 'system', context_config)
+
+        # Add the first message
+        await model.get_response_async(content="Old message", sender_name="Test", correspondent_id='c1')
+        self.assertEqual(len(model.shared_history.messages), 2)
+
+        # Simulate time passing (2 days)
+        mock_time.return_value = start_time + (2 * 24 * 60 * 60)
+
+        # Add a new message, which should trigger eviction of the old one
+        await model.get_response_async(content="New message", sender_name="Test", correspondent_id='c1')
+
+        history = model.shared_history.messages
+        self.assertEqual(len(history), 2)
+        self.assertEqual(history[0].content, "Test: New message")
+
+    async def test_single_message_truncation(self):
+        """Test that individual messages (both user and bot) are truncated."""
+        context_config = ContextConfig(max_characters_single_message=10, shared_context=True)
+        # The fake LLM returns a 26-char response, so it should be truncated
+        model = ChatbotModel('user1', self.llm, 'system', context_config)
+
+        # User message is also longer than 10 chars
+        response = await model.get_response_async(
+            content="This is a long user message",
+            sender_name="TestSender",
+            correspondent_id='c1'
         )
 
-    def test_message_history_prefixing(self):
-        """
-        Tests that the user's message and the bot's response are correctly
-        prefixed before being added to the message history.
-        """
-        # 1. Simulate a user sending a message
-        user_message_content = "Hello, bot!"
-        sender_display_name = "Test User"
-        prefixed_user_message = f"{sender_display_name}: {user_message_content}"
-
-        # This call will trigger the conversation chain
-        response = self.chatbot_model.get_response_sync(prefixed_user_message)
-
-        # 2. Verify the response from the mock LLM
+        # The response from the model should be complete
         self.assertEqual(response, "This is a mock response.")
 
-        # 3. Verify the message history
-        history = self.chatbot_model.message_history.messages
-
-        # Expected history:
-        # - A HumanMessage with the user's prefixed message
-        # - An AIMessage with the bot's prefixed response
+        history = model.shared_history.messages
         self.assertEqual(len(history), 2)
-
-        # Check the user's message in the history
-        self.assertIsInstance(history[0], HumanMessage)
-        self.assertEqual(history[0].content, prefixed_user_message)
-
-        # Check the bot's message in the history
-        self.assertIsInstance(history[1], AIMessage)
-        self.assertEqual(history[1].content, "Bot: This is a mock response.")
+        # Check that the messages in the history are truncated
+        self.assertEqual(history[0].content, "TestSender: This is a ")
+        self.assertEqual(history[1].content, "Bot: This is a ")
 
 class TestCorrespondenceIngester(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):

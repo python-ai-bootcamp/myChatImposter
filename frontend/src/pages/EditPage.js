@@ -175,12 +175,22 @@ function EditPage() {
             const response = await fetch(`/chatbot/${userId}/status`);
             if (response.ok) {
                 const data = await response.json();
-                if (data.status && data.status.toLowerCase() === 'connected') {
+                const status = data.status ? data.status.toLowerCase() : '';
+                // The button should be shown if the user is connected, or if the connection
+                // is closed/disconnected, allowing them to retry. It should only be hidden
+                // when actively linking (which redirects to the LinkPage anyway).
+                if (status === 'connected' || status === 'close' || status === 'disconnected') {
                     setIsLinked(true);
+                } else {
+                    setIsLinked(false);
                 }
+            } else {
+                // If the status endpoint returns 404, it means the session is not active.
+                setIsLinked(true);
             }
         } catch (error) {
             console.error("Failed to fetch user status:", error);
+            setIsLinked(true); // Also allow retry on network error
         }
     };
     fetchStatus();
