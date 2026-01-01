@@ -144,8 +144,11 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
             if direction == 'outgoing':
                 recipient_id = msg.get('recipient_id')
-                permanent_jid = next((alt_id for alt_id in (msg.get('alternate_identifiers') or []) if alt_id.endswith('@s.whatsapp.net')), None)
-                correspondent_id = permanent_jid or recipient_id
+                if group:
+                    correspondent_id = group.identifier
+                else:
+                    permanent_jid = next((alt_id for alt_id in (msg.get('alternate_identifiers') or []) if alt_id.endswith('@s.whatsapp.net')), None)
+                    correspondent_id = permanent_jid or recipient_id
 
                 if provider_message_id and provider_message_id in self.sent_message_ids:
                     source = 'bot'
