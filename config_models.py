@@ -39,10 +39,18 @@ class LLMProviderConfig(BaseModel):
     provider_name: str
     provider_config: LLMProviderSettings
 
+class ContextConfig(BaseModel):
+    max_messages: int = 10
+    max_characters: int = 1000
+    max_days: int = 1
+    max_characters_single_message: int = 300
+    shared_context: bool = True
+
 class UserConfiguration(BaseModel):
     user_id: str
     respond_to_whitelist: List[str] = Field(default_factory=list, title="Respond To Direct Contact Whitelist")
     respond_to_whitelist_group: List[str] = Field(default_factory=list, title="Respond To Group Whitelist")
     chat_provider_config: ChatProviderConfig
     queue_config: QueueConfig
+    context_config: ContextConfig = Field(default_factory=ContextConfig)
     llm_provider_config: Optional[LLMProviderConfig] = None
