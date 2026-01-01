@@ -118,15 +118,18 @@ class TestChatbotModelWithContext(unittest.IsolatedAsyncioTestCase):
         model = ChatbotModel('user1', self.llm, 'system', context_config)
 
         # User message is also longer than 10 chars
-        await model.get_response_async(
+        response = await model.get_response_async(
             content="This is a long user message",
             sender_name="TestSender",
             correspondent_id='c1'
         )
 
+        # The response from the model should be complete
+        self.assertEqual(response, "This is a mock response.")
+
         history = model.shared_history.messages
         self.assertEqual(len(history), 2)
-        # The user message is now formatted inside the model, so we check for the final format.
+        # Check that the messages in the history are truncated
         self.assertEqual(history[0].content, "TestSender: This is a ")
         self.assertEqual(history[1].content, "Bot: This is a ")
 

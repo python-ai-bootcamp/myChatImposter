@@ -33,18 +33,44 @@ def _find_provider_class(module, base_class: Type) -> Optional[Type]:
 
 class TimestampedAndPrefixedChatMessageHistory(ChatMessageHistory):
     """
-    A ChatMessageHistory that stores messages with timestamps and prefixes AI messages.
+    A ChatMessageHistory that stores messages with timestamps, prefixes, and handles truncation.
     """
     message_timestamps: List[float] = Field(default_factory=list)
+    context_config: ContextConfig = Field(default_factory=ContextConfig)
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Pop context_config from kwargs to prevent it from being passed to Pydantic's ChatMessageHistory
+        self.context_config = kwargs.pop('context_config', ContextConfig())
 
     def add_message(self, message: BaseMessage) -> None:
-        """Add a message to the history with a timestamp."""
+        """Add a message to the history with a timestamp and apply truncation."""
+        limit = self.context_config.max_characters_single_message
+
+        # Truncate content if necessary
+        truncated_content = message.content
+        if limit and limit > 0 and len(truncated_content) > limit:
+            truncated_content = truncated_content[:limit]
+
+        # Create a new message with the potentially truncated content
         if isinstance(message, AIMessage):
-            # Create a new AIMessage with the prefixed content
-            prefixed_message = AIMessage(content=f"Bot: {message.content}")
-            super().add_message(prefixed_message)
+            new_message = AIMessage(content=f"Bot: {truncated_content}")
+        elif isinstance(message, HumanMessage):
+            # Human messages are already formatted with the sender's name at this point.
+            # We need to find the content part and truncate it.
+            parts = message.content.split(": ", 1)
+            if len(parts) == 2:
+                sender, original_content = parts
+                if limit and limit > 0 and len(original_content) > limit:
+                    original_content = original_content[:limit]
+                new_content = f"{sender}: {original_content}"
+                new_message = HumanMessage(content=new_content)
+            else: # Fallback for unexpected format
+                 new_message = HumanMessage(content=truncated_content)
         else:
-            super().add_message(message)
+            new_message = message.__class__(content=truncated_content)
+
+        super().add_message(new_message)
         self.message_timestamps.append(time.time())
 
     def clear(self) -> None:
@@ -59,7 +85,7 @@ class ChatbotModel:
         self.llm = llm
         self.context_config = context_config
         self.histories: Dict[str, TimestampedAndPrefixedChatMessageHistory] = {}
-        self.shared_history = TimestampedAndPrefixedChatMessageHistory()
+        self.shared_history = TimestampedAndPrefixedChatMessageHistory(context_config=self.context_config)
 
         prompt = ChatPromptTemplate.from_messages(
             [
@@ -69,13 +95,7 @@ class ChatbotModel:
             ]
         )
 
-        def _truncate_output(text: str) -> str:
-            limit = self.context_config.max_characters_single_message
-            if limit and limit > 0 and len(text) > limit:
-                return text[:limit]
-            return text
-
-        runnable = prompt | self.llm | StrOutputParser() | RunnableLambda(_truncate_output)
+        runnable = prompt | self.llm | StrOutputParser()
         self.conversation = RunnableWithMessageHistory(
             runnable,
             self._get_session_history,
@@ -130,11 +150,6 @@ class ChatbotModel:
 
         # Before getting a response, trim the history
         self._trim_history(history)
-
-        # Truncate the incoming message content if it's too long
-        limit = self.context_config.max_characters_single_message
-        if limit and limit > 0 and len(content) > limit:
-            content = content[:limit]
 
         # Format the message for the model
         formatted_message = f"{sender_name}: {content}"
