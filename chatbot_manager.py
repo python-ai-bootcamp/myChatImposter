@@ -95,9 +95,9 @@ class ChatbotModel:
             ]
         )
 
-        runnable = prompt | self.llm | StrOutputParser()
+        self.runnable = prompt | self.llm | StrOutputParser()
         self.conversation = RunnableWithMessageHistory(
-            runnable,
+            self.runnable,
             self._get_session_history,
             input_messages_key="question",
             history_messages_key="history",
@@ -156,10 +156,18 @@ class ChatbotModel:
         # Format the message for the model
         formatted_message = f"{sender_name}: {content}"
 
-        response = await self.conversation.ainvoke(
-            {"question": formatted_message},
+        # Manually add the user message to history immediately
+        history.add_message(HumanMessage(content=formatted_message))
+
+        # Invoke the underlying runnable directly, passing the current history manually
+        response = await self.runnable.ainvoke(
+            {"question": formatted_message, "history": history.messages},
             config={"configurable": {"session_id": session_id}}
         )
+
+        # Manually add the AI response to history
+        history.add_message(AIMessage(content=response))
+
         return response
 
     def get_all_histories(self) -> Dict[str, TimestampedAndPrefixedChatMessageHistory]:
