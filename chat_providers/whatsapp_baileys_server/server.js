@@ -690,19 +690,11 @@ app.post('/sessions/:userId/send', async (req, res) => {
     }
 
     try {
-        if (recipient.endsWith('@lid')) {
-            const cachedJid = session.lidCache && session.lidCache[recipient];
-            if (cachedJid) {
-                console.log(`[${userId}] Resolved LID ${recipient} -> ${cachedJid} from cache.`);
-                recipient = cachedJid;
-            } else {
-                const normalized = recipient.replace('@lid', '@s.whatsapp.net');
-                console.log(`[${userId}] WARN: No cache for LID ${recipient}. Falling back to normalization: ${normalized}`);
-                recipient = normalized;
-            }
-        }
+        // Do NOT automatically convert LID to PN.
+        // Sending to the LID ensures we use the correct cryptographic session (LID session),
+        // preventing "Bad MAC" errors caused by state divergence when mixing PN/LID sessions.
 
-        if (!recipient.endsWith('@g.us') && !recipient.endsWith('@s.whatsapp.net')) {
+        if (!recipient.endsWith('@g.us') && !recipient.endsWith('@s.whatsapp.net') && !recipient.endsWith('@lid')) {
             const [result] = await session.sock.onWhatsApp(recipient);
             if (!result?.exists) {
                 return res.status(400).json({ error: `Recipient ${recipient} is not on WhatsApp.` });

@@ -175,7 +175,6 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 permanent_jid = next((alt_id for alt_id in all_alternates if alt_id.endswith('@s.whatsapp.net')), None)
                 if permanent_jid:
                     if not group: correspondent_id = permanent_jid
-                    primary_identifier = permanent_jid
                     if msg['sender'] not in all_alternates: all_alternates.append(msg['sender'])
 
                 sender = Sender(
