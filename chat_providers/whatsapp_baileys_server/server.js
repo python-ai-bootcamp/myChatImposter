@@ -234,17 +234,45 @@ const useMongoDBAuthState = async (userId, collection) => {
                 set: async (data) => {
                     const promises = [];
                     for (const type in data) {
-                        for (const id in data[type]) {
+                        for (let id in data[type]) {
                             const value = data[type][id];
-                            promises.push(writeData(`${userId}-${type}-${id}`, value));
+                            let writeId = id;
+
+                            // Redirect LID session writes to PN session to keep them in sync
+                            if (type === 'session' && id.includes('@lid')) {
+                                const lidJid = id.split(':')[0];
+                                const pn = sessions[userId]?.lidCache?.[lidJid];
+                                if (pn) {
+                                    // Construct the target ID preserving the device suffix from the original ID if present
+                                    // Usually PN JIDs don't have suffixes in the same way, or match.
+                                    // If id was user@lid:1, we want user@pn:1 or just user@pn?
+                                    // Baileys sessions are usually just JID for legacy or JID:device for MD.
+                                    // Let's assume we map user@lid:X -> user@pn:X
+                                    const suffix = id.split(':')[1];
+                                    writeId = suffix ? `${pn}:${suffix}` : pn;
+                                    console.log(`[${userId}] MongoDB Auth: Redirecting write for LID ${id} to PN ${writeId}`);
+                                }
+                            }
+
+                            promises.push(writeData(`${userId}-${type}-${writeId}`, value));
                         }
                     }
                     await Promise.all(promises);
                 },
                 remove: async (type, ids) => {
                     const promises = [];
-                    for (const id of ids) {
-                        promises.push(removeData(`${userId}-${type}-${id}`));
+                    for (let id of ids) {
+                        let removeId = id;
+                        if (type === 'session' && id.includes('@lid')) {
+                            const lidJid = id.split(':')[0];
+                            const pn = sessions[userId]?.lidCache?.[lidJid];
+                            if (pn) {
+                                const suffix = id.split(':')[1];
+                                removeId = suffix ? `${pn}:${suffix}` : pn;
+                                console.log(`[${userId}] MongoDB Auth: Redirecting remove for LID ${id} to PN ${removeId}`);
+                            }
+                        }
+                        promises.push(removeData(`${userId}-${type}-${removeId}`));
                     }
                     await Promise.all(promises);
                 }
