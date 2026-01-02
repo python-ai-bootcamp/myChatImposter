@@ -208,16 +208,18 @@ const useMongoDBAuthState = async (userId, collection) => {
                             // If we have a mapping for this LID to a Phone Number (PN), we should prefer the PN session.
                             // This handles cases where a "zombie" session exists for the LID (causing Bad MAC)
                             // or where the LID session is missing (causing No Matching Session).
-                            if (type === 'session' && id.endsWith('@lid')) {
-                                const pn = sessions[userId]?.lidCache?.[id];
+                            if (type === 'session' && id.includes('@lid')) {
+                                const lidJid = id.split(':')[0]; // Remove device suffix if present
+                                const pn = sessions[userId]?.lidCache?.[lidJid];
                                 if (pn) {
-                                    // Try to fetch the session for the Phone Number
+                                    // Try to fetch the session for the Phone Number.
+                                    // Note: We use the bare PN JID because the mapping stores bare JIDs.
                                     const pnValue = await readData(`${userId}-${type}-${pn}`);
                                     if (pnValue) {
-                                        console.log(`[${userId}] MongoDB Auth: Overriding LID session lookup. Using PN session ${pn} for LID ${id}.`);
+                                        console.log(`[${userId}] MongoDB Auth: Overriding LID session lookup. Using PN session ${pn} for LID ${id} (Mapped from ${lidJid}).`);
                                         value = pnValue;
                                     } else {
-                                        console.log(`[${userId}] MongoDB Auth: LID ${id} maps to ${pn}, but no PN session found. Keeping original lookup result.`);
+                                        console.log(`[${userId}] MongoDB Auth: LID ${lidJid} maps to ${pn}, but no PN session found. Keeping original lookup result.`);
                                     }
                                 }
                             }
