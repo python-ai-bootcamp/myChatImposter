@@ -167,6 +167,9 @@ const useMongoDBAuthState = async (userId, collection) => {
         if (value instanceof Buffer) {
             return { type: 'Buffer', data: value.toString('base64') };
         }
+        if (value instanceof Uint8Array) {
+            return { type: 'Buffer', data: Buffer.from(value).toString('base64') };
+        }
         return value;
     };
 
