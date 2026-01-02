@@ -271,7 +271,9 @@ async function getLatestWaVersion() {
 // Helper to manage LID mappings in MongoDB
 const loadLidMappings = async (userId) => {
     try {
-        const doc = await baileysSessionsCollection.findOne({ _id: `${userId}-lid-mappings` });
+        const key = `${userId}-lid-mappings`;
+        console.log(`[${userId}] Loading LID mappings from DB key: ${key}`);
+        const doc = await baileysSessionsCollection.findOne({ _id: key });
         return doc?.mappings || {};
     } catch (e) {
         console.error(`[${userId}] Failed to load LID mappings:`, e);
