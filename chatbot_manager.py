@@ -95,9 +95,9 @@ class ChatbotModel:
             ]
         )
 
-        runnable = prompt | self.llm | StrOutputParser()
+        self.runnable = prompt | self.llm | StrOutputParser()
         self.conversation = RunnableWithMessageHistory(
-            runnable,
+            self.runnable,
             self._get_session_history,
             input_messages_key="question",
             history_messages_key="history",
@@ -110,7 +110,7 @@ class ChatbotModel:
         if self.context_config.shared_context:
             return self.shared_history
         if session_id not in self.histories:
-            self.histories[session_id] = TimestampedAndPrefixedChatMessageHistory()
+            self.histories[session_id] = TimestampedAndPrefixedChatMessageHistory(context_config=self.context_config)
         return self.histories[session_id]
 
     def _trim_history(self, history: TimestampedAndPrefixedChatMessageHistory):
@@ -136,7 +136,9 @@ class ChatbotModel:
             total_chars -= len(evicted_msg.content)
 
         # 3. Evict by total message count
-        while len(history.messages) > self.context_config.max_messages:
+        # We need to ensure that after adding the new User message and the new AI response,
+        # the total count does not exceed the limit. Hence, we make room for 2 new messages.
+        while history.messages and len(history.messages) + 2 > self.context_config.max_messages:
             evicted_msg = history.messages.pop(0)
             history.message_timestamps.pop(0)
             total_chars -= len(evicted_msg.content)
@@ -154,10 +156,18 @@ class ChatbotModel:
         # Format the message for the model
         formatted_message = f"{sender_name}: {content}"
 
-        response = await self.conversation.ainvoke(
-            {"question": formatted_message},
+        # Manually add the user message to history immediately
+        history.add_message(HumanMessage(content=formatted_message))
+
+        # Invoke the underlying runnable directly, passing the current history manually
+        response = await self.runnable.ainvoke(
+            {"question": formatted_message, "history": history.messages},
             config={"configurable": {"session_id": session_id}}
         )
+
+        # Manually add the AI response to history
+        history.add_message(AIMessage(content=response))
+
         return response
 
     def get_all_histories(self) -> Dict[str, TimestampedAndPrefixedChatMessageHistory]:
