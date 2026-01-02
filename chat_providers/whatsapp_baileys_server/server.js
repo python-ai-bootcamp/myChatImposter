@@ -335,6 +335,27 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
     console.log(`[${userId}] Starting new session connection...`);
 
+    // Pre-load LID mappings to ensure consistent state for auth/socket initialization
+    const lidMappings = await loadLidMappings(userId);
+
+    // Initialize session placeholder if needed, or update cache immediately
+    // This ensures resolveId has the correct state during useMongoDBAuthState initialization
+    if (!sessions[userId]) {
+        console.log(`[${userId}] Creating new session object (pre-init).`);
+        sessions[userId] = {
+            contactsCache: {},
+            lidCache: lidMappings,
+            pushNameCache: {},
+            vendorConfig: vendorConfig,
+            retryCount: 0,
+            http405Tracker: createHttp405Tracker(),
+            // sock etc will be set later
+        };
+    } else {
+        console.log(`[${userId}] Updating existing session object (pre-init).`);
+        sessions[userId].lidCache = lidMappings;
+    }
+
     const { state, saveCreds } = await useMongoDBAuthState(userId, baileysSessionsCollection);
 
     const logger = pino({ level: 'debug' });
