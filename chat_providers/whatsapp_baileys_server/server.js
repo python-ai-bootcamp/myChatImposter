@@ -147,13 +147,23 @@ const port = args[0] || 9000; // Default to port 9000 if not provided
 // --- MongoDB Auth State Logic ---
 const useMongoDBAuthState = async (userId, collection) => {
     const reviveBuffers = (key, value) => {
-        if (value && typeof value === 'object' && value.type === 'Buffer' && Array.isArray(value.data)) {
-            return Buffer.from(value.data, 'base64');
+        if (value && typeof value === 'object' && value.type === 'Buffer') {
+            if (Array.isArray(value.data)) {
+                return Buffer.from(value.data);
+            }
+            if (typeof value.data === 'string') {
+                return Buffer.from(value.data, 'base64');
+            }
         }
         return value;
     };
 
     const serializeBuffers = (key, value) => {
+        // Because JSON.stringify calls toJSON on Buffers before hitting this replacer,
+        // we see { type: 'Buffer', data: [numbers...] } instead of a Buffer instance.
+        if (value && value.type === 'Buffer' && Array.isArray(value.data)) {
+            return { type: 'Buffer', data: Buffer.from(value.data).toString('base64') };
+        }
         if (value instanceof Buffer) {
             return { type: 'Buffer', data: value.toString('base64') };
         }
@@ -192,7 +202,17 @@ const useMongoDBAuthState = async (userId, collection) => {
                     const data = {};
                     await Promise.all(
                         ids.map(async id => {
-                            const value = await readData(`${userId}-${type}-${id}`);
+                            let value = await readData(`${userId}-${type}-${id}`);
+                            if (!value && type === 'session' && id.endsWith('@lid')) {
+                                const pn = sessions[userId]?.lidCache?.[id];
+                                if (pn) {
+                                    console.log(`[${userId}] MongoDB Auth: Key miss for LID ${id}. Found PN mapping ${pn}. Trying fallback.`);
+                                    value = await readData(`${userId}-${type}-${pn}`);
+                                    if (value) {
+                                        console.log(`[${userId}] MongoDB Auth: Fallback successful for ${id} using ${pn}`);
+                                    }
+                                }
+                            }
                             if (value) {
                                 data[id] = value;
                             }
