@@ -199,6 +199,7 @@ const useMongoDBAuthState = async (userId, collection) => {
             creds,
             keys: {
                 get: async (type, ids) => {
+                    // console.log(`[${userId}] keys.get requested for type: ${type}, ids: ${ids.length}`);
                     const data = {};
                     await Promise.all(
                         ids.map(async id => {
@@ -211,6 +212,8 @@ const useMongoDBAuthState = async (userId, collection) => {
                                     if (value) {
                                         console.log(`[${userId}] MongoDB Auth: Fallback successful for ${id} using ${pn}`);
                                     }
+                                } else {
+                                     console.log(`[${userId}] MongoDB Auth: Key miss for LID ${id} and NO MAPPING found in cache.`);
                                 }
                             }
                             if (value) {
@@ -259,6 +262,33 @@ async function getLatestWaVersion() {
     return cachedWaVersion;
 }
 
+// Helper to manage LID mappings in MongoDB
+const loadLidMappings = async (userId) => {
+    try {
+        const doc = await baileysSessionsCollection.findOne({ _id: `${userId}-lid-mappings` });
+        return doc?.mappings || {};
+    } catch (e) {
+        console.error(`[${userId}] Failed to load LID mappings:`, e);
+        return {};
+    }
+};
+
+const saveLidMapping = async (userId, lid, pn) => {
+    try {
+        const key = `${userId}-lid-mappings`;
+        const update = {};
+        update[`mappings.${lid}`] = pn;
+        await baileysSessionsCollection.updateOne(
+            { _id: key },
+            { $set: update },
+            { upsert: true }
+        );
+        console.log(`[${userId}] Persisted LID mapping: ${lid} -> ${pn}`);
+    } catch (e) {
+        console.error(`[${userId}] Failed to save LID mapping:`, e);
+    }
+};
+
 async function connectToWhatsApp(userId, vendorConfig) {
     const waVersion = await getLatestWaVersion();
 
@@ -297,6 +327,10 @@ async function connectToWhatsApp(userId, vendorConfig) {
     });
 
 
+    // Load persisted LID mappings
+    const persistedLidMappings = await loadLidMappings(userId);
+    console.log(`[${userId}] Loaded ${Object.keys(persistedLidMappings).length} LID mappings from DB.`);
+
     // If a session object already exists, update it. Otherwise, create a new one.
     // This preserves the object reference and prevents race conditions.
     if (sessions[userId]) {
@@ -305,7 +339,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         sessions[userId].currentQR = null;
         sessions[userId].connectionStatus = 'connecting';
         sessions[userId].retryCount = 0;
-        sessions[userId].lidCache = {}; // Also reset cache on reconnect
+        sessions[userId].lidCache = persistedLidMappings; // Initialize with persisted data
         sessions[userId].pushNameCache = {}; // Reset pushName cache
         resetHttp405Tracker(sessions[userId]);
     } else {
@@ -315,7 +349,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
             currentQR: null,
             connectionStatus: 'connecting',
             contactsCache: {},
-            lidCache: {},
+            lidCache: persistedLidMappings, // Initialize with persisted data
             pushNameCache: {},
             vendorConfig: vendorConfig,
             retryCount: 0,
@@ -462,8 +496,11 @@ async function connectToWhatsApp(userId, vendorConfig) {
             }
             if (senderId && senderId.endsWith('@lid') && senderPn) {
                 if (!session.lidCache) session.lidCache = {};
-                session.lidCache[senderId] = senderPn;
-                console.log(`[${userId}] Cached LID mapping: ${senderId} -> ${senderPn}`);
+                if (session.lidCache[senderId] !== senderPn) {
+                    session.lidCache[senderId] = senderPn;
+                    console.log(`[${userId}] New LID mapping found: ${senderId} -> ${senderPn}. Saving to DB.`);
+                    saveLidMapping(userId, senderId, senderPn);
+                }
             }
 
             // --- Robustness Fix ---
