@@ -203,30 +203,6 @@ const useMongoDBAuthState = async (userId, collection) => {
                     await Promise.all(
                         ids.map(async id => {
                             let value = await readData(`${userId}-${type}-${id}`);
-
-                            // Fix for Bad MAC / SessionError with LIDs:
-                            // If we have a mapping for this LID to a Phone Number (PN), we should prefer the PN session.
-                            // This handles cases where a "zombie" session exists for the LID (causing Bad MAC)
-                            // or where the LID session is missing (causing No Matching Session).
-                            if (type === 'session' && id.includes('@lid')) {
-                                const lidJid = id.split(':')[0]; // Remove device suffix if present
-                                const pn = sessions[userId]?.lidCache?.[lidJid];
-                                if (pn) {
-                                    // Try to fetch the session for the Phone Number.
-                                    // We must preserve the device suffix to match the write logic in keys.set
-                                    const suffix = id.split(':')[1];
-                                    const targetPnId = suffix ? `${pn}:${suffix}` : pn;
-
-                                    const pnValue = await readData(`${userId}-${type}-${targetPnId}`);
-                                    if (pnValue) {
-                                        console.log(`[${userId}] MongoDB Auth: Overriding LID session lookup. Using PN session ${targetPnId} for LID ${id} (Mapped from ${lidJid}).`);
-                                        value = pnValue;
-                                    } else {
-                                        console.log(`[${userId}] MongoDB Auth: LID ${lidJid} maps to ${pn}, but no PN session found for ${targetPnId}. Keeping original lookup result.`);
-                                    }
-                                }
-                            }
-
                             if (value) {
                                 data[id] = value;
                             }
@@ -237,45 +213,17 @@ const useMongoDBAuthState = async (userId, collection) => {
                 set: async (data) => {
                     const promises = [];
                     for (const type in data) {
-                        for (let id in data[type]) {
+                        for (const id in data[type]) {
                             const value = data[type][id];
-                            let writeId = id;
-
-                            // Redirect LID session writes to PN session to keep them in sync
-                            if (type === 'session' && id.includes('@lid')) {
-                                const lidJid = id.split(':')[0];
-                                const pn = sessions[userId]?.lidCache?.[lidJid];
-                                if (pn) {
-                                    // Construct the target ID preserving the device suffix from the original ID if present
-                                    // Usually PN JIDs don't have suffixes in the same way, or match.
-                                    // If id was user@lid:1, we want user@pn:1 or just user@pn?
-                                    // Baileys sessions are usually just JID for legacy or JID:device for MD.
-                                    // Let's assume we map user@lid:X -> user@pn:X
-                                    const suffix = id.split(':')[1];
-                                    writeId = suffix ? `${pn}:${suffix}` : pn;
-                                    console.log(`[${userId}] MongoDB Auth: Redirecting write for LID ${id} to PN ${writeId}`);
-                                }
-                            }
-
-                            promises.push(writeData(`${userId}-${type}-${writeId}`, value));
+                            promises.push(writeData(`${userId}-${type}-${id}`, value));
                         }
                     }
                     await Promise.all(promises);
                 },
                 remove: async (type, ids) => {
                     const promises = [];
-                    for (let id of ids) {
-                        let removeId = id;
-                        if (type === 'session' && id.includes('@lid')) {
-                            const lidJid = id.split(':')[0];
-                            const pn = sessions[userId]?.lidCache?.[lidJid];
-                            if (pn) {
-                                const suffix = id.split(':')[1];
-                                removeId = suffix ? `${pn}:${suffix}` : pn;
-                                console.log(`[${userId}] MongoDB Auth: Redirecting remove for LID ${id} to PN ${removeId}`);
-                            }
-                        }
-                        promises.push(removeData(`${userId}-${type}-${removeId}`));
+                    for (const id of ids) {
+                        promises.push(removeData(`${userId}-${type}-${id}`));
                     }
                     await Promise.all(promises);
                 }
