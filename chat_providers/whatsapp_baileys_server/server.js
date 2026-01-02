@@ -181,7 +181,21 @@ const useMongoDBAuthState = async (userId, collection) => {
     const readData = async (key) => {
         const doc = await collection.findOne({ _id: key });
         if (doc?.value) {
-            return JSON.parse(doc.value, reviveBuffers);
+            try {
+                const parsed = JSON.parse(doc.value, reviveBuffers);
+                // Sanity check: If we loaded a session-related key and it looks like a "corrupted" buffer object
+                // (has keys "0", "1" etc but isn't a Buffer), warn about it.
+                if (parsed && typeof parsed === 'object' && !Buffer.isBuffer(parsed) && !Array.isArray(parsed)) {
+                    const keys = Object.keys(parsed);
+                    if (keys.length > 0 && keys.every(k => !isNaN(parseInt(k)))) {
+                        console.warn(`[${userId}] WARNING: Loaded key '${key}' appears to be a corrupted Buffer (stored as object). This may cause Bad MAC errors.`);
+                    }
+                }
+                return parsed;
+            } catch (e) {
+                console.error(`[${userId}] Error parsing data for key '${key}':`, e);
+                return null;
+            }
         }
         return null;
     };
