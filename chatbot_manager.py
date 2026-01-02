@@ -110,7 +110,7 @@ class ChatbotModel:
         if self.context_config.shared_context:
             return self.shared_history
         if session_id not in self.histories:
-            self.histories[session_id] = TimestampedAndPrefixedChatMessageHistory()
+            self.histories[session_id] = TimestampedAndPrefixedChatMessageHistory(context_config=self.context_config)
         return self.histories[session_id]
 
     def _trim_history(self, history: TimestampedAndPrefixedChatMessageHistory):
