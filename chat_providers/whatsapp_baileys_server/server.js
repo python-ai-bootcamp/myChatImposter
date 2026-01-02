@@ -199,23 +199,29 @@ const useMongoDBAuthState = async (userId, collection) => {
             creds,
             keys: {
                 get: async (type, ids) => {
-                    // console.log(`[${userId}] keys.get requested for type: ${type}, ids: ${ids.length}`);
                     const data = {};
                     await Promise.all(
                         ids.map(async id => {
                             let value = await readData(`${userId}-${type}-${id}`);
-                            if (!value && type === 'session' && id.endsWith('@lid')) {
+
+                            // Fix for Bad MAC / SessionError with LIDs:
+                            // If we have a mapping for this LID to a Phone Number (PN), we should prefer the PN session.
+                            // This handles cases where a "zombie" session exists for the LID (causing Bad MAC)
+                            // or where the LID session is missing (causing No Matching Session).
+                            if (type === 'session' && id.endsWith('@lid')) {
                                 const pn = sessions[userId]?.lidCache?.[id];
                                 if (pn) {
-                                    console.log(`[${userId}] MongoDB Auth: Key miss for LID ${id}. Found PN mapping ${pn}. Trying fallback.`);
-                                    value = await readData(`${userId}-${type}-${pn}`);
-                                    if (value) {
-                                        console.log(`[${userId}] MongoDB Auth: Fallback successful for ${id} using ${pn}`);
+                                    // Try to fetch the session for the Phone Number
+                                    const pnValue = await readData(`${userId}-${type}-${pn}`);
+                                    if (pnValue) {
+                                        console.log(`[${userId}] MongoDB Auth: Overriding LID session lookup. Using PN session ${pn} for LID ${id}.`);
+                                        value = pnValue;
+                                    } else {
+                                        console.log(`[${userId}] MongoDB Auth: LID ${id} maps to ${pn}, but no PN session found. Keeping original lookup result.`);
                                     }
-                                } else {
-                                     console.log(`[${userId}] MongoDB Auth: Key miss for LID ${id} and NO MAPPING found in cache.`);
                                 }
                             }
+
                             if (value) {
                                 data[id] = value;
                             }
