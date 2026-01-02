@@ -213,13 +213,16 @@ const useMongoDBAuthState = async (userId, collection) => {
                                 const pn = sessions[userId]?.lidCache?.[lidJid];
                                 if (pn) {
                                     // Try to fetch the session for the Phone Number.
-                                    // Note: We use the bare PN JID because the mapping stores bare JIDs.
-                                    const pnValue = await readData(`${userId}-${type}-${pn}`);
+                                    // We must preserve the device suffix to match the write logic in keys.set
+                                    const suffix = id.split(':')[1];
+                                    const targetPnId = suffix ? `${pn}:${suffix}` : pn;
+
+                                    const pnValue = await readData(`${userId}-${type}-${targetPnId}`);
                                     if (pnValue) {
-                                        console.log(`[${userId}] MongoDB Auth: Overriding LID session lookup. Using PN session ${pn} for LID ${id} (Mapped from ${lidJid}).`);
+                                        console.log(`[${userId}] MongoDB Auth: Overriding LID session lookup. Using PN session ${targetPnId} for LID ${id} (Mapped from ${lidJid}).`);
                                         value = pnValue;
                                     } else {
-                                        console.log(`[${userId}] MongoDB Auth: LID ${lidJid} maps to ${pn}, but no PN session found. Keeping original lookup result.`);
+                                        console.log(`[${userId}] MongoDB Auth: LID ${lidJid} maps to ${pn}, but no PN session found for ${targetPnId}. Keeping original lookup result.`);
                                     }
                                 }
                             }
