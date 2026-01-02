@@ -211,6 +211,9 @@ const useMongoDBAuthState = async (userId, collection) => {
     const credsKey = `${userId}-creds`;
     const creds = (await readData(credsKey)) || initAuthCreds();
 
+    // In-memory cache to prevent race conditions during rapid updates
+    const keysCache = {};
+
     return {
         state: {
             creds,
@@ -219,9 +222,18 @@ const useMongoDBAuthState = async (userId, collection) => {
                     const data = {};
                     await Promise.all(
                         ids.map(async id => {
+                            const cacheKey = `${type}-${id}`;
+                            if (cacheKey in keysCache) {
+                                if (keysCache[cacheKey]) {
+                                    data[id] = keysCache[cacheKey];
+                                }
+                                return;
+                            }
+
                             let value = await readData(`${userId}-${type}-${id}`);
                             if (value) {
                                 data[id] = value;
+                                keysCache[cacheKey] = value;
                             }
                         })
                     );
@@ -232,6 +244,8 @@ const useMongoDBAuthState = async (userId, collection) => {
                     for (const type in data) {
                         for (const id in data[type]) {
                             const value = data[type][id];
+                            const cacheKey = `${type}-${id}`;
+                            keysCache[cacheKey] = value; // Update cache immediately
                             promises.push(writeData(`${userId}-${type}-${id}`, value));
                         }
                     }
@@ -240,6 +254,8 @@ const useMongoDBAuthState = async (userId, collection) => {
                 remove: async (type, ids) => {
                     const promises = [];
                     for (const id of ids) {
+                        const cacheKey = `${type}-${id}`;
+                        delete keysCache[cacheKey]; // Remove from cache immediately
                         promises.push(removeData(`${userId}-${type}-${id}`));
                     }
                     await Promise.all(promises);
