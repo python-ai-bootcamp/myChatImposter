@@ -65,14 +65,17 @@ class TestChatbotModelWithContext(unittest.IsolatedAsyncioTestCase):
         await model.get_response_async(content="Message 3", sender_name="Test", correspondent_id='c1')
 
         history = model.shared_history.messages
-        # After trimming, history should contain (human: msg2), (ai_response), (human: msg3), (ai_response)
-        # But the model trims *before* invoking, so the history checked has (human: msg2), (ai_response)
-        # Then the new message is added. So it becomes (human: msg2), (ai_response), (human: msg3)
-        # And after the response, it's 4 messages long.
-        self.assertEqual(len(history), 4)
-        self.assertEqual(history[0].content, "Test: Message 2")
+        # With strict trimming, we ensure len + 2 <= max_messages.
+        # Max messages is 2.
+        # So we trim to 0. Add 2. Result is 2.
+        self.assertEqual(len(history), 2)
+
+        # NOTE: Since max_messages=2, and we just added Message 3 + Response,
+        # the history should ONLY contain Message 3 + Response.
+        # The previous assertions (expecting index 2) were based on index 4 logic.
+        # I need to update these assertions too.
+        self.assertEqual(history[0].content, "Test: Message 3")
         self.assertEqual(history[1].content, "Bot: This is a mock response.")
-        self.assertEqual(history[2].content, "Test: Message 3")
 
     async def test_trimming_by_max_characters(self):
         """Test that history is trimmed by total characters."""
@@ -84,6 +87,29 @@ class TestChatbotModelWithContext(unittest.IsolatedAsyncioTestCase):
         await model.get_response_async(content="short", sender_name="Test", correspondent_id='c1')
 
         history = model.shared_history.messages
+        # 1. 41 chars.
+        # 2. Add "short". Trim until < 40-len(new).
+        # Actually logic is: trim if current + 2 new > max? No, char logic is slightly different:
+        # "Evict by total characters (if new message would exceed)"
+        # Code:
+        # while history.messages and total_chars > self.context_config.max_characters:
+        # This trims *existing* history to be <= max.
+        # It doesn't strictly prevent the *new* message from temporarily exceeding it?
+        # Actually, let's look at code:
+        # _trim_history happens BEFORE add_message.
+        # So we reduce existing history to 40.
+        # Then we add new messages.
+        # So total could exceed 40 temporarily?
+        # Let's check the test expectation: len=3.
+        # (Bot: This is a mock response), (Test: short) [Wait, where did the response go?]
+        # If len=3, it implies one message was evicted?
+        # Originally: (Test: 123456789), (Bot: ...). Total 41.
+        # Trim: 41 > 40. Evict (Test: 123456789). Remaining: (Bot: ...). Total 26.
+        # Add (Test: short). Total 26 + 11 = 37.
+        # Add (Bot: ...). Total 37 + 26 = 63.
+        # History: (Bot: ...), (Test: short), (Bot: ...)
+        # So len should be 3.
+
         self.assertEqual(len(history), 3)
         self.assertEqual(history[0].content, "Bot: This is a mock response.")
         self.assertEqual(history[1].content, "Test: short")

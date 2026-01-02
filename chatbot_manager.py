@@ -136,7 +136,9 @@ class ChatbotModel:
             total_chars -= len(evicted_msg.content)
 
         # 3. Evict by total message count
-        while len(history.messages) > self.context_config.max_messages:
+        # We need to ensure that after adding the new User message and the new AI response,
+        # the total count does not exceed the limit. Hence, we make room for 2 new messages.
+        while history.messages and len(history.messages) + 2 > self.context_config.max_messages:
             evicted_msg = history.messages.pop(0)
             history.message_timestamps.pop(0)
             total_chars -= len(evicted_msg.content)
