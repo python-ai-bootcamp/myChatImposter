@@ -333,10 +333,6 @@ async function connectToWhatsApp(userId, vendorConfig) {
     });
 
 
-    // Load persisted LID mappings
-    const persistedLidMappings = await loadLidMappings(userId);
-    console.log(`[${userId}] Loaded ${Object.keys(persistedLidMappings).length} LID mappings from DB.`);
-
     // If a session object already exists, update it. Otherwise, create a new one.
     // This preserves the object reference and prevents race conditions.
     if (sessions[userId]) {
@@ -345,7 +341,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         sessions[userId].currentQR = null;
         sessions[userId].connectionStatus = 'connecting';
         sessions[userId].retryCount = 0;
-        sessions[userId].lidCache = persistedLidMappings; // Initialize with persisted data
+        sessions[userId].lidCache = {}; // Reset cache on reconnect (will load from DB below)
         sessions[userId].pushNameCache = {}; // Reset pushName cache
         resetHttp405Tracker(sessions[userId]);
     } else {
@@ -355,13 +351,22 @@ async function connectToWhatsApp(userId, vendorConfig) {
             currentQR: null,
             connectionStatus: 'connecting',
             contactsCache: {},
-            lidCache: persistedLidMappings, // Initialize with persisted data
+            lidCache: {}, // Initialize empty (will load from DB below)
             pushNameCache: {},
             vendorConfig: vendorConfig,
             retryCount: 0,
             http405Tracker: createHttp405Tracker(),
         };
     }
+
+    // Load persisted LID mappings asynchronously to avoid blocking session creation
+    // This resolves a race condition where the WebSocket connects before this function returns
+    loadLidMappings(userId).then(mappings => {
+        if (sessions[userId]) {
+            sessions[userId].lidCache = mappings;
+            console.log(`[${userId}] Loaded ${Object.keys(mappings).length} LID mappings from DB into session.`);
+        }
+    });
 
 
     sock.ev.on('connection.update', (update) => {
