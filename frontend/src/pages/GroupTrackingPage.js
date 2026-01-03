@@ -9,7 +9,6 @@ const GroupTrackingPage = () => {
   const [availableGroups, setAvailableGroups] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
-  const [searchTerm, setSearchTerm] = useState('');
 
   // Fetch configuration and active groups on load
   useEffect(() => {
@@ -70,7 +69,6 @@ const GroupTrackingPage = () => {
 
     // Find display name for current value if not in available list
     const currentGroup = availableGroups.find(g => g.id === currentVal);
-    const displayLabel = currentGroup ? `${currentGroup.subject} (${currentGroup.id})` : currentVal;
 
     const filteredGroups = availableGroups.filter(g =>
         (g.subject || '').toLowerCase().includes(filter.toLowerCase()) ||
