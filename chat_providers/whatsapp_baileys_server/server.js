@@ -136,7 +136,128 @@ const collectGroupIdentifiers = (groupInfo) => {
     return Array.from(identifiers).filter(Boolean);
 };
 
+// --- Message Processing Helper ---
+async function processMessage(session, userId, msg, processOffline, allowGroups) {
+    if (msg?.key?.senderPn) {
+        console.log(`[${userId}] Normalized senderPn detected: ${msg.key.senderPn}`);
+    }
+    if (msg?.messageKey?.senderPn) {
+        console.log(`[${userId}] messageKey senderPn present: ${msg.messageKey.senderPn}`);
+    }
 
+    const isGroup = msg.key.remoteJid.endsWith('@g.us');
+    const senderId = isGroup ? (msg.participant || msg.key.participant) : msg.key.remoteJid;
+    const senderPn = msg?.key?.senderPn || msg?.messageKey?.senderPn || msg?.key?.senderJid || null;
+
+    // Cache pushName and LID mappings from ANY message, even stubs
+    const cacheKey = senderPn || senderId;
+    if (msg.pushName) {
+        session.pushNameCache[cacheKey] = msg.pushName;
+    }
+    if (senderId && senderId.endsWith('@lid') && senderPn) {
+        if (!session.lidCache) session.lidCache = {};
+        if (session.lidCache[senderId] !== senderPn) {
+            session.lidCache[senderId] = senderPn;
+            console.log(`[${userId}] New LID mapping found: ${senderId} -> ${senderPn}. Saving to DB.`);
+            saveLidMapping(userId, senderId, senderPn);
+        }
+    }
+
+    if (!msg.message) {
+        console.log(`[${userId}] Received a stub message or an event with no message body. Type: ${msg.messageStubType}, Params: ${msg.messageStubParameters?.join(', ')}. Skipping.`);
+        return null;
+    }
+
+    // Filter out technical keys to find the actual content type
+    const rawKeys = Object.keys(msg.message);
+    const technicalKeys = ['senderKeyDistributionMessage', 'messageContextInfo', 'keepInChatMessage'];
+    const contentKeys = rawKeys.filter(k => !technicalKeys.includes(k));
+    const messageType = contentKeys.length > 0 ? contentKeys[0] : rawKeys[0];
+
+    if (messageType === 'protocolMessage') return null;
+    if (contentKeys.length === 0 && messageType === 'senderKeyDistributionMessage') return null;
+
+    if (isGroup && !allowGroups) return null;
+
+    const messageTimestamp = (typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp * 1000 : msg.messageTimestamp.toNumber() * 1000);
+    if (!processOffline && messageTimestamp < serverStartTime) return null;
+
+    let messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text;
+    if (!messageContent) {
+        const type = Object.keys(msg.message)[0] || 'unknown';
+        messageContent = `[User sent a non-text message: ${type}]`;
+    }
+
+    if (!senderPn && !isGroup) {
+        const normalizedRemote = jidNormalizedUser?.(msg.key.remoteJid);
+        if (normalizedRemote && normalizedRemote !== msg.key.remoteJid) {
+            msg.messageKey = msg.messageKey || {};
+            msg.messageKey.senderPn = normalizedRemote;
+        }
+    }
+
+    const senderName = msg.pushName || session.pushNameCache[senderId] || session.pushNameCache[senderPn] || session.contactsCache[senderId]?.name || null;
+
+    let groupInfo = null;
+    if (isGroup) {
+        try {
+            // Using session.sock directly might be an issue if called from outside,
+            // but for this helper assume session.sock is available.
+            const metadata = await session.sock.groupMetadata(msg.key.remoteJid);
+            groupInfo = { id: msg.key.remoteJid, name: metadata.subject };
+            groupInfo.alternate_identifiers = collectGroupIdentifiers(groupInfo);
+        } catch (e) {
+            groupInfo = { id: msg.key.remoteJid, name: null };
+            groupInfo.alternate_identifiers = collectGroupIdentifiers(groupInfo);
+        }
+    }
+
+    const alternateIdentifiers = new Set(collectSenderIdentifiers(msg, senderId));
+    addIdentifierVariant(alternateIdentifiers, senderPn);
+    addIdentifierVariant(alternateIdentifiers, msg?.key?.participantPn);
+    addIdentifierVariant(alternateIdentifiers, senderName); // Add display name
+
+    const finalSenderIdentifiers = Array.from(alternateIdentifiers).filter(Boolean);
+
+    let recipientId = msg.key.remoteJid;
+    if (msg.key.fromMe && recipientId.endsWith('@lid')) {
+        const resolvedJid = session.lidCache && session.lidCache[recipientId];
+        if (resolvedJid) {
+            recipientId = resolvedJid;
+        } else {
+            recipientId = recipientId.replace('@lid', '@s.whatsapp.net');
+        }
+    }
+
+    let actualSender = null;
+    if (msg.key.fromMe) {
+        const selfJid = session.sock?.user?.id;
+        const selfName = msg.pushName;
+        const selfAlternate = new Set();
+        addIdentifierVariant(selfAlternate, selfJid);
+        addIdentifierVariant(selfAlternate, selfName);
+
+        actualSender = {
+            identifier: selfJid,
+            display_name: selfName,
+            alternate_identifiers: Array.from(selfAlternate).filter(Boolean),
+        };
+    }
+
+    return {
+        provider_message_id: msg.key.id,
+        sender: senderId,
+        display_name: senderName,
+        message: messageContent,
+        timestamp: new Date().toISOString(),
+        group: groupInfo,
+        alternate_identifiers: finalSenderIdentifiers,
+        direction: msg.key.fromMe ? 'outgoing' : 'incoming',
+        recipient_id: recipientId,
+        actual_sender: actualSender,
+        originating_time: messageTimestamp,
+    };
+}
 
 
 
@@ -517,136 +638,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         const allowGroups = session.vendorConfig.allow_group_messages === true;
 
         const newMessagesPromises = m.messages.map(async (msg) => {
-            if (msg?.key?.senderPn) {
-                console.log(`[${userId}] Normalized senderPn detected: ${msg.key.senderPn}`);
-            }
-            if (msg?.messageKey?.senderPn) {
-                console.log(`[${userId}] messageKey senderPn present: ${msg.messageKey.senderPn}`);
-            }
-            console.log(`[${userId}] Raw message key info:`, {
-                remoteJid: msg?.key?.remoteJid,
-                senderJid: msg?.key?.senderJid,
-                senderPn: msg?.key?.senderPn || msg?.messageKey?.senderPn,
-                participant: msg?.participant || msg?.key?.participant,
-                pushName: msg?.pushName,
-                contactsCacheName: (msg?.key?.remoteJid && session.contactsCache[msg.key.remoteJid]?.name) || null,
-            });
-            console.log("entire msg object::\n----------", msg, "\n--------");
-
-            const isGroup = msg.key.remoteJid.endsWith('@g.us');
-            const senderId = isGroup ? (msg.participant || msg.key.participant) : msg.key.remoteJid;
-            const senderPn = msg?.key?.senderPn || msg?.messageKey?.senderPn || msg?.key?.senderJid || null;
-
-            // Cache pushName and LID mappings from ANY message, even stubs
-            const cacheKey = senderPn || senderId;
-            if (msg.pushName) {
-                session.pushNameCache[cacheKey] = msg.pushName;
-            }
-            if (senderId && senderId.endsWith('@lid') && senderPn) {
-                if (!session.lidCache) session.lidCache = {};
-                if (session.lidCache[senderId] !== senderPn) {
-                    session.lidCache[senderId] = senderPn;
-                    console.log(`[${userId}] New LID mapping found: ${senderId} -> ${senderPn}. Saving to DB.`);
-                    saveLidMapping(userId, senderId, senderPn);
-                }
-            }
-
-            // --- Robustness Fix ---
-            // If msg.message is null or undefined, it's likely a stub message (e.g., decryption error notification)
-            // We should log it and skip processing to prevent a server crash.
-            if (!msg.message) {
-                console.log(`[${userId}] Received a stub message or an event with no message body. Type: ${msg.messageStubType}, Params: ${msg.messageStubParameters?.join(', ')}. Skipping.`);
-                return null;
-            }
-
-            // Filter out technical keys to find the actual content type
-            const rawKeys = Object.keys(msg.message);
-            const technicalKeys = ['senderKeyDistributionMessage', 'messageContextInfo', 'keepInChatMessage'];
-            const contentKeys = rawKeys.filter(k => !technicalKeys.includes(k));
-            const messageType = contentKeys.length > 0 ? contentKeys[0] : rawKeys[0];
-
-            if (messageType === 'protocolMessage') return null;
-            if (contentKeys.length === 0 && messageType === 'senderKeyDistributionMessage') return null;
-
-            if (isGroup && !allowGroups) return null;
-
-            const messageTimestamp = (typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp * 1000 : msg.messageTimestamp.toNumber() * 1000);
-            if (!processOffline && messageTimestamp < serverStartTime) return null;
-
-            let messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text;
-            if (!messageContent) {
-                const type = Object.keys(msg.message)[0] || 'unknown';
-                messageContent = `[User sent a non-text message: ${type}]`;
-            }
-
-            if (!senderPn && !isGroup) {
-                const normalizedRemote = jidNormalizedUser?.(msg.key.remoteJid);
-                if (normalizedRemote && normalizedRemote !== msg.key.remoteJid) {
-                    msg.messageKey = msg.messageKey || {};
-                    msg.messageKey.senderPn = normalizedRemote;
-                }
-            }
-
-            const senderName = msg.pushName || session.pushNameCache[senderId] || session.pushNameCache[senderPn] || session.contactsCache[senderId]?.name || null;
-
-            let groupInfo = null;
-            if (isGroup) {
-                try {
-                    const metadata = await sock.groupMetadata(msg.key.remoteJid);
-                    groupInfo = { id: msg.key.remoteJid, name: metadata.subject };
-                    groupInfo.alternate_identifiers = collectGroupIdentifiers(groupInfo);
-                } catch (e) {
-                    groupInfo = { id: msg.key.remoteJid, name: null };
-                    groupInfo.alternate_identifiers = collectGroupIdentifiers(groupInfo);
-                }
-            }
-
-            const alternateIdentifiers = new Set(collectSenderIdentifiers(msg, senderId));
-            addIdentifierVariant(alternateIdentifiers, senderPn);
-            addIdentifierVariant(alternateIdentifiers, msg?.key?.participantPn);
-            addIdentifierVariant(alternateIdentifiers, senderName); // Add display name
-
-            const finalSenderIdentifiers = Array.from(alternateIdentifiers).filter(Boolean);
-            console.log(`[${userId}] Derived alternate identifiers:`, finalSenderIdentifiers);
-
-            let recipientId = msg.key.remoteJid;
-            if (msg.key.fromMe && recipientId.endsWith('@lid')) {
-                const resolvedJid = session.lidCache && session.lidCache[recipientId];
-                if (resolvedJid) {
-                    recipientId = resolvedJid;
-                } else {
-                    recipientId = recipientId.replace('@lid', '@s.whatsapp.net');
-                }
-            }
-
-            let actualSender = null;
-            if (msg.key.fromMe) {
-                const selfJid = session.sock?.user?.id;
-                const selfName = msg.pushName;
-                const selfAlternate = new Set();
-                addIdentifierVariant(selfAlternate, selfJid);
-                addIdentifierVariant(selfAlternate, selfName);
-
-                actualSender = {
-                    identifier: selfJid,
-                    display_name: selfName,
-                    alternate_identifiers: Array.from(selfAlternate).filter(Boolean),
-                };
-            }
-
-
-            return {
-                provider_message_id: msg.key.id,
-                sender: senderId,
-                display_name: senderName,
-                message: messageContent,
-                timestamp: new Date().toISOString(),
-                group: groupInfo,
-                alternate_identifiers: finalSenderIdentifiers,
-                direction: msg.key.fromMe ? 'outgoing' : 'incoming',
-                recipient_id: recipientId,
-                actual_sender: actualSender
-            };
+            return await processMessage(session, userId, msg, processOffline, allowGroups);
         });
 
         const newMessages = (await Promise.all(newMessagesPromises)).filter(Boolean);
@@ -761,6 +753,81 @@ app.delete('/sessions/:userId', async (req, res) => {
     }
 
     res.status(200).json({ status: 'Session deleted successfully.' });
+});
+
+app.post('/sessions/:userId/groups', async (req, res) => {
+    const { userId } = req.params;
+    const session = sessions[userId];
+    if (!session || !session.sock) {
+        return res.status(404).json({ error: 'Session not found.' });
+    }
+    try {
+        const groups = await session.sock.groupFetchAllParticipating();
+        const groupList = Object.values(groups).map(g => ({
+            id: g.id,
+            subject: g.subject
+        }));
+        res.status(200).json({ groups: groupList });
+    } catch (e) {
+        console.error(`[${userId}] Error fetching groups:`, e);
+        res.status(500).json({ error: 'Failed to fetch groups.' });
+    }
+});
+
+app.post('/sessions/:userId/fetch-messages', async (req, res) => {
+    const { userId } = req.params;
+    const { groupId, limit } = req.body;
+    const session = sessions[userId];
+    if (!session || !session.sock) {
+        return res.status(404).json({ error: 'Session not found.' });
+    }
+    if (!groupId) {
+        return res.status(400).json({ error: 'groupId is required.' });
+    }
+
+    try {
+        console.log(`[${userId}] Fetching ${limit} historic messages for ${groupId}...`);
+
+        let messages = [];
+
+        // Try using fetchMessagesFromWA if available (common in forks)
+        if (typeof session.sock.fetchMessagesFromWA === 'function') {
+             // Example signature: (jid, count, cursor)
+             // We want the last 'limit' messages.
+             // We can pass `undefined` for cursor to get latest.
+             const result = await session.sock.fetchMessagesFromWA(groupId, limit);
+             messages = result || [];
+        } else {
+            // Fallback: If we can't fetch actively, we throw an error as per requirements.
+            // We assume the Baileys version supports some form of active fetch or we are stuck.
+            // However, to be safe, I'll check if we can simply iterate.
+
+            // NOTE: The current Baileys version might not have `fetchMessagesFromWA` exposed.
+            // But we can try to use `store` if it was attached. It isn't.
+
+            // Let's assume for now that if `fetchMessagesFromWA` is missing, we can't fulfill "Active Fetch".
+            // But we will try one more thing: `sock.query` to build the stanza manually? No, too risky.
+
+            console.warn(`[${userId}] fetchMessagesFromWA not found on socket. Attempting fallback or returning error.`);
+            throw new Error("Active history fetching is not supported by the current Baileys provider version.");
+        }
+
+        const allowGroups = true; // We are fetching for a group specifically
+        const processOffline = true; // We always want these messages
+
+        const processedMessagesPromises = messages.map(async (msg) => {
+             // Reuse the extraction logic
+             return await processMessage(session, userId, msg, processOffline, allowGroups);
+        });
+
+        const processedMessages = (await Promise.all(processedMessagesPromises)).filter(Boolean);
+
+        res.status(200).json({ messages: processedMessages });
+
+    } catch (e) {
+         console.error(`[${userId}] Error fetching historic messages:`, e);
+         res.status(500).json({ error: e.message || 'Failed to fetch historic messages.' });
+    }
 });
 
 async function startServer() {

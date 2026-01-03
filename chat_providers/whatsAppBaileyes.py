@@ -197,13 +197,16 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 if self.logger: self.logger.log(f"ERROR: Could not determine correspondent_id for message. Skipping. Data: {msg}")
                 continue
 
+            originating_time = msg.get('originating_time')
+
             queues_manager.add_message(
                 correspondent_id=correspondent_id,
                 content=msg['message'],
                 sender=sender,
                 source=source,
                 group=group,
-                provider_message_id=provider_message_id
+                provider_message_id=provider_message_id,
+                originating_time=originating_time
             )
 
     async def stop_listening(self, cleanup_session: bool = False):
@@ -268,3 +271,32 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             return {"status": "initializing", "message": f"Node.js server is not reachable: {e}"}
         except Exception as e:
             return {"status": "error", "message": f"Exception while getting status: {e}"}
+
+    async def get_active_groups(self):
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(f"{self.base_url}/sessions/{self.user_id}/groups", timeout=10)
+                if response.status_code == 200:
+                    return response.json().get('groups', [])
+                if self.logger: self.logger.log(f"ERROR: Failed to fetch active groups: {response.text}")
+                return []
+        except Exception as e:
+            if self.logger: self.logger.log(f"ERROR: Exception while fetching active groups: {e}")
+            return []
+
+    async def fetch_historic_messages(self, group_id: str, limit: int = 500):
+        try:
+            payload = {"groupId": group_id, "limit": limit}
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self.base_url}/sessions/{self.user_id}/fetch-messages",
+                    json=payload,
+                    timeout=60
+                )
+                if response.status_code == 200:
+                    return response.json().get('messages', [])
+                if self.logger: self.logger.log(f"ERROR: Failed to fetch historic messages: {response.text}")
+                return []
+        except Exception as e:
+            if self.logger: self.logger.log(f"ERROR: Exception while fetching historic messages: {e}")
+            return []

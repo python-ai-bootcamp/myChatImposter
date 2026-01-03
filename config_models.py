@@ -46,10 +46,16 @@ class ContextConfig(BaseModel):
     max_characters_single_message: int = 300
     shared_context: bool = True
 
+class PeriodicGroupTrackingConfig(BaseModel):
+    groupIdentifier: str = Field(..., title="Group Identifier", description="The stable JID of the group to track.")
+    cronTrackingSchedule: str = Field(..., title="Cron Schedule", description="Cron expression for tracking frequency.")
+    displayName: str = Field(..., title="Display Name", description="User-friendly name of the group.")
+
 class UserConfiguration(BaseModel):
     user_id: str
     respond_to_whitelist: List[str] = Field(default_factory=list, title="Respond To Direct Contact Whitelist")
     respond_to_whitelist_group: List[str] = Field(default_factory=list, title="Respond To Group Whitelist")
+    periodic_group_tracking: List[PeriodicGroupTrackingConfig] = Field(default_factory=list, title="Periodic Group Tracking")
     chat_provider_config: ChatProviderConfig
     queue_config: QueueConfig
     context_config: ContextConfig = Field(default_factory=ContextConfig)
