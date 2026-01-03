@@ -18,7 +18,13 @@ const GroupTrackingPage = () => {
         // Fetch config
         const configRes = await fetch(`/api/configurations/${userId}`);
         if (!configRes.ok) throw new Error("Failed to fetch configuration");
-        const configData = await configRes.json();
+        let configData = await configRes.json();
+
+        // Normalize config data: Handle legacy array format
+        if (Array.isArray(configData)) {
+            configData = configData.length > 0 ? configData[0] : {};
+        }
+
         setConfig(configData);
 
         // Fetch groups
@@ -45,11 +51,16 @@ const GroupTrackingPage = () => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(formData),
       });
-      if (!res.ok) throw new Error("Failed to save configuration");
+      if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.detail ? JSON.stringify(errData.detail) : "Failed to save configuration");
+      }
 
       // Reload the bot to apply changes
       await fetch(`/chatbot/${userId}/reload`, { method: 'POST' });
 
+      // Update local state, preserving structure
+      // Ensure we keep it as an object
       setConfig(formData);
       alert('Configuration saved and bot reloaded!');
     } catch (err) {
@@ -197,7 +208,7 @@ const GroupTrackingPage = () => {
                 "ui:widget": GroupSelectorWidget
             },
             displayName: {
-                "ui:widget": "hidden" // Hiding the input as requested, we show it in the custom widget
+                "ui:widget": "hidden"
             },
             cronTrackingSchedule: {
                 "ui:placeholder": "e.g. 0/5 * * * *"
@@ -207,10 +218,12 @@ const GroupTrackingPage = () => {
   };
 
   const onSubmit = (data) => {
-      const newData = { ...config, ...data.formData };
+      // Ensure config is an object before merging
+      const baseConfig = Array.isArray(config) ? (config[0] || {}) : (config || {});
+      const newData = { ...baseConfig, ...data.formData };
+
       newData.periodic_group_tracking = newData.periodic_group_tracking.map(item => {
           const group = availableGroups.find(g => g.id === item.groupIdentifier);
-          // Always ensure display name is synced with the selected group ID on save
           if (group) {
               item.displayName = group.subject;
           }
@@ -230,7 +243,7 @@ const GroupTrackingPage = () => {
       <Form
         schema={schema}
         uiSchema={uiSchema}
-        formData={{ periodic_group_tracking: config.periodic_group_tracking || [] }}
+        formData={{ periodic_group_tracking: config ? (Array.isArray(config) ? (config[0]?.periodic_group_tracking || []) : (config.periodic_group_tracking || [])) : [] }}
         validator={validator}
         customValidate={validateCron}
         onSubmit={onSubmit}

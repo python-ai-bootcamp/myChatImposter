@@ -131,11 +131,14 @@ class GroupTracker:
 
         logger.info(f"Completed tracking job for {user_id}/{config.groupIdentifier}. Generated context with {len(filtered_messages)} messages.")
 
-    def get_tracked_contexts(self, user_id: str):
+    def get_tracked_contexts(self, user_id: str, last_periods: int = 0):
         # The user requested: "list with objects which are {groupIdentifier:<STR>,groupContext:<STR>}"
         query = {"user_id": user_id}
         # Sort by most recent first
         cursor = self.tracked_contexts_collection.find(query).sort("period_end", -1)
+
+        if last_periods > 0:
+            cursor = cursor.limit(last_periods)
 
         results = []
         for doc in cursor:
