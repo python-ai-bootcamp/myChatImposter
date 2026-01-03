@@ -207,4 +207,4 @@ def test_get_user_context():
 
         response = client.get(f"/api/context/{user_id}")
         assert response.status_code == 200
-        assert response.json() == {"corr1": ["Human: Hello", "AI: Bot: Hi"]}
+        assert response.json() == {"corr1": ["Hello", "Bot: Hi"]}

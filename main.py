@@ -447,7 +447,7 @@ async def get_user_context(user_id: str):
         histories = instance.chatbot_model.get_all_histories()
         # Format the histories for JSON response
         formatted_histories = {
-            correspondent: [f"{'AI' if msg.type == 'ai' else 'Human'}: {msg.content}" for msg in history.messages]
+            correspondent: [msg.content for msg in history.messages]
             for correspondent, history in histories.items()
         }
         return JSONResponse(content=formatted_histories)
