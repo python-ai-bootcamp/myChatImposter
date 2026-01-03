@@ -62,31 +62,22 @@ const GroupTrackingPage = () => {
 
   // Custom widget for Group Selection (Autocomplete style)
   const GroupSelectorWidget = (props) => {
-    // Current selected ID from props
     const selectedId = props.value || '';
-
-    // Find the currently selected group object to get its name
     const selectedGroup = availableGroups.find(g => g.id === selectedId);
 
-    // State for the input text.
-    // If we have a selection, show its name. Otherwise empty.
-    // If user is typing, we show what they type.
-    // We use a separate state 'inputValue' to control the text box.
-    const [inputValue, setInputValue] = useState(selectedGroup ? selectedGroup.subject : selectedId);
+    // If we have a selected group, the input should allow searching/changing.
+    // If we have a selection, we verify if the input text matches.
+    const [inputValue, setInputValue] = useState(selectedGroup ? selectedGroup.subject : (selectedId || ''));
     const [isMenuOpen, setIsMenuOpen] = useState(false);
 
-    // Update input value if external props change (e.g. initial load)
     useEffect(() => {
         if (selectedGroup) {
             setInputValue(selectedGroup.subject);
-        } else if (selectedId) {
-            setInputValue(selectedId); // Fallback to ID if not found
+        } else if (selectedId && !selectedGroup) {
+            setInputValue(selectedId);
         }
     }, [selectedId, selectedGroup]);
 
-    // Filter groups based on input value
-    // We filter only if the menu is open (user is interacting) to avoid confusing behavior
-    // but typically autocomplete filters based on current text.
     const filteredGroups = availableGroups.filter(g =>
         (g.subject || '').toLowerCase().includes(inputValue.toLowerCase())
     );
@@ -94,9 +85,6 @@ const GroupTrackingPage = () => {
     const handleInputChange = (e) => {
         setInputValue(e.target.value);
         setIsMenuOpen(true);
-        // We do NOT call props.onChange here because we want to commit only on selection
-        // or we could clear it?
-        // If user clears text, we should clear selection.
         if (e.target.value === '') {
             props.onChange(undefined);
         }
@@ -109,17 +97,14 @@ const GroupTrackingPage = () => {
     };
 
     return (
-      <div style={{ position: 'relative' }}>
+      <div style={{ position: 'relative', marginBottom: '10px' }}>
         <input
             type="text"
             placeholder="Type group name..."
             value={inputValue}
             onChange={handleInputChange}
             onFocus={() => setIsMenuOpen(true)}
-            onBlur={() => {
-                // Delay hiding menu to allow click event to register
-                setTimeout(() => setIsMenuOpen(false), 200);
-            }}
+            onBlur={() => setTimeout(() => setIsMenuOpen(false), 200)}
             style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
         />
         {isMenuOpen && filteredGroups.length > 0 && (
@@ -137,7 +122,7 @@ const GroupTrackingPage = () => {
                 {filteredGroups.map(g => (
                     <div
                         key={g.id}
-                        onMouseDown={() => handleSelect(g)} // Use onMouseDown to trigger before onBlur
+                        onMouseDown={() => handleSelect(g)}
                         style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #eee' }}
                         className="group-option"
                     >
@@ -147,16 +132,45 @@ const GroupTrackingPage = () => {
                 ))}
             </div>
         )}
+
+        {/* Read-only display of ID and Name as requested */}
         {selectedId && (
-            <div style={{ marginTop: '5px', fontSize: '0.85em', color: '#555' }}>
-                ID: {selectedId}
+            <div style={{ marginTop: '8px', padding: '10px', backgroundColor: '#f9f9f9', borderRadius: '4px', border: '1px solid #ddd' }}>
+                 <div style={{ fontWeight: 'bold', fontSize: '1.1em' }}>
+                    {selectedGroup ? selectedGroup.subject : 'Unknown Group Name'}
+                 </div>
+                 <div style={{ fontSize: '0.85em', color: '#666', marginTop: '4px' }}>
+                    ID: {selectedId}
+                 </div>
             </div>
         )}
       </div>
     );
   };
 
-  // Schema Definition for the form
+  const validateCron = (formData, errors) => {
+      if (formData.periodic_group_tracking) {
+        formData.periodic_group_tracking.forEach((item, index) => {
+            const cron = item.cronTrackingSchedule;
+            if (cron) {
+                const parts = cron.trim().split(/\s+/);
+                // Basic check: 5 parts
+                if (parts.length !== 5) {
+                     errors.periodic_group_tracking[index].cronTrackingSchedule.addError("Invalid cron expression: must have exactly 5 parts (minute hour day month day-of-week).");
+                }
+                // Check for valid characters allowed in cron
+                else {
+                    const validChars = /^[0-9*/,\-]+$/;
+                    if (!parts.every(p => validChars.test(p))) {
+                        errors.periodic_group_tracking[index].cronTrackingSchedule.addError("Invalid characters in cron expression. Allowed: 0-9 * / , -");
+                    }
+                }
+            }
+        });
+      }
+      return errors;
+  };
+
   const schema = {
     type: "object",
     properties: {
@@ -166,9 +180,9 @@ const GroupTrackingPage = () => {
             items: {
                 type: "object",
                 properties: {
-                    groupIdentifier: { type: "string", title: "Group Name (Search)" },
+                    groupIdentifier: { type: "string", title: "Group Selection" },
                     displayName: { type: "string", title: "Display Name" },
-                    cronTrackingSchedule: { type: "string", title: "Cron Schedule (e.g. '0 * * * *')" }
+                    cronTrackingSchedule: { type: "string", title: "Cron Schedule" }
                 },
                 required: ["groupIdentifier", "cronTrackingSchedule"]
             }
@@ -183,18 +197,21 @@ const GroupTrackingPage = () => {
                 "ui:widget": GroupSelectorWidget
             },
             displayName: {
-                "ui:help": "Friendly name for the group. Will be autofilled on save if empty."
+                "ui:widget": "hidden" // Hiding the input as requested, we show it in the custom widget
+            },
+            cronTrackingSchedule: {
+                "ui:placeholder": "e.g. 0/5 * * * *"
             }
         }
     }
   };
 
-  // Pre-process data before save to ensure display name matches ID if possible
   const onSubmit = (data) => {
       const newData = { ...config, ...data.formData };
       newData.periodic_group_tracking = newData.periodic_group_tracking.map(item => {
           const group = availableGroups.find(g => g.id === item.groupIdentifier);
-          if (group && !item.displayName) {
+          // Always ensure display name is synced with the selected group ID on save
+          if (group) {
               item.displayName = group.subject;
           }
           return item;
@@ -215,6 +232,7 @@ const GroupTrackingPage = () => {
         uiSchema={uiSchema}
         formData={{ periodic_group_tracking: config.periodic_group_tracking || [] }}
         validator={validator}
+        customValidate={validateCron}
         onSubmit={onSubmit}
       />
     </div>

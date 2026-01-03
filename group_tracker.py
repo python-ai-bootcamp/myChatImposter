@@ -56,22 +56,19 @@ class GroupTracker:
             except Exception as e:
                 logger.error(f"Failed to add tracking job {job_id}: {e}")
 
+    def _format_messages(self, messages: list) -> str:
+        lines = []
+        for msg in messages:
+            sender = msg.get('display_name') or msg.get('sender', 'Unknown')
+            text = msg.get('message', '')
+            # Format: "Sender: Message"
+            lines.append(f"{sender}: {text}")
+        return "\n".join(lines)
+
     async def track_group_context(self, user_id: str, config: PeriodicGroupTrackingConfig):
         logger.info(f"Starting tracking job for user {user_id}, group {config.groupIdentifier}")
 
-        chatbot = self.chatbot_instances.get(user_id)
-        # Note: We rely on the chatbot instance being keyed by user_id in the main app map?
-        # Actually in main.py `chatbot_instances` is keyed by instance_id (uuid), and `active_users` maps user_id -> instance_id.
-        # But `GroupTracker` receives `chatbot_instances` reference.
-        # We need `active_users` map as well to lookup the instance.
-        # Wait, my previous implementation of GroupTracker took `chatbot_instances` (dict).
-        # In `main.py`, I passed `chatbot_instances` which is `instance_id -> instance`.
-        # I need to fix `GroupTracker` to handle this lookup or pass `active_users` too.
-
-        # FIX: I will pass `active_users` to GroupTracker or handle the lookup differently.
-        # Since I can't easily change the constructor signature without changing main.py again (which implies more risk),
-        # I will iterate `chatbot_instances` to find the one with matching `user_id`.
-
+        # Find the chatbot instance for this user
         target_instance = None
         for instance in self.chatbot_instances.values():
             if instance.user_id == user_id:
@@ -87,37 +84,43 @@ class GroupTracker:
         state = self.tracking_state_collection.find_one(state_key)
 
         now_ts = int(time.time() * 1000)
-        last_run_ts = state['last_run_ts'] if state else (now_ts - 24 * 60 * 60 * 1000) # Default to 24h ago
+        # If no previous run, default to 24 hours ago
+        last_run_ts = state['last_run_ts'] if state else (now_ts - 24 * 60 * 60 * 1000)
 
-        # Fetch messages
-        messages = await target_instance.provider_instance.fetch_historic_messages(config.groupIdentifier, limit=500)
+        # Fetch messages (fetching slightly more to ensure coverage)
+        try:
+            messages = await target_instance.provider_instance.fetch_historic_messages(config.groupIdentifier, limit=500)
+        except Exception as e:
+             logger.error(f"Failed to fetch historic messages for {user_id}/{config.groupIdentifier}: {e}")
+             return
 
         # Filter messages by time window: last_run_ts < msg.originating_time <= now_ts
         filtered_messages = []
         for msg in messages:
             msg_ts = msg.get('originating_time')
             if not msg_ts:
-                # Fallback: parse timestamp string if originating_time is missing?
-                # server.js sends ISO string in 'timestamp', and numeric in 'originating_time' (if I added it correctly).
-                # Let's trust originating_time.
                 continue
 
             if last_run_ts < msg_ts <= now_ts:
                 filtered_messages.append(msg)
 
-        # Create period object
-        period_object = {
+        # Generate context string
+        group_context_str = self._format_messages(filtered_messages)
+
+        # Create context object
+        context_object = {
             "user_id": user_id,
             "group_id": config.groupIdentifier,
             "group_name": config.displayName,
             "period_start": last_run_ts,
             "period_end": now_ts,
-            "messages": filtered_messages,
+            "group_context": group_context_str,
+            "message_count": len(filtered_messages),
             "created_at": datetime.utcnow()
         }
 
         # Save to DB
-        self.tracked_contexts_collection.insert_one(period_object)
+        self.tracked_contexts_collection.insert_one(context_object)
 
         # Update last run state
         self.tracking_state_collection.update_one(
@@ -126,18 +129,19 @@ class GroupTracker:
             upsert=True
         )
 
-        logger.info(f"Completed tracking job for {user_id}/{config.groupIdentifier}. Saved {len(filtered_messages)} messages.")
+        logger.info(f"Completed tracking job for {user_id}/{config.groupIdentifier}. Generated context with {len(filtered_messages)} messages.")
 
-    def get_tracked_contexts(self, user_id: str, last_periods: int = 0):
+    def get_tracked_contexts(self, user_id: str):
+        # The user requested: "list with objects which are {groupIdentifier:<STR>,groupContext:<STR>}"
         query = {"user_id": user_id}
+        # Sort by most recent first
         cursor = self.tracked_contexts_collection.find(query).sort("period_end", -1)
-
-        if last_periods > 0:
-            cursor = cursor.limit(last_periods)
 
         results = []
         for doc in cursor:
-            doc['_id'] = str(doc['_id'])
-            results.append(doc)
+            results.append({
+                "groupIdentifier": doc['group_id'],
+                "groupContext": doc['group_context']
+            })
 
         return results
