@@ -216,6 +216,20 @@ function HomePage() {
           Delete
         </button>
       </div>
+
+      <div style={{ marginTop: '1rem', textAlign: 'center' }}>
+        <button
+            onClick={() => {
+                if (selectedUserId) {
+                    navigate(`/tracking/${selectedUserId}`);
+                }
+            }}
+            disabled={!selectedUserId || status !== 'connected'}
+            style={{ width: '100%', backgroundColor: '#6c757d' }}
+        >
+            Group Tracking
+        </button>
+      </div>
     </div>
   );
 }
