@@ -60,59 +60,98 @@ const GroupTrackingPage = () => {
   if (loading) return <div>Loading...</div>;
   if (error) return <div>Error: {error}</div>;
 
-  // Custom widget for Group Selection
+  // Custom widget for Group Selection (Autocomplete style)
   const GroupSelectorWidget = (props) => {
-    const [filter, setFilter] = useState('');
+    // Current selected ID from props
+    const selectedId = props.value || '';
 
-    // Determine current value
-    const currentVal = props.value || '';
+    // Find the currently selected group object to get its name
+    const selectedGroup = availableGroups.find(g => g.id === selectedId);
 
-    // Find display name for current value if not in available list
-    const currentGroup = availableGroups.find(g => g.id === currentVal);
+    // State for the input text.
+    // If we have a selection, show its name. Otherwise empty.
+    // If user is typing, we show what they type.
+    // We use a separate state 'inputValue' to control the text box.
+    const [inputValue, setInputValue] = useState(selectedGroup ? selectedGroup.subject : selectedId);
+    const [isMenuOpen, setIsMenuOpen] = useState(false);
 
+    // Update input value if external props change (e.g. initial load)
+    useEffect(() => {
+        if (selectedGroup) {
+            setInputValue(selectedGroup.subject);
+        } else if (selectedId) {
+            setInputValue(selectedId); // Fallback to ID if not found
+        }
+    }, [selectedId, selectedGroup]);
+
+    // Filter groups based on input value
+    // We filter only if the menu is open (user is interacting) to avoid confusing behavior
+    // but typically autocomplete filters based on current text.
     const filteredGroups = availableGroups.filter(g =>
-        (g.subject || '').toLowerCase().includes(filter.toLowerCase()) ||
-        g.id.toLowerCase().includes(filter.toLowerCase())
+        (g.subject || '').toLowerCase().includes(inputValue.toLowerCase())
     );
 
+    const handleInputChange = (e) => {
+        setInputValue(e.target.value);
+        setIsMenuOpen(true);
+        // We do NOT call props.onChange here because we want to commit only on selection
+        // or we could clear it?
+        // If user clears text, we should clear selection.
+        if (e.target.value === '') {
+            props.onChange(undefined);
+        }
+    };
+
+    const handleSelect = (group) => {
+        setInputValue(group.subject);
+        props.onChange(group.id);
+        setIsMenuOpen(false);
+    };
+
     return (
-      <div>
-        <div style={{ marginBottom: '10px' }}>
-            <input
-                type="text"
-                placeholder="Search groups..."
-                value={filter}
-                onChange={(e) => setFilter(e.target.value)}
-                style={{ width: '100%', padding: '5px', marginBottom: '5px' }}
-            />
-            {filter && (
-                <div style={{ maxHeight: '150px', overflowY: 'auto', border: '1px solid #ccc' }}>
-                    {filteredGroups.map(g => (
-                        <div
-                            key={g.id}
-                            onClick={() => {
-                                props.onChange(g.id);
-                                // Hacky way to set the display name in the sibling field if it exists
-                                // In a real RJSF custom field we'd do this better, but here we might rely on the user manually checking?
-                                // Actually, we need to populate 'displayName' as well.
-                                // Since this widget only controls one field, we can't easily set the other.
-                                // We will rely on the user to select the group, and we will try to autofill the name if possible,
-                                // but RJSF structure makes cross-field updates tricky without a custom field template.
-                                // Alternative: Store the whole object? No, schema defines separate string fields.
-                                setFilter('');
-                            }}
-                            style={{ padding: '5px', cursor: 'pointer', borderBottom: '1px solid #eee' }}
-                        >
-                            {g.subject} <small>({g.id})</small>
-                        </div>
-                    ))}
-                </div>
-            )}
-        </div>
-        <div>
-            <strong>Selected Group ID:</strong> {currentVal}
-            {currentGroup && <div style={{color: 'green'}}>Selected: {currentGroup.subject}</div>}
-        </div>
+      <div style={{ position: 'relative' }}>
+        <input
+            type="text"
+            placeholder="Type group name..."
+            value={inputValue}
+            onChange={handleInputChange}
+            onFocus={() => setIsMenuOpen(true)}
+            onBlur={() => {
+                // Delay hiding menu to allow click event to register
+                setTimeout(() => setIsMenuOpen(false), 200);
+            }}
+            style={{ width: '100%', padding: '8px', boxSizing: 'border-box' }}
+        />
+        {isMenuOpen && filteredGroups.length > 0 && (
+            <div style={{
+                position: 'absolute',
+                top: '100%',
+                left: 0,
+                right: 0,
+                maxHeight: '200px',
+                overflowY: 'auto',
+                border: '1px solid #ccc',
+                backgroundColor: '#fff',
+                zIndex: 1000
+            }}>
+                {filteredGroups.map(g => (
+                    <div
+                        key={g.id}
+                        onMouseDown={() => handleSelect(g)} // Use onMouseDown to trigger before onBlur
+                        style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #eee' }}
+                        className="group-option"
+                    >
+                        <strong>{g.subject}</strong> <br/>
+                        <small style={{ color: '#666' }}>{g.id}</small>
+                    </div>
+                ))}
+            </div>
+        )}
+        {selectedId && (
+            <div style={{ marginTop: '5px', fontSize: '0.85em', color: '#555' }}>
+                ID: {selectedId}
+            </div>
+        )}
       </div>
     );
   };
@@ -127,7 +166,7 @@ const GroupTrackingPage = () => {
             items: {
                 type: "object",
                 properties: {
-                    groupIdentifier: { type: "string", title: "Group ID" },
+                    groupIdentifier: { type: "string", title: "Group Name (Search)" },
                     displayName: { type: "string", title: "Display Name" },
                     cronTrackingSchedule: { type: "string", title: "Cron Schedule (e.g. '0 * * * *')" }
                 },

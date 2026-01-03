@@ -215,9 +215,6 @@ function HomePage() {
         <button onClick={handleDelete} disabled={!selectedUserId} className="delete-button">
           Delete
         </button>
-      </div>
-
-      <div style={{ marginTop: '1rem', textAlign: 'center' }}>
         <button
             onClick={() => {
                 if (selectedUserId) {
@@ -225,7 +222,7 @@ function HomePage() {
                 }
             }}
             disabled={!selectedUserId || status !== 'connected'}
-            style={{ width: '100%', backgroundColor: '#6c757d' }}
+            style={{ backgroundColor: (!selectedUserId || status !== 'connected') ? '#6c757d' : '#007bff' }}
         >
             Group Tracking
         </button>
