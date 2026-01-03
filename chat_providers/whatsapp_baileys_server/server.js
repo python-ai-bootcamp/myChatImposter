@@ -559,8 +559,14 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 return null;
             }
 
-            const messageType = Object.keys(msg.message)[0];
-            if (messageType === 'protocolMessage' || messageType === 'senderKeyDistributionMessage') return null;
+            // Filter out technical keys to find the actual content type
+            const rawKeys = Object.keys(msg.message);
+            const technicalKeys = ['senderKeyDistributionMessage', 'messageContextInfo', 'keepInChatMessage'];
+            const contentKeys = rawKeys.filter(k => !technicalKeys.includes(k));
+            const messageType = contentKeys.length > 0 ? contentKeys[0] : rawKeys[0];
+
+            if (messageType === 'protocolMessage') return null;
+            if (contentKeys.length === 0 && messageType === 'senderKeyDistributionMessage') return null;
 
             if (isGroup && !allowGroups) return null;
 

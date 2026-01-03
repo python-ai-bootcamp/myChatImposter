@@ -152,7 +152,16 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
                 if provider_message_id and provider_message_id in self.sent_message_ids:
                     source = 'bot'
-                    sender = Sender(identifier=f"bot_{self.user_id}", display_name=f"Bot ({self.user_id})")
+                    actual_sender_data = msg.get('actual_sender')
+                    alternate_identifiers = []
+                    if actual_sender_data:
+                        alternate_identifiers = actual_sender_data.get('alternate_identifiers', [])
+
+                    sender = Sender(
+                        identifier=f"bot_{self.user_id}",
+                        display_name=f"Bot ({self.user_id})",
+                        alternate_identifiers=alternate_identifiers
+                    )
                     self.sent_message_ids.remove(provider_message_id)
                 else:
                     source = 'user_outgoing'
