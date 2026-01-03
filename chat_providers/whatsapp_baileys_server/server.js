@@ -147,15 +147,28 @@ const port = args[0] || 9000; // Default to port 9000 if not provided
 // --- MongoDB Auth State Logic ---
 const useMongoDBAuthState = async (userId, collection) => {
     const reviveBuffers = (key, value) => {
-        if (value && typeof value === 'object' && value.type === 'Buffer' && Array.isArray(value.data)) {
-            return Buffer.from(value.data, 'base64');
+        if (value && typeof value === 'object' && value.type === 'Buffer') {
+            if (Array.isArray(value.data)) {
+                return Buffer.from(value.data);
+            }
+            if (typeof value.data === 'string') {
+                return Buffer.from(value.data, 'base64');
+            }
         }
         return value;
     };
 
     const serializeBuffers = (key, value) => {
+        // Because JSON.stringify calls toJSON on Buffers before hitting this replacer,
+        // we see { type: 'Buffer', data: [numbers...] } instead of a Buffer instance.
+        if (value && value.type === 'Buffer' && Array.isArray(value.data)) {
+            return { type: 'Buffer', data: Buffer.from(value.data).toString('base64') };
+        }
         if (value instanceof Buffer) {
             return { type: 'Buffer', data: value.toString('base64') };
+        }
+        if (value instanceof Uint8Array) {
+            return { type: 'Buffer', data: Buffer.from(value).toString('base64') };
         }
         return value;
     };
@@ -168,7 +181,21 @@ const useMongoDBAuthState = async (userId, collection) => {
     const readData = async (key) => {
         const doc = await collection.findOne({ _id: key });
         if (doc?.value) {
-            return JSON.parse(doc.value, reviveBuffers);
+            try {
+                const parsed = JSON.parse(doc.value, reviveBuffers);
+                // Sanity check: If we loaded a session-related key and it looks like a "corrupted" buffer object
+                // (has keys "0", "1" etc but isn't a Buffer), warn about it.
+                if (parsed && typeof parsed === 'object' && !Buffer.isBuffer(parsed) && !Array.isArray(parsed)) {
+                    const keys = Object.keys(parsed);
+                    if (keys.length > 0 && keys.every(k => !isNaN(parseInt(k)))) {
+                        console.warn(`[${userId}] WARNING: Loaded key '${key}' appears to be a corrupted Buffer (stored as object). This may cause Bad MAC errors.`);
+                    }
+                }
+                return parsed;
+            } catch (e) {
+                console.error(`[${userId}] Error parsing data for key '${key}':`, e);
+                return null;
+            }
         }
         return null;
     };
@@ -184,6 +211,9 @@ const useMongoDBAuthState = async (userId, collection) => {
     const credsKey = `${userId}-creds`;
     const creds = (await readData(credsKey)) || initAuthCreds();
 
+    // In-memory cache to prevent race conditions during rapid updates
+    const keysCache = {};
+
     return {
         state: {
             creds,
@@ -192,9 +222,18 @@ const useMongoDBAuthState = async (userId, collection) => {
                     const data = {};
                     await Promise.all(
                         ids.map(async id => {
-                            const value = await readData(`${userId}-${type}-${id}`);
+                            const cacheKey = `${type}-${id}`;
+                            if (cacheKey in keysCache) {
+                                if (keysCache[cacheKey]) {
+                                    data[id] = keysCache[cacheKey];
+                                }
+                                return;
+                            }
+
+                            let value = await readData(`${userId}-${type}-${id}`);
                             if (value) {
                                 data[id] = value;
+                                keysCache[cacheKey] = value;
                             }
                         })
                     );
@@ -205,6 +244,8 @@ const useMongoDBAuthState = async (userId, collection) => {
                     for (const type in data) {
                         for (const id in data[type]) {
                             const value = data[type][id];
+                            const cacheKey = `${type}-${id}`;
+                            keysCache[cacheKey] = value; // Update cache immediately
                             promises.push(writeData(`${userId}-${type}-${id}`, value));
                         }
                     }
@@ -213,6 +254,8 @@ const useMongoDBAuthState = async (userId, collection) => {
                 remove: async (type, ids) => {
                     const promises = [];
                     for (const id of ids) {
+                        const cacheKey = `${type}-${id}`;
+                        delete keysCache[cacheKey]; // Remove from cache immediately
                         promises.push(removeData(`${userId}-${type}-${id}`));
                     }
                     await Promise.all(promises);
@@ -239,6 +282,35 @@ async function getLatestWaVersion() {
     return cachedWaVersion;
 }
 
+// Helper to manage LID mappings in MongoDB
+const loadLidMappings = async (userId) => {
+    try {
+        const key = `${userId}-lid-mappings`;
+        console.log(`[${userId}] Loading LID mappings from DB key: ${key}`);
+        const doc = await baileysSessionsCollection.findOne({ _id: key });
+        return doc?.mappings || {};
+    } catch (e) {
+        console.error(`[${userId}] Failed to load LID mappings:`, e);
+        return {};
+    }
+};
+
+const saveLidMapping = async (userId, lid, pn) => {
+    try {
+        const key = `${userId}-lid-mappings`;
+        const update = {};
+        update[`mappings.${lid}`] = pn;
+        await baileysSessionsCollection.updateOne(
+            { _id: key },
+            { $set: update },
+            { upsert: true }
+        );
+        console.log(`[${userId}] Persisted LID mapping: ${lid} -> ${pn}`);
+    } catch (e) {
+        console.error(`[${userId}] Failed to save LID mapping:`, e);
+    }
+};
+
 async function connectToWhatsApp(userId, vendorConfig) {
     const waVersion = await getLatestWaVersion();
 
@@ -263,6 +335,27 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
     console.log(`[${userId}] Starting new session connection...`);
 
+    // Pre-load LID mappings to ensure consistent state for auth/socket initialization
+    const lidMappings = await loadLidMappings(userId);
+
+    // Initialize session placeholder if needed, or update cache immediately
+    // This ensures resolveId has the correct state during useMongoDBAuthState initialization
+    if (!sessions[userId]) {
+        console.log(`[${userId}] Creating new session object (pre-init).`);
+        sessions[userId] = {
+            contactsCache: {},
+            lidCache: lidMappings,
+            pushNameCache: {},
+            vendorConfig: vendorConfig,
+            retryCount: 0,
+            http405Tracker: createHttp405Tracker(),
+            // sock etc will be set later
+        };
+    } else {
+        console.log(`[${userId}] Updating existing session object (pre-init).`);
+        sessions[userId].lidCache = lidMappings;
+    }
+
     const { state, saveCreds } = await useMongoDBAuthState(userId, baileysSessionsCollection);
 
     const logger = pino({ level: 'debug' });
@@ -285,7 +378,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         sessions[userId].currentQR = null;
         sessions[userId].connectionStatus = 'connecting';
         sessions[userId].retryCount = 0;
-        sessions[userId].lidCache = {}; // Also reset cache on reconnect
+        sessions[userId].lidCache = {}; // Reset cache on reconnect (will load from DB below)
         sessions[userId].pushNameCache = {}; // Reset pushName cache
         resetHttp405Tracker(sessions[userId]);
     } else {
@@ -295,13 +388,22 @@ async function connectToWhatsApp(userId, vendorConfig) {
             currentQR: null,
             connectionStatus: 'connecting',
             contactsCache: {},
-            lidCache: {},
+            lidCache: {}, // Initialize empty (will load from DB below)
             pushNameCache: {},
             vendorConfig: vendorConfig,
             retryCount: 0,
             http405Tracker: createHttp405Tracker(),
         };
     }
+
+    // Load persisted LID mappings asynchronously to avoid blocking session creation
+    // This resolves a race condition where the WebSocket connects before this function returns
+    loadLidMappings(userId).then(mappings => {
+        if (sessions[userId]) {
+            sessions[userId].lidCache = mappings;
+            console.log(`[${userId}] Loaded ${Object.keys(mappings).length} LID mappings from DB into session.`);
+        }
+    });
 
 
     sock.ev.on('connection.update', (update) => {
@@ -442,8 +544,11 @@ async function connectToWhatsApp(userId, vendorConfig) {
             }
             if (senderId && senderId.endsWith('@lid') && senderPn) {
                 if (!session.lidCache) session.lidCache = {};
-                session.lidCache[senderId] = senderPn;
-                console.log(`[${userId}] Cached LID mapping: ${senderId} -> ${senderPn}`);
+                if (session.lidCache[senderId] !== senderPn) {
+                    session.lidCache[senderId] = senderPn;
+                    console.log(`[${userId}] New LID mapping found: ${senderId} -> ${senderPn}. Saving to DB.`);
+                    saveLidMapping(userId, senderId, senderPn);
+                }
             }
 
             // --- Robustness Fix ---
@@ -585,19 +690,11 @@ app.post('/sessions/:userId/send', async (req, res) => {
     }
 
     try {
-        if (recipient.endsWith('@lid')) {
-            const cachedJid = session.lidCache && session.lidCache[recipient];
-            if (cachedJid) {
-                console.log(`[${userId}] Resolved LID ${recipient} -> ${cachedJid} from cache.`);
-                recipient = cachedJid;
-            } else {
-                const normalized = recipient.replace('@lid', '@s.whatsapp.net');
-                console.log(`[${userId}] WARN: No cache for LID ${recipient}. Falling back to normalization: ${normalized}`);
-                recipient = normalized;
-            }
-        }
+        // Do NOT automatically convert LID to PN.
+        // Sending to the LID ensures we use the correct cryptographic session (LID session),
+        // preventing "Bad MAC" errors caused by state divergence when mixing PN/LID sessions.
 
-        if (!recipient.endsWith('@g.us') && !recipient.endsWith('@s.whatsapp.net')) {
+        if (!recipient.endsWith('@g.us') && !recipient.endsWith('@s.whatsapp.net') && !recipient.endsWith('@lid')) {
             const [result] = await session.sock.onWhatsApp(recipient);
             if (!result?.exists) {
                 return res.status(400).json({ error: `Recipient ${recipient} is not on WhatsApp.` });
