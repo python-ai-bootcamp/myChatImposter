@@ -17,7 +17,8 @@ class GroupTracker:
     def __init__(self, mongo_url: str, chatbot_instances: dict[str, ChatbotInstance]):
         self.mongo_client = MongoClient(mongo_url)
         self.db = self.mongo_client['chat_manager']
-        self.tracked_contexts_collection = self.db['tracked_group_contexts']
+        self.tracked_groups_collection = self.db['tracked_groups']
+        self.tracked_group_periods_collection = self.db['tracked_group_periods']
         self.tracking_state_collection = self.db['group_tracking_state']
         self.chatbot_instances = chatbot_instances
         self.scheduler = AsyncIOScheduler()
@@ -56,15 +57,6 @@ class GroupTracker:
             except Exception as e:
                 logger.error(f"Failed to add tracking job {job_id}: {e}")
 
-    def _format_messages(self, messages: list) -> str:
-        lines = []
-        for msg in messages:
-            sender = msg.get('display_name') or msg.get('sender', 'Unknown')
-            text = msg.get('message', '')
-            # Format: "Sender: Message"
-            lines.append(f"{sender}: {text}")
-        return "\n".join(lines)
-
     async def track_group_context(self, user_id: str, config: PeriodicGroupTrackingConfig):
         logger.info(f"Starting tracking job for user {user_id}, group {config.groupIdentifier}")
 
@@ -79,7 +71,17 @@ class GroupTracker:
             logger.error(f"Chatbot not active or invalid provider for user {user_id}")
             return
 
-        # Get last run time
+        # Fetch messages
+        try:
+            messages = await target_instance.provider_instance.fetch_historic_messages(config.groupIdentifier, limit=500)
+            if messages is None:
+                 logger.error(f"Fetch failed for {user_id}/{config.groupIdentifier} (returned None). Aborting job to prevent data loss. State will NOT be updated.")
+                 return # Abort without updating state, allowing retry next time
+        except Exception as e:
+             logger.error(f"Failed to fetch historic messages for {user_id}/{config.groupIdentifier}: {e}")
+             return
+
+        # Determine time window
         state_key = {"user_id": user_id, "group_id": config.groupIdentifier}
         state = self.tracking_state_collection.find_one(state_key)
 
@@ -87,41 +89,64 @@ class GroupTracker:
         # If no previous run, default to 24 hours ago
         last_run_ts = state['last_run_ts'] if state else (now_ts - 24 * 60 * 60 * 1000)
 
-        # Fetch messages (fetching slightly more to ensure coverage)
-        try:
-            messages = await target_instance.provider_instance.fetch_historic_messages(config.groupIdentifier, limit=500)
-        except Exception as e:
-             logger.error(f"Failed to fetch historic messages for {user_id}/{config.groupIdentifier}: {e}")
-             return
+        # Filter and Transform
+        transformed_messages = []
+        alternate_identifiers_set = set()
 
-        # Filter messages by time window: last_run_ts < msg.originating_time <= now_ts
-        filtered_messages = []
         for msg in messages:
             msg_ts = msg.get('originating_time')
             if not msg_ts:
                 continue
 
             if last_run_ts < msg_ts <= now_ts:
-                filtered_messages.append(msg)
+                # Transform message object
+                sender_data = {
+                    "identifier": msg.get('sender'),
+                    "display_name": msg.get('display_name'),
+                    "alternate_identifiers": msg.get('alternate_identifiers', [])
+                }
 
-        # Generate context string
-        group_context_str = self._format_messages(filtered_messages)
+                # Collect group alternates if available in msg
+                if msg.get('group'):
+                    for alt in msg['group'].get('alternate_identifiers', []):
+                        alternate_identifiers_set.add(alt)
 
-        # Create context object
-        context_object = {
+                transformed_msg = {
+                    "sender": sender_data,
+                    "message": msg.get('message'),
+                    "accepted_time": int(time.time() * 1000),
+                    "originating_time": msg_ts,
+                    "provider_message_id": msg.get('provider_message_id')
+                }
+                transformed_messages.append(transformed_msg)
+
+        # Upsert Group Metadata
+        alternate_identifiers_set.add(config.groupIdentifier)
+        alternate_identifiers_set.add(config.displayName)
+
+        self.tracked_groups_collection.update_one(
+            {"user_id": user_id, "group_id": config.groupIdentifier},
+            {"$set": {
+                "user_id": user_id,
+                "group_id": config.groupIdentifier,
+                "display_name": config.displayName,
+                "alternate_identifiers": list(alternate_identifiers_set),
+                "crontab_triggering_expression": config.cronTrackingSchedule
+            }},
+            upsert=True
+        )
+
+        # Insert Period Document
+        period_doc = {
             "user_id": user_id,
-            "group_id": config.groupIdentifier,
-            "group_name": config.displayName,
-            "period_start": last_run_ts,
-            "period_end": now_ts,
-            "group_context": group_context_str,
-            "messages": filtered_messages,
-            "message_count": len(filtered_messages),
-            "created_at": datetime.utcnow()
+            "tracked_group_unique_identifier": config.groupIdentifier,
+            "periodStart": last_run_ts,
+            "periodEnd": now_ts,
+            "messageCount": len(transformed_messages),
+            "createdAt": datetime.utcnow(),
+            "messages": transformed_messages
         }
-
-        # Save to DB
-        self.tracked_contexts_collection.insert_one(context_object)
+        self.tracked_group_periods_collection.insert_one(period_doc)
 
         # Update last run state
         self.tracking_state_collection.update_one(
@@ -130,28 +155,31 @@ class GroupTracker:
             upsert=True
         )
 
-        logger.info(f"Completed tracking job for {user_id}/{config.groupIdentifier}. Generated context with {len(filtered_messages)} messages.")
+        logger.info(f"Completed tracking job for {user_id}/{config.groupIdentifier}. Saved {len(transformed_messages)} messages.")
 
-    def get_tracked_contexts(self, user_id: str, last_periods: int = 0):
-        # The user requested: "list with objects which are {groupIdentifier:<STR>,groupContext:<STR>}"
-        query = {"user_id": user_id}
-        # Sort by most recent first
-        cursor = self.tracked_contexts_collection.find(query).sort("period_end", -1)
+    def get_group_messages(self, user_id: str, group_id: str):
+        # Fetch group metadata
+        group_meta = self.tracked_groups_collection.find_one({"user_id": user_id, "group_id": group_id})
+        if not group_meta:
+            return None
 
-        if last_periods > 0:
-            cursor = cursor.limit(last_periods)
+        # Fetch periods
+        cursor = self.tracked_group_periods_collection.find(
+            {"user_id": user_id, "tracked_group_unique_identifier": group_id}
+        ).sort("periodEnd", -1)
 
-        results = []
+        periods = []
         for doc in cursor:
-            results.append({
-                "groupIdentifier": doc['group_id'],
-                "displayName": doc.get('group_name'),
-                "groupContext": doc['group_context'],
-                "messages": doc.get('messages', []), # Return the raw messages
-                "periodStart": doc['period_start'],
-                "periodEnd": doc['period_end'],
-                "messageCount": doc['message_count'],
-                "createdAt": doc['created_at'].isoformat() if isinstance(doc.get('created_at'), datetime) else doc.get('created_at')
-            })
+            doc['_id'] = str(doc['_id'])
+            if isinstance(doc.get('createdAt'), datetime):
+                doc['createdAt'] = doc['createdAt'].isoformat()
+            periods.append(doc)
 
-        return results
+        # Construct response
+        response = {
+            "identifier": group_meta['group_id'],
+            "display_name": group_meta['display_name'],
+            "alternate_identifiers": group_meta.get('alternate_identifiers', []),
+            "periods": periods
+        }
+        return response

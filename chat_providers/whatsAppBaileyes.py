@@ -3,7 +3,7 @@ import json
 import os
 import threading
 from concurrent.futures import TimeoutError as FuturesTimeoutError
-from typing import Dict, Optional, Callable
+from typing import Dict, Optional, Callable, List
 from collections import deque
 
 import httpx
@@ -284,7 +284,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             if self.logger: self.logger.log(f"ERROR: Exception while fetching active groups: {e}")
             return []
 
-    async def fetch_historic_messages(self, group_id: str, limit: int = 500):
+    async def fetch_historic_messages(self, group_id: str, limit: int = 500) -> Optional[List]:
         try:
             payload = {"groupId": group_id, "limit": limit}
             async with httpx.AsyncClient() as client:
@@ -296,7 +296,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 if response.status_code == 200:
                     return response.json().get('messages', [])
                 if self.logger: self.logger.log(f"ERROR: Failed to fetch historic messages: {response.text}")
-                return []
+                return None # Return None to indicate failure
         except Exception as e:
             if self.logger: self.logger.log(f"ERROR: Exception while fetching historic messages: {e}")
-            return []
+            return None # Return None to indicate failure
