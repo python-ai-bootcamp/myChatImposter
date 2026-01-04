@@ -115,6 +115,7 @@ class GroupTracker:
             "period_start": last_run_ts,
             "period_end": now_ts,
             "group_context": group_context_str,
+            "messages": filtered_messages, # Storing raw messages as requested
             "message_count": len(filtered_messages),
             "created_at": datetime.utcnow()
         }
