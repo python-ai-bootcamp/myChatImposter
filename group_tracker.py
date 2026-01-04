@@ -144,7 +144,12 @@ class GroupTracker:
         for doc in cursor:
             results.append({
                 "groupIdentifier": doc['group_id'],
-                "groupContext": doc['group_context']
+                "displayName": doc.get('group_name'),
+                "groupContext": doc['group_context'],
+                "periodStart": doc['period_start'],
+                "periodEnd": doc['period_end'],
+                "messageCount": doc['message_count'],
+                "createdAt": doc['created_at'].isoformat() if isinstance(doc.get('created_at'), datetime) else doc.get('created_at')
             })
 
         return results
