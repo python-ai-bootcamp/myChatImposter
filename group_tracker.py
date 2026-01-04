@@ -188,9 +188,11 @@ class GroupTracker:
             periods.append(doc)
 
         return {
-            "identifier": group_id,
-            "display_name": group_meta['display_name'],
-            "alternate_identifiers": group_meta.get('alternate_identifiers', []),
+            "group": {
+                "identifier": group_id,
+                "display_name": group_meta['display_name'],
+                "alternate_identifiers": group_meta.get('alternate_identifiers', [])
+            },
             "periods": periods
         }
 
@@ -227,28 +229,6 @@ class GroupTracker:
             return result.deleted_count
 
     def delete_all_user_messages(self, user_id: str, last_periods: int = 0, time_from: int = None, time_until: int = None):
-        # Need to iterate all groups to apply logic correctly?
-        # Or can we delete generally?
-        # The query `_build_period_query` uses `tracked_group_unique_identifier`.
-        # If I want to delete for ALL groups, I should just remove that filter?
-        # But `_build_period_query` takes group_id.
-
-        # General query for user
-        query = {"user_id": user_id}
-        if time_from is not None:
-            query["periodStart"] = {"$gt": time_from}
-        if time_until is not None:
-            query["periodEnd"] = {"$lt": time_until}
-
-        # Logic for last_periods across ALL groups?
-        # "same semantics as the get api".
-        # GET API aggregates by group.
-        # So "last N periods" probably means "last N periods PER GROUP".
-        # If so, I must iterate groups.
-
-        # If I simply applied last_periods to the global user list, it might delete recent stuff from Group A and leave old stuff from Group B.
-        # Given the API structure is Group-centric, DELETE should probably be Group-centric too (Delete last N periods FOR EACH group).
-
         total_deleted = 0
         groups_cursor = self.tracked_groups_collection.find({"user_id": user_id})
         for group_meta in groups_cursor:
