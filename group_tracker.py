@@ -157,13 +157,25 @@ class GroupTracker:
 
         logger.info(f"Completed tracking job for {user_id}/{config.groupIdentifier}. Saved {len(transformed_messages)} messages.")
 
-    def _build_group_response(self, group_meta, last_periods: int):
+    def _build_period_query(self, user_id, group_id, time_from=None, time_until=None):
+        query = {
+            "user_id": user_id,
+            "tracked_group_unique_identifier": group_id
+        }
+
+        if time_from is not None:
+            query["periodStart"] = {"$gt": time_from}
+        if time_until is not None:
+            query["periodEnd"] = {"$lt": time_until}
+
+        return query
+
+    def _build_group_response(self, group_meta, last_periods: int, time_from=None, time_until=None):
         user_id = group_meta['user_id']
         group_id = group_meta['group_id']
 
-        cursor = self.tracked_group_periods_collection.find(
-            {"user_id": user_id, "tracked_group_unique_identifier": group_id}
-        ).sort("periodEnd", -1)
+        query = self._build_period_query(user_id, group_id, time_from, time_until)
+        cursor = self.tracked_group_periods_collection.find(query).sort("periodEnd", -1)
 
         if last_periods > 0:
             cursor = cursor.limit(last_periods)
@@ -182,19 +194,65 @@ class GroupTracker:
             "periods": periods
         }
 
-    def get_group_messages(self, user_id: str, group_id: str, last_periods: int = 0):
+    def get_group_messages(self, user_id: str, group_id: str, last_periods: int = 0, time_from: int = None, time_until: int = None):
         # Fetch group metadata
         group_meta = self.tracked_groups_collection.find_one({"user_id": user_id, "group_id": group_id})
         if not group_meta:
             return None
-        return self._build_group_response(group_meta, last_periods)
+        return self._build_group_response(group_meta, last_periods, time_from, time_until)
 
-    def get_all_user_messages(self, user_id: str, last_periods: int = 0):
+    def get_all_user_messages(self, user_id: str, last_periods: int = 0, time_from: int = None, time_until: int = None):
         # Fetch all groups for user
         groups_cursor = self.tracked_groups_collection.find({"user_id": user_id})
 
         results = []
         for group_meta in groups_cursor:
-            results.append(self._build_group_response(group_meta, last_periods))
+            results.append(self._build_group_response(group_meta, last_periods, time_from, time_until))
 
         return results
+
+    def delete_group_messages(self, user_id: str, group_id: str, last_periods: int = 0, time_from: int = None, time_until: int = None):
+        query = self._build_period_query(user_id, group_id, time_from, time_until)
+
+        if last_periods > 0:
+            # Fetch IDs to delete (most recent N matching filters)
+            cursor = self.tracked_group_periods_collection.find(query, {"_id": 1}).sort("periodEnd", -1).limit(last_periods)
+            ids = [doc["_id"] for doc in cursor]
+            if not ids:
+                return 0
+            result = self.tracked_group_periods_collection.delete_many({"_id": {"$in": ids}})
+            return result.deleted_count
+        else:
+            result = self.tracked_group_periods_collection.delete_many(query)
+            return result.deleted_count
+
+    def delete_all_user_messages(self, user_id: str, last_periods: int = 0, time_from: int = None, time_until: int = None):
+        # Need to iterate all groups to apply logic correctly?
+        # Or can we delete generally?
+        # The query `_build_period_query` uses `tracked_group_unique_identifier`.
+        # If I want to delete for ALL groups, I should just remove that filter?
+        # But `_build_period_query` takes group_id.
+
+        # General query for user
+        query = {"user_id": user_id}
+        if time_from is not None:
+            query["periodStart"] = {"$gt": time_from}
+        if time_until is not None:
+            query["periodEnd"] = {"$lt": time_until}
+
+        # Logic for last_periods across ALL groups?
+        # "same semantics as the get api".
+        # GET API aggregates by group.
+        # So "last N periods" probably means "last N periods PER GROUP".
+        # If so, I must iterate groups.
+
+        # If I simply applied last_periods to the global user list, it might delete recent stuff from Group A and leave old stuff from Group B.
+        # Given the API structure is Group-centric, DELETE should probably be Group-centric too (Delete last N periods FOR EACH group).
+
+        total_deleted = 0
+        groups_cursor = self.tracked_groups_collection.find({"user_id": user_id})
+        for group_meta in groups_cursor:
+            deleted = self.delete_group_messages(user_id, group_meta['group_id'], last_periods, time_from, time_until)
+            total_deleted += deleted
+
+        return total_deleted

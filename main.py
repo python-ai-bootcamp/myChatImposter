@@ -8,7 +8,7 @@ import json
 import asyncio
 from pathlib import Path
 import dataclasses
-from fastapi import FastAPI, HTTPException, Body, Request, Response
+from fastapi import FastAPI, HTTPException, Body, Request, Response, Query
 from fastapi.responses import JSONResponse
 from fastapi.concurrency import run_in_threadpool
 from typing import Dict, Any, List, Union
@@ -698,7 +698,7 @@ async def get_active_groups(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get active groups: {e}")
 
 @app.get("/api/trackedGroupMessages/{user_id}/{group_id}")
-async def get_tracked_group_messages(user_id: str, group_id: str, lastPeriods: int = 0):
+async def get_tracked_group_messages(user_id: str, group_id: str, lastPeriods: int = 0, from_time: int = Query(None, alias="from"), until_time: int = Query(None, alias="until")):
     """
     Returns all tracked message periods for a specific group.
     """
@@ -706,7 +706,7 @@ async def get_tracked_group_messages(user_id: str, group_id: str, lastPeriods: i
          raise HTTPException(status_code=503, detail="Group Tracker not initialized.")
 
     try:
-        data = group_tracker.get_group_messages(user_id, group_id, last_periods=lastPeriods)
+        data = group_tracker.get_group_messages(user_id, group_id, last_periods=lastPeriods, time_from=from_time, time_until=until_time)
         if data is None:
              raise HTTPException(status_code=404, detail="Tracked group not found.")
         return JSONResponse(content=data)
@@ -717,7 +717,7 @@ async def get_tracked_group_messages(user_id: str, group_id: str, lastPeriods: i
         raise HTTPException(status_code=500, detail=f"Failed to get tracked group messages: {e}")
 
 @app.get("/api/trackedGroupMessages/{user_id}")
-async def get_all_tracked_group_messages(user_id: str, lastPeriods: int = 0):
+async def get_all_tracked_group_messages(user_id: str, lastPeriods: int = 0, from_time: int = Query(None, alias="from"), until_time: int = Query(None, alias="until")):
     """
     Returns tracked message periods for all groups of a user.
     """
@@ -725,11 +725,41 @@ async def get_all_tracked_group_messages(user_id: str, lastPeriods: int = 0):
          raise HTTPException(status_code=503, detail="Group Tracker not initialized.")
 
     try:
-        data = group_tracker.get_all_user_messages(user_id, last_periods=lastPeriods)
+        data = group_tracker.get_all_user_messages(user_id, last_periods=lastPeriods, time_from=from_time, time_until=until_time)
         return JSONResponse(content=data)
     except Exception as e:
         console_log(f"API_ERROR: Failed to get all tracked group messages for user '{user_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get all tracked group messages: {e}")
+
+@app.delete("/api/trackedGroupMessages/{user_id}/{group_id}")
+async def delete_tracked_group_messages(user_id: str, group_id: str, lastPeriods: int = 0, from_time: int = Query(None, alias="from"), until_time: int = Query(None, alias="until")):
+    """
+    Deletes tracked message periods for a specific group.
+    """
+    if not group_tracker:
+         raise HTTPException(status_code=503, detail="Group Tracker not initialized.")
+
+    try:
+        count = group_tracker.delete_group_messages(user_id, group_id, last_periods=lastPeriods, time_from=from_time, time_until=until_time)
+        return {"status": "success", "deleted_count": count}
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to delete tracked group messages for user '{user_id}' group '{group_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete tracked group messages: {e}")
+
+@app.delete("/api/trackedGroupMessages/{user_id}")
+async def delete_all_tracked_group_messages(user_id: str, lastPeriods: int = 0, from_time: int = Query(None, alias="from"), until_time: int = Query(None, alias="until")):
+    """
+    Deletes tracked message periods for all groups of a user.
+    """
+    if not group_tracker:
+         raise HTTPException(status_code=503, detail="Group Tracker not initialized.")
+
+    try:
+        count = group_tracker.delete_all_user_messages(user_id, last_periods=lastPeriods, time_from=from_time, time_until=until_time)
+        return {"status": "success", "deleted_count": count}
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to delete all tracked group messages for user '{user_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete all tracked group messages: {e}")
 
 
 if __name__ == "__main__":
