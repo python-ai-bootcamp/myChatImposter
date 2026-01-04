@@ -698,7 +698,7 @@ async def get_active_groups(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get active groups: {e}")
 
 @app.get("/api/trackedGroupMessages/{user_id}/{group_id}")
-async def get_tracked_group_messages(user_id: str, group_id: str):
+async def get_tracked_group_messages(user_id: str, group_id: str, lastPeriods: int = 0):
     """
     Returns all tracked message periods for a specific group.
     """
@@ -706,7 +706,7 @@ async def get_tracked_group_messages(user_id: str, group_id: str):
          raise HTTPException(status_code=503, detail="Group Tracker not initialized.")
 
     try:
-        data = group_tracker.get_group_messages(user_id, group_id)
+        data = group_tracker.get_group_messages(user_id, group_id, last_periods=lastPeriods)
         if data is None:
              raise HTTPException(status_code=404, detail="Tracked group not found.")
         return JSONResponse(content=data)
@@ -715,6 +715,21 @@ async def get_tracked_group_messages(user_id: str, group_id: str):
     except Exception as e:
         console_log(f"API_ERROR: Failed to get tracked group messages for user '{user_id}' group '{group_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get tracked group messages: {e}")
+
+@app.get("/api/trackedGroupMessages/{user_id}")
+async def get_all_tracked_group_messages(user_id: str, lastPeriods: int = 0):
+    """
+    Returns tracked message periods for all groups of a user.
+    """
+    if not group_tracker:
+         raise HTTPException(status_code=503, detail="Group Tracker not initialized.")
+
+    try:
+        data = group_tracker.get_all_user_messages(user_id, last_periods=lastPeriods)
+        return JSONResponse(content=data)
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to get all tracked group messages for user '{user_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get all tracked group messages: {e}")
 
 
 if __name__ == "__main__":

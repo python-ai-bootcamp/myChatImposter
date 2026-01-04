@@ -157,16 +157,16 @@ class GroupTracker:
 
         logger.info(f"Completed tracking job for {user_id}/{config.groupIdentifier}. Saved {len(transformed_messages)} messages.")
 
-    def get_group_messages(self, user_id: str, group_id: str):
-        # Fetch group metadata
-        group_meta = self.tracked_groups_collection.find_one({"user_id": user_id, "group_id": group_id})
-        if not group_meta:
-            return None
+    def _build_group_response(self, group_meta, last_periods: int):
+        user_id = group_meta['user_id']
+        group_id = group_meta['group_id']
 
-        # Fetch periods
         cursor = self.tracked_group_periods_collection.find(
             {"user_id": user_id, "tracked_group_unique_identifier": group_id}
         ).sort("periodEnd", -1)
+
+        if last_periods > 0:
+            cursor = cursor.limit(last_periods)
 
         periods = []
         for doc in cursor:
@@ -175,11 +175,26 @@ class GroupTracker:
                 doc['createdAt'] = doc['createdAt'].isoformat()
             periods.append(doc)
 
-        # Construct response
-        response = {
-            "identifier": group_meta['group_id'],
+        return {
+            "identifier": group_id,
             "display_name": group_meta['display_name'],
             "alternate_identifiers": group_meta.get('alternate_identifiers', []),
             "periods": periods
         }
-        return response
+
+    def get_group_messages(self, user_id: str, group_id: str, last_periods: int = 0):
+        # Fetch group metadata
+        group_meta = self.tracked_groups_collection.find_one({"user_id": user_id, "group_id": group_id})
+        if not group_meta:
+            return None
+        return self._build_group_response(group_meta, last_periods)
+
+    def get_all_user_messages(self, user_id: str, last_periods: int = 0):
+        # Fetch all groups for user
+        groups_cursor = self.tracked_groups_collection.find({"user_id": user_id})
+
+        results = []
+        for group_meta in groups_cursor:
+            results.append(self._build_group_response(group_meta, last_periods))
+
+        return results
