@@ -215,6 +215,17 @@ function HomePage() {
         <button onClick={handleDelete} disabled={!selectedUserId} className="delete-button">
           Delete
         </button>
+        <button
+            onClick={() => {
+                if (selectedUserId) {
+                    navigate(`/tracking/${selectedUserId}`);
+                }
+            }}
+            disabled={!selectedUserId || status !== 'connected'}
+            style={{ backgroundColor: (!selectedUserId || status !== 'connected') ? '#6c757d' : '#007bff' }}
+        >
+            Group Tracking
+        </button>
       </div>
     </div>
   );

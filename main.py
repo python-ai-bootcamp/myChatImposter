@@ -8,7 +8,7 @@ import json
 import asyncio
 from pathlib import Path
 import dataclasses
-from fastapi import FastAPI, HTTPException, Body, Request, Response
+from fastapi import FastAPI, HTTPException, Body, Request, Response, Query
 from fastapi.responses import JSONResponse
 from fastapi.concurrency import run_in_threadpool
 from typing import Dict, Any, List, Union
@@ -17,8 +17,9 @@ from pymongo import MongoClient
 from pymongo.errors import DuplicateKeyError
 
 from chatbot_manager import ChatbotInstance
+from group_tracker import GroupTracker
 from logging_lock import console_log
-from config_models import UserConfiguration
+from config_models import UserConfiguration, PeriodicGroupTrackingConfig
 
 
 # Suppress the default uvicorn access logger
@@ -41,12 +42,17 @@ db = None
 configurations_collection = None
 queues_collection = None
 
+# In-memory storage for chatbot instances
+chatbot_instances: Dict[str, ChatbotInstance] = {}
+active_users: Dict[str, str] = {} # Maps user_id to instance_id
+group_tracker: GroupTracker = None
+
 @app.on_event("startup")
 async def startup_event():
     """
     Connect to MongoDB and create a unique index on startup.
     """
-    global mongo_client, db, configurations_collection, queues_collection
+    global mongo_client, db, configurations_collection, queues_collection, group_tracker
     mongodb_url = os.environ.get("MONGODB_URL", "mongodb://mongodb:27017/")
     console_log(f"API: Connecting to MongoDB at {mongodb_url}")
     try:
@@ -64,6 +70,11 @@ async def startup_event():
             console_log(f"API_WARN: Could not create unique index, it may already exist or there's a data issue: {index_e}")
 
         console_log("API: Successfully connected to MongoDB.")
+
+        # Initialize GroupTracker
+        group_tracker = GroupTracker(mongodb_url, chatbot_instances)
+        group_tracker.start()
+
     except Exception as e:
         console_log(f"API_ERROR: Could not connect to MongoDB: {e}")
         mongo_client = None
@@ -83,10 +94,6 @@ async def log_requests(request: Request, call_next):
 
     return response
 
-
-# In-memory storage for chatbot instances
-chatbot_instances: Dict[str, ChatbotInstance] = {}
-active_users: Dict[str, str] = {} # Maps user_id to instance_id
 
 def remove_active_user(user_id: str):
     """Callback function to remove a user from the active list."""
@@ -362,6 +369,10 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
 
         console_log(f"API: Instance {instance_id} for user '{user_id}' is starting in the background.")
 
+        # Update group tracker with new config
+        if group_tracker:
+            group_tracker.update_jobs(user_id, config.periodic_group_tracking)
+
         return {
             "successful": [{
                 "user_id": user_id,
@@ -619,6 +630,10 @@ async def reload_chatbot(user_id: str):
         # Update the active user tracking
         active_users[user_id] = new_instance_id
 
+        # Update group tracker with new config
+        if group_tracker:
+            group_tracker.update_jobs(user_id, config.periodic_group_tracking)
+
         console_log(f"API: Instance {new_instance_id} for user '{user_id}' has been successfully reloaded.")
 
         return {"status": "success", "message": f"Chatbot for user '{user_id}' is being reloaded."}
@@ -651,10 +666,100 @@ def shutdown_event():
     chatbot_instances.clear()
     console_log("API: All instances stopped and cleaned up.")
 
+    # Shutdown GroupTracker
+    global group_tracker
+    if group_tracker:
+        group_tracker.shutdown()
+
     # Close MongoDB connection
     if mongo_client:
         mongo_client.close()
         console_log("API: MongoDB connection closed.")
+
+@app.get("/chatbot/{user_id}/groups")
+async def get_active_groups(user_id: str):
+    """
+    Proxy endpoint to fetch active groups from the chat provider.
+    """
+    if user_id not in active_users:
+        raise HTTPException(status_code=404, detail=f"No active session found for user_id '{user_id}'.")
+
+    instance_id = active_users[user_id]
+    instance = chatbot_instances.get(instance_id)
+
+    if not instance or not hasattr(instance.provider_instance, 'get_active_groups'):
+        raise HTTPException(status_code=400, detail="Provider does not support fetching groups.")
+
+    try:
+        groups = await instance.provider_instance.get_active_groups()
+        return {"groups": groups}
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to get active groups for user '{user_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get active groups: {e}")
+
+@app.get("/api/trackedGroupMessages/{user_id}/{group_id}")
+async def get_tracked_group_messages(user_id: str, group_id: str, lastPeriods: int = 0, from_time: int = Query(None, alias="from"), until_time: int = Query(None, alias="until")):
+    """
+    Returns all tracked message periods for a specific group.
+    """
+    if not group_tracker:
+         raise HTTPException(status_code=503, detail="Group Tracker not initialized.")
+
+    try:
+        data = group_tracker.get_group_messages(user_id, group_id, last_periods=lastPeriods, time_from=from_time, time_until=until_time)
+        if data is None:
+             raise HTTPException(status_code=404, detail="Tracked group not found.")
+        return JSONResponse(content=data)
+    except HTTPException:
+        raise
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to get tracked group messages for user '{user_id}' group '{group_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get tracked group messages: {e}")
+
+@app.get("/api/trackedGroupMessages/{user_id}")
+async def get_all_tracked_group_messages(user_id: str, lastPeriods: int = 0, from_time: int = Query(None, alias="from"), until_time: int = Query(None, alias="until")):
+    """
+    Returns tracked message periods for all groups of a user.
+    """
+    if not group_tracker:
+         raise HTTPException(status_code=503, detail="Group Tracker not initialized.")
+
+    try:
+        data = group_tracker.get_all_user_messages(user_id, last_periods=lastPeriods, time_from=from_time, time_until=until_time)
+        return JSONResponse(content=data)
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to get all tracked group messages for user '{user_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to get all tracked group messages: {e}")
+
+@app.delete("/api/trackedGroupMessages/{user_id}/{group_id}")
+async def delete_tracked_group_messages(user_id: str, group_id: str, lastPeriods: int = 0, from_time: int = Query(None, alias="from"), until_time: int = Query(None, alias="until")):
+    """
+    Deletes tracked message periods for a specific group.
+    """
+    if not group_tracker:
+         raise HTTPException(status_code=503, detail="Group Tracker not initialized.")
+
+    try:
+        count = group_tracker.delete_group_messages(user_id, group_id, last_periods=lastPeriods, time_from=from_time, time_until=until_time)
+        return {"status": "success", "deleted_count": count}
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to delete tracked group messages for user '{user_id}' group '{group_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete tracked group messages: {e}")
+
+@app.delete("/api/trackedGroupMessages/{user_id}")
+async def delete_all_tracked_group_messages(user_id: str, lastPeriods: int = 0, from_time: int = Query(None, alias="from"), until_time: int = Query(None, alias="until")):
+    """
+    Deletes tracked message periods for all groups of a user.
+    """
+    if not group_tracker:
+         raise HTTPException(status_code=503, detail="Group Tracker not initialized.")
+
+    try:
+        count = group_tracker.delete_all_user_messages(user_id, last_periods=lastPeriods, time_from=from_time, time_until=until_time)
+        return {"status": "success", "deleted_count": count}
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to delete all tracked group messages for user '{user_id}': {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to delete all tracked group messages: {e}")
 
 
 if __name__ == "__main__":
