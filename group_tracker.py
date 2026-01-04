@@ -115,7 +115,7 @@ class GroupTracker:
             "period_start": last_run_ts,
             "period_end": now_ts,
             "group_context": group_context_str,
-            "messages": filtered_messages, # Storing raw messages as requested
+            "messages": filtered_messages,
             "message_count": len(filtered_messages),
             "created_at": datetime.utcnow()
         }
@@ -147,6 +147,7 @@ class GroupTracker:
                 "groupIdentifier": doc['group_id'],
                 "displayName": doc.get('group_name'),
                 "groupContext": doc['group_context'],
+                "messages": doc.get('messages', []), # Return the raw messages
                 "periodStart": doc['period_start'],
                 "periodEnd": doc['period_end'],
                 "messageCount": doc['message_count'],
