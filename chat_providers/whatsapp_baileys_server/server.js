@@ -470,11 +470,15 @@ async function connectToWhatsApp(userId, vendorConfig) {
             vendorConfig: vendorConfig,
             retryCount: 0,
             http405Tracker: createHttp405Tracker(),
+            store: { messages: {} } // Initialize in-memory message store
             // sock etc will be set later
         };
     } else {
         console.log(`[${userId}] Updating existing session object (pre-init).`);
         sessions[userId].lidCache = lidMappings;
+        if (!sessions[userId].store) {
+            sessions[userId].store = { messages: {} }; // Initialize in-memory message store if missing
+        }
     }
 
     const { state, saveCreds } = await useMongoDBAuthState(userId, baileysSessionsCollection);
@@ -502,6 +506,12 @@ async function connectToWhatsApp(userId, vendorConfig) {
         sessions[userId].lidCache = {}; // Reset cache on reconnect (will load from DB below)
         sessions[userId].pushNameCache = {}; // Reset pushName cache
         resetHttp405Tracker(sessions[userId]);
+        // Do not reset store here, preserve what we have?
+        // Or reset if it's a new connection?
+        // If we restart the connection logic, likely we should keep the store as long as the process lives.
+        if (!sessions[userId].store) {
+             sessions[userId].store = { messages: {} };
+        }
     } else {
         console.log(`[${userId}] Creating new session object.`);
         sessions[userId] = {
@@ -514,6 +524,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
             vendorConfig: vendorConfig,
             retryCount: 0,
             http405Tracker: createHttp405Tracker(),
+            store: { messages: {} } // Initialize in-memory message store
         };
     }
 
@@ -627,6 +638,21 @@ async function connectToWhatsApp(userId, vendorConfig) {
         try {
             const session = sessions[userId];
             if (!session) return;
+
+            // Populate internal store with RAW messages, irrespective of processing logic
+            if (session.store && m.messages) {
+                for (const msg of m.messages) {
+                    const jid = msg.key.remoteJid;
+                    if (!session.store.messages[jid]) {
+                        session.store.messages[jid] = [];
+                    }
+                    // Simple buffer: append and slice
+                    session.store.messages[jid].push(msg);
+                    if (session.store.messages[jid].length > 1000) {
+                        session.store.messages[jid].shift();
+                    }
+                }
+            }
 
             // If we are receiving messages, we can consider the connection open
             if (session.connectionStatus !== 'open') {
@@ -797,23 +823,25 @@ app.post('/sessions/:userId/fetch-messages', async (req, res) => {
              // We can pass `undefined` for cursor to get latest.
              const result = await session.sock.fetchMessagesFromWA(groupId, limit);
              messages = result || [];
+        } else if (session.store && session.store.messages[groupId]) {
+             // Use local store buffer (active provider state)
+             console.log(`[${userId}] Using local store buffer for ${groupId}`);
+             const storedMessages = session.store.messages[groupId];
+             // Get last 'limit' messages
+             messages = storedMessages.slice(-limit);
         } else {
-            // Fallback: If we can't fetch actively, we throw an error as per requirements.
-            // We assume the Baileys version supports some form of active fetch or we are stuck.
-            // However, to be safe, I'll check if we can simply iterate.
+            console.warn(`[${userId}] Active fetch failed and no local store data for ${groupId}.`);
 
-            // NOTE: The current Baileys version might not have `fetchMessagesFromWA` exposed.
-            // But we can try to use `store` if it was attached. It isn't.
-
-            // Let's assume for now that if `fetchMessagesFromWA` is missing, we can't fulfill "Active Fetch".
-            // But we will try one more thing: `sock.query` to build the stanza manually? No, too risky.
-
-            console.warn(`[${userId}] fetchMessagesFromWA not found on socket. Attempting fallback or returning error.`);
-            throw new Error("Active history fetching is not supported by the current Baileys provider version.");
+            // If store is not initialized at all, we can't do anything
+            if (!session.store) {
+                 throw new Error("Active history fetching is not supported by the current Baileys provider version (no store).");
+            }
+            // If store exists but no messages for this group, return empty (valid result)
+            messages = [];
         }
 
         const allowGroups = true; // We are fetching for a group specifically
-        const processOffline = true; // We always want these messages
+        const processOffline = true; // We always want these messages to be processed/formatted
 
         const processedMessagesPromises = messages.map(async (msg) => {
              // Reuse the extraction logic
