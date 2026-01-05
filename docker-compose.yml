@@ -44,6 +44,8 @@ services:
       - "9000:9000"
     environment:
       - MONGODB_URL=mongodb://mongodb:27017
+    volumes:
+      - ./baileys_store:/app/baileys_store
     # The command will be specified in the python code that starts this service.
     # We need to pass the port, user_id, and config.
     # For now, we'll just have it run and listen on a port.
