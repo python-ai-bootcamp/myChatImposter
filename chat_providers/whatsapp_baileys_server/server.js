@@ -164,7 +164,7 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
     }
 
     if (!msg.message) {
-        console.log(`[${userId}] Received a stub message or an event with no message body. Type: ${msg.messageStubType}, Params: ${msg.messageStubParameters?.join(', ')}. Skipping.`);
+        console.log(`[${userId}] Received a stub message or an event with no message body. Type: ${msg.messageStubType}, Params: ${msg.messageStubParameters?.join(', ')}. Skipping. Full msg: ${JSON.stringify(msg)}`);
         return null;
     }
 
@@ -174,13 +174,22 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
     const contentKeys = rawKeys.filter(k => !technicalKeys.includes(k));
     const messageType = contentKeys.length > 0 ? contentKeys[0] : rawKeys[0];
 
-    if (messageType === 'protocolMessage') return null;
+    if (messageType === 'protocolMessage') {
+        // console.log(`[${userId}] Skipping protocolMessage.`);
+        return null;
+    }
     if (contentKeys.length === 0 && messageType === 'senderKeyDistributionMessage') return null;
 
-    if (isGroup && !allowGroups) return null;
+    if (isGroup && !allowGroups) {
+        console.log(`[${userId}] Skipping group message from ${msg.key.remoteJid} (allow_group_messages=false).`);
+        return null;
+    }
 
     const messageTimestamp = (typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp * 1000 : msg.messageTimestamp.toNumber() * 1000);
-    if (!processOffline && messageTimestamp < serverStartTime) return null;
+    if (!processOffline && messageTimestamp < serverStartTime) {
+        console.log(`[${userId}] Skipping offline message from ${msg.key.remoteJid} (ts: ${messageTimestamp} < start: ${serverStartTime}).`);
+        return null;
+    }
 
     let messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text;
     if (!messageContent) {
@@ -639,6 +648,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
             const session = sessions[userId];
             if (!session) return;
 
+            console.log(`[${userId}] messages.upsert type: ${m.type}, count: ${m.messages.length}`);
+
             // Populate internal store with RAW messages, irrespective of processing logic
             if (session.store && m.messages) {
                 for (const msg of m.messages) {
@@ -650,6 +661,12 @@ async function connectToWhatsApp(userId, vendorConfig) {
                     session.store.messages[jid].push(msg);
                     if (session.store.messages[jid].length > 1000) {
                         session.store.messages[jid].shift();
+                    }
+                    if (m.type === 'append' || m.type === 'notify') {
+                        // Log first message of batch for debug
+                        if (m.messages.indexOf(msg) === 0) {
+                             console.log(`[${userId}] Stored message in buffer for ${jid}. ID: ${msg.key.id}`);
+                        }
                     }
                 }
             }
@@ -825,8 +842,8 @@ app.post('/sessions/:userId/fetch-messages', async (req, res) => {
              messages = result || [];
         } else if (session.store && session.store.messages[groupId]) {
              // Use local store buffer (active provider state)
-             console.log(`[${userId}] Using local store buffer for ${groupId}`);
              const storedMessages = session.store.messages[groupId];
+             console.log(`[${userId}] Using local store buffer for ${groupId}. Found ${storedMessages.length} total messages.`);
              // Get last 'limit' messages
              messages = storedMessages.slice(-limit);
         } else {
@@ -850,6 +867,7 @@ app.post('/sessions/:userId/fetch-messages', async (req, res) => {
 
         const processedMessages = (await Promise.all(processedMessagesPromises)).filter(Boolean);
 
+        console.log(`[${userId}] fetch-messages: Returning ${processedMessages.length} messages after processing.`);
         res.status(200).json({ messages: processedMessages });
 
     } catch (e) {
