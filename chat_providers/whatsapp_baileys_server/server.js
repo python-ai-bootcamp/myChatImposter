@@ -479,7 +479,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
             vendorConfig: vendorConfig,
             retryCount: 0,
             http405Tracker: createHttp405Tracker(),
-            store: { messages: {} } // Initialize in-memory message store
+            store: { messages: {} }, // Initialize in-memory message store
+            authState: null // Placeholder for auth state
             // sock etc will be set later
         };
     } else {
@@ -490,7 +491,18 @@ async function connectToWhatsApp(userId, vendorConfig) {
         }
     }
 
-    const { state, saveCreds } = await useMongoDBAuthState(userId, baileysSessionsCollection);
+    // Reuse existing auth state if available (preserves in-memory keys during restarts)
+    // Otherwise, initialize from MongoDB
+    let authState = sessions[userId].authState;
+    if (!authState) {
+        console.log(`[${userId}] Initializing new MongoDB auth state.`);
+        authState = await useMongoDBAuthState(userId, baileysSessionsCollection);
+        sessions[userId].authState = authState;
+    } else {
+        console.log(`[${userId}] Reusing existing in-memory auth state (preserving keys).`);
+    }
+
+    const { state, saveCreds } = authState;
 
     const logger = pino({ level: 'debug' });
 
@@ -533,7 +545,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
             vendorConfig: vendorConfig,
             retryCount: 0,
             http405Tracker: createHttp405Tracker(),
-            store: { messages: {} } // Initialize in-memory message store
+            store: { messages: {} }, // Initialize in-memory message store
+            authState: authState // Store auth state
         };
     }
 
