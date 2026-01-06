@@ -32,6 +32,7 @@ const {
     initAuthCreds,
     proto,
     fetchLatestBaileysVersion,
+    makeInMemoryStore,
 } = require('@whiskeysockets/baileys');
 
 // --- Globals ---
@@ -164,7 +165,7 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
     }
 
     if (!msg.message) {
-        console.log(`[${userId}] Received a stub message or an event with no message body. Type: ${msg.messageStubType}, Params: ${msg.messageStubParameters?.join(', ')}. Skipping.`);
+        // console.log(`[${userId}] Received a stub message or an event with no message body. Type: ${msg.messageStubType}, Params: ${msg.messageStubParameters?.join(', ')}. Skipping.`);
         return null;
     }
 
@@ -203,7 +204,14 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
         try {
             // Using session.sock directly might be an issue if called from outside,
             // but for this helper assume session.sock is available.
-            const metadata = await session.sock.groupMetadata(msg.key.remoteJid);
+            // Check if we have group metadata in the store first
+            let metadata;
+            if (session.store && session.store.groupMetadata && session.store.groupMetadata[msg.key.remoteJid]) {
+                metadata = session.store.groupMetadata[msg.key.remoteJid];
+            } else {
+                 metadata = await session.sock.groupMetadata(msg.key.remoteJid);
+            }
+
             groupInfo = { id: msg.key.remoteJid, name: metadata.subject };
             groupInfo.alternate_identifiers = collectGroupIdentifiers(groupInfo);
         } catch (e) {
@@ -461,6 +469,11 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
     // Initialize session placeholder if needed, or update cache immediately
     // This ensures resolveId has the correct state during useMongoDBAuthState initialization
+
+    // SETUP IN-MEMORY STORE
+    const storeLogger = pino({ level: 'debug' });
+    const store = makeInMemoryStore({ logger: storeLogger });
+
     if (!sessions[userId]) {
         console.log(`[${userId}] Creating new session object (pre-init).`);
         sessions[userId] = {
@@ -470,15 +483,12 @@ async function connectToWhatsApp(userId, vendorConfig) {
             vendorConfig: vendorConfig,
             retryCount: 0,
             http405Tracker: createHttp405Tracker(),
-            store: { messages: {} } // Initialize in-memory message store
-            // sock etc will be set later
+            store: store // USE THE NEW STORE
         };
     } else {
         console.log(`[${userId}] Updating existing session object (pre-init).`);
         sessions[userId].lidCache = lidMappings;
-        if (!sessions[userId].store) {
-            sessions[userId].store = { messages: {} }; // Initialize in-memory message store if missing
-        }
+        sessions[userId].store = store; // UPDATE THE STORE
     }
 
     const { state, saveCreds } = await useMongoDBAuthState(userId, baileysSessionsCollection);
@@ -494,6 +504,9 @@ async function connectToWhatsApp(userId, vendorConfig) {
         printQRInTerminal: false, // We handle QR code generation manually
     });
 
+    // Bind the store to the socket to automatically handle updates
+    store.bind(sock.ev);
+
 
     // If a session object already exists, update it. Otherwise, create a new one.
     // This preserves the object reference and prevents race conditions.
@@ -506,14 +519,10 @@ async function connectToWhatsApp(userId, vendorConfig) {
         sessions[userId].lidCache = {}; // Reset cache on reconnect (will load from DB below)
         sessions[userId].pushNameCache = {}; // Reset pushName cache
         resetHttp405Tracker(sessions[userId]);
-        // Do not reset store here, preserve what we have?
-        // Or reset if it's a new connection?
-        // If we restart the connection logic, likely we should keep the store as long as the process lives.
-        if (!sessions[userId].store) {
-             sessions[userId].store = { messages: {} };
-        }
+        // Store is already set above
     } else {
-        console.log(`[${userId}] Creating new session object.`);
+        // This block strictly shouldn't be reached given the pre-init above, but for safety:
+        console.log(`[${userId}] Creating new session object (redundant branch).`);
         sessions[userId] = {
             sock: sock,
             currentQR: null,
@@ -524,7 +533,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
             vendorConfig: vendorConfig,
             retryCount: 0,
             http405Tracker: createHttp405Tracker(),
-            store: { messages: {} } // Initialize in-memory message store
+            store: store
         };
     }
 
@@ -639,25 +648,21 @@ async function connectToWhatsApp(userId, vendorConfig) {
             const session = sessions[userId];
             if (!session) return;
 
-            // Populate internal store with RAW messages, irrespective of processing logic
-            if (session.store && m.messages) {
-                for (const msg of m.messages) {
-                    const jid = msg.key.remoteJid;
-                    if (!session.store.messages[jid]) {
-                        session.store.messages[jid] = [];
-                    }
-                    // Simple buffer: append and slice
-                    session.store.messages[jid].push(msg);
-                    if (session.store.messages[jid].length > 1000) {
-                        session.store.messages[jid].shift();
-                    }
-                }
-            }
+            // LOGGING FOR DEBUGGING
+            console.log(`[${userId}] messages.upsert received. Type: ${m.type}, Count: ${m.messages.length}`);
+
+            // Note: The store is bound via store.bind(sock.ev), so we don't need manual buffering!
+            // The store will automatically update `store.messages[jid]`.
 
             // If we are receiving messages, we can consider the connection open
             if (session.connectionStatus !== 'open') {
                 console.log(`[${userId}] Received messages while not in 'open' state, updating status.`);
                 session.connectionStatus = 'open';
+            }
+
+            if(m.type === 'append') {
+                 console.log(`[${userId}] Ignoring 'append' message type for live processing (historic/sync).`);
+                 return;
             }
 
         const processOffline = session.vendorConfig.process_offline_messages === true;
@@ -804,7 +809,11 @@ app.post('/sessions/:userId/fetch-messages', async (req, res) => {
     const { userId } = req.params;
     const { groupId, limit } = req.body;
     const session = sessions[userId];
+
+    console.log(`[${userId}] /fetch-messages request: groupId=${groupId}, limit=${limit}`);
+
     if (!session || !session.sock) {
+        console.warn(`[${userId}] Fetch aborted: Session not found.`);
         return res.status(404).json({ error: 'Session not found.' });
     }
     if (!groupId) {
@@ -816,39 +825,45 @@ app.post('/sessions/:userId/fetch-messages', async (req, res) => {
 
         let messages = [];
 
-        // Try using fetchMessagesFromWA if available (common in forks)
-        if (typeof session.sock.fetchMessagesFromWA === 'function') {
-             // Example signature: (jid, count, cursor)
-             // We want the last 'limit' messages.
-             // We can pass `undefined` for cursor to get latest.
-             const result = await session.sock.fetchMessagesFromWA(groupId, limit);
-             messages = result || [];
-        } else if (session.store && session.store.messages[groupId]) {
-             // Use local store buffer (active provider state)
-             console.log(`[${userId}] Using local store buffer for ${groupId}`);
-             const storedMessages = session.store.messages[groupId];
-             // Get last 'limit' messages
-             messages = storedMessages.slice(-limit);
-        } else {
-            console.warn(`[${userId}] Active fetch failed and no local store data for ${groupId}.`);
+        if (session.store) {
+             console.log(`[${userId}] Searching local store for ${groupId}`);
 
-            // If store is not initialized at all, we can't do anything
-            if (!session.store) {
-                 throw new Error("Active history fetching is not supported by the current Baileys provider version (no store).");
-            }
-            // If store exists but no messages for this group, return empty (valid result)
-            messages = [];
+             // In makeInMemoryStore, messages are stored in store.messages[jid].array which is an array
+             // Verify the structure: sometimes it's a specialized object, but Baileys default store uses an array-like structure.
+             // Actually, Baileys standard store.messages[jid] is an array.
+
+             const storedMessages = session.store.messages[groupId] || [];
+             const storeSize = Array.isArray(storedMessages) ? storedMessages.length : (storedMessages.array ? storedMessages.array.length : 0);
+
+             console.log(`[${userId}] Store has ${storeSize} messages for ${groupId}`);
+
+             if (storeSize > 0) {
+                 const msgArray = Array.isArray(storedMessages) ? storedMessages : storedMessages.array;
+
+                 // Log first and last message timestamps for debugging
+                 const firstMsg = msgArray[0];
+                 const lastMsg = msgArray[msgArray.length - 1];
+                 const firstTs = firstMsg.messageTimestamp;
+                 const lastTs = lastMsg.messageTimestamp;
+                 console.log(`[${userId}] Store Range: First TS=${firstTs}, Last TS=${lastTs}`);
+
+                 // Get last 'limit' messages
+                 messages = msgArray.slice(-limit);
+             }
+        } else {
+            console.warn(`[${userId}] No local store found.`);
         }
 
-        const allowGroups = true; // We are fetching for a group specifically
-        const processOffline = true; // We always want these messages to be processed/formatted
+        const allowGroups = true;
+        const processOffline = true;
 
         const processedMessagesPromises = messages.map(async (msg) => {
-             // Reuse the extraction logic
              return await processMessage(session, userId, msg, processOffline, allowGroups);
         });
 
         const processedMessages = (await Promise.all(processedMessagesPromises)).filter(Boolean);
+
+        console.log(`[${userId}] Returning ${processedMessages.length} processed messages.`);
 
         res.status(200).json({ messages: processedMessages });
 
