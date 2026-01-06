@@ -4,6 +4,7 @@ from typing import List, Optional, Dict, Any, Literal
 class ChatProviderSettings(BaseModel):
     allow_group_messages: bool = False
     process_offline_messages: bool = False
+    sync_full_history: bool = Field(default=True, title="Sync Full History")
 
     class Config:
         extra = 'allow'
