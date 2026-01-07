@@ -1,6 +1,6 @@
 import asyncio
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from pymongo import MongoClient
@@ -83,27 +83,27 @@ class GroupTracker:
              return
 
         # Determine time window
-        state_key = {"user_id": user_id, "group_id": config.groupIdentifier}
-        state = self.tracking_state_collection.find_one(state_key)
+        # We calculate the time window strictly based on the cron schedule to avoid
+        # ingesting stale data (e.g. after downtime) or duplicate data.
+        # The window is [previous_cron_time, current_cron_time].
 
-        now_ts = int(time.time() * 1000)
+        try:
+            now_ts_raw = time.time()
+            now_dt = datetime.fromtimestamp(now_ts_raw)
+            # Add a small buffer to ensure that if we run exactly on the second, we still catch the current slot.
+            safe_now_dt = now_dt + timedelta(seconds=1)
 
-        if state:
-            last_run_ts = state['last_run_ts']
-        else:
-            # If no previous run, calculate the previous scheduled time based on cron
-            # This ensures the first "sponge" respects the schedule interval (e.g. 15 mins)
-            # instead of defaulting to 24 hours.
-            try:
-                # croniter expects datetime object or float timestamp (seconds)
-                now_dt = datetime.fromtimestamp(now_ts / 1000)
-                iter = croniter(config.cronTrackingSchedule, now_dt)
-                prev_run_dt = iter.get_prev(datetime)
-                last_run_ts = int(prev_run_dt.timestamp() * 1000)
-                logger.info(f"First run for {user_id}/{config.groupIdentifier}: Calculated sponge start time as {prev_run_dt}")
-            except Exception as e:
-                logger.warning(f"Failed to calculate previous cron time for {user_id}/{config.groupIdentifier}: {e}. Defaulting to 24h ago.")
-                last_run_ts = (now_ts - 24 * 60 * 60 * 1000)
+            iter = croniter(config.cronTrackingSchedule, safe_now_dt)
+            current_cron_end_dt = iter.get_prev(datetime)
+            current_cron_start_dt = iter.get_prev(datetime)
+
+            now_ts = int(current_cron_end_dt.timestamp() * 1000)
+            last_run_ts = int(current_cron_start_dt.timestamp() * 1000)
+
+            logger.info(f"Tracking job for {user_id}/{config.groupIdentifier}: Window calculated as {current_cron_start_dt} -> {current_cron_end_dt}")
+        except Exception as e:
+            logger.error(f"Failed to calculate cron window for {user_id}/{config.groupIdentifier}: {e}. Aborting.")
+            return
 
         # Filter and Transform
         transformed_messages = []
@@ -168,6 +168,8 @@ class GroupTracker:
         self.tracked_group_periods_collection.insert_one(period_doc)
 
         # Update last run state
+        # We store the end of the current window as the last run time.
+        state_key = {"user_id": user_id, "group_id": config.groupIdentifier}
         self.tracking_state_collection.update_one(
             state_key,
             {"$set": {"last_run_ts": now_ts}},
