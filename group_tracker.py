@@ -120,6 +120,9 @@ class GroupTracker:
                 }
                 transformed_messages.append(transformed_msg)
 
+        # Sort messages by originating_time
+        transformed_messages.sort(key=lambda x: x['originating_time'])
+
         # Upsert Group Metadata
         alternate_identifiers_set.add(config.groupIdentifier)
         alternate_identifiers_set.add(config.displayName)
