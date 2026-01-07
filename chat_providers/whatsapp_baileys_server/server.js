@@ -656,6 +656,40 @@ async function connectToWhatsApp(userId, vendorConfig) {
         }
     });
 
+    sock.ev.on('messaging-history.set', async ({ messages, isLatest }) => {
+        try {
+            const session = sessions[userId];
+            if (!session) return;
+
+            console.log(`[${userId}] messaging-history.set received. Count: ${messages?.length}, isLatest: ${isLatest}`);
+
+            if (session.store && messages) {
+                let addedCount = 0;
+                // messages in history.set can be an array of WAMessage directly
+                // or sometimes an array of Chat objects with messages.
+                // We handle the direct WAMessage array case primarily.
+                for (const item of messages) {
+                    // Check if item is a message (has key)
+                    if (item.key && item.message) {
+                        const msg = item;
+                        const jid = msg.key.remoteJid;
+                        if (!session.store.messages[jid]) {
+                             session.store.messages[jid] = [];
+                        }
+                        session.store.messages[jid].push(msg);
+                        if (session.store.messages[jid].length > 1000) {
+                             session.store.messages[jid].shift();
+                        }
+                        addedCount++;
+                    }
+                }
+                console.log(`[${userId}] messaging-history.set: Added ${addedCount} messages to store.`);
+            }
+        } catch (e) {
+            console.error(`[${userId}] Error in messaging-history.set handler:`, e);
+        }
+    });
+
     sock.ev.on('messages.upsert', async (m) => {
         try {
             const session = sessions[userId];
