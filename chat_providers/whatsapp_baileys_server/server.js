@@ -656,12 +656,25 @@ async function connectToWhatsApp(userId, vendorConfig) {
         }
     });
 
-    sock.ev.on('messaging-history.set', async ({ messages, isLatest }) => {
+    sock.ev.on('messaging-history.set', async ({ messages, contacts, isLatest }) => {
         try {
             const session = sessions[userId];
             if (!session) return;
 
-            console.log(`[${userId}] messaging-history.set received. Count: ${messages?.length}, isLatest: ${isLatest}`);
+            console.log(`[${userId}] messaging-history.set received. Msgs: ${messages?.length}, Contacts: ${contacts?.length}, isLatest: ${isLatest}`);
+
+            if (contacts) {
+                for (const contact of contacts) {
+                    if (contact.id) {
+                        session.contactsCache[contact.id] = contact;
+                        // Also cache notify name if available as pushName
+                        if (contact.notify || contact.name) {
+                            session.pushNameCache[contact.id] = contact.notify || contact.name;
+                        }
+                    }
+                }
+                console.log(`[${userId}] messaging-history.set: Cached ${contacts.length} contacts.`);
+            }
 
             if (session.store && messages) {
                 let addedCount = 0;

@@ -4,6 +4,7 @@ from datetime import datetime
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from pymongo import MongoClient
+from croniter import croniter
 import logging
 
 from chatbot_manager import ChatbotInstance
@@ -86,8 +87,23 @@ class GroupTracker:
         state = self.tracking_state_collection.find_one(state_key)
 
         now_ts = int(time.time() * 1000)
-        # If no previous run, default to 24 hours ago
-        last_run_ts = state['last_run_ts'] if state else (now_ts - 24 * 60 * 60 * 1000)
+
+        if state:
+            last_run_ts = state['last_run_ts']
+        else:
+            # If no previous run, calculate the previous scheduled time based on cron
+            # This ensures the first "sponge" respects the schedule interval (e.g. 15 mins)
+            # instead of defaulting to 24 hours.
+            try:
+                # croniter expects datetime object or float timestamp (seconds)
+                now_dt = datetime.fromtimestamp(now_ts / 1000)
+                iter = croniter(config.cronTrackingSchedule, now_dt)
+                prev_run_dt = iter.get_prev(datetime)
+                last_run_ts = int(prev_run_dt.timestamp() * 1000)
+                logger.info(f"First run for {user_id}/{config.groupIdentifier}: Calculated sponge start time as {prev_run_dt}")
+            except Exception as e:
+                logger.warning(f"Failed to calculate previous cron time for {user_id}/{config.groupIdentifier}: {e}. Defaulting to 24h ago.")
+                last_run_ts = (now_ts - 24 * 60 * 60 * 1000)
 
         # Filter and Transform
         transformed_messages = []
