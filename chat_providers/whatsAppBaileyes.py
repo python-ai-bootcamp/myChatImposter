@@ -5,12 +5,13 @@ import threading
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Dict, Optional, Callable, List
 from collections import deque
+import time
 
 import httpx
 import websockets
 
 from queue_manager import UserQueuesManager, Sender, Group, Message
-from logging_lock import FileLogger
+from logging_lock import FileLogger, console_log
 from .base import BaseChatProvider
 from config_models import ChatProviderConfig
 
@@ -26,6 +27,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         self.base_url = os.environ.get("WHATSAPP_SERVER_URL", "http://localhost:9000")
         self.ws_url = self.base_url.replace("http", "ws")
         self.sent_message_ids = deque()
+        self.pending_bot_messages = deque()
         self.max_cache_interval = 0
         self.max_cache_size = 100
 
@@ -55,12 +57,48 @@ class WhatsAppBaileysProvider(BaseChatProvider):
     def is_bot_message(self, provider_message_id: str) -> bool:
         if not provider_message_id:
             return False
-        if self.logger: self.logger.log(f"Checking is_bot_message for ID: {provider_message_id}. Cache size: {len(self.sent_message_ids)}")
+        # Use console_log for visibility
+        # console_log(f"DEBUG_BOT: Checking ID {provider_message_id}. Cache size: {len(self.sent_message_ids)}")
         for msg_id, _ in self.sent_message_ids:
             if msg_id == provider_message_id:
-                if self.logger: self.logger.log(f"MATCH FOUND in cache for ID: {provider_message_id}")
+                console_log(f"DEBUG_BOT: MATCH FOUND in cache for ID: {provider_message_id}")
                 return True
-        if self.logger: self.logger.log(f"No match found in cache for ID: {provider_message_id}")
+        # console_log(f"DEBUG_BOT: No match found in cache for ID: {provider_message_id}")
+        return False
+
+    def _check_and_consume_pending(self, recipient_id: str, content: str) -> bool:
+        """
+        Checks if a message matches a pending bot message by content and recipient.
+        This handles race conditions where the WebSocket event arrives before the HTTP response returns the ID.
+        Also cleans up stale pending messages (TTL 30s).
+        """
+        now = time.time()
+        # Clean up stale pending messages
+        while self.pending_bot_messages and now - self.pending_bot_messages[0][2] > 30:
+            self.pending_bot_messages.popleft()
+
+        console_log(f"DEBUG_BOT: Checking pending. Recipient: '{recipient_id}', Content: '{content[:30]}...'")
+        console_log(f"DEBUG_BOT: Pending buffer: {[(r, c[:10], t) for r, c, t in self.pending_bot_messages]}")
+
+        for i, (p_recipient, p_content, p_time) in enumerate(self.pending_bot_messages):
+            # We assume strict matching for now. Recipient formatting might vary slightly,
+            # but usually it's consistent if we use what we sent.
+            # p_recipient is what we passed to sendMessage. recipient_id is from the incoming message.
+            # If recipient_id is None, skip check.
+            if recipient_id and recipient_id != p_recipient:
+                console_log(f"DEBUG_BOT: Recipient mismatch: '{recipient_id}' != '{p_recipient}'")
+                continue
+
+            if content == p_content:
+                console_log(f"DEBUG_BOT: MATCH FOUND in pending buffer for content: {content[:20]}...")
+                # Remove from deque
+                del self.pending_bot_messages[i]
+                return True
+            else:
+                console_log(f"DEBUG_BOT: Content mismatch. \nReceived: '{content}'\nPending:  '{p_content}'")
+                pass
+
+        console_log(f"DEBUG_BOT: No pending match found.")
         return False
 
     async def _send_config_to_server(self):
@@ -186,7 +224,20 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     permanent_jid = next((alt_id for alt_id in (msg.get('alternate_identifiers') or []) if alt_id.endswith('@s.whatsapp.net')), None)
                     correspondent_id = permanent_jid or recipient_id
 
+                is_bot = False
                 if provider_message_id and self.is_bot_message(provider_message_id):
+                    is_bot = True
+                elif self._check_and_consume_pending(recipient_id, msg.get('message')):
+                    is_bot = True
+                    # CRITICAL: Add to cache immediately so history/future checks work
+                    if provider_message_id:
+                        # Check if already present to avoid duplicates (though deque allows it, cleaner not to)
+                        if not any(x[0] == provider_message_id for x in self.sent_message_ids):
+                            self.sent_message_ids.append((provider_message_id, time.time()))
+                            self._cleanup_cache()
+                            if self.logger: self.logger.log(f"Race condition resolved: Added ID {provider_message_id} to cache from pending match.")
+
+                if is_bot:
                     source = 'bot'
                     actual_sender_data = msg.get('actual_sender')
                     alternate_identifiers = []
@@ -273,6 +324,11 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
     async def sendMessage(self, recipient: str, message: str):
         if self.logger: self.logger.log(f"Sending reply to {recipient} ---> {message[:50]}...")
+        console_log(f"DEBUG_BOT: Adding to pending: Recipient: '{recipient}', Content: '{message[:30]}...'")
+
+        # Add to pending buffer immediately to handle race conditions
+        self.pending_bot_messages.append((recipient, message, time.time()))
+
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
@@ -285,9 +341,11 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     response_data = response.json()
                     provider_message_id = response_data.get('provider_message_id')
                     if provider_message_id:
-                        self.sent_message_ids.append((provider_message_id, time.time()))
-                        self._cleanup_cache()
-                        if self.logger: self.logger.log(f"Successfully sent message. Tracking provider_message_id: {provider_message_id}")
+                        # Only add if not already added by race condition handler
+                        if not any(x[0] == provider_message_id for x in self.sent_message_ids):
+                            self.sent_message_ids.append((provider_message_id, time.time()))
+                            self._cleanup_cache()
+                            if self.logger: self.logger.log(f"Successfully sent message. Tracking provider_message_id: {provider_message_id}")
                     else:
                         if self.logger: self.logger.log("WARN: Sent message but got no provider_message_id in response.")
                 else:
