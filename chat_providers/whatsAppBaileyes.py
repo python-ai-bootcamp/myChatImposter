@@ -27,7 +27,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         self.ws_url = self.base_url.replace("http", "ws")
         self.sent_message_ids = deque()
         self.max_cache_interval = 0
-        self.max_cache_size = 1000
+        self.max_cache_size = 100
 
     def update_cache_policy(self, max_interval: int):
         self.max_cache_interval = max_interval
@@ -55,9 +55,12 @@ class WhatsAppBaileysProvider(BaseChatProvider):
     def is_bot_message(self, provider_message_id: str) -> bool:
         if not provider_message_id:
             return False
+        if self.logger: self.logger.log(f"Checking is_bot_message for ID: {provider_message_id}. Cache size: {len(self.sent_message_ids)}")
         for msg_id, _ in self.sent_message_ids:
             if msg_id == provider_message_id:
+                if self.logger: self.logger.log(f"MATCH FOUND in cache for ID: {provider_message_id}")
                 return True
+        if self.logger: self.logger.log(f"No match found in cache for ID: {provider_message_id}")
         return False
 
     async def _send_config_to_server(self):
@@ -285,6 +288,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                         self.sent_message_ids.append((provider_message_id, time.time()))
                         self._cleanup_cache()
                         if self.logger: self.logger.log(f"Successfully sent message. Tracking provider_message_id: {provider_message_id}")
+                    else:
+                        if self.logger: self.logger.log("WARN: Sent message but got no provider_message_id in response.")
                 else:
                     if self.logger: self.logger.log(f"ERROR: Failed to send message. Status: {response.status_code}, Body: {response.text}")
         except Exception as e:

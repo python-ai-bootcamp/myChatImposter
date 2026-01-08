@@ -347,7 +347,7 @@ class ChatbotInstance:
         """Processes a new message from a correspondent's queue."""
         console_log(f"INSTANCE ({user_id}/{correspondent_id}): Callback received for message {message.id}.")
 
-        if message.source == 'bot':
+        if message.source == 'bot' or message.source == 'user_outgoing':
             return
 
         if message.group:
