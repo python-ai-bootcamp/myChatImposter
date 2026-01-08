@@ -33,6 +33,26 @@ class GroupTracker:
         self.scheduler.shutdown()
         logger.info("GroupTracker scheduler shutdown.")
 
+    def _calculate_max_interval(self, configs: list[PeriodicGroupTrackingConfig]) -> int:
+        max_interval = 0
+        now_dt = datetime.now()
+        for config in configs:
+            try:
+                # We calculate the interval between two potential future executions to estimate the period.
+                # Note: Cron intervals can vary (e.g. months). We take a sample.
+                iter = croniter(config.cronTrackingSchedule, now_dt)
+                next_1 = iter.get_next(datetime)
+                next_2 = iter.get_next(datetime)
+                interval = (next_2 - next_1).total_seconds()
+                if interval > max_interval:
+                    max_interval = interval
+            except Exception:
+                pass
+
+        if max_interval > 0:
+            return int(max_interval) + 900 # Add 15 minutes buffer
+        return 0
+
     def update_jobs(self, user_id: str, tracking_configs: list[PeriodicGroupTrackingConfig]):
         # Remove existing jobs for this user
         jobs_to_remove = [job_id for job_id in self.jobs if job_id.startswith(f"{user_id}_")]
@@ -57,6 +77,17 @@ class GroupTracker:
                 logger.info(f"Added tracking job {job_id} with schedule {config.cronTrackingSchedule}")
             except Exception as e:
                 logger.error(f"Failed to add tracking job {job_id}: {e}")
+
+        # Update provider cache policy
+        max_interval = self._calculate_max_interval(tracking_configs)
+        target_instance = None
+        for instance in self.chatbot_instances.values():
+            if instance.user_id == user_id:
+                target_instance = instance
+                break
+
+        if target_instance and isinstance(target_instance.provider_instance, WhatsAppBaileysProvider):
+            target_instance.provider_instance.update_cache_policy(max_interval)
 
     async def track_group_context(self, user_id: str, config: PeriodicGroupTrackingConfig):
         logger.info(f"Starting tracking job for user {user_id}, group {config.groupIdentifier}")
@@ -115,12 +146,22 @@ class GroupTracker:
                 continue
 
             if last_run_ts < msg_ts <= now_ts:
-                # Transform message object
-                sender_data = {
-                    "identifier": msg.get('sender'),
-                    "display_name": msg.get('display_name'),
-                    "alternate_identifiers": msg.get('alternate_identifiers', [])
-                }
+                # Check if it's a bot message
+                provider_message_id = msg.get('provider_message_id')
+                is_bot = target_instance.provider_instance.is_bot_message(provider_message_id)
+
+                if is_bot:
+                    sender_data = {
+                        "identifier": f"bot_{user_id}",
+                        "display_name": f"Bot ({user_id})",
+                        "alternate_identifiers": msg.get('actual_sender', {}).get('alternate_identifiers', [])
+                    }
+                else:
+                    sender_data = {
+                        "identifier": msg.get('sender'),
+                        "display_name": msg.get('display_name'),
+                        "alternate_identifiers": msg.get('alternate_identifiers', [])
+                    }
 
                 # Collect group alternates if available in msg
                 if msg.get('group'):
@@ -132,7 +173,7 @@ class GroupTracker:
                     "message": msg.get('message'),
                     "accepted_time": int(time.time() * 1000),
                     "originating_time": msg_ts,
-                    "provider_message_id": msg.get('provider_message_id')
+                    "provider_message_id": provider_message_id
                 }
                 transformed_messages.append(transformed_msg)
 

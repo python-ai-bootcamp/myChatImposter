@@ -25,7 +25,40 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         self.listen_task = None
         self.base_url = os.environ.get("WHATSAPP_SERVER_URL", "http://localhost:9000")
         self.ws_url = self.base_url.replace("http", "ws")
-        self.sent_message_ids = deque(maxlen=100)
+        self.sent_message_ids = deque()
+        self.max_cache_interval = 0
+        self.max_cache_size = 1000
+
+    def update_cache_policy(self, max_interval: int):
+        self.max_cache_interval = max_interval
+        if self.logger: self.logger.log(f"Updated cache policy: max_interval={max_interval}s, max_size={self.max_cache_size}")
+
+    def _cleanup_cache(self):
+        cutoff = time.time() - self.max_cache_interval
+        # We need to remove items that are BOTH (older than max_cache_interval) AND (outside the recent max_cache_size items)
+        # So we keep items that are EITHER (newer than max_cache_interval) OR (within the last max_cache_size items)
+
+        # sent_message_ids is a deque of (id, timestamp). Oldest items are at the left (index 0).
+        # We iterate from the left and remove items until we hit one that should be kept.
+
+        while len(self.sent_message_ids) > self.max_cache_size:
+            # Check the oldest item
+            item_id, timestamp = self.sent_message_ids[0]
+
+            # If it's also too old, remove it.
+            # If it's within the time window, we stop removing because all subsequent items are newer.
+            if timestamp < cutoff:
+                self.sent_message_ids.popleft()
+            else:
+                break
+
+    def is_bot_message(self, provider_message_id: str) -> bool:
+        if not provider_message_id:
+            return False
+        for msg_id, _ in self.sent_message_ids:
+            if msg_id == provider_message_id:
+                return True
+        return False
 
     async def _send_config_to_server(self):
         if self.logger: self.logger.log(f"Connecting to Node.js server at {self.base_url}")
@@ -150,7 +183,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     permanent_jid = next((alt_id for alt_id in (msg.get('alternate_identifiers') or []) if alt_id.endswith('@s.whatsapp.net')), None)
                     correspondent_id = permanent_jid or recipient_id
 
-                if provider_message_id and provider_message_id in self.sent_message_ids:
+                if provider_message_id and self.is_bot_message(provider_message_id):
                     source = 'bot'
                     actual_sender_data = msg.get('actual_sender')
                     alternate_identifiers = []
@@ -162,7 +195,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                         display_name=f"Bot ({self.user_id})",
                         alternate_identifiers=alternate_identifiers
                     )
-                    self.sent_message_ids.remove(provider_message_id)
+                    # Do not remove from cache here
                 else:
                     source = 'user_outgoing'
                     actual_sender_data = msg.get('actual_sender')
@@ -249,7 +282,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     response_data = response.json()
                     provider_message_id = response_data.get('provider_message_id')
                     if provider_message_id:
-                        self.sent_message_ids.append(provider_message_id)
+                        self.sent_message_ids.append((provider_message_id, time.time()))
+                        self._cleanup_cache()
                         if self.logger: self.logger.log(f"Successfully sent message. Tracking provider_message_id: {provider_message_id}")
                 else:
                     if self.logger: self.logger.log(f"ERROR: Failed to send message. Status: {response.status_code}, Body: {response.text}")
