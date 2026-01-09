@@ -150,11 +150,28 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
     let senderPn = msg?.key?.senderPn || msg?.messageKey?.senderPn || msg?.key?.senderJid || null;
 
     // Fallback: If senderPn is missing but senderId is an LID, try to find it in the cache
-    if (!senderPn && senderId && senderId.endsWith('@lid') && session.lidCache) {
-        const cachedPn = session.lidCache[senderId];
-        if (cachedPn) {
-            // console.log(`[${userId}] Resolved missing senderPn from cache: ${senderId} -> ${cachedPn}`);
-            senderPn = cachedPn;
+    if (!senderPn && senderId && senderId.endsWith('@lid')) {
+        // Special case: Check if the sender is the connected user (me)
+        // session.sock.user usually contains { id: "PN@s.whatsapp.net", lid: "LID@lid" } or similar
+        if (session.sock?.user?.lid === senderId) {
+             const selfPn = jidNormalizedUser(session.sock.user.id);
+             if (selfPn) {
+                 senderPn = selfPn;
+                 console.log(`[${userId}] Resolved missing senderPn (Self) from session: ${senderId} -> ${senderPn}`);
+
+                 // Ensure it's cached so we don't have to resolve it every time
+                 if (!session.lidCache) session.lidCache = {};
+                 if (session.lidCache[senderId] !== senderPn) {
+                     session.lidCache[senderId] = senderPn;
+                     saveLidMapping(userId, senderId, senderPn);
+                 }
+             }
+        } else if (session.lidCache) {
+            const cachedPn = session.lidCache[senderId];
+            if (cachedPn) {
+                // console.log(`[${userId}] Resolved missing senderPn from cache: ${senderId} -> ${cachedPn}`);
+                senderPn = cachedPn;
+            }
         }
     }
 
@@ -581,6 +598,10 @@ async function connectToWhatsApp(userId, vendorConfig) {
             session.currentQR = null;
             session.retryCount = 0; // Reset retry count
             resetHttp405Tracker(session);
+            // Log user info to help debug LID issues
+            if (session.sock?.user) {
+                console.log(`[${userId}] Session user info: ${JSON.stringify(session.sock.user)}`);
+            }
         }
 
 
