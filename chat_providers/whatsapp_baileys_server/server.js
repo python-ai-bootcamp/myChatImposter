@@ -151,27 +151,39 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
 
     // Fallback: If senderPn is missing but senderId is an LID, try to find it in the cache
     if (!senderPn && senderId && senderId.endsWith('@lid')) {
-        // Special case: Check if the sender is the connected user (me)
-        // session.sock.user usually contains { id: "PN@s.whatsapp.net", lid: "LID@lid" } or similar
-        if (session.sock?.user?.lid === senderId) {
-             const selfPn = jidNormalizedUser(session.sock.user.id);
-             if (selfPn) {
-                 senderPn = selfPn;
-                 console.log(`[${userId}] Resolved missing senderPn (Self) from session: ${senderId} -> ${senderPn}`);
-
-                 // Ensure it's cached so we don't have to resolve it every time
-                 if (!session.lidCache) session.lidCache = {};
-                 if (session.lidCache[senderId] !== senderPn) {
-                     session.lidCache[senderId] = senderPn;
-                     saveLidMapping(userId, senderId, senderPn);
-                 }
-             }
-        } else if (session.lidCache) {
+        if (session.lidCache) {
             const cachedPn = session.lidCache[senderId];
             if (cachedPn) {
                 // console.log(`[${userId}] Resolved missing senderPn from cache: ${senderId} -> ${cachedPn}`);
                 senderPn = cachedPn;
             }
+        }
+    }
+
+    // Explicitly handle "Self" identification to ensure both LID and PN are present
+    // This catches cases where manual messages might only have one identifier
+    if (session.sock?.user) {
+        const selfId = jidNormalizedUser(session.sock.user.id);
+        const selfLid = jidNormalizedUser(session.sock.user.lid);
+        const normalizedSender = jidNormalizedUser(senderId);
+
+        if (normalizedSender && (normalizedSender === selfId || normalizedSender === selfLid)) {
+             // Sender is ME. Ensure we have both PN and LID.
+             if (selfId && selfId !== senderId) {
+                 // Add PN to alternate identifiers later
+                 // Also set senderPn if it was missing
+                 if (!senderPn) senderPn = selfId;
+             }
+
+             // If we have both, ensure mapping is saved
+             if (selfLid && selfId) {
+                  if (!session.lidCache) session.lidCache = {};
+                  if (session.lidCache[selfLid] !== selfId) {
+                       session.lidCache[selfLid] = selfId;
+                       console.log(`[${userId}] Self-repair: Mapped Self LID ${selfLid} -> ${selfId}`);
+                       saveLidMapping(userId, selfLid, selfId);
+                  }
+             }
         }
     }
 
@@ -251,6 +263,18 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
     addIdentifierVariant(alternateIdentifiers, senderPn);
     addIdentifierVariant(alternateIdentifiers, msg?.key?.participantPn);
     addIdentifierVariant(alternateIdentifiers, senderName); // Add display name
+
+    // If sender is Self, force add both Self PN and Self LID
+    if (session.sock?.user) {
+        const selfId = jidNormalizedUser(session.sock.user.id);
+        const selfLid = jidNormalizedUser(session.sock.user.lid);
+        const normalizedSender = jidNormalizedUser(senderId);
+
+        if (normalizedSender && (normalizedSender === selfId || normalizedSender === selfLid)) {
+            addIdentifierVariant(alternateIdentifiers, selfId);
+            addIdentifierVariant(alternateIdentifiers, selfLid);
+        }
+    }
 
     const finalSenderIdentifiers = Array.from(alternateIdentifiers).filter(Boolean);
 
