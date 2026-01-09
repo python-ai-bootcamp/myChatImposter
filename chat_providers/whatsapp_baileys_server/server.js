@@ -160,6 +160,26 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
         }
     }
 
+    // Self-Learning: If message is from Me, we can learn the LID mapping if present in participant field
+    // even for direct messages (if multi-device) or group messages
+    if (msg.key.fromMe && session.sock?.user) {
+         // Try to find the participant field which represents the sender (Me)
+         // Note: senderId variable already holds this for groups, but for direct it holds remoteJid
+         const rawParticipant = msg.participant || msg.key.participant;
+
+         const potentialLid = jidNormalizedUser(rawParticipant);
+         const selfId = jidNormalizedUser(session.sock.user.id);
+
+         if (potentialLid && selfId && potentialLid.endsWith('@lid')) {
+              if (!session.lidCache) session.lidCache = {};
+              if (session.lidCache[potentialLid] !== selfId) {
+                   session.lidCache[potentialLid] = selfId;
+                   console.log(`[${userId}] Learned Self LID mapping: ${potentialLid} -> ${selfId}`);
+                   saveLidMapping(userId, potentialLid, selfId);
+              }
+         }
+    }
+
     // Explicitly handle "Self" identification to ensure both LID and PN are present
     // This catches cases where manual messages might only have one identifier
     if (session.sock?.user) {
