@@ -147,7 +147,16 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
 
     const isGroup = msg.key.remoteJid.endsWith('@g.us');
     const senderId = isGroup ? (msg.participant || msg.key.participant) : msg.key.remoteJid;
-    const senderPn = msg?.key?.senderPn || msg?.messageKey?.senderPn || msg?.key?.senderJid || null;
+    let senderPn = msg?.key?.senderPn || msg?.messageKey?.senderPn || msg?.key?.senderJid || null;
+
+    // Fallback: If senderPn is missing but senderId is an LID, try to find it in the cache
+    if (!senderPn && senderId && senderId.endsWith('@lid') && session.lidCache) {
+        const cachedPn = session.lidCache[senderId];
+        if (cachedPn) {
+            // console.log(`[${userId}] Resolved missing senderPn from cache: ${senderId} -> ${cachedPn}`);
+            senderPn = cachedPn;
+        }
+    }
 
     // Cache pushName and LID mappings from ANY message, even stubs
     const cacheKey = senderPn || senderId;
