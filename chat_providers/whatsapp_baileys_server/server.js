@@ -164,7 +164,17 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
     // This catches cases where manual messages might only have one identifier
     if (session.sock?.user) {
         const selfId = jidNormalizedUser(session.sock.user.id);
-        const selfLid = jidNormalizedUser(session.sock.user.lid);
+        let selfLid = jidNormalizedUser(session.sock.user.lid);
+
+        // Fallback: If LID is missing in session (e.g. fresh login), try to find it in cache via reverse lookup
+        if (!selfLid && session.lidCache) {
+            const cachedLid = Object.keys(session.lidCache).find(key => session.lidCache[key] === selfId);
+            if (cachedLid) {
+                selfLid = jidNormalizedUser(cachedLid);
+                // console.log(`[${userId}] Resolved missing selfLid from cache: ${selfLid}`);
+            }
+        }
+
         const normalizedSender = jidNormalizedUser(senderId);
 
         if (normalizedSender && (normalizedSender === selfId || normalizedSender === selfLid)) {
@@ -291,7 +301,15 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
     let actualSender = null;
     if (msg.key.fromMe) {
         const selfJid = session.sock?.user?.id;
-        const selfLid = session.sock?.user?.lid;
+        let selfLid = session.sock?.user?.lid;
+
+        // Fallback: Resolve selfLid from cache if missing
+        if (!selfLid && session.lidCache) {
+             const normalizedSelfJid = jidNormalizedUser(selfJid);
+             const cachedLid = Object.keys(session.lidCache).find(key => session.lidCache[key] === normalizedSelfJid);
+             if (cachedLid) selfLid = cachedLid;
+        }
+
         const selfName = msg.pushName;
         const selfAlternate = new Set();
         addIdentifierVariant(selfAlternate, selfJid);
