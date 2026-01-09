@@ -291,9 +291,11 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
     let actualSender = null;
     if (msg.key.fromMe) {
         const selfJid = session.sock?.user?.id;
+        const selfLid = session.sock?.user?.lid;
         const selfName = msg.pushName;
         const selfAlternate = new Set();
         addIdentifierVariant(selfAlternate, selfJid);
+        addIdentifierVariant(selfAlternate, selfLid);
         addIdentifierVariant(selfAlternate, selfName);
 
         actualSender = {
