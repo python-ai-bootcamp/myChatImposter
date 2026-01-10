@@ -186,13 +186,27 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
         const selfId = jidNormalizedUser(session.sock.user.id);
         let selfLid = jidNormalizedUser(session.sock.user.lid);
 
-        // Fallback: If LID is missing in session (e.g. fresh login), try to find it in cache via reverse lookup
+        // Fallback 1: If LID is missing in session (e.g. fresh login), try to find it in cache via reverse lookup
         if (!selfLid && session.lidCache) {
             const cachedLid = Object.keys(session.lidCache).find(key => session.lidCache[key] === selfId);
             if (cachedLid) {
                 selfLid = jidNormalizedUser(cachedLid);
-                // console.log(`[${userId}] Resolved missing selfLid from cache: ${selfLid}`);
             }
+        }
+
+        // Fallback 2: Check contacts cache for selfId to find LID
+        if (!selfLid && session.contactsCache && session.contactsCache[selfId]) {
+             const selfContact = session.contactsCache[selfId];
+             if (selfContact.lid) {
+                  selfLid = jidNormalizedUser(selfContact.lid);
+                  // Persist this found mapping
+                  if (!session.lidCache) session.lidCache = {};
+                  if (session.lidCache[selfLid] !== selfId) {
+                       session.lidCache[selfLid] = selfId;
+                       console.log(`[${userId}] Resolved selfLid from contacts: ${selfLid} -> ${selfId}`);
+                       saveLidMapping(userId, selfLid, selfId);
+                  }
+             }
         }
 
         const normalizedSender = jidNormalizedUser(senderId);
@@ -324,10 +338,27 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
         let selfLid = session.sock?.user?.lid;
 
         // Fallback: Resolve selfLid from cache if missing
-        if (!selfLid && session.lidCache) {
+        if (!selfLid) {
              const normalizedSelfJid = jidNormalizedUser(selfJid);
-             const cachedLid = Object.keys(session.lidCache).find(key => session.lidCache[key] === normalizedSelfJid);
-             if (cachedLid) selfLid = cachedLid;
+
+             // Try lidCache
+             if (session.lidCache) {
+                 const cachedLid = Object.keys(session.lidCache).find(key => session.lidCache[key] === normalizedSelfJid);
+                 if (cachedLid) selfLid = cachedLid;
+             }
+
+             // Try contactsCache
+             if (!selfLid && session.contactsCache && session.contactsCache[normalizedSelfJid]) {
+                  const selfContact = session.contactsCache[normalizedSelfJid];
+                  if (selfContact.lid) {
+                       selfLid = jidNormalizedUser(selfContact.lid);
+                       // Persist (fire and forget for this block)
+                       if (session.lidCache && session.lidCache[selfLid] !== normalizedSelfJid) {
+                            session.lidCache[selfLid] = normalizedSelfJid;
+                            saveLidMapping(userId, selfLid, normalizedSelfJid);
+                       }
+                  }
+             }
         }
 
         const selfName = msg.pushName;
