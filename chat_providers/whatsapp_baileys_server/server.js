@@ -158,6 +158,62 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
         }
     }
 
+    // Self-Learning: If message is from Me, we can learn the LID mapping if present in participant field
+    // even for direct messages (if multi-device) or group messages
+    if (msg.key.fromMe && session.sock?.user) {
+         const rawParticipant = msg.participant || msg.key.participant;
+         const potentialLid = jidNormalizedUser(rawParticipant);
+         const selfId = jidNormalizedUser(session.sock.user.id);
+
+         if (potentialLid && selfId && potentialLid.endsWith('@lid')) {
+              if (!session.lidCache) session.lidCache = {};
+              if (session.lidCache[potentialLid] !== selfId) {
+                   session.lidCache[potentialLid] = selfId;
+                   saveLidMapping(userId, potentialLid, selfId);
+              }
+         }
+    }
+
+    // Explicitly handle "Self" identification to ensure both LID and PN are present
+    if (session.sock?.user) {
+        const selfId = jidNormalizedUser(session.sock.user.id);
+        let selfLid = jidNormalizedUser(session.sock.user.lid);
+
+        // Fallback 1: Reverse lookup in lidCache
+        if (!selfLid && session.lidCache) {
+            const cachedLid = Object.keys(session.lidCache).find(key => session.lidCache[key] === selfId);
+            if (cachedLid) selfLid = jidNormalizedUser(cachedLid);
+        }
+
+        // Fallback 2: Lookup in contactsCache
+        if (!selfLid && session.contactsCache && session.contactsCache[selfId]) {
+             const selfContact = session.contactsCache[selfId];
+             if (selfContact.lid) {
+                  selfLid = jidNormalizedUser(selfContact.lid);
+                  if (!session.lidCache) session.lidCache = {};
+                  if (session.lidCache[selfLid] !== selfId) {
+                       session.lidCache[selfLid] = selfId;
+                       saveLidMapping(userId, selfLid, selfId);
+                  }
+             }
+        }
+
+        const normalizedSender = jidNormalizedUser(senderId);
+
+        if (normalizedSender && (normalizedSender === selfId || normalizedSender === selfLid)) {
+             if (selfId && selfId !== senderId) {
+                 if (!senderPn) senderPn = selfId;
+             }
+             if (selfLid && selfId) {
+                  if (!session.lidCache) session.lidCache = {};
+                  if (session.lidCache[selfLid] !== selfId) {
+                       session.lidCache[selfLid] = selfId;
+                       saveLidMapping(userId, selfLid, selfId);
+                  }
+             }
+        }
+    }
+
     // Cache pushName and LID mappings from ANY message, even stubs
     const cacheKey = senderPn || senderId;
     if (msg.pushName) {
@@ -250,9 +306,32 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
     let actualSender = null;
     if (msg.key.fromMe) {
         const selfJid = session.sock?.user?.id;
+        let selfLid = session.sock?.user?.lid;
+
+        // Resolve selfLid if missing
+        if (!selfLid) {
+             const normalizedSelfJid = jidNormalizedUser(selfJid);
+             if (session.lidCache) {
+                 const cachedLid = Object.keys(session.lidCache).find(key => session.lidCache[key] === normalizedSelfJid);
+                 if (cachedLid) selfLid = cachedLid;
+             }
+             if (!selfLid && session.contactsCache && session.contactsCache[normalizedSelfJid]) {
+                  const selfContact = session.contactsCache[normalizedSelfJid];
+                  if (selfContact.lid) {
+                       selfLid = jidNormalizedUser(selfContact.lid);
+                       if (!session.lidCache) session.lidCache = {};
+                       if (session.lidCache[selfLid] !== normalizedSelfJid) {
+                            session.lidCache[selfLid] = normalizedSelfJid;
+                            saveLidMapping(userId, selfLid, normalizedSelfJid);
+                       }
+                  }
+             }
+        }
+
         const selfName = msg.pushName;
         const selfAlternate = new Set();
         addIdentifierVariant(selfAlternate, selfJid);
+        addIdentifierVariant(selfAlternate, selfLid);
         addIdentifierVariant(selfAlternate, selfName);
 
         actualSender = {
@@ -581,8 +660,6 @@ async function connectToWhatsApp(userId, vendorConfig) {
             session.currentQR = null;
             session.retryCount = 0; // Reset retry count
             resetHttp405Tracker(session);
-            // DEBUG: Log session user to inspect missing LID
-            console.log(`[${userId}] DEBUG_SESSION_USER: ${JSON.stringify(session.sock?.user)}`);
         }
 
 
@@ -720,12 +797,6 @@ async function connectToWhatsApp(userId, vendorConfig) {
             if (!session) return;
 
             console.log(`[${userId}] messages.upsert type: ${m.type}, count: ${m.messages.length}`);
-
-            // DEBUG: Log first message raw structure to inspect identifiers
-            if (m.messages.length > 0) {
-                const debugMsg = m.messages[0];
-                console.log(`[${userId}] DEBUG_RAW_MSG: key=${JSON.stringify(debugMsg.key)}, participant=${debugMsg.participant}, user=${JSON.stringify(session.sock?.user)}`);
-            }
 
             // Populate internal store with RAW messages, irrespective of processing logic
             if (session.store && m.messages) {
