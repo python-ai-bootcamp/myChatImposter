@@ -2,18 +2,18 @@ const { Boom } = require('@hapi/boom');
 
 // --- Global Error Handlers ---
 process.on('uncaughtException', (err, origin) => {
-  console.error(`\n\n--- UNCAUGHT EXCEPTION ---`);
-  console.error(`Caught exception: ${err}`);
-  console.error(`Exception origin: ${origin}`);
-  console.error(`Stack: ${err.stack}`);
-  console.error(`--- END UNCAUGHT EXCEPTION ---`);
+    console.error(`\n\n--- UNCAUGHT EXCEPTION ---`);
+    console.error(`Caught exception: ${err}`);
+    console.error(`Exception origin: ${origin}`);
+    console.error(`Stack: ${err.stack}`);
+    console.error(`--- END UNCAUGHT EXCEPTION ---`);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
-  console.error('\n\n--- UNHANDLED REJECTION ---');
-  console.error('Unhandled Rejection at:', promise);
-  console.error('Reason:', reason);
-  console.error('--- END UNHANDLED REJECTION ---');
+    console.error('\n\n--- UNHANDLED REJECTION ---');
+    console.error('Unhandled Rejection at:', promise);
+    console.error('Reason:', reason);
+    console.error('--- END UNHANDLED REJECTION ---');
 });
 
 const express = require('express');
@@ -105,7 +105,30 @@ const addIdentifierVariant = (set, value) => {
     }
 };
 
-const collectSenderIdentifiers = (msg, primaryIdentifier) => {
+// Enrich identifiers with bidirectional LID/PN cache lookups
+const enrichIdentifiersFromCache = (identifiersSet, lidCache) => {
+    if (!lidCache || Object.keys(lidCache).length === 0) return;
+
+    const currentIdentifiers = Array.from(identifiersSet);
+    for (const id of currentIdentifiers) {
+        if (id.endsWith('@lid')) {
+            // Forward lookup: LID -> PN (try normalized LID too)
+            const normalizedLid = jidNormalizedUser(id);
+            const pn = lidCache[id] || lidCache[normalizedLid];
+            if (pn) addIdentifierVariant(identifiersSet, pn);
+        } else if (id.endsWith('@s.whatsapp.net')) {
+            // Reverse lookup: PN -> LID
+            const normalizedPn = jidNormalizedUser(id);
+            const lid = Object.keys(lidCache).find(key => {
+                const cached = lidCache[key];
+                return cached === id || cached === normalizedPn || jidNormalizedUser(cached) === normalizedPn;
+            });
+            if (lid) addIdentifierVariant(identifiersSet, lid);
+        }
+    }
+};
+
+const collectSenderIdentifiers = (msg, primaryIdentifier, lidCache = {}) => {
     const identifiers = new Set();
     addIdentifierVariant(identifiers, primaryIdentifier);
     const isGroup = msg?.key?.remoteJid?.endsWith('@g.us');
@@ -123,6 +146,10 @@ const collectSenderIdentifiers = (msg, primaryIdentifier) => {
         msg?.messageKey?.senderPn,
     ];
     potentialValues.forEach((value) => addIdentifierVariant(identifiers, value));
+
+    // Enrich with LID cache lookups for bidirectional resolution
+    enrichIdentifiersFromCache(identifiers, lidCache);
+
     return Array.from(identifiers).filter(Boolean);
 };
 
@@ -134,6 +161,44 @@ const collectGroupIdentifiers = (groupInfo) => {
     addIdentifierVariant(identifiers, groupInfo.id);
     addIdentifierVariant(identifiers, groupInfo.name);
     return Array.from(identifiers).filter(Boolean);
+};
+
+// --- Contact Processing Helper ---
+const processContacts = (session, userId, contacts) => {
+    if (!contacts || !contacts.length) return;
+
+    const selfId = session.sock?.user?.id ? jidNormalizedUser(session.sock.user.id) : null;
+    let addedCount = 0;
+
+    for (const contact of contacts) {
+        if (contact.id) {
+            session.contactsCache[contact.id] = Object.assign(session.contactsCache[contact.id] || {}, contact);
+
+            // Also cache notify name if available as pushName
+            if (contact.notify || contact.name) {
+                session.pushNameCache[contact.id] = contact.notify || contact.name;
+            }
+            // Learn LID mapping from contact if it has lid field
+            if (contact.lid && contact.id) {
+                const contactPn = jidNormalizedUser(contact.id);
+                const contactLid = jidNormalizedUser(contact.lid);
+                if (contactPn && contactLid && contactLid.endsWith('@lid')) {
+                    if (!session.lidCache) session.lidCache = {};
+                    if (session.lidCache[contactLid] !== contactPn) {
+                        session.lidCache[contactLid] = contactPn;
+                        // Check if this is self
+                        const isSelf = selfId && (contactPn === selfId || contact.id.includes(selfId.split(':')[0]));
+                        if (isSelf) {
+                            console.log(`[${userId}] Learned Self LID from contacts: ${contactLid} -> ${contactPn}`);
+                        }
+                        saveLidMapping(userId, contactLid, contactPn);
+                    }
+                }
+            }
+            addedCount++;
+        }
+    }
+    // console.log(`[${userId}] Processed ${addedCount} contacts.`);
 };
 
 // --- Message Processing Helper ---
@@ -160,24 +225,55 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
         }
     }
 
-    // Self-Learning: If message is from Me, we can learn the LID mapping if present in participant field
-    // even for direct messages (if multi-device) or group messages
-    if (msg.key.fromMe && session.sock?.user) {
-         // Try to find the participant field which represents the sender (Me)
-         // Note: senderId variable already holds this for groups, but for direct it holds remoteJid
-         const rawParticipant = msg.participant || msg.key.participant;
+    // Self-Learning: Learn LID mapping when we can identify self messages
+    // This triggers for fromMe messages OR when senderId matches known self identifiers
+    if (session.sock?.user) {
+        const selfId = jidNormalizedUser(session.sock.user.id);
+        const selfLidFromSession = session.sock.user.lid ? jidNormalizedUser(session.sock.user.lid) : null;
 
-         const potentialLid = jidNormalizedUser(rawParticipant);
-         const selfId = jidNormalizedUser(session.sock.user.id);
+        // Check if senderId is self (for group messages, senderId is the participant)
+        const normalizedSenderId = jidNormalizedUser(senderId);
+        const isSelfBySenderId = normalizedSenderId === selfId || normalizedSenderId === selfLidFromSession;
 
-         if (potentialLid && selfId && potentialLid.endsWith('@lid')) {
-              if (!session.lidCache) session.lidCache = {};
-              if (session.lidCache[potentialLid] !== selfId) {
-                   session.lidCache[potentialLid] = selfId;
-                   console.log(`[${userId}] Learned Self LID mapping: ${potentialLid} -> ${selfId}`);
-                   saveLidMapping(userId, potentialLid, selfId);
-              }
-         }
+        // Also check via cache reverse lookup if we already have a mapping
+        const cachedSelfLid = session.lidCache ? Object.keys(session.lidCache).find(key => session.lidCache[key] === selfId) : null;
+        const isSelfByCache = cachedSelfLid && normalizedSenderId === jidNormalizedUser(cachedSelfLid);
+
+        const isSelfMessage = msg.key.fromMe || isSelfBySenderId || isSelfByCache;
+
+        // DEBUG: Trace why we are missing self messages
+        if (msg.key.fromMe || isSelfBySenderId) {
+            console.log(`[${userId}] Self msg check. fromMe: ${msg.key.fromMe}, isGroup: ${isGroup}, senderId: ${senderId}, selfId: ${selfId}, selfLid: ${selfLidFromSession}, LID Cached: ${!!cachedSelfLid}`);
+        }
+
+        if (isSelfMessage && isGroup) {
+            // For group messages, learn the LID mapping from senderId (which is participant)
+            if (senderId && senderId.endsWith('@lid') && selfId) {
+                const normalizedLid = jidNormalizedUser(senderId);
+                if (!session.lidCache) session.lidCache = {};
+                if (session.lidCache[normalizedLid] !== selfId) {
+                    session.lidCache[normalizedLid] = selfId;
+                    console.log(`[${userId}] Learned Self LID mapping (from group): ${normalizedLid} -> ${selfId}`);
+                    saveLidMapping(userId, normalizedLid, selfId);
+                }
+            } else {
+                // console.log(`[${userId}] Skipped Self LID learning. senderId: ${senderId}, selfId: ${selfId}`);
+            }
+        }
+
+        // Also try participant field for direct messages
+        if (msg.key.fromMe) {
+            const rawParticipant = msg.participant || msg.key.participant;
+            const potentialLid = jidNormalizedUser(rawParticipant);
+            if (potentialLid && selfId && potentialLid.endsWith('@lid')) {
+                if (!session.lidCache) session.lidCache = {};
+                if (session.lidCache[potentialLid] !== selfId) {
+                    session.lidCache[potentialLid] = selfId;
+                    console.log(`[${userId}] Learned Self LID mapping: ${potentialLid} -> ${selfId}`);
+                    saveLidMapping(userId, potentialLid, selfId);
+                }
+            }
+        }
     }
 
     // Explicitly handle "Self" identification to ensure both LID and PN are present
@@ -196,38 +292,38 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
 
         // Fallback 2: Check contacts cache for selfId to find LID
         if (!selfLid && session.contactsCache && session.contactsCache[selfId]) {
-             const selfContact = session.contactsCache[selfId];
-             if (selfContact.lid) {
-                  selfLid = jidNormalizedUser(selfContact.lid);
-                  // Persist this found mapping
-                  if (!session.lidCache) session.lidCache = {};
-                  if (session.lidCache[selfLid] !== selfId) {
-                       session.lidCache[selfLid] = selfId;
-                       console.log(`[${userId}] Resolved selfLid from contacts: ${selfLid} -> ${selfId}`);
-                       saveLidMapping(userId, selfLid, selfId);
-                  }
-             }
+            const selfContact = session.contactsCache[selfId];
+            if (selfContact.lid) {
+                selfLid = jidNormalizedUser(selfContact.lid);
+                // Persist this found mapping
+                if (!session.lidCache) session.lidCache = {};
+                if (session.lidCache[selfLid] !== selfId) {
+                    session.lidCache[selfLid] = selfId;
+                    console.log(`[${userId}] Resolved selfLid from contacts: ${selfLid} -> ${selfId}`);
+                    saveLidMapping(userId, selfLid, selfId);
+                }
+            }
         }
 
         const normalizedSender = jidNormalizedUser(senderId);
 
         if (normalizedSender && (normalizedSender === selfId || normalizedSender === selfLid)) {
-             // Sender is ME. Ensure we have both PN and LID.
-             if (selfId && selfId !== senderId) {
-                 // Add PN to alternate identifiers later
-                 // Also set senderPn if it was missing
-                 if (!senderPn) senderPn = selfId;
-             }
+            // Sender is ME. Ensure we have both PN and LID.
+            if (selfId && selfId !== senderId) {
+                // Add PN to alternate identifiers later
+                // Also set senderPn if it was missing
+                if (!senderPn) senderPn = selfId;
+            }
 
-             // If we have both, ensure mapping is saved
-             if (selfLid && selfId) {
-                  if (!session.lidCache) session.lidCache = {};
-                  if (session.lidCache[selfLid] !== selfId) {
-                       session.lidCache[selfLid] = selfId;
-                       console.log(`[${userId}] Self-repair: Mapped Self LID ${selfLid} -> ${selfId}`);
-                       saveLidMapping(userId, selfLid, selfId);
-                  }
-             }
+            // If we have both, ensure mapping is saved
+            if (selfLid && selfId) {
+                if (!session.lidCache) session.lidCache = {};
+                if (session.lidCache[selfLid] !== selfId) {
+                    session.lidCache[selfLid] = selfId;
+                    console.log(`[${userId}] Self-repair: Mapped Self LID ${selfLid} -> ${selfId}`);
+                    saveLidMapping(userId, selfLid, selfId);
+                }
+            }
         }
     }
 
@@ -303,7 +399,7 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
         }
     }
 
-    const alternateIdentifiers = new Set(collectSenderIdentifiers(msg, senderId));
+    const alternateIdentifiers = new Set(collectSenderIdentifiers(msg, senderId, session.lidCache));
     addIdentifierVariant(alternateIdentifiers, senderPn);
     addIdentifierVariant(alternateIdentifiers, msg?.key?.participantPn);
     addIdentifierVariant(alternateIdentifiers, senderName); // Add display name
@@ -339,26 +435,26 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
 
         // Fallback: Resolve selfLid from cache if missing
         if (!selfLid) {
-             const normalizedSelfJid = jidNormalizedUser(selfJid);
+            const normalizedSelfJid = jidNormalizedUser(selfJid);
 
-             // Try lidCache
-             if (session.lidCache) {
-                 const cachedLid = Object.keys(session.lidCache).find(key => session.lidCache[key] === normalizedSelfJid);
-                 if (cachedLid) selfLid = cachedLid;
-             }
+            // Try lidCache
+            if (session.lidCache) {
+                const cachedLid = Object.keys(session.lidCache).find(key => session.lidCache[key] === normalizedSelfJid);
+                if (cachedLid) selfLid = cachedLid;
+            }
 
-             // Try contactsCache
-             if (!selfLid && session.contactsCache && session.contactsCache[normalizedSelfJid]) {
-                  const selfContact = session.contactsCache[normalizedSelfJid];
-                  if (selfContact.lid) {
-                       selfLid = jidNormalizedUser(selfContact.lid);
-                       // Persist (fire and forget for this block)
-                       if (session.lidCache && session.lidCache[selfLid] !== normalizedSelfJid) {
-                            session.lidCache[selfLid] = normalizedSelfJid;
-                            saveLidMapping(userId, selfLid, normalizedSelfJid);
-                       }
-                  }
-             }
+            // Try contactsCache
+            if (!selfLid && session.contactsCache && session.contactsCache[normalizedSelfJid]) {
+                const selfContact = session.contactsCache[normalizedSelfJid];
+                if (selfContact.lid) {
+                    selfLid = jidNormalizedUser(selfContact.lid);
+                    // Persist (fire and forget for this block)
+                    if (session.lidCache && session.lidCache[selfLid] !== normalizedSelfJid) {
+                        session.lidCache[selfLid] = normalizedSelfJid;
+                        saveLidMapping(userId, selfLid, normalizedSelfJid);
+                    }
+                }
+            }
         }
 
         const selfName = msg.pushName;
@@ -366,6 +462,7 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
         addIdentifierVariant(selfAlternate, selfJid);
         addIdentifierVariant(selfAlternate, selfLid);
         addIdentifierVariant(selfAlternate, selfName);
+        enrichIdentifiersFromCache(selfAlternate, session.lidCache);
 
         actualSender = {
             identifier: selfJid,
@@ -627,6 +724,13 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
     const logger = pino({ level: 'debug' });
 
+    // DEBUG: Check Auth State 'me'
+    if (state && state.creds && state.creds.me) {
+        console.log(`[${userId}] Auth State 'me': ${JSON.stringify(state.creds.me)}`);
+    } else {
+        console.log(`[${userId}] Auth State 'me' is empty or missing.`);
+    }
+
     const sock = makeWASocket({
         auth: state,
         logger: logger,
@@ -652,7 +756,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         // Or reset if it's a new connection?
         // If we restart the connection logic, likely we should keep the store as long as the process lives.
         if (!sessions[userId].store) {
-             sessions[userId].store = { messages: {} };
+            sessions[userId].store = { messages: {} };
         }
     } else {
         console.log(`[${userId}] Creating new session object.`);
@@ -696,6 +800,36 @@ async function connectToWhatsApp(userId, vendorConfig) {
             // Log user info to help debug LID issues
             if (session.sock?.user) {
                 console.log(`[${userId}] Session user info: ${JSON.stringify(session.sock.user)}`);
+
+                // Active Self-LID Resolution
+                const selfId = jidNormalizedUser(session.sock.user.id);
+                if (selfId && !session.sock.user.lid) {
+                    console.log(`[${userId}] Self LID missing in session. Actively querying onWhatsApp for ${selfId}...`);
+                    session.sock.onWhatsApp(selfId).then(results => {
+                        if (results && results[0]) {
+                            const data = results[0];
+                            if (data.exists && data.jid) {
+                                // onWhatsApp returns the JID you queried (PN).
+                                // We need the LID. Does it return LID? 
+                                // Actually onWhatsApp usually confirms existence. 
+                                // Let's try to 'get' the contact/profile which might resolve it?
+                                // Or check if result has 'lid' property (some versions do).
+                                // If not, we might need another method, but let's log what we get.
+                                console.log(`[${userId}] onWhatsApp result: ${JSON.stringify(data)}`);
+
+                                // If result has lid, save it.
+                                if (data.lid) {
+                                    const foundLid = jidNormalizedUser(data.lid);
+                                    saveLidMapping(userId, foundLid, selfId);
+                                    session.lidCache[foundLid] = selfId;
+                                    console.log(`[${userId}] Resolved Self LID via onWhatsApp: ${foundLid} -> ${selfId}`);
+                                }
+                            }
+                        }
+                    }).catch(err => {
+                        console.error(`[${userId}] Failed to query onWhatsApp for self:`, err);
+                    });
+                }
             }
         }
 
@@ -766,7 +900,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
     sock.ev.on('creds.update', async () => {
         try {
             await saveCreds();
-        } catch(e) {
+        } catch (e) {
             console.error(`[${userId}] Error saving credentials:`, e);
         }
     });
@@ -774,11 +908,13 @@ async function connectToWhatsApp(userId, vendorConfig) {
     sock.ev.on('contacts.update', (updates) => {
         const session = sessions[userId];
         if (!session) return;
-        for (const contact of updates) {
-            if (contact.id) {
-                session.contactsCache[contact.id] = contact;
-            }
-        }
+        processContacts(session, userId, updates);
+    });
+
+    sock.ev.on('contacts.upsert', (updates) => {
+        const session = sessions[userId];
+        if (!session) return;
+        processContacts(session, userId, updates);
     });
 
     sock.ev.on('messaging-history.set', async ({ messages, contacts, isLatest }) => {
@@ -789,15 +925,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
             console.log(`[${userId}] messaging-history.set received. Msgs: ${messages?.length}, Contacts: ${contacts?.length}, isLatest: ${isLatest}`);
 
             if (contacts) {
-                for (const contact of contacts) {
-                    if (contact.id) {
-                        session.contactsCache[contact.id] = contact;
-                        // Also cache notify name if available as pushName
-                        if (contact.notify || contact.name) {
-                            session.pushNameCache[contact.id] = contact.notify || contact.name;
-                        }
-                    }
-                }
+                processContacts(session, userId, contacts);
                 console.log(`[${userId}] messaging-history.set: Cached ${contacts.length} contacts.`);
             }
 
@@ -812,11 +940,11 @@ async function connectToWhatsApp(userId, vendorConfig) {
                         const msg = item;
                         const jid = msg.key.remoteJid;
                         if (!session.store.messages[jid]) {
-                             session.store.messages[jid] = [];
+                            session.store.messages[jid] = [];
                         }
                         session.store.messages[jid].push(msg);
                         if (session.store.messages[jid].length > 1000) {
-                             session.store.messages[jid].shift();
+                            session.store.messages[jid].shift();
                         }
                         addedCount++;
                     }
@@ -850,7 +978,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
                     if (m.type === 'append' || m.type === 'notify') {
                         // Log first message of batch for debug
                         if (m.messages.indexOf(msg) === 0) {
-                             console.log(`[${userId}] Stored message in buffer for ${jid}. ID: ${msg.key.id}`);
+                            console.log(`[${userId}] Stored message in buffer for ${jid}. ID: ${msg.key.id}`);
                         }
                     }
                 }
@@ -862,22 +990,22 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 session.connectionStatus = 'open';
             }
 
-        const processOffline = session.vendorConfig.process_offline_messages === true;
-        const allowGroups = session.vendorConfig.allow_group_messages === true;
+            const processOffline = session.vendorConfig.process_offline_messages === true;
+            const allowGroups = session.vendorConfig.allow_group_messages === true;
 
-        const newMessagesPromises = m.messages.map(async (msg) => {
-            return await processMessage(session, userId, msg, processOffline, allowGroups);
-        });
+            const newMessagesPromises = m.messages.map(async (msg) => {
+                return await processMessage(session, userId, msg, processOffline, allowGroups);
+            });
 
-        const newMessages = (await Promise.all(newMessagesPromises)).filter(Boolean);
-        if (newMessages.length > 0) {
-            const ws = wsConnections[userId];
-            if (ws && ws.readyState === ws.OPEN) {
-                ws.send(JSON.stringify(newMessages));
-            } else {
-                console.log(`[${userId}] WebSocket not open, cannot send messages.`);
+            const newMessages = (await Promise.all(newMessagesPromises)).filter(Boolean);
+            if (newMessages.length > 0) {
+                const ws = wsConnections[userId];
+                if (ws && ws.readyState === ws.OPEN) {
+                    ws.send(JSON.stringify(newMessages));
+                } else {
+                    console.log(`[${userId}] WebSocket not open, cannot send messages.`);
+                }
             }
-        }
         } catch (e) {
             console.error(`[${userId}] Error in messages.upsert handler:`, e);
         }
@@ -928,6 +1056,21 @@ app.post('/sessions/:userId/send', async (req, res) => {
         }
         const sentMsgData = await session.sock.sendMessage(recipient, { text: message });
         console.log(`[${userId}] sendMessage() invoked for ${recipient}`);
+
+        // Learn self LID from sent message (especially for group messages)
+        if (sentMsgData?.key?.participant && sentMsgData.key.participant.endsWith('@lid')) {
+            const selfId = jidNormalizedUser(session.sock?.user?.id);
+            const participantLid = jidNormalizedUser(sentMsgData.key.participant);
+            if (selfId && participantLid) {
+                if (!session.lidCache) session.lidCache = {};
+                if (session.lidCache[participantLid] !== selfId) {
+                    session.lidCache[participantLid] = selfId;
+                    console.log(`[${userId}] Learned Self LID from sendMessage: ${participantLid} -> ${selfId}`);
+                    saveLidMapping(userId, participantLid, selfId);
+                }
+            }
+        }
+
         res.status(200).json({
             status: 'Message sent',
             recipient,
@@ -1020,23 +1163,23 @@ app.post('/sessions/:userId/fetch-messages', async (req, res) => {
 
         // Try using fetchMessagesFromWA if available (common in forks)
         if (typeof session.sock.fetchMessagesFromWA === 'function') {
-             // Example signature: (jid, count, cursor)
-             // We want the last 'limit' messages.
-             // We can pass `undefined` for cursor to get latest.
-             const result = await session.sock.fetchMessagesFromWA(groupId, limit);
-             messages = result || [];
+            // Example signature: (jid, count, cursor)
+            // We want the last 'limit' messages.
+            // We can pass `undefined` for cursor to get latest.
+            const result = await session.sock.fetchMessagesFromWA(groupId, limit);
+            messages = result || [];
         } else if (session.store && session.store.messages[groupId]) {
-             // Use local store buffer (active provider state)
-             const storedMessages = session.store.messages[groupId];
-             console.log(`[${userId}] Using local store buffer for ${groupId}. Found ${storedMessages.length} total messages.`);
-             // Get last 'limit' messages
-             messages = storedMessages.slice(-limit);
+            // Use local store buffer (active provider state)
+            const storedMessages = session.store.messages[groupId];
+            console.log(`[${userId}] Using local store buffer for ${groupId}. Found ${storedMessages.length} total messages.`);
+            // Get last 'limit' messages
+            messages = storedMessages.slice(-limit);
         } else {
             console.warn(`[${userId}] Active fetch failed and no local store data for ${groupId}.`);
 
             // If store is not initialized at all, we can't do anything
             if (!session.store) {
-                 throw new Error("Active history fetching is not supported by the current Baileys provider version (no store).");
+                throw new Error("Active history fetching is not supported by the current Baileys provider version (no store).");
             }
             // If store exists but no messages for this group, return empty (valid result)
             messages = [];
@@ -1046,8 +1189,8 @@ app.post('/sessions/:userId/fetch-messages', async (req, res) => {
         const processOffline = true; // We always want these messages to be processed/formatted
 
         const processedMessagesPromises = messages.map(async (msg) => {
-             // Reuse the extraction logic
-             return await processMessage(session, userId, msg, processOffline, allowGroups);
+            // Reuse the extraction logic
+            return await processMessage(session, userId, msg, processOffline, allowGroups);
         });
 
         const processedMessages = (await Promise.all(processedMessagesPromises)).filter(Boolean);
@@ -1056,8 +1199,8 @@ app.post('/sessions/:userId/fetch-messages', async (req, res) => {
         res.status(200).json({ messages: processedMessages });
 
     } catch (e) {
-         console.error(`[${userId}] Error fetching historic messages:`, e);
-         res.status(500).json({ error: e.message || 'Failed to fetch historic messages.' });
+        console.error(`[${userId}] Error fetching historic messages:`, e);
+        res.status(500).json({ error: e.message || 'Failed to fetch historic messages.' });
     }
 });
 
