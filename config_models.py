@@ -31,6 +31,7 @@ class LLMProviderSettings(BaseModel):
     )
     model: str
     temperature: float = 0.7
+    reasoning_effort: Optional[Literal["low", "medium", "high", "minimal"]] = None
     system: str = ""
 
     class Config:

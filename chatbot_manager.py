@@ -84,6 +84,7 @@ class ChatbotModel:
         self.user_id = user_id
         self.llm = llm
         self.context_config = context_config
+        self.system_prompt = system_prompt
         self.histories: Dict[str, TimestampedAndPrefixedChatMessageHistory] = {}
         self.shared_history = TimestampedAndPrefixedChatMessageHistory(context_config=self.context_config)
 
@@ -160,10 +161,13 @@ class ChatbotModel:
         history.add_message(HumanMessage(content=formatted_message))
 
         # Invoke the underlying runnable directly, passing the current history manually
+        console_log(f"INVOKING LANCHAIN CHAIN for session {session_id}")
+        console_log(f"--- FULL PROMPT CONTEXT ---\nSystem: {self.system_prompt}\nHistory: {history.messages}\nUser: {formatted_message}\n---------------------------")
         response = await self.runnable.ainvoke(
             {"question": formatted_message, "history": history.messages},
             config={"configurable": {"session_id": session_id}}
         )
+        console_log(f"LANCHAIN CHAIN RETURNED for session {session_id}")
 
         # Manually add the AI response to history
         history.add_message(AIMessage(content=response))
