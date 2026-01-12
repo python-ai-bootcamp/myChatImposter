@@ -5,9 +5,34 @@ import validator from '@rjsf/validator-ajv8';
 import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate } from '../components/FormTemplates';
 import { editPageLayout } from './EditPageLayout';
 
+
 // Helper to transform schema based on the layout definition
 const transformSchema = (originalSchema) => {
   const newSchema = JSON.parse(JSON.stringify(originalSchema));
+
+  // Patch: Fix titles for reasoning_effort and set default value
+  // LLMProviderSettings uses oneOf, so we need to patch each branch
+  const defs = newSchema.$defs || newSchema.definitions;
+  if (defs && defs.LLMProviderSettings && defs.LLMProviderSettings.oneOf) {
+    defs.LLMProviderSettings.oneOf.forEach(branch => {
+      if (branch.properties && branch.properties.reasoning_effort && branch.properties.reasoning_effort.anyOf) {
+        const re = branch.properties.reasoning_effort;
+        re.anyOf.forEach(option => {
+          // The string option (enum)
+          if (option.type === 'string' || (Array.isArray(option.type) && option.type.includes('string')) || option.enum) {
+            option.title = 'Defined';
+            // Set default so when user selects "Defined", it defaults to 'minimal'
+            option.default = 'minimal';
+          }
+          // The null option
+          else if (option.type === 'null') {
+            option.title = 'Undefined';
+          }
+        });
+      }
+    });
+  }
+
   const newProperties = {};
 
   // Create new group schemas based on the layout config
@@ -171,27 +196,27 @@ function EditPage() {
 
   useEffect(() => {
     const fetchStatus = async () => {
-        try {
-            const response = await fetch(`/chatbot/${userId}/status`);
-            if (response.ok) {
-                const data = await response.json();
-                const status = data.status ? data.status.toLowerCase() : '';
-                // The button should be shown if the user is connected, or if the connection
-                // is closed/disconnected, allowing them to retry. It should only be hidden
-                // when actively linking (which redirects to the LinkPage anyway).
-                if (status === 'connected' || status === 'close' || status === 'disconnected') {
-                    setIsLinked(true);
-                } else {
-                    setIsLinked(false);
-                }
-            } else {
-                // If the status endpoint returns 404, it means the session is not active.
-                setIsLinked(true);
-            }
-        } catch (error) {
-            console.error("Failed to fetch user status:", error);
-            setIsLinked(true); // Also allow retry on network error
+      try {
+        const response = await fetch(`/chatbot/${userId}/status`);
+        if (response.ok) {
+          const data = await response.json();
+          const status = data.status ? data.status.toLowerCase() : '';
+          // The button should be shown if the user is connected, or if the connection
+          // is closed/disconnected, allowing them to retry. It should only be hidden
+          // when actively linking (which redirects to the LinkPage anyway).
+          if (status === 'connected' || status === 'close' || status === 'disconnected') {
+            setIsLinked(true);
+          } else {
+            setIsLinked(false);
+          }
+        } else {
+          // If the status endpoint returns 404, it means the session is not active.
+          setIsLinked(true);
         }
+      } catch (error) {
+        console.error("Failed to fetch user status:", error);
+        setIsLinked(true); // Also allow retry on network error
+      }
     };
     fetchStatus();
   }, [userId]);
@@ -211,9 +236,24 @@ function EditPage() {
           // so the input box appears.
           providerConfig.api_key = "";
         }
+
+        // Logic for Reasoning Effort auto-selection
+        const oldProviderConfig = formData?.llm_bot_config?.llm_provider_config?.provider_config;
+        const oldReasoningEffort = oldProviderConfig?.reasoning_effort;
+        const newReasoningEffort = providerConfig.reasoning_effort;
+
+        // If reasoning_effort was previously null/undefined (Undefined) and is now set (Defined),
+        // and it's not 'minimal', set it to 'minimal'.
+        // This handles the transition from "Undefined" to "Defined".
+        // Note: rjsf might default it to the first enum value (e.g. 'low').
+        if (newReasoningEffort && !oldReasoningEffort) {
+          if (newReasoningEffort !== 'minimal') {
+            providerConfig.reasoning_effort = 'minimal';
+          }
+        }
       }
     } catch (error) {
-        // ignore
+      // ignore
     }
     setFormData(newFormData);
   };
@@ -254,8 +294,8 @@ function EditPage() {
       if (!response.ok) {
         const errorBody = await response.json();
         const detail = typeof errorBody.detail === 'object' && errorBody.detail !== null
-            ? JSON.stringify(errorBody.detail, null, 2)
-            : errorBody.detail;
+          ? JSON.stringify(errorBody.detail, null, 2)
+          : errorBody.detail;
         throw new Error(detail || 'Failed to save configuration.');
       }
 
@@ -271,43 +311,43 @@ function EditPage() {
     setIsSaving(true);
     setError(null);
     try {
-        // First, save the configuration. We get the form data from the ref.
-        const apiDataFromUser = transformDataToAPI(formRef.current.state.formData);
+      // First, save the configuration. We get the form data from the ref.
+      const apiDataFromUser = transformDataToAPI(formRef.current.state.formData);
 
-        if (!isNew && apiDataFromUser.user_id !== userId) {
-            throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
-        }
+      if (!isNew && apiDataFromUser.user_id !== userId) {
+        throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
+      }
 
-        const finalApiData = { ...apiDataFromUser, user_id: userId };
+      const finalApiData = { ...apiDataFromUser, user_id: userId };
 
-        const saveResponse = await fetch(`/api/configurations/${userId}`, {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify([finalApiData]),
-        });
+      const saveResponse = await fetch(`/api/configurations/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([finalApiData]),
+      });
 
-        if (!saveResponse.ok) {
-            const errorBody = await saveResponse.json();
-            throw new Error(errorBody.detail || 'Failed to save configuration.');
-        }
+      if (!saveResponse.ok) {
+        const errorBody = await saveResponse.json();
+        throw new Error(errorBody.detail || 'Failed to save configuration.');
+      }
 
-        // If save is successful, then reload
-        const reloadResponse = await fetch(`/chatbot/${userId}/reload`, {
-            method: 'POST',
-        });
+      // If save is successful, then reload
+      const reloadResponse = await fetch(`/chatbot/${userId}/reload`, {
+        method: 'POST',
+      });
 
-        if (!reloadResponse.ok) {
-            const errorBody = await reloadResponse.json();
-            throw new Error(errorBody.detail || 'Failed to reload configuration.');
-        }
+      if (!reloadResponse.ok) {
+        const errorBody = await reloadResponse.json();
+        throw new Error(errorBody.detail || 'Failed to reload configuration.');
+      }
 
-        // If both are successful, navigate to the link page
-        navigate(`/link/${userId}`);
+      // If both are successful, navigate to the link page
+      navigate(`/link/${userId}`);
 
     } catch (err) {
-        setError(`Failed to save and reload: ${err.message}`);
+      setError(`Failed to save and reload: ${err.message}`);
     } finally {
-        setIsSaving(false);
+      setIsSaving(false);
     }
   };
 
@@ -370,6 +410,13 @@ function EditPage() {
               "API Key From Environment",
               "API Key From User Input"
             ]
+          },
+          reasoning_effort: {
+            "ui:title": "Reasoning Effort",
+            "ui:widget": "select",
+            "ui:options": {
+              "optionTitles": ["Defined", "Undefined"]
+            }
           }
         }
       }
@@ -391,8 +438,8 @@ function EditPage() {
   };
 
   const innerPanelStyle = {
-      ...panelStyle,
-      backgroundColor: '#f9f9f9',
+    ...panelStyle,
+    backgroundColor: '#f9f9f9',
   };
 
   return (
@@ -402,7 +449,7 @@ function EditPage() {
           <div style={panelStyle}>
             <h2>{isNew ? 'Add New Configuration' : `Edit Configuration`}: {userId}</h2>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem', minHeight: '75vh' }}>
-              <div style={{...innerPanelStyle, overflowY: 'auto'}}>
+              <div style={{ ...innerPanelStyle, overflowY: 'auto' }}>
                 <Form
                   ref={formRef}
                   schema={schema}
