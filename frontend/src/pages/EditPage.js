@@ -385,6 +385,9 @@ function EditPage() {
       },
       respond_to_whitelist_group: {
         "ui:title": " "
+      },
+      periodic_group_tracking: {
+        "ui:title": " "
       }
     },
     chat_provider_config: {
