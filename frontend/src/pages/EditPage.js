@@ -216,11 +216,12 @@ const CronInputWidget = (props) => {
   const width = props.options?.width || '120px';
   const style = {
     width,
-    border: error ? '2px solid red' : '1px solid #cecece',
-    borderRadius: '4px',
-    padding: '8px 12px',
-    outline: error ? 'none' : undefined,
-    boxShadow: error ? '0 0 3px red' : 'none'
+    // Only apply error styles, let defaults handle the rest
+    ...(error ? {
+      border: '2px solid red',
+      outline: 'none',
+      boxShadow: '0 0 3px red'
+    } : {})
   };
 
   return (
@@ -371,8 +372,36 @@ function EditPage() {
   const [isLinked, setIsLinked] = useState(false);
   const [availableGroups, setAvailableGroups] = useState([]);
   const [cronErrors, setCronErrors] = useState([]);
+  const [saveAttempt, setSaveAttempt] = useState(0);
 
   const isNew = location.state?.isNew;
+
+  // Scheduled check for cron errors (polling/debounced)
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      const tracking = formData?.general_config?.periodic_group_tracking;
+      if (tracking && Array.isArray(tracking)) {
+        const newCronErrors = [];
+
+        for (let i = 0; i < tracking.length; i++) {
+          const cron = tracking[i].cronTrackingSchedule;
+          const validation = validateCronExpression(cron);
+          if (!validation.valid) {
+            newCronErrors[i] = validation.error;
+          }
+        }
+
+        // Compare with current errors to avoid unnecessary re-renders
+        if (JSON.stringify(newCronErrors) !== JSON.stringify(cronErrors)) {
+          setCronErrors(newCronErrors);
+        }
+      } else {
+        if (cronErrors.length > 0) setCronErrors([]);
+      }
+    }, 1000);
+
+    return () => clearTimeout(timer);
+  }, [formData, cronErrors]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -551,6 +580,7 @@ function EditPage() {
 
       if (hasCronErrors) {
         setCronErrors(newCronErrors);
+        setSaveAttempt(prev => prev + 1);
         setIsSaving(false);
         // Scroll to the first error
         setTimeout(() => {
@@ -622,6 +652,7 @@ function EditPage() {
 
       if (hasCronErrors) {
         setCronErrors(newCronErrors);
+        setSaveAttempt(prev => prev + 1);
         setIsSaving(false);
         // Scroll to the first error
         setTimeout(() => {
@@ -701,6 +732,7 @@ function EditPage() {
 
       if (hasCronErrors) {
         setCronErrors(newCronErrors);
+        setSaveAttempt(prev => prev + 1);
         setIsSaving(false);
         // Scroll to the first error
         setTimeout(() => {
@@ -848,7 +880,7 @@ function EditPage() {
             "ui:FieldTemplate": InlineFieldTemplate,
             "ui:title": "Schedule",
             "ui:widget": "CronInputWidget",
-            "ui:options": { width: "120px" },
+            "ui:options": { width: "90px" },
             "ui:placeholder": "0/15 * * * *"
           }
         }
@@ -940,7 +972,8 @@ function EditPage() {
                     isLinked,
                     formData,
                     setFormData,
-                    cronErrors
+                    cronErrors,
+                    saveAttempt
                   }}
                 >
                   <div />
