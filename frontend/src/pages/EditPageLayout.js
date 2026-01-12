@@ -14,6 +14,10 @@ export const editPageLayout = {
       title: 'Llm Provider Config',
       fields: ['llm_provider_config'],
     },
+    context_config: {
+      title: 'Llm Context Configuration',
+      fields: ['context_config'],
+    },
     chat_provider_config: {
       title: 'Chat Provider Config',
       fields: ['chat_provider_config'],

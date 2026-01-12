@@ -424,6 +424,12 @@ function EditPage() {
         }
       }
     },
+    context_config: {
+      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
+      "context_config": {
+        "ui:title": " "
+      }
+    },
     queue_config: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       "queue_config": {
