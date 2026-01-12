@@ -369,6 +369,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         except Exception as e:
             return {"status": "error", "message": f"Exception while getting status: {e}"}
 
+
+
     async def get_active_groups(self):
         try:
             async with httpx.AsyncClient() as client:

@@ -785,6 +785,9 @@ async function connectToWhatsApp(userId, vendorConfig) {
     });
 
 
+    // Register credentials update listener to persist session state
+    sock.ev.on('creds.update', saveCreds);
+
     sock.ev.on('connection.update', (update) => {
         const { connection, lastDisconnect, qr } = update;
         const session = sessions[userId];
@@ -1012,9 +1015,15 @@ async function connectToWhatsApp(userId, vendorConfig) {
     });
 }
 
+
+
+
+
 // --- Express Server ---
 const app = express();
 app.use(express.json());
+
+
 
 app.post('/initialize', async (req, res) => {
     const { userId, config } = req.body;
@@ -1095,6 +1104,7 @@ app.get('/sessions/:userId/status', (req, res) => {
         return res.status(200).json({ status: 'linking', qr: session.currentQR });
     }
     const apiStatus = session.connectionStatus === 'open' ? 'connected' : session.connectionStatus;
+    // console.log(`[${userId}] Returning status:`, { status: apiStatus || 'initializing', hasQR: !!session.currentQR });
     return res.status(200).json({ status: apiStatus || 'initializing' });
 });
 

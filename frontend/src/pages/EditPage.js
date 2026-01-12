@@ -700,7 +700,7 @@ function EditPage() {
       }
 
       // If both are successful, navigate to the link page
-      navigate(`/link/${userId}`);
+      navigate('/');
 
     } catch (err) {
       setError(`Failed to save and reload: ${err.message}`);
@@ -782,7 +782,7 @@ function EditPage() {
       }
 
       // Navigate to the link page to show linking status
-      navigate(`/link/${userId}`);
+      navigate('/');
 
     } catch (err) {
       setError(`Failed to save and link: ${err.message}`);

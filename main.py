@@ -41,6 +41,7 @@ mongo_client: MongoClient = None
 db = None
 configurations_collection = None
 queues_collection = None
+baileys_sessions_collection = None
 
 # In-memory storage for chatbot instances
 chatbot_instances: Dict[str, ChatbotInstance] = {}
@@ -52,7 +53,7 @@ async def startup_event():
     """
     Connect to MongoDB and create a unique index on startup.
     """
-    global mongo_client, db, configurations_collection, queues_collection, group_tracker
+    global mongo_client, db, configurations_collection, queues_collection, baileys_sessions_collection, group_tracker
     mongodb_url = os.environ.get("MONGODB_URL", "mongodb://mongodb:27017/")
     console_log(f"API: Connecting to MongoDB at {mongodb_url}")
     try:
@@ -61,6 +62,7 @@ async def startup_event():
         db = mongo_client.get_database("chat_manager")
         configurations_collection = db.get_collection("configurations")
         queues_collection = db.get_collection("queues")
+        baileys_sessions_collection = db.get_collection("baileys_sessions")
 
         try:
             # This index is on the user_id field *within* the config_data object.
@@ -224,13 +226,41 @@ async def get_all_configurations_status():
                 config = UserConfiguration.model_validate(config_to_validate)
                 user_id_from_config = config.user_id
 
+                # Check if session is authenticated in MongoDB
+                is_authenticated = False
+                try:
+                    if baileys_sessions_collection is not None:
+                         # DEBUG: Log check details
+                         console_log(f"API_DEBUG: Checking auth for user_id='{user_id_from_config}' in collection '{baileys_sessions_collection.name}'")
+                         auth_doc = await run_in_threadpool(baileys_sessions_collection.find_one, {"_id": f"{user_id_from_config}-creds"})
+                         
+                         if auth_doc:
+                             console_log(f"API_DEBUG: Found auth doc for '{user_id_from_config}'")
+                             is_authenticated = True
+                         else:
+                             console_log(f"API_DEBUG: No auth doc found for '{user_id_from_config}-creds'")
+                             pass
+                    else:
+                        console_log("API_WARN: baileys_sessions_collection is None during status check.")
+                except Exception as auth_e:
+                    console_log(f"API_WARN: Error checking auth status for {user_id_from_config}: {auth_e}")
+                
+                # Check for active session
                 if user_id_from_config in active_users:
                     instance_id = active_users[user_id_from_config]
                     instance = chatbot_instances.get(instance_id)
                     status_info = await instance.get_status() if instance else {"status": "error"}
-                    statuses.append({"user_id": user_id_from_config, "status": status_info.get('status', 'unknown')})
+                    statuses.append({
+                        "user_id": user_id_from_config, 
+                        "status": status_info.get('status', 'unknown'),
+                        "authenticated": is_authenticated
+                    })
                 else:
-                    statuses.append({"user_id": user_id_from_config, "status": "disconnected"})
+                    statuses.append({
+                        "user_id": user_id_from_config, 
+                        "status": "disconnected",
+                        "authenticated": is_authenticated
+                    })
 
             except Exception as e:
                 uid = "unknown"
@@ -240,7 +270,7 @@ async def get_all_configurations_status():
                     uid = config_data.get('user_id', 'unknown')
 
                 console_log(f"API_WARN: Could not process config for user_id '{uid}': {e}")
-                statuses.append({"user_id": uid, "status": "invalid_config"})
+                statuses.append({"user_id": uid, "status": "invalid_config", "authenticated": False})
                 continue
 
         return {"configurations": statuses}
@@ -760,6 +790,10 @@ async def delete_all_tracked_group_messages(user_id: str, lastPeriods: int = 0, 
     except Exception as e:
         console_log(f"API_ERROR: Failed to delete all tracked group messages for user '{user_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete all tracked group messages: {e}")
+
+
+
+
 
 
 if __name__ == "__main__":
