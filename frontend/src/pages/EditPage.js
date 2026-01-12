@@ -532,15 +532,25 @@ function EditPage() {
     setError(null);
     try {
       // Validate cron expressions before saving
+      setCronErrors([]); // Reset errors
+      let hasCronErrors = false;
+      const newCronErrors = [];
       const tracking = formData?.general_config?.periodic_group_tracking;
       if (tracking && Array.isArray(tracking)) {
         for (let i = 0; i < tracking.length; i++) {
           const cron = tracking[i].cronTrackingSchedule;
           const validation = validateCronExpression(cron);
           if (!validation.valid) {
-            throw new Error(`Invalid cron expression in group tracking item ${i + 1}: ${validation.error}`);
+            newCronErrors[i] = validation.error;
+            hasCronErrors = true;
           }
         }
+      }
+
+      if (hasCronErrors) {
+        setCronErrors(newCronErrors);
+        setIsSaving(false);
+        return;
       }
 
       const apiDataFromUser = transformDataToAPI(formData);
@@ -580,6 +590,9 @@ function EditPage() {
     setError(null);
     try {
       // Validate cron expressions before saving
+      setCronErrors([]); // Reset errors
+      let hasCronErrors = false;
+      const newCronErrors = [];
       const currentFormData = formData;
       const tracking = currentFormData?.general_config?.periodic_group_tracking;
       if (tracking && Array.isArray(tracking)) {
@@ -587,9 +600,16 @@ function EditPage() {
           const cron = tracking[i].cronTrackingSchedule;
           const validation = validateCronExpression(cron);
           if (!validation.valid) {
-            throw new Error(`Invalid cron expression in group tracking item ${i + 1}: ${validation.error}`);
+            newCronErrors[i] = validation.error;
+            hasCronErrors = true;
           }
         }
+      }
+
+      if (hasCronErrors) {
+        setCronErrors(newCronErrors);
+        setIsSaving(false);
+        return;
       }
 
       // First, save the configuration. We get the form data from the ref.
@@ -637,6 +657,9 @@ function EditPage() {
     setError(null);
     try {
       // Validate cron expressions before saving
+      setCronErrors([]); // Reset errors
+      let hasCronErrors = false;
+      const newCronErrors = [];
       const currentFormData = formData;
       const tracking = currentFormData?.general_config?.periodic_group_tracking;
       if (tracking && Array.isArray(tracking)) {
@@ -644,9 +667,16 @@ function EditPage() {
           const cron = tracking[i].cronTrackingSchedule;
           const validation = validateCronExpression(cron);
           if (!validation.valid) {
-            throw new Error(`Invalid cron expression in group tracking item ${i + 1}: ${validation.error}`);
+            newCronErrors[i] = validation.error;
+            hasCronErrors = true;
           }
         }
+      }
+
+      if (hasCronErrors) {
+        setCronErrors(newCronErrors);
+        setIsSaving(false);
+        return;
       }
 
       // Save the configuration first
@@ -743,7 +773,8 @@ function EditPage() {
     NarrowTextWidget: NarrowTextWidget,
     SizedTextWidget: SizedTextWidget,
     GroupNameSelectorWidget: GroupNameSelectorWidget,
-    ReadOnlyTextWidget: ReadOnlyTextWidget
+    ReadOnlyTextWidget: ReadOnlyTextWidget,
+    CronInputWidget: CronInputWidget
   };
 
   const uiSchema = {
@@ -778,7 +809,7 @@ function EditPage() {
           cronTrackingSchedule: {
             "ui:FieldTemplate": InlineFieldTemplate,
             "ui:title": "Schedule",
-            "ui:widget": "SizedTextWidget",
+            "ui:widget": "CronInputWidget",
             "ui:options": { width: "120px" },
             "ui:placeholder": "0/15 * * * *"
           }
@@ -870,7 +901,8 @@ function EditPage() {
                     availableGroups,
                     isLinked,
                     formData,
-                    setFormData
+                    setFormData,
+                    cronErrors
                   }}
                 >
                   <div />
