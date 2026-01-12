@@ -698,7 +698,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
             retryCount: 0,
             http405Tracker: createHttp405Tracker(),
             store: { messages: {} }, // Initialize in-memory message store
-            authState: null // Placeholder for auth state
+            authState: null, // Placeholder for auth state
+            lastHeartbeat: Date.now() // Initialize heartbeat
             // sock etc will be set later
         };
     } else {
@@ -771,7 +772,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
             retryCount: 0,
             http405Tracker: createHttp405Tracker(),
             store: { messages: {} }, // Initialize in-memory message store
-            authState: authState // Store auth state
+            authState: authState, // Store auth state
+            lastHeartbeat: Date.now() // Initialize heartbeat
         };
     }
 
@@ -838,6 +840,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
 
         if (qr) {
+            // Heartbeat check is now handled by the active monitor interval
             console.log(`[${userId}] QR code received, generating data URL...`);
             QRCode.toDataURL(qr, (err, url) => {
                 if (err) {
@@ -855,6 +858,12 @@ async function connectToWhatsApp(userId, vendorConfig) {
             if (session.isGracefulDisconnect) {
                 console.log(`[${userId}] Graceful disconnect detected. Skipping reconnect logic.`);
                 session.isGracefulDisconnect = false; // Reset the flag
+                return;
+            }
+
+            if (session.isZombie) {
+                console.log(`[${userId}] Zombie session killed. Skipping reconnect logic.`);
+                session.isZombie = false; // Reset flag (though session effectively dead)
                 return;
             }
 
@@ -1100,6 +1109,14 @@ app.get('/sessions/:userId/status', (req, res) => {
     if (!session) {
         return res.status(404).json({ status: 'disconnected', message: 'Session not found.' });
     }
+
+
+    // Only update heartbeat if explicitly requested (e.g. from modal polling)
+    if (req.query.heartbeat === 'true') {
+        session.lastHeartbeat = Date.now();
+        // console.log(`[${userId}] Heartbeat received via status poll.`);
+    }
+
     if (session.currentQR) {
         return res.status(200).json({ status: 'linking', qr: session.currentQR });
     }
@@ -1129,12 +1146,59 @@ app.delete('/sessions/:userId', async (req, res) => {
         } catch (dbError) {
             console.error(`[${userId}] Error deleting auth data from MongoDB:`, dbError);
         }
+        if (session.heartbeatInterval) {
+            clearInterval(session.heartbeatInterval);
+        }
         delete sessions[userId];
         console.log(`[${userId}] Session object deleted.`);
     }
 
     res.status(200).json({ status: 'Session deleted successfully.' });
 });
+
+// --- Active Heartbeat Monitor ---
+setInterval(() => {
+    const now = Date.now();
+    const HEARTBEAT_TIMEOUT = 5000; // 5 seconds
+
+    for (const userId in sessions) {
+        const session = sessions[userId];
+
+        const timeSince = now - (session.lastHeartbeat || 0);
+        // Debug Log: Only log if we are monitoring AND if it looks like a heartbeat might be active
+        // (i.e. connection not open, not zombie).
+        const isMonitored = session && session.connectionStatus !== 'open' && session.connectionStatus !== 'connected' && !session.isZombie;
+
+        // To avoid spamming logs for every inactive session, only log if heartbeat is recent (< 10s)
+        // This lets us see the active countdown when a user is linking, but hides old sessions.
+        if (isMonitored && timeSince < 10000) {
+            console.log(`[Monitor] ${userId}: Status=${session.connectionStatus}, LastHeartbeat=${timeSince}ms ago`);
+        }
+
+        if (!session || session.connectionStatus === 'open' || session.connectionStatus === 'connected' || session.isZombie) {
+            // Heartbeat only matters during linking (connecting/qr)
+            // If connected, we assume they are fine (or we can implement keep-alive later if needed)
+            // If already zombie, let it die in peace
+            continue;
+        }
+
+        // We only care if we are in a 'linking' state (connecting, or has QR)
+        // If we are just starting up, give it some grace period? 
+        // Actually, lastHeartbeat is set on creation.
+
+        const timeSinceLastHeartbeat = now - (session.lastHeartbeat || 0);
+        if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT) {
+            console.log(`[${userId}] Heartbeat expired (Monitor) (${timeSinceLastHeartbeat}ms > ${HEARTBEAT_TIMEOUT}ms). Force killing zombie session.`);
+            session.isZombie = true;
+            // Close socket
+            if (session.sock) {
+                session.sock.end(undefined);
+            }
+            session.connectionStatus = 'disconnected';
+            session.currentQR = null;
+        }
+    }
+}, 1000); // Check every second
 
 app.post('/sessions/:userId/groups', async (req, res) => {
     const { userId } = req.params;

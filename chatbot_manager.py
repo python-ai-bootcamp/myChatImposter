@@ -465,8 +465,17 @@ class ChatbotInstance:
             await self.provider_instance.stop_listening(cleanup_session=cleanup_session)
             console_log(f"INSTANCE ({self.user_id}): Shutdown complete.")
 
-    async def get_status(self):
+    async def get_status(self, heartbeat: bool = False):
         """Gets the connection status from the provider."""
         if self.provider_instance and hasattr(self.provider_instance, 'get_status'):
-            return await self.provider_instance.get_status()
+            # Check if provider supports heartbeat param, or just pass it if we are sure
+            # For now, we assume updated providers support it, or we can use inspection/try-except
+            # But simpler: Our Baileys provider supports it. Verification provider might not.
+            # Best to only pass it if supported:
+            
+            sig = inspect.signature(self.provider_instance.get_status)
+            if 'heartbeat' in sig.parameters:
+                return await self.provider_instance.get_status(heartbeat=heartbeat)
+            else:
+                 return await self.provider_instance.get_status()
         return {"status": "unknown", "message": "Provider does not support status checks."}

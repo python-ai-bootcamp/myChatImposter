@@ -41,6 +41,8 @@ function HomePage() {
 
   // Polling for specific user status (QR code) when the modal is open
   useEffect(() => {
+
+    // console.log(`[Frontend] linkingUser changed to: ${linkingUser}`);
     if (linkingUser) {
       const pollSpecificStatus = async () => {
         try {

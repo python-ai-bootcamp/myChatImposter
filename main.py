@@ -381,9 +381,28 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
     user_id = config.user_id
 
     if user_id in active_users:
-        error_message = f"Conflict: An active session for user_id '{user_id}' already exists."
-        console_log(f"API_WARN: {error_message}")
-        raise HTTPException(status_code=409, detail=error_message)
+        # Check if the existing session is effectively dead
+        existing_instance_id = active_users[user_id]
+        existing_instance = chatbot_instances.get(existing_instance_id)
+
+        try:
+            status = await existing_instance.get_status() if existing_instance else {"status": "error"}
+            if status.get("status") == "disconnected" or status.get("status") == "error":
+                console_log(f"API_WARN: Found existing 'disconnected' session for user '{user_id}'. Cleaning up to allow new link.")
+                if existing_instance:
+                    await existing_instance.stop(cleanup_session=False) 
+                # Remove from active_users so we can proceed
+                if user_id in active_users:
+                    del active_users[user_id]
+            else:
+                error_message = f"Conflict: An active session for user_id '{user_id}' already exists (Status: {status.get('status')})."
+                console_log(f"API_WARN: {error_message}")
+                raise HTTPException(status_code=409, detail=error_message)
+        except Exception as e:
+            # If we fail to check status, assume it's stuck and fail safe? Or block?
+            # Let's block to be safe, but log it.
+            console_log(f"API_ERROR: Failed to check status of conflicting session for '{user_id}': {e}")
+            raise HTTPException(status_code=409, detail=f"Conflict: Active session exists and status check failed: {e}")
 
     console_log(f"API: Received request to create instance {instance_id} for user {user_id}")
 
@@ -435,7 +454,8 @@ async def get_chatbot_status(user_id: str):
         raise HTTPException(status_code=500, detail="Internal server error: instance not found for active user.")
 
     try:
-        status = await instance.get_status()
+        # This endpoint is polled by the modal, so we treat it as a heartbeat.
+        status = await instance.get_status(heartbeat=True)
         return status
     except Exception as e:
         console_log(f"API_ERROR: Failed to get status for instance {instance_id}: {e}")

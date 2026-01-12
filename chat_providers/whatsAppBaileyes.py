@@ -353,10 +353,11 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         except Exception as e:
             if self.logger: self.logger.log(f"ERROR: Exception while sending message: {e}")
 
-    async def get_status(self) -> Dict:
+    async def get_status(self, heartbeat: bool = False) -> Dict:
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.get(f"{self.base_url}/sessions/{self.user_id}/status", timeout=5)
+                params = {"heartbeat": "true"} if heartbeat else {}
+                response = await client.get(f"{self.base_url}/sessions/{self.user_id}/status", params=params, timeout=5)
                 if response.status_code == 200:
                     return response.json()
                 return {"status": "error", "message": f"Unexpected status code {response.status_code}"}
