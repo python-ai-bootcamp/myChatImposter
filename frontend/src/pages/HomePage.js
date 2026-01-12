@@ -36,47 +36,47 @@ function HomePage() {
     setError(null);
 
     try {
-        const selectedConfig = configs.find(c => c.user_id === selectedUserId);
-        const status = selectedConfig?.status || 'disconnected';
+      const selectedConfig = configs.find(c => c.user_id === selectedUserId);
+      const status = selectedConfig?.status || 'disconnected';
 
-        if (status === 'disconnected') {
-            // If the user is fully disconnected, we need to create a new session.
-            const configResponse = await fetch(`/api/configurations/${selectedUserId}`);
-            if (!configResponse.ok) {
-                throw new Error('Failed to fetch configuration.');
-            }
-            const configData = await configResponse.json();
-            const payload = Array.isArray(configData) ? configData[0] : configData;
-            const createResponse = await fetch('/chatbot', {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload),
-            });
-
-            if (!createResponse.ok) {
-                const errorBody = await createResponse.json();
-                throw new Error(errorBody.detail || `Failed to create session (HTTP ${createResponse.status})`);
-            }
-        } else {
-            // If the status is 'close' or 'error', the instance exists but is not running.
-            // We should reload it to restart the connection process.
-            const reloadResponse = await fetch(`/chatbot/${selectedUserId}/reload`, {
-                method: 'POST',
-            });
-
-            if (!reloadResponse.ok) {
-                const errorBody = await reloadResponse.json();
-                throw new Error(errorBody.detail || 'Failed to reload configuration.');
-            }
+      if (status === 'disconnected') {
+        // If the user is fully disconnected, we need to create a new session.
+        const configResponse = await fetch(`/api/configurations/${selectedUserId}`);
+        if (!configResponse.ok) {
+          throw new Error('Failed to fetch configuration.');
         }
+        const configData = await configResponse.json();
+        const payload = Array.isArray(configData) ? configData[0] : configData;
+        const createResponse = await fetch('/chatbot', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
 
-        // If either action is successful, navigate to the link page.
-        navigate(`/link/${selectedUserId}`);
+        if (!createResponse.ok) {
+          const errorBody = await createResponse.json();
+          throw new Error(errorBody.detail || `Failed to create session (HTTP ${createResponse.status})`);
+        }
+      } else {
+        // If the status is 'close' or 'error', the instance exists but is not running.
+        // We should reload it to restart the connection process.
+        const reloadResponse = await fetch(`/chatbot/${selectedUserId}/reload`, {
+          method: 'POST',
+        });
+
+        if (!reloadResponse.ok) {
+          const errorBody = await reloadResponse.json();
+          throw new Error(errorBody.detail || 'Failed to reload configuration.');
+        }
+      }
+
+      // If either action is successful, navigate to the link page.
+      navigate(`/link/${selectedUserId}`);
 
     } catch (err) {
-        setError(err.message);
+      setError(err.message);
     } finally {
-        setIsLinking(false);
+      setIsLinking(false);
     }
   };
 
@@ -215,17 +215,7 @@ function HomePage() {
         <button onClick={handleDelete} disabled={!selectedUserId} className="delete-button">
           Delete
         </button>
-        <button
-            onClick={() => {
-                if (selectedUserId) {
-                    navigate(`/tracking/${selectedUserId}`);
-                }
-            }}
-            disabled={!selectedUserId || status !== 'connected'}
-            style={{ backgroundColor: (!selectedUserId || status !== 'connected') ? '#6c757d' : '#007bff' }}
-        >
-            Group Tracking
-        </button>
+
       </div>
     </div>
   );
