@@ -201,21 +201,20 @@ function EditPage() {
         if (response.ok) {
           const data = await response.json();
           const status = data.status ? data.status.toLowerCase() : '';
-          // The button should be shown if the user is connected, or if the connection
-          // is closed/disconnected, allowing them to retry. It should only be hidden
-          // when actively linking (which redirects to the LinkPage anyway).
-          if (status === 'connected' || status === 'close' || status === 'disconnected') {
+          // isConnected is true only when the user is actively connected
+          // This enables "Save & Reload". Otherwise, "Save & Link" is available.
+          if (status === 'connected') {
             setIsLinked(true);
           } else {
             setIsLinked(false);
           }
         } else {
           // If the status endpoint returns 404, it means the session is not active.
-          setIsLinked(true);
+          setIsLinked(false);
         }
       } catch (error) {
         console.error("Failed to fetch user status:", error);
-        setIsLinked(true); // Also allow retry on network error
+        setIsLinked(false);
       }
     };
     fetchStatus();
@@ -346,6 +345,52 @@ function EditPage() {
 
     } catch (err) {
       setError(`Failed to save and reload: ${err.message}`);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleSaveAndLink = async () => {
+    setIsSaving(true);
+    setError(null);
+    try {
+      // Save the configuration first
+      const apiDataFromUser = transformDataToAPI(formRef.current.state.formData);
+
+      if (!isNew && apiDataFromUser.user_id !== userId) {
+        throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
+      }
+
+      const finalApiData = { ...apiDataFromUser, user_id: userId };
+
+      const saveResponse = await fetch(`/api/configurations/${userId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify([finalApiData]),
+      });
+
+      if (!saveResponse.ok) {
+        const errorBody = await saveResponse.json();
+        throw new Error(errorBody.detail || 'Failed to save configuration.');
+      }
+
+      // Start the session by calling PUT /chatbot with the config payload
+      const createResponse = await fetch('/chatbot', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(finalApiData),
+      });
+
+      if (!createResponse.ok) {
+        const errorBody = await createResponse.json();
+        throw new Error(errorBody.detail || `Failed to start session (HTTP ${createResponse.status})`);
+      }
+
+      // Navigate to the link page to show linking status
+      navigate(`/link/${userId}`);
+
+    } catch (err) {
+      setError(`Failed to save and link: ${err.message}`);
     } finally {
       setIsSaving(false);
     }
@@ -528,11 +573,24 @@ function EditPage() {
           <button type="button" onClick={() => formRef.current.submit()} disabled={isSaving} style={{ marginRight: '10px' }}>
             {isSaving ? 'Saving...' : 'Save'}
           </button>
-          {isLinked && (
-            <button type="button" onClick={handleSaveAndReload} disabled={isSaving} style={{ marginRight: '10px' }}>
-              {isSaving ? 'Saving...' : 'Save & Reload'}
-            </button>
-          )}
+          <button
+            type="button"
+            onClick={handleSaveAndReload}
+            disabled={isSaving || !isLinked}
+            style={{ marginRight: '10px', opacity: isLinked ? 1 : 0.5 }}
+            title={isLinked ? 'Save and reload the configuration for the connected user' : 'Only available when user is connected'}
+          >
+            {isSaving ? 'Saving...' : 'Save & Reload'}
+          </button>
+          <button
+            type="button"
+            onClick={handleSaveAndLink}
+            disabled={isSaving || isLinked}
+            style={{ marginRight: '10px', opacity: !isLinked ? 1 : 0.5 }}
+            title={!isLinked ? 'Save and start the linking flow' : 'Only available when user is not connected'}
+          >
+            {isSaving ? 'Saving...' : 'Save & Link'}
+          </button>
           <button type="button" onClick={handleCancel}>
             Cancel
           </button>
