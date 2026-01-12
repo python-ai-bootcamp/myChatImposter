@@ -5,6 +5,235 @@ import validator from '@rjsf/validator-ajv8';
 import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget } from '../components/FormTemplates';
 import { editPageLayout } from './EditPageLayout';
 
+// Stable widget definitions - defined outside component to prevent re-creation on re-render
+const ReadOnlyTextWidget = (props) => {
+  return (
+    <input
+      type="text"
+      value={props.value || ''}
+      disabled
+      style={{ width: '180px', backgroundColor: '#f5f5f5', color: '#666' }}
+      title="Auto-filled from group selection"
+    />
+  );
+};
+
+// Group Name Selector Widget - uses formContext to access state
+const GroupNameSelectorWidget = (props) => {
+  const { availableGroups, isLinked, formData, setFormData } = props.formContext || {};
+  const [inputValue, setInputValue] = React.useState(props.value || '');
+  const [isMenuOpen, setIsMenuOpen] = React.useState(false);
+  const isFocusedRef = React.useRef(false);
+
+  // Only sync from props when not focused (external changes like JSON editor)
+  React.useEffect(() => {
+    if (!isFocusedRef.current) {
+      setInputValue(props.value || '');
+    }
+  }, [props.value]);
+
+  const groups = availableGroups || [];
+  const filteredGroups = groups.filter(g =>
+    (g.subject || '').toLowerCase().includes((inputValue || '').toLowerCase())
+  );
+
+  const handleInputChange = (e) => {
+    setInputValue(e.target.value);
+    setIsMenuOpen(true);
+    props.onChange(e.target.value);
+  };
+
+  const handleFocus = () => {
+    isFocusedRef.current = true;
+    setIsMenuOpen(true);
+  };
+
+  const handleBlur = () => {
+    isFocusedRef.current = false;
+    setTimeout(() => setIsMenuOpen(false), 200);
+  };
+
+  const handleSelect = (group) => {
+    setInputValue(group.subject);
+    setIsMenuOpen(false);
+
+    // Extract the array index from the widget's id
+    const idMatch = props.id.match(/_(\d+)_displayName$/);
+    if (idMatch && formData && setFormData) {
+      const idx = parseInt(idMatch[1], 10);
+      const currentData = JSON.parse(JSON.stringify(formData));
+      if (currentData?.general_config?.periodic_group_tracking?.[idx]) {
+        currentData.general_config.periodic_group_tracking[idx].groupIdentifier = group.id;
+        currentData.general_config.periodic_group_tracking[idx].displayName = group.subject;
+        setFormData(currentData);
+      }
+    }
+  };
+
+  if (!isLinked) {
+    return (
+      <input
+        type="text"
+        value={props.value || '(connect to select)'}
+        disabled
+        style={{ width: '150px', backgroundColor: '#f0f0f0' }}
+        title="Adding or changing group details is prohibited for disconnected users"
+      />
+    );
+  }
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <input
+        type="text"
+        placeholder="Type group name..."
+        value={inputValue}
+        onChange={handleInputChange}
+        onFocus={handleFocus}
+        onBlur={handleBlur}
+        style={{ width: '150px', padding: '4px' }}
+      />
+      {isMenuOpen && filteredGroups.length > 0 && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          width: '300px',
+          maxHeight: '200px',
+          overflowY: 'auto',
+          border: '1px solid #ccc',
+          backgroundColor: '#fff',
+          zIndex: 1000,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+        }}>
+          {filteredGroups.map(g => (
+            <div
+              key={g.id}
+              onMouseDown={() => handleSelect(g)}
+              style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #eee' }}
+            >
+              <strong>{g.subject}</strong><br />
+              <small style={{ color: '#666' }}>{g.id}</small>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Custom array template for periodic_group_tracking - disables Add when not connected
+// Uses formContext to access isLinked state
+const GroupTrackingArrayTemplate = (props) => {
+  const { isLinked } = props.formContext || {};
+
+  const btnStyle = {
+    padding: '0.1rem 0.4rem',
+    fontSize: '0.8rem',
+    lineHeight: 1.2,
+    border: '1px solid #ccc',
+    borderRadius: '3px',
+    cursor: 'pointer'
+  };
+  const disabledBtnStyle = {
+    ...btnStyle,
+    cursor: 'not-allowed',
+    backgroundColor: '#f8f8f8',
+    color: '#ccc',
+  };
+
+  return (
+    <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
+      {props.title && (
+        <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
+          {props.title}
+        </h3>
+      )}
+      {props.items &&
+        props.items.map(element => (
+          <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
+            <span style={{ marginRight: '0.5rem' }}>•</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div>{element.children}</div>
+              <div style={{ display: 'flex', gap: '0.3rem' }}>
+                <button
+                  type="button"
+                  onClick={element.onReorderClick(element.index, element.index - 1)}
+                  style={element.hasMoveUp ? btnStyle : disabledBtnStyle}
+                  disabled={!element.hasMoveUp}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  onClick={element.onReorderClick(element.index, element.index + 1)}
+                  style={element.hasMoveDown ? btnStyle : disabledBtnStyle}
+                  disabled={!element.hasMoveDown}
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  onClick={element.onDropIndexClick(element.index)}
+                  style={element.hasRemove ? btnStyle : disabledBtnStyle}
+                  disabled={!element.hasRemove}
+                >
+                  -
+                </button>
+              </div>
+            </div>
+          </div>
+        ))}
+
+      {/* Add button - only enabled when connected */}
+      <button
+        type="button"
+        onClick={props.onAddClick}
+        disabled={!isLinked}
+        style={{
+          ...btnStyle,
+          padding: '0.3rem 0.6rem',
+          marginTop: '0.5rem',
+          opacity: isLinked ? 1 : 0.5
+        }}
+        title={isLinked ? 'Add new group' : 'Adding or changing group details is prohibited for disconnected users'}
+      >
+        + Add
+      </button>
+    </div>
+  );
+};
+
+// Cron input widget that shows validation errors inline
+const CronInputWidget = (props) => {
+  const { cronErrors } = props.formContext || {};
+
+  // Extract index from ID: root_general_config_periodic_group_tracking_0_cronTrackingSchedule
+  const idMatch = props.id.match(/_(\d+)_cronTrackingSchedule$/);
+  const index = idMatch ? parseInt(idMatch[1], 10) : -1;
+  const error = cronErrors && cronErrors[index];
+
+  const width = props.options?.width || '120px';
+  const style = {
+    width,
+    border: error ? '2px solid red' : '1px solid #cecece',
+    borderRadius: '4px',
+    padding: '8px 12px'
+  };
+
+  return (
+    <input
+      type="text"
+      id={props.id}
+      value={props.value || ''}
+      required={props.required}
+      onChange={(event) => props.onChange(event.target.value)}
+      style={style}
+      placeholder={props.placeholder || "0/15 * * * *"}
+      title={error ? `Error: ${error}` : "Cron expression: minute hour day month weekday"}
+    />
+  );
+};
 
 // Helper to transform schema based on the layout definition
 const transformSchema = (originalSchema) => {
@@ -138,6 +367,8 @@ function EditPage() {
   const [error, setError] = useState(null);
   const [isSaving, setIsSaving] = useState(false);
   const [isLinked, setIsLinked] = useState(false);
+  const [availableGroups, setAvailableGroups] = useState([]);
+  const [cronErrors, setCronErrors] = useState([]);
 
   const isNew = location.state?.isNew;
 
@@ -195,7 +426,7 @@ function EditPage() {
   }, [formData]);
 
   useEffect(() => {
-    const fetchStatus = async () => {
+    const fetchStatusAndGroups = async () => {
       try {
         const response = await fetch(`/chatbot/${userId}/status`);
         if (response.ok) {
@@ -205,19 +436,32 @@ function EditPage() {
           // This enables "Save & Reload". Otherwise, "Save & Link" is available.
           if (status === 'connected') {
             setIsLinked(true);
+            // Fetch available groups when connected
+            try {
+              const groupsRes = await fetch(`/chatbot/${userId}/groups`);
+              if (groupsRes.ok) {
+                const groupsData = await groupsRes.json();
+                setAvailableGroups(groupsData.groups || []);
+              }
+            } catch (groupsError) {
+              console.warn("Could not fetch groups:", groupsError);
+            }
           } else {
             setIsLinked(false);
+            setAvailableGroups([]);
           }
         } else {
           // If the status endpoint returns 404, it means the session is not active.
           setIsLinked(false);
+          setAvailableGroups([]);
         }
       } catch (error) {
         console.error("Failed to fetch user status:", error);
         setIsLinked(false);
+        setAvailableGroups([]);
       }
     };
-    fetchStatus();
+    fetchStatusAndGroups();
   }, [userId]);
 
   const handleFormChange = (e) => {
@@ -251,6 +495,19 @@ function EditPage() {
           }
         }
       }
+
+      // Auto-populate displayName when groupIdentifier is selected
+      const tracking = newFormData?.general_config?.periodic_group_tracking;
+      if (tracking && Array.isArray(tracking) && availableGroups.length > 0) {
+        tracking.forEach(item => {
+          if (item.groupIdentifier) {
+            const group = availableGroups.find(g => g.id === item.groupIdentifier);
+            if (group && item.displayName !== group.subject) {
+              item.displayName = group.subject;
+            }
+          }
+        });
+      }
     } catch (error) {
       // ignore
     }
@@ -274,6 +531,18 @@ function EditPage() {
     setIsSaving(true);
     setError(null);
     try {
+      // Validate cron expressions before saving
+      const tracking = formData?.general_config?.periodic_group_tracking;
+      if (tracking && Array.isArray(tracking)) {
+        for (let i = 0; i < tracking.length; i++) {
+          const cron = tracking[i].cronTrackingSchedule;
+          const validation = validateCronExpression(cron);
+          if (!validation.valid) {
+            throw new Error(`Invalid cron expression in group tracking item ${i + 1}: ${validation.error}`);
+          }
+        }
+      }
+
       const apiDataFromUser = transformDataToAPI(formData);
 
       if (!isNew && apiDataFromUser.user_id !== userId) {
@@ -310,8 +579,21 @@ function EditPage() {
     setIsSaving(true);
     setError(null);
     try {
+      // Validate cron expressions before saving
+      const currentFormData = formData;
+      const tracking = currentFormData?.general_config?.periodic_group_tracking;
+      if (tracking && Array.isArray(tracking)) {
+        for (let i = 0; i < tracking.length; i++) {
+          const cron = tracking[i].cronTrackingSchedule;
+          const validation = validateCronExpression(cron);
+          if (!validation.valid) {
+            throw new Error(`Invalid cron expression in group tracking item ${i + 1}: ${validation.error}`);
+          }
+        }
+      }
+
       // First, save the configuration. We get the form data from the ref.
-      const apiDataFromUser = transformDataToAPI(formRef.current.state.formData);
+      const apiDataFromUser = transformDataToAPI(formData);
 
       if (!isNew && apiDataFromUser.user_id !== userId) {
         throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
@@ -354,8 +636,21 @@ function EditPage() {
     setIsSaving(true);
     setError(null);
     try {
+      // Validate cron expressions before saving
+      const currentFormData = formData;
+      const tracking = currentFormData?.general_config?.periodic_group_tracking;
+      if (tracking && Array.isArray(tracking)) {
+        for (let i = 0; i < tracking.length; i++) {
+          const cron = tracking[i].cronTrackingSchedule;
+          const validation = validateCronExpression(cron);
+          if (!validation.valid) {
+            throw new Error(`Invalid cron expression in group tracking item ${i + 1}: ${validation.error}`);
+          }
+        }
+      }
+
       // Save the configuration first
-      const apiDataFromUser = transformDataToAPI(formRef.current.state.formData);
+      const apiDataFromUser = transformDataToAPI(formData);
 
       if (!isNew && apiDataFromUser.user_id !== userId) {
         throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
@@ -400,6 +695,35 @@ function EditPage() {
     navigate('/');
   };
 
+  // Cron validation helper
+  const validateCronExpression = (cron) => {
+    if (!cron) return { valid: false, error: 'Required' };
+    const parts = cron.trim().split(/\s+/);
+    if (parts.length !== 5) {
+      return { valid: false, error: 'Must have 5 parts (min hour day month weekday)' };
+    }
+    const validChars = /^[0-9*/,\-]+$/;
+    if (!parts.every(p => validChars.test(p))) {
+      return { valid: false, error: 'Invalid characters. Allowed: 0-9 * / , -' };
+    }
+    return { valid: true, error: null };
+  };
+
+  // Custom validation for cron expressions
+  const customValidate = (formData, errors) => {
+    const tracking = formData?.general_config?.periodic_group_tracking;
+    if (tracking && Array.isArray(tracking)) {
+      tracking.forEach((item, index) => {
+        const cron = item.cronTrackingSchedule;
+        const validation = validateCronExpression(cron);
+        if (!validation.valid && errors.general_config?.periodic_group_tracking?.[index]?.cronTrackingSchedule) {
+          errors.general_config.periodic_group_tracking[index].cronTrackingSchedule.addError(validation.error);
+        }
+      });
+    }
+    return errors;
+  };
+
   if (error) {
     return <div>Error: {error}</div>;
   }
@@ -417,7 +741,9 @@ function EditPage() {
   const widgets = {
     CheckboxWidget: CustomCheckboxWidget,
     NarrowTextWidget: NarrowTextWidget,
-    SizedTextWidget: SizedTextWidget
+    SizedTextWidget: SizedTextWidget,
+    GroupNameSelectorWidget: GroupNameSelectorWidget,
+    ReadOnlyTextWidget: ReadOnlyTextWidget
   };
 
   const uiSchema = {
@@ -435,26 +761,26 @@ function EditPage() {
       },
       periodic_group_tracking: {
         "ui:title": " ",
+        "ui:ArrayFieldTemplate": GroupTrackingArrayTemplate,
         items: {
           "ui:ObjectFieldTemplate": InlineObjectFieldTemplate,
           "ui:order": ["displayName", "groupIdentifier", "cronTrackingSchedule"],
           displayName: {
             "ui:FieldTemplate": InlineFieldTemplate,
             "ui:title": "Name",
-            "ui:widget": "SizedTextWidget",
-            "ui:options": { width: "132px" }
+            "ui:widget": "GroupNameSelectorWidget"
           },
           groupIdentifier: {
             "ui:FieldTemplate": InlineFieldTemplate,
             "ui:title": "Identifier",
-            "ui:widget": "SizedTextWidget",
-            "ui:options": { width: "182px" }
+            "ui:widget": "ReadOnlyTextWidget"
           },
           cronTrackingSchedule: {
             "ui:FieldTemplate": InlineFieldTemplate,
             "ui:title": "Schedule",
             "ui:widget": "SizedTextWidget",
-            "ui:options": { width: "80px" }
+            "ui:options": { width: "120px" },
+            "ui:placeholder": "0/15 * * * *"
           }
         }
       }
@@ -540,6 +866,12 @@ function EditPage() {
                   disabled={isSaving}
                   templates={templates}
                   widgets={widgets}
+                  formContext={{
+                    availableGroups,
+                    isLinked,
+                    formData,
+                    setFormData
+                  }}
                 >
                   <div />
                 </Form>
