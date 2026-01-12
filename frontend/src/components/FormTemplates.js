@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // A custom widget for checkboxes that only renders the input element.
 // The label is handled by the CustomFieldTemplate.
@@ -124,6 +124,20 @@ export function CustomFieldTemplate(props) {
 
 export function CollapsibleObjectFieldTemplate(props) {
   const [isOpen, setIsOpen] = useState(false);
+  const { cronErrors } = props.registry?.formContext || props.formContext || {};
+
+  // Check if this section contains the periodic_group_tracking field
+  const containsTracking = props.properties.some(p => p.name === 'periodic_group_tracking');
+
+  useEffect(() => {
+    // Auto-expand if this section contains the tracking field and there are errors
+    if (containsTracking && cronErrors && cronErrors.length > 0) {
+      const hasErrors = cronErrors.some(e => e);
+      if (hasErrors) {
+        setIsOpen(true);
+      }
+    }
+  }, [cronErrors, containsTracking]);
 
   const containerStyle = {
     border: '1px solid #ccc',

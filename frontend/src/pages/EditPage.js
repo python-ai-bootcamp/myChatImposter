@@ -218,7 +218,9 @@ const CronInputWidget = (props) => {
     width,
     border: error ? '2px solid red' : '1px solid #cecece',
     borderRadius: '4px',
-    padding: '8px 12px'
+    padding: '8px 12px',
+    outline: error ? 'none' : undefined,
+    boxShadow: error ? '0 0 3px red' : 'none'
   };
 
   return (
@@ -550,6 +552,18 @@ function EditPage() {
       if (hasCronErrors) {
         setCronErrors(newCronErrors);
         setIsSaving(false);
+        // Scroll to the first error
+        setTimeout(() => {
+          const firstIndex = newCronErrors.findIndex(e => e);
+          if (firstIndex !== -1) {
+            const elementId = `root_general_config_periodic_group_tracking_${firstIndex}_cronTrackingSchedule`;
+            const element = document.getElementById(elementId);
+            if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              element.focus();
+            }
+          }
+        }, 100);
         return;
       }
 
@@ -609,6 +623,18 @@ function EditPage() {
       if (hasCronErrors) {
         setCronErrors(newCronErrors);
         setIsSaving(false);
+        // Scroll to the first error
+        setTimeout(() => {
+          const firstIndex = newCronErrors.findIndex(e => e);
+          if (firstIndex !== -1) {
+            const elementId = `root_general_config_periodic_group_tracking_${firstIndex}_cronTrackingSchedule`;
+            const element = document.getElementById(elementId);
+            if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              element.focus();
+            }
+          }
+        }, 100);
         return;
       }
 
@@ -676,6 +702,18 @@ function EditPage() {
       if (hasCronErrors) {
         setCronErrors(newCronErrors);
         setIsSaving(false);
+        // Scroll to the first error
+        setTimeout(() => {
+          const firstIndex = newCronErrors.findIndex(e => e);
+          if (firstIndex !== -1) {
+            const elementId = `root_general_config_periodic_group_tracking_${firstIndex}_cronTrackingSchedule`;
+            const element = document.getElementById(elementId);
+            if (element) {
+              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+              element.focus();
+            }
+          }
+        }, 100);
         return;
       }
 
