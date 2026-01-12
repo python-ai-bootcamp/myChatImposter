@@ -3,17 +3,48 @@ import React, { useState } from 'react';
 // A custom widget for checkboxes that only renders the input element.
 // The label is handled by the CustomFieldTemplate.
 export function CustomCheckboxWidget(props) {
-    return (
-        <input
-            type="checkbox"
-            id={props.id}
-            checked={typeof props.value === 'undefined' ? false : props.value}
-            required={props.required}
-            onChange={(event) => props.onChange(event.target.checked)}
-            style={{ margin: 0 }}
-        />
-    );
+  return (
+    <input
+      type="checkbox"
+      id={props.id}
+      checked={typeof props.value === 'undefined' ? false : props.value}
+      required={props.required}
+      onChange={(event) => props.onChange(event.target.checked)}
+      style={{ margin: 0 }}
+    />
+  );
 }
+
+// A narrow text input widget for compact inline fields
+export function NarrowTextWidget(props) {
+  return (
+    <input
+      type="text"
+      id={props.id}
+      value={props.value || ''}
+      required={props.required}
+      onChange={(event) => props.onChange(event.target.value)}
+      style={{ width: '80px' }}
+    />
+  );
+}
+
+// A text widget with configurable width via ui:options.width
+export function SizedTextWidget(props) {
+  const width = props.options?.width || '150px';
+  return (
+    <input
+      type="text"
+      id={props.id}
+      value={props.value || ''}
+      required={props.required}
+      onChange={(event) => props.onChange(event.target.value)}
+      style={{ width }}
+    />
+  );
+}
+
+
 
 export function CustomFieldTemplate(props) {
   const { id, label, children, required, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
@@ -29,24 +60,24 @@ export function CustomFieldTemplate(props) {
     // This is the container for the `oneOf` selection. It includes the dropdown
     // and the fields for the selected provider. We wrap it in a fieldset.
     const fieldsetStyle = {
-        border: '1px solid #ccc',
-        borderRadius: '4px',
-        padding: '1rem',
-        margin: 0,
-        width: '100%',
-        marginTop: '0.5rem',
-        display: 'table',
-        borderCollapse: 'collapse'
+      border: '1px solid #ccc',
+      borderRadius: '4px',
+      padding: '1rem',
+      margin: 0,
+      width: '100%',
+      marginTop: '0.5rem',
+      display: 'table',
+      borderCollapse: 'collapse'
     };
 
     return (
-        <fieldset style={fieldsetStyle}>
-            <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
-                LlmProviderSettings
-            </h3>
-            {/* The `children` here will be the select dropdown AND the rendered object below it */}
-            {children}
-        </fieldset>
+      <fieldset style={fieldsetStyle}>
+        <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
+          LlmProviderSettings
+        </h3>
+        {/* The `children` here will be the select dropdown AND the rendered object below it */}
+        {children}
+      </fieldset>
     );
   }
 
@@ -63,15 +94,15 @@ export function CustomFieldTemplate(props) {
 
   // For object containers, we let the ObjectFieldTemplate handle the title and layout.
   if (schema.type === 'object') {
-      return children;
+    return children;
   }
 
   // A single, consistent layout for all other fields.
   const rightColumnStyle = {
-      boxSizing: 'border-box',
-      textAlign: 'left',
-      display: 'table-cell',
-      width: '100%'
+    boxSizing: 'border-box',
+    textAlign: 'left',
+    display: 'table-cell',
+    width: '100%'
   };
 
   return (
@@ -115,7 +146,7 @@ export function CollapsibleObjectFieldTemplate(props) {
         {props.title} {isOpen ? '[-]' : '[+]'}
       </h3>
       {isOpen && (
-        <div style={{marginTop: '1rem'}}>
+        <div style={{ marginTop: '1rem' }}>
           {props.description}
           {props.properties.map(element => (
             <React.Fragment key={element.content.key}>
@@ -164,7 +195,7 @@ export function CustomObjectFieldTemplate(props) {
     <fieldset style={fieldsetStyle}>
       {shouldShowTitle && (
         <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
-            {title}
+          {title}
         </h3>
       )}
 
@@ -178,70 +209,112 @@ export function CustomObjectFieldTemplate(props) {
   );
 }
 
+// A field template that only renders the input, hiding label and description
+// Used for inline compact rendering where labels are handled separately
+export function InlineFieldTemplate(props) {
+  const { children } = props;
+  return children;
+}
+
+// An inline compact object template for array items like PeriodicGroupTrackingConfig
+// Renders all fields on a single line with label:input pairs and tooltip descriptions
+export function InlineObjectFieldTemplate(props) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+      {props.properties.map(element => {
+        const schema = element.content.props.schema;
+        const uiSchema = element.content.props.uiSchema || {};
+        const description = schema?.description || '';
+        // Use ui:title from uiSchema if available, otherwise fall back to schema title
+        const label = uiSchema['ui:title'] || schema?.title || element.name;
+        const isRequired = element.content.props.required;
+
+        return (
+          <div key={element.content.key} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+            <label
+              htmlFor={element.content.props.idSchema.$id}
+              title={description}
+              style={{
+                fontSize: '0.85rem',
+                cursor: description ? 'help' : 'default',
+                textDecoration: description ? 'underline dotted' : 'none',
+                whiteSpace: 'nowrap'
+              }}
+            >
+              {label}
+            </label>
+            {element.content}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export function CustomArrayFieldTemplate(props) {
-    const btnStyle = {
-        padding: '0.1rem 0.4rem',
-        fontSize: '0.8rem',
-        lineHeight: 1.2,
-        border: '1px solid #ccc',
-        borderRadius: '3px',
-        cursor: 'pointer'
-    };
-    const disabledBtnStyle = {
-        ...btnStyle,
-        cursor: 'not-allowed',
-        backgroundColor: '#f8f8f8',
-        color: '#ccc',
-    };
+  const btnStyle = {
+    padding: '0.1rem 0.4rem',
+    fontSize: '0.8rem',
+    lineHeight: 1.2,
+    border: '1px solid #ccc',
+    borderRadius: '3px',
+    cursor: 'pointer'
+  };
+  const disabledBtnStyle = {
+    ...btnStyle,
+    cursor: 'not-allowed',
+    backgroundColor: '#f8f8f8',
+    color: '#ccc',
+  };
 
-    return (
-      <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
-         {props.title && (
-            <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
-                {props.title}
-            </h3>
-        )}
-        {props.items &&
-          props.items.map(element => (
-            <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'baseline' }}>
-                <span style={{ marginRight: '0.5rem' }}>•</span>
-                <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem' }}>
-                    <div>{element.children}</div>
-                    <div style={{ display: 'flex', gap: '0.3rem' }}>
-                        <button
-                            type="button"
-                            onClick={element.onReorderClick(element.index, element.index - 1)}
-                            style={element.hasMoveUp ? btnStyle : disabledBtnStyle}
-                            disabled={!element.hasMoveUp}
-                        >
-                            ↑
-                        </button>
-                        <button
-                            type="button"
-                            onClick={element.onReorderClick(element.index, element.index + 1)}
-                            style={element.hasMoveDown ? btnStyle : disabledBtnStyle}
-                            disabled={!element.hasMoveDown}
-                        >
-                            ↓
-                        </button>
-                        <button
-                            type="button"
-                            onClick={element.onDropIndexClick(element.index)}
-                            style={element.hasRemove ? btnStyle : disabledBtnStyle}
-                            disabled={!element.hasRemove}
-                        >
-                            -
-                        </button>
-                    </div>
-                </div>
+  return (
+    <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
+      {props.title && (
+        <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
+          {props.title}
+        </h3>
+      )}
+      {props.items &&
+        props.items.map(element => (
+          <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
+            <span style={{ marginRight: '0.5rem' }}>•</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <div>{element.children}</div>
+              <div style={{ display: 'flex', gap: '0.3rem' }}>
+                <button
+                  type="button"
+                  onClick={element.onReorderClick(element.index, element.index - 1)}
+                  style={element.hasMoveUp ? btnStyle : disabledBtnStyle}
+                  disabled={!element.hasMoveUp}
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  onClick={element.onReorderClick(element.index, element.index + 1)}
+                  style={element.hasMoveDown ? btnStyle : disabledBtnStyle}
+                  disabled={!element.hasMoveDown}
+                >
+                  ↓
+                </button>
+                <button
+                  type="button"
+                  onClick={element.onDropIndexClick(element.index)}
+                  style={element.hasRemove ? btnStyle : disabledBtnStyle}
+                  disabled={!element.hasRemove}
+                >
+                  -
+                </button>
+              </div>
             </div>
-          ))}
+          </div>
+        ))}
 
-        {props.canAdd && (
-          <button type="button" onClick={props.onAddClick} style={{ ...btnStyle, padding: '0.3rem 0.6rem', marginTop: '0.5rem' }}>
-            + Add
-          </button>
-        )}
-      </div>
-    );
-  }
+      {props.canAdd && (
+        <button type="button" onClick={props.onAddClick} style={{ ...btnStyle, padding: '0.3rem 0.6rem', marginTop: '0.5rem' }}>
+          + Add
+        </button>
+      )}
+    </div>
+  );
+}

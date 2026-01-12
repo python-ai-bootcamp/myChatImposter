@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget } from '../components/FormTemplates';
 import { editPageLayout } from './EditPageLayout';
 
 
@@ -370,7 +370,9 @@ function EditPage() {
   };
 
   const widgets = {
-    CheckboxWidget: CustomCheckboxWidget
+    CheckboxWidget: CustomCheckboxWidget,
+    NarrowTextWidget: NarrowTextWidget,
+    SizedTextWidget: SizedTextWidget
   };
 
   const uiSchema = {
@@ -387,7 +389,29 @@ function EditPage() {
         "ui:title": " "
       },
       periodic_group_tracking: {
-        "ui:title": " "
+        "ui:title": " ",
+        items: {
+          "ui:ObjectFieldTemplate": InlineObjectFieldTemplate,
+          "ui:order": ["displayName", "groupIdentifier", "cronTrackingSchedule"],
+          displayName: {
+            "ui:FieldTemplate": InlineFieldTemplate,
+            "ui:title": "Name",
+            "ui:widget": "SizedTextWidget",
+            "ui:options": { width: "132px" }
+          },
+          groupIdentifier: {
+            "ui:FieldTemplate": InlineFieldTemplate,
+            "ui:title": "Identifier",
+            "ui:widget": "SizedTextWidget",
+            "ui:options": { width: "182px" }
+          },
+          cronTrackingSchedule: {
+            "ui:FieldTemplate": InlineFieldTemplate,
+            "ui:title": "Schedule",
+            "ui:widget": "SizedTextWidget",
+            "ui:options": { width: "80px" }
+          }
+        }
       }
     },
     chat_provider_config: {
