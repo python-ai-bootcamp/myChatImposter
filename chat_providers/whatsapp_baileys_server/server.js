@@ -90,6 +90,23 @@ const logPersistent405 = (userId, session) => {
     console.log(`[${userId}] Persistent 405 errors: ${tracker.count} hits over ${duration}ms. POPs: ${locations}`);
 };
 
+// Push status updates to Python backend via WebSocket
+const pushStatusToPython = (userId) => {
+    const session = sessions[userId];
+    const ws = wsConnections[userId];
+    if (!session || !ws || ws.readyState !== ws.OPEN) return;
+
+    const status = session.connectionStatus === 'open' ? 'connected' :
+        session.currentQR ? 'linking' :
+            session.connectionStatus || 'initializing';
+
+    ws.send(JSON.stringify({
+        type: 'status_update',
+        status: status,
+        qr: session.currentQR || null
+    }));
+};
+
 const addIdentifierVariant = (set, value) => {
     if (!value || typeof value !== 'string') {
         return;
@@ -836,6 +853,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
                     });
                 }
             }
+            // Push status to Python
+            pushStatusToPython(userId);
         }
 
 
@@ -848,6 +867,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
                     return;
                 }
                 session.currentQR = url;
+                // Push QR to Python
+                pushStatusToPython(userId);
             });
         }
 
@@ -858,6 +879,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
             if (session.isGracefulDisconnect) {
                 console.log(`[${userId}] Graceful disconnect detected. Skipping reconnect logic.`);
                 session.isGracefulDisconnect = false; // Reset the flag
+                pushStatusToPython(userId); // Push disconnected status
                 return;
             }
 
@@ -1165,15 +1187,6 @@ setInterval(() => {
         const session = sessions[userId];
 
         const timeSince = now - (session.lastHeartbeat || 0);
-        // Debug Log: Only log if we are monitoring AND if it looks like a heartbeat might be active
-        // (i.e. connection not open, not zombie).
-        const isMonitored = session && session.connectionStatus !== 'open' && session.connectionStatus !== 'connected' && !session.isZombie;
-
-        // To avoid spamming logs for every inactive session, only log if heartbeat is recent (< 10s)
-        // This lets us see the active countdown when a user is linking, but hides old sessions.
-        if (isMonitored && timeSince < 10000) {
-            console.log(`[Monitor] ${userId}: Status=${session.connectionStatus}, LastHeartbeat=${timeSince}ms ago`);
-        }
 
         if (!session || session.connectionStatus === 'open' || session.connectionStatus === 'connected' || session.isZombie) {
             // Heartbeat only matters during linking (connecting/qr)
@@ -1196,6 +1209,8 @@ setInterval(() => {
             }
             session.connectionStatus = 'disconnected';
             session.currentQR = null;
+            // Push disconnected status to Python
+            pushStatusToPython(userId);
         }
     }
 }, 1000); // Check every second
@@ -1324,6 +1339,15 @@ async function startServer() {
                                 session.sock.end(undefined);
                             }
                         }
+                    } else if (data.action === 'heartbeat') {
+                        // Heartbeat ping from Python frontend polling
+                        const session = sessions[userId];
+                        if (session) {
+                            session.lastHeartbeat = Date.now();
+                        }
+                    } else if (data.action === 'request_status') {
+                        // Python requesting initial status sync
+                        pushStatusToPython(userId);
                     }
                 } catch (e) {
                     console.error(`[WebSocket] Error processing message for userId ${userId}:`, e);

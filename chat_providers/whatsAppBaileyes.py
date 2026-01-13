@@ -30,6 +30,9 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         self.pending_bot_messages = deque()
         self.max_cache_interval = 0
         self.max_cache_size = 100
+        # Status cache for push-based updates
+        self._cached_status = {"status": "initializing", "qr": None}
+        self._ws_connection = None  # Reference to active WebSocket for sending messages
 
     def update_cache_policy(self, max_interval: int):
         self.max_cache_interval = max_interval
@@ -134,11 +137,17 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             try:
                 async with websockets.connect(uri, open_timeout=10) as websocket:
                     if self.logger: self.logger.log(f"WebSocket connection established to {uri}")
+                    self._ws_connection = websocket
+                    # Request initial status sync from Baileys
+                    try:
+                        await websocket.send(json.dumps({"action": "request_status"}))
+                    except Exception as e:
+                        if self.logger: self.logger.log(f"WARN: Could not send request_status: {e}")
                     # Connection successful, now enter the main listening loop
                     while self.is_listening:
                         try:
                             message = await asyncio.wait_for(websocket.recv(), timeout=1.0)
-                            self._process_ws_message(message)
+                            await self._process_ws_message(message)
                         except asyncio.TimeoutError:
                             continue
                         except websockets.exceptions.ConnectionClosed:
@@ -187,9 +196,18 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
         if self.logger: self.logger.log("Listen loop has gracefully exited.")
 
-    def _process_ws_message(self, message: str):
+    async def _process_ws_message(self, message: str):
         try:
             data = json.loads(message)
+            # Handle status_update messages from Baileys
+            if isinstance(data, dict) and data.get('type') == 'status_update':
+                self._cached_status = {
+                    "status": data.get('status', 'unknown'),
+                    "qr": data.get('qr')
+                }
+                if self.logger: self.logger.log(f"Status update received: {self._cached_status['status']}")
+                return
+            # Handle message arrays (existing behavior)
             if isinstance(data, list):
                 if self.logger: self.logger.log(f"Fetched {len(data)} new message(s) via WebSocket.")
                 self._process_messages(data)
@@ -354,21 +372,17 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             if self.logger: self.logger.log(f"ERROR: Exception while sending message: {e}")
 
     async def get_status(self, heartbeat: bool = False) -> Dict:
-        try:
-            async with httpx.AsyncClient() as client:
-                params = {"heartbeat": "true"} if heartbeat else {}
-                response = await client.get(f"{self.base_url}/sessions/{self.user_id}/status", params=params, timeout=5)
-                if response.status_code == 200:
-                    return response.json()
-                return {"status": "error", "message": f"Unexpected status code {response.status_code}"}
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 404:
-                return {"status": "disconnected", "message": "Session not found on Node.js server."}
-            return {"status": "error", "message": f"HTTP Error {e.response.status_code}: {e.response.text}"}
-        except httpx.RequestError as e:
-            return {"status": "initializing", "message": f"Node.js server is not reachable: {e}"}
-        except Exception as e:
-            return {"status": "error", "message": f"Exception while getting status: {e}"}
+        """Returns cached status. If heartbeat=True, sends heartbeat ping over WebSocket."""
+        if heartbeat:
+            # Send heartbeat over WebSocket instead of HTTP
+            if self._ws_connection:
+                try:
+                    await self._ws_connection.send(json.dumps({"action": "heartbeat"}))
+                except Exception as e:
+                    if self.logger: self.logger.log(f"WARN: Could not send heartbeat: {e}")
+        
+        # Return cached status (no HTTP call needed)
+        return self._cached_status.copy()
 
 
 
