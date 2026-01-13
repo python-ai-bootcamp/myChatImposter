@@ -1188,9 +1188,9 @@ setInterval(() => {
 
         const timeSince = now - (session.lastHeartbeat || 0);
 
-        if (!session || session.connectionStatus === 'open' || session.connectionStatus === 'connected' || session.isZombie) {
+        if (!session || session.connectionStatus === 'open' || session.connectionStatus === 'connected' || session.connectionStatus === 'disconnected' || session.isZombie) {
             // Heartbeat only matters during linking (connecting/qr)
-            // If connected, we assume they are fine (or we can implement keep-alive later if needed)
+            // If connected or already disconnected, skip
             // If already zombie, let it die in peace
             continue;
         }
