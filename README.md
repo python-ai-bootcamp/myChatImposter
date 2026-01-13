@@ -101,6 +101,7 @@ Controls how much history the bot "remembers" when generating a reply. This is c
 | `max_messages` | `int` | `10` | Max count of recent messages to include in the prompt. |
 | `max_characters` | `int` | `1000` | Hard cap on total characters in history (trims oldest). |
 | `max_days` | `int` | `1` | Max age of messages to include (e.g., forget yesterday's chat). |
+| `max_characters_single_message` | `int` | `300` | Truncate individual messages longer than this before adding to context. |
 | `shared_context` | `boolean` | `true` | **Experimental**. If `true`, the bot maintains a single history across ALL contacts (knows what it said to Bob while talking to Alice). If `false`, every chat is isolated. |
 
 #### `queue_config` (Incoming Buffer)
@@ -109,13 +110,22 @@ Controls the raw message buffer before processing.
 | :--- | :--- | :--- | :--- |
 | `max_messages` | `int` | `10` | Max incoming messages to hold in memory. |
 | `max_characters` | `int` | `1000` | Max total characters in buffer. |
+| `max_days` | `int` | `1` | Max age of messages to keep in buffer. |
+| `max_characters_single_message` | `int` | `300` | Truncate incoming messages longer than this before queuing. |
 
 ```json
 "context_config": {
   "max_messages": 20,
   "max_characters": 4000,
   "max_days": 1,
+  "max_characters_single_message": 500,
   "shared_context": false
+},
+"queue_config": {
+  "max_messages": 10,
+  "max_characters": 1000,
+  "max_days": 1,
+  "max_characters_single_message": 300
 }
 ```
 
