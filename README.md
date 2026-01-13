@@ -1,195 +1,168 @@
-# My WhatsApp Imposter
+# My Chat Imposter
 
-This project is a modular chatbot framework designed for easy extension to various messaging platforms. It operates as an API server that dynamically manages multiple users, each with their own dedicated chatbot instance, message queue, and integration with a specific messaging service (a "chat provider").
+**My Chat Imposter** is a sophisticated, modular chatbot framework designed to mimic human personalities on messaging platforms (currently WhatsApp via Baileys). It decouples the chatbot logic (LLM) from the communication layer, allowing for powerful, customized interactions.
 
-The core design philosophy is to isolate the chatbot logic from the specifics of the communication platform, allowing developers to add support for new platforms without modifying the core application code.
+## 🚀 Key Features
 
-## Core Components
+-   **Modular Architecture**: Easily swap Chat Providers (WhatsApp, etc.) and LLM Providers (OpenAI, Local, etc.).
+-   **Context Management**: Sophisticated handling of chat history, including shared context across different correspondents or isolated sessions.
+-   **Smart Whitelisting**: Granular control over who the bot replies to—supports both individual contacts and specific groups.
+-   **Group Tracking**: distinct from chatting, the bot can periodically "scrape" or track messages from specific groups on a CRON schedule.
+-   **Robust Linking**: Features a heartbeat-monitored QR linking process to prevent "zombie" sessions.
+-   **Message Queuing**: Configurable limits on message history and character counts to manage LLM costs and context window.
 
-The project is composed of a few key Python modules:
+---
 
--   **`main.py`**: This is the main entry point of the application. It runs a FastAPI web server that exposes endpoints for creating, managing, and polling the status of chatbot instances.
+## 🛠️ Configuration Reference
 
--   **`chatbot_manager.py`**: This module provides the `ChatbotInstance` class, which encapsulates all the components for a single user's session (message queue, LLM model, and chat provider connection).
+The system is configured via a JSON object (the **User Configuration**). Below is the complete reference for every available field.
 
--   **`queue_manager.py`**: This module provides a `UserQueue` class that manages a queue of messages for each user. It's designed to be resilient, with configurable limits on the number of messages, total characters, and message age.
+### **1. Identity & Whitelisting**
 
--   **`chat_providers/`**: This directory is the key to the project's extensibility. Each file within this directory is expected to be a self-contained module that provides a connection to a specific messaging platform (like WhatsApp, Slack, etc.).
+| Field | Type | Required | Description |
+| :--- | :--- | :--- | :--- |
+| `user_id` | `string` | **Yes** | Unique identifier for this bot instance (e.g., "yahav"). Used for database keys and API routes. |
+| `respond_to_whitelist` | `string[]` | No | List of phone numbers or contact display names the bot is allowed to reply to *specifically*. Empty list = no direct replies. |
+| `respond_to_whitelist_group` | `string[]` | No | List of **Group Names** or Group IDs tracking the bot is allowed to reply in. |
 
--   **`llm_providers/`**: Similar to chat providers, this directory contains modules for different Large Language Model providers (like OpenAI, or a local Fake LLM for testing).
+### **2. Periodic Group Tracking**
 
-## API Usage
+Allows the bot to silently monitor specific groups on a schedule without necessarily replying.
 
-The server is controlled via a RESTful API.
+> **⚠️ Important Constraint**: You cannot add new groups or change the group identifier unless the bot is **CONNECTED**.
+> Efficiently configuring this requires fetching the list of groups from WhatsApp, which is only possible with an active session.
+> *You can, however, edit the CRON schedule of existing tracked groups even while disconnected.*
 
-### Create Chatbot Instance(s)
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `groupIdentifier` | `string` | The stable JID of the group (e.g., `123456789@g.us`). |
+| `displayName` | `string` | Human-readable name for the group (for logs/UI). |
+| `cronTrackingSchedule` | `string` | CRON expression for tracking frequency (e.g., `0/20 * * * *` for every 20 mins). |
 
-To create one or more new chatbot instances, send a `PUT` request to the `/chatbot` endpoint with a JSON array of configuration objects.
+### **3. chatbot_provider_config** (Messaging)
 
-**Endpoint:** `PUT /chatbot`
+Configures the connection to the messaging platform.
+**Provider Name**: `whatsAppBaileyes`
 
-**Body:**
+#### `provider_config` Options:
+| Field | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `allow_group_messages` | `boolean` | `false` | If `true`, the bot *can* process messages from groups (subject to whitelist). If `false`, it acts as if it left all groups. |
+| `process_offline_messages` | `boolean` | `false` | If `true`, the bot will attempt to reply to messages received while it was disconnected (startup backlog). Be careful with loops. |
+| `sync_full_history` | `boolean` | `true` | If `true`, attempts to fetch available history from the phone on connection. Essential for context awareness. |
+
 ```json
-[
-  {
-    "user_id": "user_wa_1",
-    "respond_to_whitelist": [
-      "1234567890"
-    ],
-    "chat_provider_config": {
-      "provider_name": "whatsAppBaileyes",
-      "provider_config": {
-        "allow_group_messages": false
-      }
-    },
-    "queue_config": {
-      "max_messages": 10,
-      "max_characters": 1000,
-      "max_days": 1
-    },
-    "llm_provider_config": {
-      "provider_name": "openAi",
-      "provider_config": {
-        "api_key": "sk-...",
-        "model": "gpt-4",
-        "system": "You are helpful assistant #1."
-      }
-    }
-  },
-  {
-    "user_id": "user_wa_2",
-    "chat_provider_config": {
-      "provider_name": "dummy",
-      "provider_config": {}
-    },
-    "queue_config": {
-      "max_messages": 5,
-      "max_characters": 500,
-      "max_days": 1
-    },
-    "llm_provider_config": {
-      "provider_name": "openAi",
-      "provider_config": {
-        "api_key": "sk-...",
-        "model": "gpt-3.5-turbo",
-        "system": "You are helpful assistant #2."
-      }
-    }
+"chat_provider_config": {
+  "provider_name": "whatsAppBaileyes",
+  "provider_config": {
+    "allow_group_messages": true,
+    "process_offline_messages": false,
+    "sync_full_history": true
   }
-]
+}
 ```
-The server will respond with an array of objects, each containing the `user_id` and a unique `instance_id` for each successfully created instance.
 
-**Example Response:**
+### **4. llm_provider_config** (AI Brain)
+
+Configures the Large Language Model.
+**Provider Name**: `openAi`
+
+#### `provider_config` Options:
+| Field | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `api_key_source` | `string` | `"environment"` | `"environment"` (use `OPENAI_API_KEY` env var) or `"explicit"` (use `api_key` field). |
+| `api_key` | `string` | `null` | The actual API key string. Required if source is `"explicit"`. |
+| `model` | `string` | **Required** | The model ID (e.g., `gpt-4`, `gpt-4o`, `gpt-3.5-turbo`, `o1-mini`). |
+| `temperature` | `float` | `0.7` | Randomness of the output (0.0 to 1.0). Lower is more deterministic. |
+| `reasoning_effort` | `string` | `null` | **For o1 models only.** Controls reasoning depth. <br>Values: `"low"`, `"medium"`, `"high"`, `"minimal"`. |
+| `system` | `string` | `""` | The **System Prompt**. This is the core personality instruction for the bot. |
+
 ```json
-[
-    {
-        "user_id": "user_wa_1",
-        "instance_id": "a1b2c3d4-e5f6-7890-1234-567890abcdef"
-    },
-    {
-        "user_id": "user_wa_2",
-        "instance_id": "f6e5d4c3-b2a1-0987-6543-210987fedcba"
-    }
-]
+"llm_provider_config": {
+  "provider_name": "openAi",
+  "provider_config": {
+    "api_key_source": "explicit",
+    "api_key": "sk-...",
+    "model": "gpt-4o",
+    "temperature": 0.8,
+    "reasoning_effort": "medium",
+    "system": "You are a witty chatbot..."
+  }
+}
 ```
 
-### Poll for Status
+### **5. Context & Memory Management**
 
-You can poll the status of an instance (e.g., to get a QR code for linking) by sending a `GET` request.
+Controls how much history the bot "remembers" when generating a reply. This is crucial for managing token costs and staying within context windows.
 
-**Endpoint:** `GET /chatbot/{instance_id}/status`
+#### `context_config` (LLM Context)
+| Field | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `max_messages` | `int` | `10` | Max count of recent messages to include in the prompt. |
+| `max_characters` | `int` | `1000` | Hard cap on total characters in history (trims oldest). |
+| `max_days` | `int` | `1` | Max age of messages to include (e.g., forget yesterday's chat). |
+| `shared_context` | `boolean` | `true` | **Experimental**. If `true`, the bot maintains a single history across ALL contacts (knows what it said to Bob while talking to Alice). If `false`, every chat is isolated. |
 
-## Extensibility: Adding New Providers
+#### `queue_config` (Incoming Buffer)
+Controls the raw message buffer before processing.
+| Field | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `max_messages` | `int` | `10` | Max incoming messages to hold in memory. |
+| `max_characters` | `int` | `1000` | Max total characters in buffer. |
 
-The application is designed to be easily extensible with new chat and LLM providers.
-
-### Adding a New Chat Provider
-
-To add support for a new messaging platform, you need to create a new provider file in the `chat_providers/` directory.
-
-**1. Create the Provider File**
-
-Create a new file, for example, `chat_providers/my_new_provider.py`.
-
-**2. Create the Provider Class**
-
-Inside your new file, create a class that inherits from `chat_providers.base.BaseChatProvider`. This base class ensures your provider implements the required interface.
-
-Your class must implement the following abstract methods:
-
--   `__init__(self, user_id: str, config: Dict, user_queues: Dict[str, UserQueue])`: The constructor receives the `user_id`, its specific `provider_config` block, and the user's queue. You must call `super().__init__(...)`.
--   `start_listening(self)`: A non-blocking method to start listening for incoming messages.
--   `stop_listening(self)`: A method to gracefully stop the listening process.
--   `sendMessage(self, recipient: str, message: str)`: A method to send an outgoing message.
--   `get_status(self) -> Dict`: A method to return the current status of the provider (e.g., for connection health checks).
-
-When a message is received, you can add it to the user's queue like this:
-```python
-# Inside your listening loop:
-queue = self.user_queues.get(self.user_id)
-if queue:
-    # ... create sender, group objects from the received message
-    queue.add_message(content=received_content, sender=sender, source='user', group=group)
+```json
+"context_config": {
+  "max_messages": 20,
+  "max_characters": 4000,
+  "max_days": 1,
+  "shared_context": false
+}
 ```
 
-The application will automatically discover your new provider class as long as it's the only class in the file that inherits from `BaseChatProvider`.
+---
 
-### Adding a New LLM Provider
+## 💻 Usage
 
-Similarly, you can add a new Large Language Model provider by creating a file in the `llm_providers/` directory.
+### 1. Linking a User
+The system uses a **Heartbeat-Monitored QR Linking** process.
+1.  Go to the frontend (Home Page).
+2.  Click **"Link"** on a user card.
+3.  A QR code will appear. **You must keep this modal open.**
+4.  Scan the QR with WhatsApp.
+5.  If you close the modal, the backend will detect the heartbeat loss and kill the linking session within 5 seconds.
 
-**1. Create the Provider File**
+### 2. API Endpoints
 
-Create a new file, for example, `llm_providers/my_new_llm.py`.
+-   **PUT `/chatbot`**: Create or Update a bot instance.
+    -   Body: `[ { ...UserConfiguration... } ]`
+-   **GET `/chatbot/{id}/status`**: Get connection status / QR code.
+    -   *Note*: This endpoint acts as a heartbeat when called with query param `?heartbeat=true`.
 
-**2. Create the Provider Class**
+---
 
-Create a class that inherits from `llm_providers.base.BaseLlmProvider`.
+## 🏗️ Architecture & Extension
 
-Your class must implement the following abstract methods:
+-   **`main.py`**: FastAPI entry point.
+-   **`chatbot_manager.py`**: Orchestrator for a single user session.
+-   **`chat_providers/`**: Pluggable modules for messaging logic.
+    -   To add a provider, inherit from `BaseChatProvider` and implement `start_listening`, `sendMessage`.
+-   **`llm_providers/`**: Pluggable modules for AI logic.
+    -   To add a provider, inherit from `BaseLlmProvider`.
 
--   `__init__(self, config: dict, user_id: str)`: The constructor. Remember to call `super().__init__(...)`.
--   `get_llm(self)`: This method should return an instance of the LLM client, typically a LangChain-compatible object.
--   `get_system_prompt(self) -> str`: This method should return the system prompt to be used for the chatbot.
+## 📦 Installation (Docker)
 
-The application will discover your new LLM provider class automatically.
+Recommended method for deployment.
 
-## Troubleshooting WhatsApp Baileys sessions
-
-If a WhatsApp session oscillates between `connecting` and `closed`, check the Node container logs (`whatsapp_baileys_server`). The server now auto-fetches the most recent WhatsApp Web version via `fetchLatestBaileysVersion`, so version drift should resolve automatically when the container restarts.
-
-If you still see rapid-fire HTTP 405 disconnects, the server will retry up to three times within 30 seconds. When every attempt fails with 405, it logs a message such as:
-
-```
-[tal] Persistent 405 errors: 3 hits over 12000ms. POPs: vll, lla, cln
-```
-
-At that point the server deletes the stored auth keys for the user and starts a fresh session so a new QR can be presented. This usually resolves real protocol mismatches or WhatsApp forcing a relink. If 405 errors continue even after a relink, double-check that your network/firewall allows WebSocket traffic, and consider restarting the entire Docker stack to force a clean environment.
-
-## How to Run
-
-
-1.  Install the required Python dependencies:
+1.  **Configure Environment**:
+    -   Ensure `docker-compose.yml` is present.
+    -   Set `OPENAI_API_KEY` in `.env` or `docker-compose.yml` if using "environment" source.
+2.  **Run**:
     ```bash
-    pip install -r requirements.txt
+    docker-compose up --build
     ```
-2.  Install the Node.js dependencies for the WhatsApp provider:
-    ```bash
-    npm install --prefix chat_providers/whatsapp_baileys_server
-    ```
-3.  **Provide OpenAI API Key:** You can provide your API key in one of two ways. The JSON method takes precedence.
-    -   **Method 1: Environment Variable (recommended for development)**
-        Set the `OPENAI_API_KEY` environment variable before running the server. The key will be used for any OpenAI session that doesn't have an API key specified in its JSON config.
-        ```bash
-        export OPENAI_API_KEY='your-api-key'
-        uvicorn main:app --host 0.0.0.0 --port 8000
-        ```
-    -   **Method 2: In the JSON request**
-        Include the `api_key` directly in the `provider_config` for the `llm_provider_config` when you create a session via the API. This is useful for production environments where each user might have a different key. See the example in the "API Usage" section.
+3.  **Access**:
+    -   Frontend: `http://localhost:3000` (default)
+    -   Backend API: `http://localhost:8000`
 
-4.  Run the FastAPI server:
-    ```bash
-    uvicorn main:app --host 0.0.0.0 --port 8000
-    ```
-The server will start, and you can begin creating chatbot instances via the API.
+---
+*Created by the MyChatImposter Team*
