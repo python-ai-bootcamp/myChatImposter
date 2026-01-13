@@ -230,16 +230,10 @@ async def get_all_configurations_status():
                 is_authenticated = False
                 try:
                     if baileys_sessions_collection is not None:
-                         # DEBUG: Log check details
-                         console_log(f"API_DEBUG: Checking auth for user_id='{user_id_from_config}' in collection '{baileys_sessions_collection.name}'")
                          auth_doc = await run_in_threadpool(baileys_sessions_collection.find_one, {"_id": f"{user_id_from_config}-creds"})
                          
                          if auth_doc:
-                             console_log(f"API_DEBUG: Found auth doc for '{user_id_from_config}'")
                              is_authenticated = True
-                         else:
-                             console_log(f"API_DEBUG: No auth doc found for '{user_id_from_config}-creds'")
-                             pass
                     else:
                         console_log("API_WARN: baileys_sessions_collection is None during status check.")
                 except Exception as auth_e:
