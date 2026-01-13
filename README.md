@@ -18,6 +18,7 @@
 *   [📚 Complete API Reference](#api-reference)
 *   [📝 Logging & Debugging](#logging)
 *   [🏗️ System Architecture](#architecture)
+*   [🗃️ Persistency Schema](#persistency-schema)
 
 ---
 
@@ -81,6 +82,8 @@ Allows the bot to silently monitor specific groups on a schedule without necessa
 > *You can, however, edit the CRON schedule of existing tracked groups even while disconnected.*
 >
 > **Note on History**: When tracking starts, the bot attempts to fetch recent message history (up to `max_messages` limit) from the group to seed its context.
+>
+> **🔄 Automatic Cache Adjustment**: The system automatically adjusts internal message caching based on your CRON schedule to ensure reliable message retrieval during each tracking period.
 
 ### <a id="messaging-config"></a>**3. chatbot_provider_config** (Messaging) <small>[↑](#main-menu)</small>
 
@@ -93,6 +96,9 @@ Configures the connection to the messaging platform.
 | `allow_group_messages` | `boolean` | `false` | If `true`, the bot *can* process messages from groups (subject to whitelist). If `false`, it acts as if it left all groups. |
 | `process_offline_messages` | `boolean` | `false` | If `true`, processes startup backlog. **RISKY**. <br>1. **Crash Loop**: A bad message can endlessly crash & restart the bot.<br>2. **Flooding**: Mass replies on startup can trigger spam bans. |
 | `sync_full_history` | `boolean` | `true` | If `true`, attempts to fetch available history from the phone on connection. Essential for context awareness. |
+
+> **📦 Non-Text Messages**: Images, videos, stickers, and other non-text content are currently normalized to `[User sent a non-text message: <type>]`.
+> *This is temporary behavior until smart LLM-based normalization is implemented.*
 
 ```json
 "chat_provider_config": {
@@ -110,6 +116,10 @@ Configures the connection to the messaging platform.
 Configures the Large Language Model.
 **Provider Name**: `openAi`
 
+> **📌 Optional Section**: This entire `llm_provider_config` block is **optional**.
+> If omitted, the bot runs in **Collection Only** mode: it collects and logs messages but **never responds**.
+> This is useful for passive monitoring or group tracking without active chatting.
+
 #### `provider_config` Options:
 | Field | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
@@ -118,7 +128,7 @@ Configures the Large Language Model.
 | `model` | `string` | **Required** | The model ID (e.g., `gpt-4`, `gpt-4o`, `gpt-3.5-turbo`, `o1-mini`). |
 | `temperature` | `float` | `0.7` | Randomness of the output (0.0 to 1.0). Lower is more deterministic. |
 | `reasoning_effort` | `string` | `null` | **For o1 models only.** Controls reasoning depth. <br>Values: `"low"`, `"medium"`, `"high"`, `"minimal"`. |
-| `system` | `string` | `""` | The **System Prompt**. Core personality instruction. Supports `{user_id}` variable (autoloads user's ID). |
+| `system` | `string` | `""` | The **System Prompt**. Core personality instruction. Supports `{user_id}` variable only (no other variables). |
 
 ```json
 "llm_provider_config": {
@@ -133,6 +143,11 @@ Configures the Large Language Model.
   }
 }
 ```
+
+> **🔧 Advanced: Extra Parameters**
+> Both `chat_provider_config.provider_config` and `llm_provider_config.provider_config` accept **arbitrary extra keys**.
+> These are passed directly to the underlying SDK (e.g., `ChatOpenAI()` for LLM, Baileys for chat).
+> Useful for experimenting with undocumented or new parameters like `max_tokens`, `top_p`, etc. **Typos are silently ignored.**
 
 ### <a id="context-config"></a>**5. Context & Memory Management** <small>[↑](#main-menu)</small>
 
@@ -192,15 +207,18 @@ Base URL: `http://localhost:8000`
 ### **1. Session Management**
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
-| `PUT` | `/chatbot` | **Create/Start Session**. Body: `[UserConfiguration]`.<br>Starts the bot process for the user(s). |
-| `GET` | `/chatbot/{user_id}/status` | **Get Status**. Params: `?heartbeat=true` (optional).<br>Returns `connecting`, `connected`, or `disconnected`. Includes QR code if linking. |
-| `DELETE` | `/chatbot/{user_id}` | **Unlink Session**. Stops the bot and deletes WhatsApp credentials. Users must rescind link on their phone or wait for timeout. |
+| `PUT` | `/chatbot` | **Create/Start Session**. Body: `UserConfiguration`.<br>Starts the bot process for the user. |
+| `GET` | `/chatbot/{user_id}/status` | **Get Status**. Returns `connecting`, `connected`, or `disconnected`. Includes QR code if linking.<br>**Query Params**: `?heartbeat=true` — Resets the heartbeat timer. Use only from linking modals, not background polling. |
+| `POST` | `/chatbot/{user_id}/reload` | **Reload Config**. Gracefully restarts the bot with the latest config from DB.<br>Does NOT re-link WhatsApp. |
+| `DELETE` | `/chatbot/{user_id}` | **Unlink Session**. Stops the bot and deletes WhatsApp credentials. |
+| `GET` | `/chatbot/{user_id}/groups` | **List Groups**. Fetches all WhatsApp groups the user is a member of.<br>Requires active (connected) session. |
 
 ### **2. Configuration Management**
 | Method | Endpoint | Description |
 | :--- | :--- | :--- |
 | `GET` | `/api/configurations` | List all configured `user_id`s. |
 | `GET` | `/api/configurations/status` | List all configs with their current connection status & authentication state. |
+| `GET` | `/api/configurations/schema` | **Get Config Schema**. Returns the JSON Schema for `UserConfiguration`.<br>Used by the frontend to render dynamic forms. |
 | `GET` | `/api/configurations/{user_id}` | Get the full JSON config for a user. |
 | `PUT` | `/api/configurations/{user_id}` | Insert/Update a config without starting the session. |
 | `DELETE`| `/api/configurations/{user_id}` | Delete a configuration from the DB. |
@@ -214,6 +232,16 @@ These APIs help you see what the bot "sees".
 | `DELETE`| `/api/queue/{user_id}` | **Clear All Queues**. Nuke all pending messages for this user. |
 | `DELETE`| `/api/queue/{user_id}/{contact_id}`| **Clear Specific Queue**. Nuke pending messages for one contact. |
 | `GET` | `/api/context/{user_id}` | **View Context**. Returns the actual prompt history the LLM will see for each contact. |
+
+### **4. Group Tracking Data**
+These APIs access data collected by **Periodic Group Tracking** (distinct from chat queues).
+
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/api/trackedGroupMessages/{user_id}` | **All Tracked Groups**. Returns message periods for all tracked groups.<br>**Query Params**: `lastPeriods`, `from`, `until`. |
+| `GET` | `/api/trackedGroupMessages/{user_id}/{group_id}` | **Single Group**. Returns message periods for a specific group. |
+| `DELETE`| `/api/trackedGroupMessages/{user_id}` | **Delete All**. Deletes tracked message periods for all groups. |
+| `DELETE`| `/api/trackedGroupMessages/{user_id}/{group_id}` | **Delete Group**. Deletes tracked message periods for a specific group. |
 
 ---
 
@@ -279,6 +307,7 @@ The project follows a microservices-inspired architecture, orchestrated via Dock
     *   Handles encryption/decryption of messages.
     *   Exposes an internal HTTP API for the Python backend to send messages/check status.
     *   **Heartbeat Monitor**: Actively kills sessions if the frontend stops polling during linking.
+    *   **LID Resolution**: Automatically learns and caches WhatsApp's internal LID-to-PN (Linked ID to Phone Number) mappings. This ensures consistent user identification across individual and group chats, even when WhatsApp's API returns different identifier formats.
 
 ### **4. 🧠 LLM Providers**
 *   **Path**: `llm_providers/`
@@ -296,5 +325,15 @@ The project follows a microservices-inspired architecture, orchestrated via Dock
     *   `baileys_sessions`: Stores WhatsApp auth credentials (keys, tokens) to allow reconnection without scanning QR codes again.
 
 ---
+## <a id="persistency-schema"></a>🗃️ Persistency Schema <small>[↑](#main-menu)</small>
 
-*Created by the MyChatImposter Team*
+The system uses MongoDB for persistence. All collections live in the `chat_manager` database.
+
+| Collection | Purpose |
+| :--- | :--- |
+| `configurations` | Stores the JSON config (`UserConfiguration`) for each bot instance. Keyed by `user_id`. |
+| `queues` | Persists unprocessed messages from the message buffer. Allows recovery after restarts. |
+| `baileys_sessions` | WhatsApp authentication credentials (keys, tokens). Allows reconnection without re-scanning QR. |
+| `tracked_groups` | Metadata for groups being tracked by `periodic_group_tracking`. |
+| `tracked_group_periods` | Individual snapshot "periods" of tracked group messages, with timestamps and message lists. |
+| `group_tracking_state` | Last run timestamps for each tracking cron job. Used to calculate time windows. |
