@@ -201,6 +201,24 @@ async def get_configuration_schema():
             ]
         }
 
+    # Patch reasoning_effort anyOf titles to show "Defined" / "Undefined"
+    if defs_key in schema and 'LLMProviderSettings' in schema[defs_key]:
+        llm_settings = schema[defs_key]['LLMProviderSettings']
+        # After our restructuring, LLMProviderSettings is a oneOf of two branches
+        if 'oneOf' in llm_settings:
+            for branch in llm_settings['oneOf']:
+                if 'properties' in branch and 'reasoning_effort' in branch['properties']:
+                    re = branch['properties']['reasoning_effort']
+                    if 'anyOf' in re:
+                        for option in re['anyOf']:
+                            # The string option (enum)
+                            if option.get('type') == 'string' or 'enum' in option:
+                                option['title'] = 'Defined'
+                                option['default'] = 'minimal'
+                            # The null option
+                            elif option.get('type') == 'null':
+                                option['title'] = 'Undefined'
+
     return schema
 
 

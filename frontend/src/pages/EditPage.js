@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate } from '../components/FormTemplates';
 
 // Stable widget definitions - defined outside component to prevent re-creation on re-render
 const ReadOnlyTextWidget = (props) => {
@@ -741,11 +741,13 @@ function EditPage() {
     SizedTextWidget: SizedTextWidget,
     GroupNameSelectorWidget: GroupNameSelectorWidget,
     ReadOnlyTextWidget: ReadOnlyTextWidget,
-    CronInputWidget: CronInputWidget
+    CronInputWidget: CronInputWidget,
+    SystemPromptWidget: SystemPromptWidget
   };
 
   const uiSchema = {
     "ui:classNames": "form-container",
+    "ui:title": " ",
     user_id: {
       "ui:FieldTemplate": NullFieldTemplate
     },
@@ -791,6 +793,10 @@ function EditPage() {
             "ui:options": {
               "optionTitles": ["Defined", "Undefined"]
             }
+          },
+          system: {
+            "ui:title": "System Prompt",
+            "ui:widget": "SystemPromptWidget"
           }
         }
       }
@@ -802,6 +808,9 @@ function EditPage() {
       automatic_bot_reply: {
         "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
         "ui:title": "Automatic Bot Reply",
+        enabled: {
+          "ui:FieldTemplate": InlineCheckboxFieldTemplate
+        },
         respond_to_whitelist: {
           "ui:title": " "
         },
@@ -812,6 +821,9 @@ function EditPage() {
       periodic_group_tracking: {
         "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
         "ui:title": "Periodic Group Tracking",
+        enabled: {
+          "ui:FieldTemplate": InlineCheckboxFieldTemplate
+        },
         tracked_groups: {
           "ui:title": " ",
           "ui:ArrayFieldTemplate": GroupTrackingArrayTemplate,
@@ -840,7 +852,10 @@ function EditPage() {
       },
       kid_phone_safety_tracking: {
         "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
-        "ui:title": "Kid Phone Safety Tracking"
+        "ui:title": "Kid Phone Safety Tracking",
+        enabled: {
+          "ui:FieldTemplate": InlineCheckboxFieldTemplate
+        }
       }
     }
   };

@@ -55,29 +55,24 @@ class PeriodicGroupTrackingConfig(BaseModel):
 
 # Feature Models
 class AutomaticBotReplyFeature(BaseModel):
-    """Feature for automatic bot replies to whitelisted contacts and groups."""
-    enabled: bool = Field(default=False, title="Enabled", description="Enable automatic bot replies.")
+    enabled: bool = Field(default=False, title="Enable automatic bot replies")
     respond_to_whitelist: List[str] = Field(default_factory=list, title="Respond To Direct Contact Whitelist")
     respond_to_whitelist_group: List[str] = Field(default_factory=list, title="Respond To Group Whitelist")
 
 class PeriodicGroupTrackingFeature(BaseModel):
-    """Feature for periodic tracking of group activities."""
-    enabled: bool = Field(default=False, title="Enabled", description="Enable periodic group tracking.")
+    enabled: bool = Field(default=False, title="Enable periodic group tracking")
     tracked_groups: List[PeriodicGroupTrackingConfig] = Field(default_factory=list, title="Tracked Groups")
 
 class KidPhoneSafetyTrackingFeature(BaseModel):
-    """Feature for tracking messages for kid phone safety."""
-    enabled: bool = Field(default=False, title="Enabled", description="Enable kid phone safety tracking.")
+    enabled: bool = Field(default=False, title="Enable kid phone safety tracking")
 
 class FeaturesConfiguration(BaseModel):
-    """Container for all feature configurations."""
     automatic_bot_reply: AutomaticBotReplyFeature = Field(default_factory=AutomaticBotReplyFeature, title="Automatic Bot Reply")
     periodic_group_tracking: PeriodicGroupTrackingFeature = Field(default_factory=PeriodicGroupTrackingFeature, title="Periodic Group Tracking")
     kid_phone_safety_tracking: KidPhoneSafetyTrackingFeature = Field(default_factory=KidPhoneSafetyTrackingFeature, title="Kid Phone Safety Tracking")
 
 # General Configuration Models
 class ConfigurationsSettings(BaseModel):
-    """Container for general configuration settings."""
     chat_provider_config: ChatProviderConfig = Field(..., title="Chat Provider Config")
     queue_config: QueueConfig = Field(default_factory=QueueConfig, title="Queue Config")
     context_config: ContextConfig = Field(default_factory=ContextConfig, title="Context Config")

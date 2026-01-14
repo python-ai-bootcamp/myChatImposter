@@ -44,6 +44,39 @@ export function SizedTextWidget(props) {
   );
 }
 
+// A textarea widget for the system prompt with fixed dimensions
+export function SystemPromptWidget(props) {
+  return (
+    <textarea
+      id={props.id}
+      value={props.value || ''}
+      required={props.required}
+      onChange={(event) => props.onChange(event.target.value)}
+      style={{
+        width: '191px',
+        height: '240px',
+        resize: 'both',
+        fontFamily: 'inherit',
+        fontSize: 'inherit',
+        padding: '4px'
+      }}
+    />
+  );
+}
+
+// An inline checkbox field template - label and checkbox on same line
+export function InlineCheckboxFieldTemplate(props) {
+  const { id, label, children, required } = props;
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '0.5rem' }}>
+      <label htmlFor={id} style={{ margin: 0 }}>
+        {label}{required && '*'}
+      </label>
+      {children}
+    </div>
+  );
+}
+
 
 
 export function CustomFieldTemplate(props) {
