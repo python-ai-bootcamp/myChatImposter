@@ -53,8 +53,8 @@ export function SystemPromptWidget(props) {
       required={props.required}
       onChange={(event) => props.onChange(event.target.value)}
       style={{
-        width: '191px',
-        height: '240px',
+        width: '290px',
+        height: '150px',
         resize: 'both',
         fontFamily: 'inherit',
         fontSize: 'inherit',
@@ -148,6 +148,27 @@ export function CustomFieldTemplate(props) {
         </label>
         <div style={{ display: 'table-cell', textAlign: 'left', width: '100%' }}>
           {children}
+        </div>
+      </div>
+    );
+  }
+
+  // Flatten the provider_config field structure - render children directly
+  if (id && id.endsWith('llm_provider_config_provider_config')) {
+    return children;
+  }
+
+  // Indent API Key field to align with Reasoning Effort dropdown
+  // Render with empty first cell so it appears in the right column
+  if (id && id.endsWith('provider_config_api_key')) {
+    return (
+      <div style={{ display: 'table-row' }}>
+        <div style={{ display: 'table-cell' }}></div>
+        <div style={{ display: 'table-cell', textAlign: 'left', width: '100%' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ whiteSpace: 'nowrap' }}>{label}</span>
+            {children}
+          </div>
         </div>
       </div>
     );
