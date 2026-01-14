@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate, LLMProviderConfigFieldTemplate } from '../components/FormTemplates';
 
 // Stable widget definitions - defined outside component to prevent re-creation on re-render
 const ReadOnlyTextWidget = (props) => {
@@ -771,28 +771,17 @@ function EditPage() {
         "ui:title": "Context Config"
       },
       llm_provider_config: {
-        "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
-        "ui:title": "LLM Provider Config",
+        "ui:FieldTemplate": LLMProviderConfigFieldTemplate,
+        provider_name: {
+          "ui:title": "Provider Name"
+        },
         provider_config: {
           "ui:title": "API Key Source",
-          "ui:options": {
-            "box": "LlmProviderSettings"
-          },
           api_key_source: {
-            "ui:options": {
-              "hidden": true
-            },
-            "ui:enumNames": [
-              "API Key From Environment",
-              "API Key From User Input"
-            ]
+            "ui:title": "API Key Source"
           },
           reasoning_effort: {
-            "ui:title": "Reasoning Effort",
-            "ui:widget": "select",
-            "ui:options": {
-              "optionTitles": ["Defined", "Undefined"]
-            }
+            "ui:title": "Reasoning Effort"
           },
           system: {
             "ui:title": "System Prompt",

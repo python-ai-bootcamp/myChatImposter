@@ -77,41 +77,85 @@ export function InlineCheckboxFieldTemplate(props) {
   );
 }
 
+// A custom collapsible field template for LLM Provider Config
+// This wraps the entire field (including anyOf dropdown) in a collapsible section
+// ONLY applies to the outer anyOf container, not the selected inner content
+export function LLMProviderConfigFieldTemplate(props) {
+  const [isOpen, setIsOpen] = useState(false);
+  const { children, schema } = props;
+
+  // Only apply the collapsible box if this field has anyOf in its schema
+  // This means it's the outer container with the dropdown, not the inner selected content
+  if (!schema || !schema.anyOf) {
+    return children;
+  }
+
+  const containerStyle = {
+    border: '1px solid #ddd',
+    borderRadius: '4px',
+    padding: '0.75rem',
+    margin: '0.5rem 0',
+    backgroundColor: '#fafafa',
+  };
+
+  const titleStyle = {
+    margin: 0,
+    padding: 0,
+    cursor: 'pointer',
+    textAlign: 'left',
+    fontSize: '0.95rem',
+    fontWeight: 600,
+  };
+
+  return (
+    <div style={containerStyle}>
+      <h4 style={titleStyle} onClick={() => setIsOpen(!isOpen)}>
+        LLM Provider Config {isOpen ? '[-]' : '[+]'}
+      </h4>
+      {isOpen && (
+        <div style={{ marginTop: '0.75rem', textAlign: 'left' }}>
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
 
 
 export function CustomFieldTemplate(props) {
   const { id, label, children, required, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
 
-  // Special handling for the LLM provider config section
-  if (id === 'root_llm_bot_config_llm_provider_config_provider_config') {
-    // This is for the object *inside* the oneOf. We don't want a label for it,
-    // because the dropdown serves as the label. This preserves the original HACK's purpose.
-    if (classNames.includes('field-object')) {
+  // Hide the inner LLMProviderConfig object box (the one that creates duplicate nested box)
+  // This matches the inner object selected by the anyOf dropdown
+  if (id && id.includes('llm_provider_config') && classNames && classNames.includes('field-object')) {
+    if (!id.endsWith('configurations_llm_provider_config')) {
       return children;
     }
+  }
 
-    // This is the container for the `oneOf` selection. It includes the dropdown
-    // and the fields for the selected provider. We wrap it in a fieldset.
-    const fieldsetStyle = {
-      border: '1px solid #ccc',
-      borderRadius: '4px',
-      padding: '1rem',
-      margin: 0,
-      width: '100%',
-      marginTop: '0.5rem',
-      display: 'table',
-      borderCollapse: 'collapse'
-    };
+  // Hide API Key Source field (it's redundant with the oneOf dropdown)
+  if (id && id.includes('api_key_source')) {
+    return null;
+  }
 
+  // Add "API Key Source" label for the oneOf dropdown (API Key From User Input/Environment)
+  if (id && id.includes('provider_config__oneof_select')) {
     return (
-      <fieldset style={fieldsetStyle}>
-        <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
-          LlmProviderSettings
-        </h3>
-        {/* The `children` here will be the select dropdown AND the rendered object below it */}
-        {children}
-      </fieldset>
+      <div style={{ display: 'table-row' }}>
+        <label style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
+          API Key Source
+        </label>
+        <div style={{ display: 'table-cell', textAlign: 'left', width: '100%' }}>
+          {children}
+        </div>
+      </div>
     );
+  }
+
+  // Also hide old special handling that created nested boxes
+  if (id === 'root_llm_bot_config_llm_provider_config_provider_config') {
+    return children;
   }
 
   if (uiSchema && uiSchema['ui:options']?.hidden) {
@@ -142,7 +186,7 @@ export function CustomFieldTemplate(props) {
     <>
       <div className={classNames} style={{ display: 'table-row' }}>
         <label htmlFor={id} style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
-          {label}{required ? '*' : null}
+          {label}
         </label>
         <div style={rightColumnStyle}>
           {description}
@@ -239,8 +283,11 @@ export function CustomObjectFieldTemplate(props) {
 
   // Hide the title for the inner oneOf selection, but show our custom one.
   // This is the definitive fix: explicitly check for the title we want to hide.
+  // Also hide if title is empty or whitespace-only, or if it's "API Key Source" (shown as label instead)
   const isLlmModeTitle = props.title === 'Llm Mode';
-  const shouldShowTitle = !isLlmModeTitle && title && ((title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm'));
+  const isTitleEmpty = !title || (typeof title === 'string' && title.trim() === '');
+  const isApiKeySourceTitle = props.title === 'API Key Source';
+  const shouldShowTitle = !isLlmModeTitle && !isTitleEmpty && !isApiKeySourceTitle && ((title && shouldHaveBorder) || (props.title && !isLlmProviderSettings && props.title !== 'Respond Using Llm'));
 
 
   return (
