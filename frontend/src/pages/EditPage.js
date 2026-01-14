@@ -2,8 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget } from '../components/FormTemplates';
-import { editPageLayout } from './EditPageLayout';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate } from '../components/FormTemplates';
 
 // Stable widget definitions - defined outside component to prevent re-creation on re-render
 const ReadOnlyTextWidget = (props) => {
@@ -58,13 +57,14 @@ const GroupNameSelectorWidget = (props) => {
     setIsMenuOpen(false);
 
     // Extract the array index from the widget's id
-    const idMatch = props.id.match(/_(\d+)_displayName$/);
+    // New path: root_features_periodic_group_tracking_tracked_groups_0_displayName
+    const idMatch = props.id.match(/tracked_groups_(\d+)_displayName$/);
     if (idMatch && formData && setFormData) {
       const idx = parseInt(idMatch[1], 10);
       const currentData = JSON.parse(JSON.stringify(formData));
-      if (currentData?.general_config?.periodic_group_tracking?.[idx]) {
-        currentData.general_config.periodic_group_tracking[idx].groupIdentifier = group.id;
-        currentData.general_config.periodic_group_tracking[idx].displayName = group.subject;
+      if (currentData?.features?.periodic_group_tracking?.tracked_groups?.[idx]) {
+        currentData.features.periodic_group_tracking.tracked_groups[idx].groupIdentifier = group.id;
+        currentData.features.periodic_group_tracking.tracked_groups[idx].displayName = group.subject;
         setFormData(currentData);
       }
     }
@@ -122,7 +122,7 @@ const GroupNameSelectorWidget = (props) => {
   );
 };
 
-// Custom array template for periodic_group_tracking - disables Add when not connected
+// Custom array template for tracked_groups - disables Add when not connected
 // Uses formContext to access isLinked state
 const GroupTrackingArrayTemplate = (props) => {
   const { isLinked } = props.formContext || {};
@@ -208,8 +208,8 @@ const GroupTrackingArrayTemplate = (props) => {
 const CronInputWidget = (props) => {
   const { cronErrors } = props.formContext || {};
 
-  // Extract index from ID: root_general_config_periodic_group_tracking_0_cronTrackingSchedule
-  const idMatch = props.id.match(/_(\d+)_cronTrackingSchedule$/);
+  // Extract index from ID: root_features_periodic_group_tracking_tracked_groups_0_cronTrackingSchedule
+  const idMatch = props.id.match(/tracked_groups_(\d+)_cronTrackingSchedule$/);
   const index = idMatch ? parseInt(idMatch[1], 10) : -1;
   const error = cronErrors && cronErrors[index];
 
@@ -238,123 +238,8 @@ const CronInputWidget = (props) => {
   );
 };
 
-// Helper to transform schema based on the layout definition
-const transformSchema = (originalSchema) => {
-  const newSchema = JSON.parse(JSON.stringify(originalSchema));
-
-  // Patch: Fix titles for reasoning_effort and set default value
-  // LLMProviderSettings uses oneOf, so we need to patch each branch
-  const defs = newSchema.$defs || newSchema.definitions;
-  if (defs && defs.LLMProviderSettings && defs.LLMProviderSettings.oneOf) {
-    defs.LLMProviderSettings.oneOf.forEach(branch => {
-      if (branch.properties && branch.properties.reasoning_effort && branch.properties.reasoning_effort.anyOf) {
-        const re = branch.properties.reasoning_effort;
-        re.anyOf.forEach(option => {
-          // The string option (enum)
-          if (option.type === 'string' || (Array.isArray(option.type) && option.type.includes('string')) || option.enum) {
-            option.title = 'Defined';
-            // Set default so when user selects "Defined", it defaults to 'minimal'
-            option.default = 'minimal';
-          }
-          // The null option
-          else if (option.type === 'null') {
-            option.title = 'Undefined';
-          }
-        });
-      }
-    });
-  }
-
-  const newProperties = {};
-
-  // Create new group schemas based on the layout config
-  for (const groupName in editPageLayout.groups) {
-    const groupConfig = editPageLayout.groups[groupName];
-    const groupSchema = {
-      type: 'object',
-      title: groupConfig.title,
-      properties: {},
-      required: [],
-    };
-
-    // Move fields from the root schema into the new group schema
-    for (const fieldName of groupConfig.fields) {
-      if (newSchema.properties[fieldName]) {
-        groupSchema.properties[fieldName] = newSchema.properties[fieldName];
-        delete newSchema.properties[fieldName]; // Remove from root
-
-        if (newSchema.required && newSchema.required.includes(fieldName)) {
-          groupSchema.required.push(fieldName);
-          newSchema.required = newSchema.required.filter(f => f !== fieldName);
-        }
-      }
-    }
-
-    newProperties[groupName] = groupSchema;
-    if (groupSchema.required.length > 0) {
-      if (!newSchema.required) newSchema.required = [];
-      newSchema.required.push(groupName);
-    }
-  }
-
-  // Combine the new group properties with the remaining root properties
-  newSchema.properties = { ...newProperties, ...newSchema.properties };
-  newSchema.title = ''; // Remove root title
-  return newSchema;
-};
-
-// Helper to transform formData to match the new schema, based on the layout definition
-const transformDataToUI = (data) => {
-  if (!data) return data;
-  const uiData = { ...data }; // Start with a copy of all original fields
-
-  for (const groupName in editPageLayout.groups) {
-    const groupConfig = editPageLayout.groups[groupName];
-    const groupData = {}; // This will hold the fields for the new group
-
-    for (const fieldName of groupConfig.fields) {
-      // Check for the field on the original data object
-      if (data[fieldName] !== undefined) {
-        groupData[fieldName] = data[fieldName]; // Populate the group
-        delete uiData[fieldName]; // Remove the original top-level field from our final UI data
-      }
-      // This logic is to ensure that a section is still rendered even if the data is missing.
-      else if (fieldName === 'llm_provider_config') {
-        groupData[fieldName] = null;
-      }
-    }
-    // Now, assign the fully populated group to the UI data.
-    // This avoids the previous bug where we would overwrite a field with an empty
-    // object before we had a chance to process it (e.g. when groupName === fieldName).
-    uiData[groupName] = groupData;
-  }
-
-  return uiData;
-};
-
 // A template that renders nothing, used to completely hide a field including its label and required asterisk
 const NullFieldTemplate = () => null;
-
-// Helper to transform formData back to the original format for saving
-const transformDataToAPI = (uiData) => {
-  if (!uiData) return uiData;
-  const apiData = { ...uiData };
-
-  for (const groupName in editPageLayout.groups) {
-    const groupData = apiData[groupName];
-    if (groupData) {
-      // THE FIX IS HERE:
-      // We must first copy the fields from the group, then delete the group container,
-      // and only then assign the fields back. This avoids the bug where a field name
-      // is the same as the group name, causing the data to be deleted.
-      const fieldsToMove = { ...groupData };
-      delete apiData[groupName];
-      Object.assign(apiData, fieldsToMove);
-    }
-  }
-
-  return apiData;
-};
 
 
 function EditPage() {
@@ -379,7 +264,7 @@ function EditPage() {
   // Scheduled check for cron errors (polling/debounced)
   useEffect(() => {
     const timer = setTimeout(() => {
-      const tracking = formData?.general_config?.periodic_group_tracking;
+      const tracking = formData?.features?.periodic_group_tracking?.tracked_groups;
       if (tracking && Array.isArray(tracking)) {
         const newCronErrors = [];
 
@@ -409,16 +294,50 @@ function EditPage() {
         const schemaResponse = await fetch('/api/configurations/schema');
         if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
         const schemaData = await schemaResponse.json();
-        const transformedSchema = transformSchema(schemaData);
-        setSchema(transformedSchema);
+        setSchema(schemaData);
 
         let initialFormData;
         if (isNew) {
-          const initialData = {
+          // Initialize with the new structure
+          initialFormData = {
             user_id: userId,
-            respond_to_whitelist: [],
+            configurations: {
+              chat_provider_config: {
+                provider_name: 'whatsapp_baileys',
+                provider_config: {
+                  allow_group_messages: false,
+                  process_offline_messages: false
+                }
+              },
+              queue_config: {
+                max_messages: 10,
+                max_characters: 1000,
+                max_days: 1,
+                max_characters_single_message: 300
+              },
+              context_config: {
+                max_messages: 10,
+                max_characters: 1000,
+                max_days: 1,
+                max_characters_single_message: 300,
+                shared_context: true
+              }
+            },
+            features: {
+              automatic_bot_reply: {
+                enabled: false,
+                respond_to_whitelist: [],
+                respond_to_whitelist_group: []
+              },
+              periodic_group_tracking: {
+                enabled: false,
+                tracked_groups: []
+              },
+              kid_phone_safety_tracking: {
+                enabled: false
+              }
+            }
           };
-          initialFormData = transformDataToUI(initialData);
         } else {
           const dataResponse = await fetch(`/api/configurations/${userId}`);
           if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');
@@ -426,8 +345,8 @@ function EditPage() {
           const originalData = Array.isArray(data) ? data[0] : data;
 
           // Perform on-the-fly migration for old configs that don't have api_key_source
-          if (originalData.llm_provider_config && originalData.llm_provider_config.provider_config) {
-            const providerConfig = originalData.llm_provider_config.provider_config;
+          if (originalData.configurations?.llm_provider_config?.provider_config) {
+            const providerConfig = originalData.configurations.llm_provider_config.provider_config;
             if (!providerConfig.hasOwnProperty('api_key_source')) {
               if (providerConfig.api_key) {
                 providerConfig.api_key_source = 'explicit';
@@ -437,10 +356,10 @@ function EditPage() {
             }
           }
 
-          initialFormData = transformDataToUI(originalData);
+          initialFormData = originalData;
         }
         setFormData(initialFormData);
-        setJsonString(JSON.stringify(transformDataToAPI(initialFormData), null, 2));
+        setJsonString(JSON.stringify(initialFormData, null, 2));
 
       } catch (err) {
         setError(err.message);
@@ -452,7 +371,7 @@ function EditPage() {
 
   useEffect(() => {
     if (formData) {
-      setJsonString(JSON.stringify(transformDataToAPI(formData), null, 2));
+      setJsonString(JSON.stringify(formData, null, 2));
     }
   }, [formData]);
 
@@ -500,7 +419,7 @@ function EditPage() {
     try {
       // This handler is needed to work around a limitation in rjsf's handling of oneOf.
       // It doesn't automatically clear data from a previously selected oneOf branch.
-      const providerConfig = newFormData?.llm_bot_config?.llm_provider_config?.provider_config;
+      const providerConfig = newFormData?.configurations?.llm_provider_config?.provider_config;
       if (providerConfig) {
         if (providerConfig.api_key_source === 'environment') {
           // If the user selects 'environment', we must explicitly nullify the api_key.
@@ -512,7 +431,7 @@ function EditPage() {
         }
 
         // Logic for Reasoning Effort auto-selection
-        const oldProviderConfig = formData?.llm_bot_config?.llm_provider_config?.provider_config;
+        const oldProviderConfig = formData?.configurations?.llm_provider_config?.provider_config;
         const oldReasoningEffort = oldProviderConfig?.reasoning_effort;
         const newReasoningEffort = providerConfig.reasoning_effort;
 
@@ -528,7 +447,7 @@ function EditPage() {
       }
 
       // Auto-populate displayName when groupIdentifier is selected
-      const tracking = newFormData?.general_config?.periodic_group_tracking;
+      const tracking = newFormData?.features?.periodic_group_tracking?.tracked_groups;
       if (tracking && Array.isArray(tracking) && availableGroups.length > 0) {
         tracking.forEach(item => {
           if (item.groupIdentifier) {
@@ -550,8 +469,7 @@ function EditPage() {
     setJsonString(newJsonString);
     try {
       const parsedData = JSON.parse(newJsonString);
-      const uiData = transformDataToUI(parsedData);
-      setFormData(uiData);
+      setFormData(parsedData);
       setJsonError(null);
     } catch (err) {
       setJsonError('Invalid JSON: ' + err.message);
@@ -566,7 +484,7 @@ function EditPage() {
       setCronErrors([]); // Reset errors
       let hasCronErrors = false;
       const newCronErrors = [];
-      const tracking = formData?.general_config?.periodic_group_tracking;
+      const tracking = formData?.features?.periodic_group_tracking?.tracked_groups;
       if (tracking && Array.isArray(tracking)) {
         for (let i = 0; i < tracking.length; i++) {
           const cron = tracking[i].cronTrackingSchedule;
@@ -586,7 +504,7 @@ function EditPage() {
         setTimeout(() => {
           const firstIndex = newCronErrors.findIndex(e => e);
           if (firstIndex !== -1) {
-            const elementId = `root_general_config_periodic_group_tracking_${firstIndex}_cronTrackingSchedule`;
+            const elementId = `root_features_periodic_group_tracking_tracked_groups_${firstIndex}_cronTrackingSchedule`;
             const element = document.getElementById(elementId);
             if (element) {
               element.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -597,13 +515,11 @@ function EditPage() {
         return;
       }
 
-      const apiDataFromUser = transformDataToAPI(formData);
-
-      if (!isNew && apiDataFromUser.user_id !== userId) {
+      if (!isNew && formData.user_id !== userId) {
         throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
       }
 
-      const finalApiData = { ...apiDataFromUser, user_id: userId };
+      const finalApiData = { ...formData, user_id: userId };
 
       const response = await fetch(`/api/configurations/${userId}`, {
         method: 'PUT',
@@ -638,7 +554,7 @@ function EditPage() {
       let hasCronErrors = false;
       const newCronErrors = [];
       const currentFormData = formData;
-      const tracking = currentFormData?.general_config?.periodic_group_tracking;
+      const tracking = currentFormData?.features?.periodic_group_tracking?.tracked_groups;
       if (tracking && Array.isArray(tracking)) {
         for (let i = 0; i < tracking.length; i++) {
           const cron = tracking[i].cronTrackingSchedule;
@@ -658,7 +574,7 @@ function EditPage() {
         setTimeout(() => {
           const firstIndex = newCronErrors.findIndex(e => e);
           if (firstIndex !== -1) {
-            const elementId = `root_general_config_periodic_group_tracking_${firstIndex}_cronTrackingSchedule`;
+            const elementId = `root_features_periodic_group_tracking_tracked_groups_${firstIndex}_cronTrackingSchedule`;
             const element = document.getElementById(elementId);
             if (element) {
               element.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -670,13 +586,11 @@ function EditPage() {
       }
 
       // First, save the configuration. We get the form data from the ref.
-      const apiDataFromUser = transformDataToAPI(formData);
-
-      if (!isNew && apiDataFromUser.user_id !== userId) {
+      if (!isNew && formData.user_id !== userId) {
         throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
       }
 
-      const finalApiData = { ...apiDataFromUser, user_id: userId };
+      const finalApiData = { ...formData, user_id: userId };
 
       const saveResponse = await fetch(`/api/configurations/${userId}`, {
         method: 'PUT',
@@ -718,7 +632,7 @@ function EditPage() {
       let hasCronErrors = false;
       const newCronErrors = [];
       const currentFormData = formData;
-      const tracking = currentFormData?.general_config?.periodic_group_tracking;
+      const tracking = currentFormData?.features?.periodic_group_tracking?.tracked_groups;
       if (tracking && Array.isArray(tracking)) {
         for (let i = 0; i < tracking.length; i++) {
           const cron = tracking[i].cronTrackingSchedule;
@@ -738,7 +652,7 @@ function EditPage() {
         setTimeout(() => {
           const firstIndex = newCronErrors.findIndex(e => e);
           if (firstIndex !== -1) {
-            const elementId = `root_general_config_periodic_group_tracking_${firstIndex}_cronTrackingSchedule`;
+            const elementId = `root_features_periodic_group_tracking_tracked_groups_${firstIndex}_cronTrackingSchedule`;
             const element = document.getElementById(elementId);
             if (element) {
               element.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -750,13 +664,11 @@ function EditPage() {
       }
 
       // Save the configuration first
-      const apiDataFromUser = transformDataToAPI(formData);
-
-      if (!isNew && apiDataFromUser.user_id !== userId) {
+      if (!isNew && formData.user_id !== userId) {
         throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
       }
 
-      const finalApiData = { ...apiDataFromUser, user_id: userId };
+      const finalApiData = { ...formData, user_id: userId };
 
       const saveResponse = await fetch(`/api/configurations/${userId}`, {
         method: 'PUT',
@@ -809,21 +721,6 @@ function EditPage() {
     return { valid: true, error: null };
   };
 
-  // Custom validation for cron expressions
-  const customValidate = (formData, errors) => {
-    const tracking = formData?.general_config?.periodic_group_tracking;
-    if (tracking && Array.isArray(tracking)) {
-      tracking.forEach((item, index) => {
-        const cron = item.cronTrackingSchedule;
-        const validation = validateCronExpression(cron);
-        if (!validation.valid && errors.general_config?.periodic_group_tracking?.[index]?.cronTrackingSchedule) {
-          errors.general_config.periodic_group_tracking[index].cronTrackingSchedule.addError(validation.error);
-        }
-      });
-    }
-    return errors;
-  };
-
   if (error) {
     return <div>Error: {error}</div>;
   }
@@ -849,53 +746,31 @@ function EditPage() {
 
   const uiSchema = {
     "ui:classNames": "form-container",
-    general_config: {
+    user_id: {
+      "ui:FieldTemplate": NullFieldTemplate
+    },
+    // General Configurations section
+    configurations: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
-      user_id: {
-        "ui:FieldTemplate": NullFieldTemplate
-      },
-      respond_to_whitelist: {
-        "ui:title": " "
-      },
-      respond_to_whitelist_group: {
-        "ui:title": " "
-      },
-      periodic_group_tracking: {
-        "ui:title": " ",
-        "ui:ArrayFieldTemplate": GroupTrackingArrayTemplate,
-        items: {
-          "ui:ObjectFieldTemplate": InlineObjectFieldTemplate,
-          "ui:order": ["displayName", "groupIdentifier", "cronTrackingSchedule"],
-          displayName: {
-            "ui:FieldTemplate": InlineFieldTemplate,
-            "ui:title": "Name",
-            "ui:widget": "GroupNameSelectorWidget"
-          },
-          groupIdentifier: {
-            "ui:FieldTemplate": InlineFieldTemplate,
-            "ui:title": "Identifier",
-            "ui:widget": "ReadOnlyTextWidget"
-          },
-          cronTrackingSchedule: {
-            "ui:FieldTemplate": InlineFieldTemplate,
-            "ui:title": "Schedule",
-            "ui:widget": "CronInputWidget",
-            "ui:options": { width: "90px" },
-            "ui:placeholder": "0/15 * * * *"
-          }
+      "ui:title": "General Configurations",
+      chat_provider_config: {
+        "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
+        "ui:title": "Chat Provider Config",
+        provider_config: {
+          "ui:title": " "
         }
-      }
-    },
-    chat_provider_config: {
-      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
-      "chat_provider_config": {
-        "ui:title": " "
-      }
-    },
-    llm_bot_config: {
-      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
+      },
+      queue_config: {
+        "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
+        "ui:title": "Queue Config"
+      },
+      context_config: {
+        "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
+        "ui:title": "Context Config"
+      },
       llm_provider_config: {
-        "ui:title": "Llm Mode",
+        "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
+        "ui:title": "LLM Provider Config",
         provider_config: {
           "ui:title": "API Key Source",
           "ui:options": {
@@ -920,16 +795,52 @@ function EditPage() {
         }
       }
     },
-    context_config: {
+    // Feature Configurations section
+    features: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
-      "context_config": {
-        "ui:title": " "
-      }
-    },
-    queue_config: {
-      "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
-      "queue_config": {
-        "ui:title": " "
+      "ui:title": "Feature Configurations",
+      automatic_bot_reply: {
+        "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
+        "ui:title": "Automatic Bot Reply",
+        respond_to_whitelist: {
+          "ui:title": " "
+        },
+        respond_to_whitelist_group: {
+          "ui:title": " "
+        }
+      },
+      periodic_group_tracking: {
+        "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
+        "ui:title": "Periodic Group Tracking",
+        tracked_groups: {
+          "ui:title": " ",
+          "ui:ArrayFieldTemplate": GroupTrackingArrayTemplate,
+          items: {
+            "ui:ObjectFieldTemplate": InlineObjectFieldTemplate,
+            "ui:order": ["displayName", "groupIdentifier", "cronTrackingSchedule"],
+            displayName: {
+              "ui:FieldTemplate": InlineFieldTemplate,
+              "ui:title": "Name",
+              "ui:widget": "GroupNameSelectorWidget"
+            },
+            groupIdentifier: {
+              "ui:FieldTemplate": InlineFieldTemplate,
+              "ui:title": "Identifier",
+              "ui:widget": "ReadOnlyTextWidget"
+            },
+            cronTrackingSchedule: {
+              "ui:FieldTemplate": InlineFieldTemplate,
+              "ui:title": "Schedule",
+              "ui:widget": "CronInputWidget",
+              "ui:options": { width: "90px" },
+              "ui:placeholder": "0/15 * * * *"
+            }
+          }
+        }
+      },
+      kid_phone_safety_tracking: {
+        "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
+        "ui:title": "Kid Phone Safety Tracking"
       }
     }
   };
@@ -983,6 +894,7 @@ function EditPage() {
               <div style={{ ...innerPanelStyle, display: 'flex', flexDirection: 'column' }}>
                 <h3>Live JSON Editor</h3>
                 <textarea
+                  aria-label="Live JSON Editor"
                   style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.9rem', border: jsonError ? '1px solid red' : '1px solid #ccc', resize: 'vertical', padding: '0.5rem' }}
                   value={jsonString}
                   onChange={handleJsonChange}

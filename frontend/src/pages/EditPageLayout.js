@@ -1,30 +1,53 @@
 // This file defines the layout of the Edit Page.
-// By editing this file, you can change which fields appear in which collapsible section.
+// The structure has two main collapsible sections: General Configurations and Feature Configurations.
+// Each main section contains sub-sections that are also collapsible.
 
 export const editPageLayout = {
-  // Each key represents a new group that will be created in the form.
-  // The 'title' will be the display name of the collapsible section.
-  // The 'fields' array lists the top-level properties from the schema that should be moved into this group.
+  // Main groups at the top level
   groups: {
-    general_config: {
-      title: 'General Config',
-      fields: ['user_id', 'respond_to_whitelist', 'respond_to_whitelist_group', 'periodic_group_tracking'],
+    // General Configurations - contains system settings
+    configurations: {
+      title: 'General Configurations',
+      fields: ['configurations'],
+      // Sub-groups define the collapsible sub-sections within configurations
+      subGroups: {
+        chat_provider_config: {
+          title: 'Chat Provider Config',
+          description: 'Settings for the chat provider connection'
+        },
+        queue_config: {
+          title: 'Queue Config',
+          description: 'Message queue settings'
+        },
+        context_config: {
+          title: 'Context Config',
+          description: 'LLM context window settings'
+        },
+        llm_provider_config: {
+          title: 'LLM Provider Config',
+          description: 'Language model provider settings'
+        }
+      }
     },
-    llm_bot_config: {
-      title: 'Llm Provider Config',
-      fields: ['llm_provider_config'],
-    },
-    context_config: {
-      title: 'Llm Context Configuration',
-      fields: ['context_config'],
-    },
-    chat_provider_config: {
-      title: 'Chat Provider Config',
-      fields: ['chat_provider_config'],
-    },
-    queue_config: {
-      title: 'Queue Config',
-      fields: ['queue_config'],
-    },
-  },
+    // Feature Configurations - contains toggleable feature modules
+    features: {
+      title: 'Feature Configurations',
+      fields: ['features'],
+      // Sub-groups define the collapsible sub-sections for each feature
+      subGroups: {
+        automatic_bot_reply: {
+          title: 'Automatic Bot Reply',
+          description: 'Automatically reply to whitelisted contacts and groups'
+        },
+        periodic_group_tracking: {
+          title: 'Periodic Group Tracking',
+          description: 'Track group activities on a schedule'
+        },
+        kid_phone_safety_tracking: {
+          title: 'Kid Phone Safety Tracking',
+          description: 'Monitor messages for child safety'
+        }
+      }
+    }
+  }
 };

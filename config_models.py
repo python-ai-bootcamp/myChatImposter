@@ -53,12 +53,38 @@ class PeriodicGroupTrackingConfig(BaseModel):
     cronTrackingSchedule: str = Field(..., title="Cron Schedule", description="Cron expression for tracking frequency.")
     displayName: str = Field(..., title="Display Name", description="User-friendly name of the group.")
 
-class UserConfiguration(BaseModel):
-    user_id: str
+# Feature Models
+class AutomaticBotReplyFeature(BaseModel):
+    """Feature for automatic bot replies to whitelisted contacts and groups."""
+    enabled: bool = Field(default=False, title="Enabled", description="Enable automatic bot replies.")
     respond_to_whitelist: List[str] = Field(default_factory=list, title="Respond To Direct Contact Whitelist")
     respond_to_whitelist_group: List[str] = Field(default_factory=list, title="Respond To Group Whitelist")
-    periodic_group_tracking: List[PeriodicGroupTrackingConfig] = Field(default_factory=list, title="Periodic Group Tracking")
-    chat_provider_config: ChatProviderConfig
-    queue_config: QueueConfig
-    context_config: ContextConfig = Field(default_factory=ContextConfig)
-    llm_provider_config: Optional[LLMProviderConfig] = None
+
+class PeriodicGroupTrackingFeature(BaseModel):
+    """Feature for periodic tracking of group activities."""
+    enabled: bool = Field(default=False, title="Enabled", description="Enable periodic group tracking.")
+    tracked_groups: List[PeriodicGroupTrackingConfig] = Field(default_factory=list, title="Tracked Groups")
+
+class KidPhoneSafetyTrackingFeature(BaseModel):
+    """Feature for tracking messages for kid phone safety."""
+    enabled: bool = Field(default=False, title="Enabled", description="Enable kid phone safety tracking.")
+
+class FeaturesConfiguration(BaseModel):
+    """Container for all feature configurations."""
+    automatic_bot_reply: AutomaticBotReplyFeature = Field(default_factory=AutomaticBotReplyFeature, title="Automatic Bot Reply")
+    periodic_group_tracking: PeriodicGroupTrackingFeature = Field(default_factory=PeriodicGroupTrackingFeature, title="Periodic Group Tracking")
+    kid_phone_safety_tracking: KidPhoneSafetyTrackingFeature = Field(default_factory=KidPhoneSafetyTrackingFeature, title="Kid Phone Safety Tracking")
+
+# General Configuration Models
+class ConfigurationsSettings(BaseModel):
+    """Container for general configuration settings."""
+    chat_provider_config: ChatProviderConfig = Field(..., title="Chat Provider Config")
+    queue_config: QueueConfig = Field(default_factory=QueueConfig, title="Queue Config")
+    context_config: ContextConfig = Field(default_factory=ContextConfig, title="Context Config")
+    llm_provider_config: Optional[LLMProviderConfig] = Field(default=None, title="LLM Provider Config")
+
+class UserConfiguration(BaseModel):
+    user_id: str
+    configurations: ConfigurationsSettings = Field(..., title="General Configurations")
+    features: FeaturesConfiguration = Field(default_factory=FeaturesConfiguration, title="Feature Configurations")
+

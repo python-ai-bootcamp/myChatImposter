@@ -277,14 +277,14 @@ class ChatbotInstance:
         console_log(f"INSTANCE ({self.user_id}): Initializing components...")
 
         # 1. Initialize Queue (Essential)
-        self.whitelist = self.config.respond_to_whitelist
-        self.whitelist_group = self.config.respond_to_whitelist_group
-        chat_provider_config = self.config.chat_provider_config
+        self.whitelist = self.config.features.automatic_bot_reply.respond_to_whitelist
+        self.whitelist_group = self.config.features.automatic_bot_reply.respond_to_whitelist_group
+        chat_provider_config = self.config.configurations.chat_provider_config
         provider_name = chat_provider_config.provider_name
         self.user_queues_manager = UserQueuesManager(
             user_id=self.user_id,
             provider_name=provider_name,
-            queue_config=self.config.queue_config,
+            queue_config=self.config.configurations.queue_config,
             queues_collection=self._queues_collection,
             main_loop=self.main_loop
         )
@@ -325,22 +325,22 @@ class ChatbotInstance:
         console_log(f"INSTANCE ({self.user_id}): Initialized chat provider '{provider_name}'.")
 
         # 3. Initialize Chatbot Model (Optional)
-        if self.config.llm_provider_config:
+        if self.config.configurations.llm_provider_config:
             self.mode = "fully_functional"
-            llm_provider_name = self.config.llm_provider_config.provider_name
+            llm_provider_name = self.config.configurations.llm_provider_config.provider_name
             llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
             LlmProviderClass = _find_provider_class(llm_provider_module, BaseLlmProvider)
             if not LlmProviderClass:
                 raise ImportError(f"Could not find a valid LLM provider class in module 'llm_providers.{llm_provider_name}'")
 
-            llm_provider = LlmProviderClass(config=self.config.llm_provider_config, user_id=self.user_id)
+            llm_provider = LlmProviderClass(config=self.config.configurations.llm_provider_config, user_id=self.user_id)
             llm_instance = llm_provider.get_llm()
             system_prompt = llm_provider.get_system_prompt()
             self.chatbot_model = ChatbotModel(
                 self.user_id,
                 llm_instance,
                 system_prompt,
-                self.config.context_config
+                self.config.configurations.context_config
             )
             console_log(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.")
         else:

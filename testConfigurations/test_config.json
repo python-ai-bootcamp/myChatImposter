@@ -1,27 +1,51 @@
 {
   "user_id": "test_user",
-  "respond_to_whitelist": [],
-  "chat_provider_config": {
-    "provider_name": "dummy",
-    "allow_group_messages": false,
-    "process_offline_messages": false
+  "configurations": {
+    "chat_provider_config": {
+      "provider_name": "dummy",
+      "provider_config": {
+        "allow_group_messages": false,
+        "process_offline_messages": false
+      }
+    },
+    "queue_config": {
+      "max_messages": 5,
+      "max_characters": 100,
+      "max_days": 1,
+      "max_characters_single_message": 300
+    },
+    "context_config": {
+      "max_messages": 10,
+      "max_characters": 1000,
+      "max_days": 1,
+      "max_characters_single_message": 300,
+      "shared_context": true
+    },
+    "llm_provider_config": {
+      "provider_name": "fakeLlm",
+      "provider_config": {
+        "api_key": null,
+        "model": "fake",
+        "temperature": 0.7,
+        "system": "Test system prompt for test_user",
+        "response_array": [
+          "Test response"
+        ]
+      }
+    }
   },
-  "queue_config": {
-    "max_messages": 5,
-    "max_characters": 100,
-    "max_days": 1,
-    "max_characters_single_message": 300
-  },
-  "llm_provider_config": {
-    "provider_name": "fakeLlm",
-    "api_key": null,
-    "model": "fake",
-    "temperature": 0.7,
-    "system": "Test system prompt for test_user",
-    "provider_config": {
-      "response_array": [
-        "Test response"
-      ]
+  "features": {
+    "automatic_bot_reply": {
+      "enabled": false,
+      "respond_to_whitelist": [],
+      "respond_to_whitelist_group": []
+    },
+    "periodic_group_tracking": {
+      "enabled": false,
+      "tracked_groups": []
+    },
+    "kid_phone_safety_tracking": {
+      "enabled": false
     }
   }
 }

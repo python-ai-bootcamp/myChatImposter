@@ -148,14 +148,21 @@ async def get_configuration_schema():
     defs_key = '$defs' if '$defs' in schema else 'definitions'
 
     # Add descriptive titles to the oneOf choices for llm_provider_config for the dropdown
-    if 'llm_provider_config' in schema['properties']:
-        llm_config_schema = schema['properties']['llm_provider_config']
-        if 'anyOf' in llm_config_schema:
-            for item in llm_config_schema['anyOf']:
-                if '$ref' in item:
-                    item['title'] = "Respond Using Llm"
-                elif item.get('type') == 'null':
-                    item['title'] = "Collection Only"
+    # Navigate to llm_provider_config inside configurations
+    configs_schema = schema['properties'].get('configurations', {})
+    if '$ref' in configs_schema:
+        # Get ConfigurationsSettings definition
+        ref_name = configs_schema['$ref'].split('/')[-1]
+        if defs_key in schema and ref_name in schema[defs_key]:
+            configs_def = schema[defs_key][ref_name]
+            if 'properties' in configs_def and 'llm_provider_config' in configs_def['properties']:
+                llm_config_schema = configs_def['properties']['llm_provider_config']
+                if 'anyOf' in llm_config_schema:
+                    for item in llm_config_schema['anyOf']:
+                        if '$ref' in item:
+                            item['title'] = "Respond Using Llm"
+                        elif item.get('type') == 'null':
+                            item['title'] = "Collection Only"
 
     # To fix the conditional API key, we will restructure the entire LLMProviderSettings schema.
     # Instead of using dependencies, we will define two distinct objects in a oneOf.
@@ -414,7 +421,7 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
 
         # Update group tracker with new config
         if group_tracker:
-            group_tracker.update_jobs(user_id, config.periodic_group_tracking)
+            group_tracker.update_jobs(user_id, config.features.periodic_group_tracking.tracked_groups)
 
         return {
             "successful": [{
@@ -676,7 +683,7 @@ async def reload_chatbot(user_id: str):
 
         # Update group tracker with new config
         if group_tracker:
-            group_tracker.update_jobs(user_id, config.periodic_group_tracking)
+            group_tracker.update_jobs(user_id, config.features.periodic_group_tracking.tracked_groups)
 
         console_log(f"API: Instance {new_instance_id} for user '{user_id}' has been successfully reloaded.")
 

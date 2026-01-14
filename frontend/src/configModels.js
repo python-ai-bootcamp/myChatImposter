@@ -20,10 +20,10 @@ class ChatProviderSettings {
 
   static validate(data) {
     if (typeof data.allow_group_messages !== 'boolean') {
-      throw new ValidationError('allow_group_messages must be a boolean.', 'chat_provider_config.provider_config.allow_group_messages');
+      throw new ValidationError('allow_group_messages must be a boolean.', 'configurations.chat_provider_config.provider_config.allow_group_messages');
     }
     if (typeof data.process_offline_messages !== 'boolean') {
-      throw new ValidationError('process_offline_messages must be a boolean.', 'chat_provider_config.provider_config.process_offline_messages');
+      throw new ValidationError('process_offline_messages must be a boolean.', 'configurations.chat_provider_config.provider_config.process_offline_messages');
     }
     return new ChatProviderSettings(data);
   }
@@ -37,10 +37,10 @@ class ChatProviderConfig {
 
   static validate(data) {
     if (!data.provider_name || typeof data.provider_name !== 'string') {
-      throw new ValidationError('provider_name is required and must be a string.', 'chat_provider_config.provider_name');
+      throw new ValidationError('provider_name is required and must be a string.', 'configurations.chat_provider_config.provider_name');
     }
     if (!data.provider_config || typeof data.provider_config !== 'object') {
-      throw new ValidationError('provider_config is required.', 'chat_provider_config.provider_config');
+      throw new ValidationError('provider_config is required.', 'configurations.chat_provider_config.provider_config');
     }
     ChatProviderSettings.validate(data.provider_config);
     return new ChatProviderConfig(data);
@@ -57,16 +57,16 @@ class QueueConfig {
 
   static validate(data) {
     if (typeof data.max_messages !== 'number') {
-      throw new ValidationError('max_messages must be a number.', 'queue_config.max_messages');
+      throw new ValidationError('max_messages must be a number.', 'configurations.queue_config.max_messages');
     }
     if (typeof data.max_characters !== 'number') {
-      throw new ValidationError('max_characters must be a number.', 'queue_config.max_characters');
+      throw new ValidationError('max_characters must be a number.', 'configurations.queue_config.max_characters');
     }
     if (typeof data.max_days !== 'number') {
-      throw new ValidationError('max_days must be a number.', 'queue_config.max_days');
+      throw new ValidationError('max_days must be a number.', 'configurations.queue_config.max_days');
     }
     if (typeof data.max_characters_single_message !== 'number') {
-      throw new ValidationError('max_characters_single_message must be a number.', 'queue_config.max_characters_single_message');
+      throw new ValidationError('max_characters_single_message must be a number.', 'configurations.queue_config.max_characters_single_message');
     }
     return new QueueConfig(data);
   }
@@ -84,16 +84,16 @@ class LLMProviderSettings {
 
   static validate(data) {
     if (data.api_key !== null && typeof data.api_key !== 'string') {
-      throw new ValidationError('api_key must be a string or null.', 'llm_provider_config.provider_config.api_key');
+      throw new ValidationError('api_key must be a string or null.', 'configurations.llm_provider_config.provider_config.api_key');
     }
     if (!data.model || typeof data.model !== 'string') {
-      throw new ValidationError('model is required and must be a string.', 'llm_provider_config.provider_config.model');
+      throw new ValidationError('model is required and must be a string.', 'configurations.llm_provider_config.provider_config.model');
     }
     if (typeof data.temperature !== 'number') {
-      throw new ValidationError('temperature must be a number.', 'llm_provider_config.provider_config.temperature');
+      throw new ValidationError('temperature must be a number.', 'configurations.llm_provider_config.provider_config.temperature');
     }
     if (typeof data.system !== 'string') {
-      throw new ValidationError('system must be a string.', 'llm_provider_config.provider_config.system');
+      throw new ValidationError('system must be a string.', 'configurations.llm_provider_config.provider_config.system');
     }
     return new LLMProviderSettings(data);
   }
@@ -107,23 +107,94 @@ class LLMProviderConfig {
 
   static validate(data) {
     if (!data.provider_name || typeof data.provider_name !== 'string') {
-      throw new ValidationError('provider_name is required and must be a string.', 'llm_provider_config.provider_name');
+      throw new ValidationError('provider_name is required and must be a string.', 'configurations.llm_provider_config.provider_name');
     }
     if (!data.provider_config || typeof data.provider_config !== 'object') {
-      throw new ValidationError('provider_config is required.', 'llm_provider_config.provider_config');
+      throw new ValidationError('provider_config is required.', 'configurations.llm_provider_config.provider_config');
     }
     LLMProviderSettings.validate(data.provider_config);
     return new LLMProviderConfig(data);
   }
 }
 
-class UserConfiguration {
-  constructor({ user_id, respond_to_whitelist = [], respond_to_whitelist_group = [], chat_provider_config, queue_config, llm_provider_config = null }) {
-    this.user_id = user_id;
+// Feature Classes
+class AutomaticBotReplyFeature {
+  constructor({ enabled = false, respond_to_whitelist = [], respond_to_whitelist_group = [] }) {
+    this.enabled = enabled;
     this.respond_to_whitelist = respond_to_whitelist;
     this.respond_to_whitelist_group = respond_to_whitelist_group;
+  }
+
+  static validate(data) {
+    if (typeof data.enabled !== 'boolean') {
+      throw new ValidationError('enabled must be a boolean.', 'features.automatic_bot_reply.enabled');
+    }
+    if (!Array.isArray(data.respond_to_whitelist)) {
+      throw new ValidationError('respond_to_whitelist must be an array.', 'features.automatic_bot_reply.respond_to_whitelist');
+    }
+    if (!Array.isArray(data.respond_to_whitelist_group)) {
+      throw new ValidationError('respond_to_whitelist_group must be an array.', 'features.automatic_bot_reply.respond_to_whitelist_group');
+    }
+    return new AutomaticBotReplyFeature(data);
+  }
+}
+
+class PeriodicGroupTrackingFeature {
+  constructor({ enabled = false, tracked_groups = [] }) {
+    this.enabled = enabled;
+    this.tracked_groups = tracked_groups;
+  }
+
+  static validate(data) {
+    if (typeof data.enabled !== 'boolean') {
+      throw new ValidationError('enabled must be a boolean.', 'features.periodic_group_tracking.enabled');
+    }
+    if (!Array.isArray(data.tracked_groups)) {
+      throw new ValidationError('tracked_groups must be an array.', 'features.periodic_group_tracking.tracked_groups');
+    }
+    return new PeriodicGroupTrackingFeature(data);
+  }
+}
+
+class KidPhoneSafetyTrackingFeature {
+  constructor({ enabled = false }) {
+    this.enabled = enabled;
+  }
+
+  static validate(data) {
+    if (typeof data.enabled !== 'boolean') {
+      throw new ValidationError('enabled must be a boolean.', 'features.kid_phone_safety_tracking.enabled');
+    }
+    return new KidPhoneSafetyTrackingFeature(data);
+  }
+}
+
+class FeaturesConfiguration {
+  constructor({ automatic_bot_reply, periodic_group_tracking, kid_phone_safety_tracking }) {
+    this.automatic_bot_reply = new AutomaticBotReplyFeature(automatic_bot_reply || {});
+    this.periodic_group_tracking = new PeriodicGroupTrackingFeature(periodic_group_tracking || {});
+    this.kid_phone_safety_tracking = new KidPhoneSafetyTrackingFeature(kid_phone_safety_tracking || {});
+  }
+
+  static validate(data) {
+    if (data.automatic_bot_reply) {
+      AutomaticBotReplyFeature.validate(data.automatic_bot_reply);
+    }
+    if (data.periodic_group_tracking) {
+      PeriodicGroupTrackingFeature.validate(data.periodic_group_tracking);
+    }
+    if (data.kid_phone_safety_tracking) {
+      KidPhoneSafetyTrackingFeature.validate(data.kid_phone_safety_tracking);
+    }
+    return new FeaturesConfiguration(data);
+  }
+}
+
+class ConfigurationsSettings {
+  constructor({ chat_provider_config, queue_config, context_config, llm_provider_config = null }) {
     this.chat_provider_config = new ChatProviderConfig(chat_provider_config);
-    this.queue_config = new QueueConfig(queue_config);
+    this.queue_config = new QueueConfig(queue_config || {});
+    this.context_config = context_config || {};
     if (llm_provider_config) {
       this.llm_provider_config = new LLMProviderConfig(llm_provider_config);
     } else {
@@ -132,31 +203,45 @@ class UserConfiguration {
   }
 
   static validate(data) {
-    if (!data.user_id || typeof data.user_id !== 'string') {
-      throw new ValidationError('user_id is required and must be a string.', 'user_id');
-    }
-    if (!Array.isArray(data.respond_to_whitelist)) {
-      throw new ValidationError('respond_to_whitelist must be an array.', 'respond_to_whitelist');
-    }
-    if (!Array.isArray(data.respond_to_whitelist_group)) {
-      throw new ValidationError('respond_to_whitelist_group must be an array.', 'respond_to_whitelist_group');
-    }
     if (!data.chat_provider_config || typeof data.chat_provider_config !== 'object') {
-      throw new ValidationError('chat_provider_config is required.', 'chat_provider_config');
+      throw new ValidationError('chat_provider_config is required.', 'configurations.chat_provider_config');
     }
     ChatProviderConfig.validate(data.chat_provider_config);
 
-    if (!data.queue_config || typeof data.queue_config !== 'object') {
-      throw new ValidationError('queue_config is required.', 'queue_config');
-    }
-    QueueConfig.validate(data.queue_config);
-
-    if (data.llm_provider_config !== null && (typeof data.llm_provider_config !== 'object' || data.llm_provider_config === undefined)) {
-        throw new ValidationError('llm_provider_config must be an object or null.', 'llm_provider_config');
+    if (data.queue_config && typeof data.queue_config === 'object') {
+      QueueConfig.validate(data.queue_config);
     }
 
-    if (data.llm_provider_config) {
+    if (data.llm_provider_config !== null && data.llm_provider_config !== undefined) {
+      if (typeof data.llm_provider_config !== 'object') {
+        throw new ValidationError('llm_provider_config must be an object or null.', 'configurations.llm_provider_config');
+      }
       LLMProviderConfig.validate(data.llm_provider_config);
+    }
+
+    return new ConfigurationsSettings(data);
+  }
+}
+
+class UserConfiguration {
+  constructor({ user_id, configurations, features }) {
+    this.user_id = user_id;
+    this.configurations = new ConfigurationsSettings(configurations || {});
+    this.features = new FeaturesConfiguration(features || {});
+  }
+
+  static validate(data) {
+    if (!data.user_id || typeof data.user_id !== 'string') {
+      throw new ValidationError('user_id is required and must be a string.', 'user_id');
+    }
+
+    if (!data.configurations || typeof data.configurations !== 'object') {
+      throw new ValidationError('configurations is required.', 'configurations');
+    }
+    ConfigurationsSettings.validate(data.configurations);
+
+    if (data.features && typeof data.features === 'object') {
+      FeaturesConfiguration.validate(data.features);
     }
 
     return new UserConfiguration(data);

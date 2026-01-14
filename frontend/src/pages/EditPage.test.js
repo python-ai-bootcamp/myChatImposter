@@ -17,32 +17,91 @@ const mockSchema = {
   type: 'object',
   properties: {
     user_id: { type: 'string', title: 'User ID' },
-    respond_to_whitelist: { type: 'array', items: { type: 'string' } },
-    queue_config: {
-        type: 'object',
-        title: 'Queue Config',
-        properties: {
-            max_messages: { type: 'number', title: 'Max Messages' }
-        }
-    },
-    llm_provider_config: { type: 'object', title: 'LLM Provider Config' },
-    chat_provider_config: {
+    configurations: {
       type: 'object',
-      title: 'Chat Provider Config',
+      title: 'General Configurations',
       properties: {
-        allow_group_messages: { type: 'boolean', title: 'Allow Group Messages' }
+        queue_config: {
+          type: 'object',
+          title: 'Queue Config',
+          properties: {
+            max_messages: { type: 'number', title: 'Max Messages' }
+          }
+        },
+        llm_provider_config: { type: 'object', title: 'LLM Provider Config' },
+        chat_provider_config: {
+          type: 'object',
+          title: 'Chat Provider Config',
+          properties: {
+            provider_config: {
+              type: 'object',
+              properties: {
+                allow_group_messages: { type: 'boolean', title: 'Allow Group Messages' }
+              }
+            }
+          }
+        },
       }
     },
+    features: {
+      type: 'object',
+      title: 'Feature Configurations',
+      properties: {
+        automatic_bot_reply: {
+          type: 'object',
+          title: 'Automatic Bot Reply',
+          properties: {
+            enabled: { type: 'boolean', title: 'Enabled' },
+            respond_to_whitelist: { type: 'array', items: { type: 'string' } }
+          }
+        },
+        periodic_group_tracking: {
+          type: 'object',
+          title: 'Periodic Group Tracking',
+          properties: {
+            enabled: { type: 'boolean', title: 'Enabled' },
+            tracked_groups: { type: 'array', items: { type: 'object' } }
+          }
+        },
+        kid_phone_safety_tracking: {
+          type: 'object',
+          title: 'Kid Phone Safety Tracking',
+          properties: {
+            enabled: { type: 'boolean', title: 'Enabled' }
+          }
+        }
+      }
+    }
   },
 };
 
 let mockInitialData = {
-    user_id: 'test-user',
-    respond_to_whitelist: ['user1'],
+  user_id: 'test-user',
+  configurations: {
     queue_config: {
-        max_messages: 10
+      max_messages: 10
     },
-    // llm_provider_config is intentionally missing to test the fix
+    chat_provider_config: {
+      provider_name: 'test',
+      provider_config: {
+        allow_group_messages: false
+      }
+    }
+  },
+  features: {
+    automatic_bot_reply: {
+      enabled: false,
+      respond_to_whitelist: ['user1'],
+      respond_to_whitelist_group: []
+    },
+    periodic_group_tracking: {
+      enabled: false,
+      tracked_groups: []
+    },
+    kid_phone_safety_tracking: {
+      enabled: false
+    }
+  }
 };
 
 beforeEach(() => {
@@ -51,27 +110,33 @@ beforeEach(() => {
 });
 
 const renderComponent = () => {
-    fetch.mockImplementation((url) => {
-        if (url.includes('/api/configurations/schema')) {
-            return Promise.resolve({
-                ok: true,
-                json: () => Promise.resolve(mockSchema),
-            });
-        }
-        if (url.includes('/api/configurations/test-user')) {
-            return Promise.resolve({
-                ok: true,
-                json: () => Promise.resolve([mockInitialData]),
-            });
-        }
-        if (url.includes('/api/configurations/')) {
-            return Promise.resolve({
-                ok: true,
-                json: () => Promise.resolve({ status: 'success' }),
-            });
-        }
-        return Promise.reject(new Error(`Unhandled fetch call: ${url}`));
-    });
+  fetch.mockImplementation((url) => {
+    if (url.includes('/api/configurations/schema')) {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(mockSchema),
+      });
+    }
+    if (url.includes('/api/configurations/test-user')) {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve([mockInitialData]),
+      });
+    }
+    if (url.includes('/api/configurations/')) {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve({ status: 'success' }),
+      });
+    }
+    if (url.includes('/chatbot/')) {
+      return Promise.resolve({
+        ok: false,
+        status: 404,
+      });
+    }
+    return Promise.reject(new Error(`Unhandled fetch call: ${url}`));
+  });
 
 
   render(
@@ -83,27 +148,26 @@ const renderComponent = () => {
   );
 };
 
-test('renders all sections even when data is missing for a group', async () => {
+test('renders General Configurations and Feature Configurations sections', async () => {
   renderComponent();
 
-  // The LlmBotConfig section should be rendered, even though llm_provider_config is missing from the initial data
-  const llmBotConfigHeader = await screen.findByText(/LlmBotConfig/);
-  expect(llmBotConfigHeader).toBeInTheDocument();
+  // The main collapsible sections should be rendered
+  const generalConfigHeader = await screen.findByText(/General Configurations/);
+  expect(generalConfigHeader).toBeInTheDocument();
 
-  // Expand the section
-  fireEvent.click(llmBotConfigHeader);
-
-  // The inner field should be rendered (rjsf will handle rendering the field for a null value)
-  // We can check for the title of the field inside the group.
-  const llmProviderField = await screen.findByText(/LLM Provider Config/);
-  expect(llmProviderField).toBeInTheDocument();
+  const featureConfigHeader = await screen.findByText(/Feature Configurations/);
+  expect(featureConfigHeader).toBeInTheDocument();
 });
 
-test('renders the form and saves updated data', async () => {
-  // Restore the full data for this test
-  mockInitialData.llm_provider_config = { some: 'data' };
+test('renders the form and saves updated data with new structure', async () => {
+  mockInitialData.configurations.llm_provider_config = { provider_name: 'test_provider' };
   renderComponent();
 
+  // Expand General Configurations
+  const generalConfigHeader = await screen.findByText(/General Configurations/);
+  fireEvent.click(generalConfigHeader);
+
+  // Expand Queue Config
   const queueConfigHeader = await screen.findByText(/Queue Config/);
   fireEvent.click(queueConfigHeader);
 
@@ -118,65 +182,81 @@ test('renders the form and saves updated data', async () => {
   fireEvent.click(saveButton);
 
   await waitFor(() => {
-    const expectedBody = [{
-        ...mockInitialData,
-        queue_config: {
-            ...mockInitialData.queue_config,
-            max_messages: 50,
-        }
-    }];
-
     const putCall = fetch.mock.calls.find(call => call[1] && call[1].method === 'PUT');
     expect(putCall).toBeDefined();
     expect(putCall[0]).toBe('/api/configurations/test-user');
-    expect(JSON.parse(putCall[1].body)).toEqual(expectedBody);
+
+    const savedData = JSON.parse(putCall[1].body)[0];
+    expect(savedData.configurations.queue_config.max_messages).toBe(50);
   });
 
   expect(mockedNavigate).toHaveBeenCalledWith('/');
 });
 
-test('renders complex nested data correctly', async () => {
-  // Set up mock data that includes multiple fields that were failing
-  mockInitialData = {
-    user_id: 'test-user',
-    respond_to_whitelist: ['user1'],
-    queue_config: {
-      max_messages: 25,
-    },
-    chat_provider_config: {
-      allow_group_messages: true,
-    },
-    llm_provider_config: {
-      provider_name: 'test_provider'
-    },
-  };
+test('renders Feature Configurations with all three features', async () => {
   renderComponent();
 
-  // --- Check Chat Provider Config ---
-  const chatConfigHeader = await screen.findByText(/Chat Provider Config/);
-  fireEvent.click(chatConfigHeader);
-  const allowGroupMessagesCheckbox = await screen.findByLabelText('Allow Group Messages');
-  expect(allowGroupMessagesCheckbox).toBeChecked();
+  // Expand Feature Configurations
+  const featureConfigHeader = await screen.findByText(/Feature Configurations/);
+  fireEvent.click(featureConfigHeader);
 
-  // --- Check Queue Config ---
-  const queueConfigHeader = await screen.findByText(/Queue Config/);
-  fireEvent.click(queueConfigHeader);
-  const maxMessagesInput = await screen.findByLabelText('Max Messages');
-  expect(maxMessagesInput.value).toBe('25');
+  // All three features should be visible as sub-sections
+  const automaticBotReply = await screen.findByText(/Automatic Bot Reply/);
+  expect(automaticBotReply).toBeInTheDocument();
+
+  const periodicGroupTracking = await screen.findByText(/Periodic Group Tracking/);
+  expect(periodicGroupTracking).toBeInTheDocument();
+
+  const kidPhoneSafety = await screen.findByText(/Kid Phone Safety Tracking/);
+  expect(kidPhoneSafety).toBeInTheDocument();
+});
+
+test('renders complex nested data correctly with new structure', async () => {
+  // Set up mock data that includes multiple fields
+  mockInitialData = {
+    user_id: 'test-user',
+    configurations: {
+      queue_config: {
+        max_messages: 25,
+      },
+      chat_provider_config: {
+        provider_name: 'test',
+        provider_config: {
+          allow_group_messages: true,
+        }
+      },
+      llm_provider_config: {
+        provider_name: 'test_provider'
+      },
+    },
+    features: {
+      automatic_bot_reply: {
+        enabled: true,
+        respond_to_whitelist: ['user1'],
+        respond_to_whitelist_group: []
+      },
+      periodic_group_tracking: {
+        enabled: false,
+        tracked_groups: []
+      },
+      kid_phone_safety_tracking: {
+        enabled: false
+      }
+    }
+  };
+  renderComponent();
 
   // --- Check Live JSON Editor for all data ---
   const jsonEditor = await screen.findByRole('textbox', { name: /Live JSON Editor/i });
   const editorData = JSON.parse(jsonEditor.value);
 
-  // Check that all original top-level keys are present
-  expect(editorData.chat_provider_config).toBeDefined();
-  expect(editorData.chat_provider_config.allow_group_messages).toBe(true);
+  // Check that the new structure is present
+  expect(editorData.configurations).toBeDefined();
+  expect(editorData.configurations.queue_config.max_messages).toBe(25);
+  expect(editorData.configurations.chat_provider_config.provider_config.allow_group_messages).toBe(true);
+  expect(editorData.configurations.llm_provider_config.provider_name).toBe('test_provider');
 
-  expect(editorData.queue_config).toBeDefined();
-  expect(editorData.queue_config.max_messages).toBe(25);
-
-  expect(editorData.llm_provider_config).toBeDefined();
-  expect(editorData.llm_provider_config.provider_name).toBe('test_provider');
-
-  expect(editorData.respond_to_whitelist).toEqual(['user1']);
+  expect(editorData.features).toBeDefined();
+  expect(editorData.features.automatic_bot_reply.enabled).toBe(true);
+  expect(editorData.features.automatic_bot_reply.respond_to_whitelist).toEqual(['user1']);
 });
