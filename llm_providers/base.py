@@ -20,9 +20,3 @@ class BaseLlmProvider(ABC):
         """
         pass
 
-    @abstractmethod
-    def get_system_prompt(self) -> str:
-        """
-        Returns the system prompt for the LLM.
-        """
-        pass

@@ -32,7 +32,6 @@ class LLMProviderSettings(BaseModel):
     model: str
     temperature: float = 0.7
     reasoning_effort: Optional[Literal["low", "medium", "high", "minimal"]] = None
-    system: str = ""
 
     class Config:
         extra = 'allow'
@@ -58,6 +57,7 @@ class AutomaticBotReplyFeature(BaseModel):
     enabled: bool = Field(default=False, title="Enable automatic bot replies")
     respond_to_whitelist: List[str] = Field(default_factory=list, title="Respond To Direct Contact Whitelist")
     respond_to_whitelist_group: List[str] = Field(default_factory=list, title="Respond To Group Whitelist")
+    chat_system_prompt: str = Field(default="", title="Chat System Prompt")
 
 class PeriodicGroupTrackingFeature(BaseModel):
     enabled: bool = Field(default=False, title="Enable periodic group tracking")

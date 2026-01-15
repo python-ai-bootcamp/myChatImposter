@@ -335,7 +335,8 @@ class ChatbotInstance:
 
             llm_provider = LlmProviderClass(config=self.config.configurations.llm_provider_config, user_id=self.user_id)
             llm_instance = llm_provider.get_llm()
-            system_prompt = llm_provider.get_system_prompt()
+            # Get system prompt from the automatic_bot_reply feature, not from LLM provider
+            system_prompt = self.config.features.automatic_bot_reply.chat_system_prompt.format(user_id=self.user_id)
             self.chatbot_model = ChatbotModel(
                 self.user_id,
                 llm_instance,

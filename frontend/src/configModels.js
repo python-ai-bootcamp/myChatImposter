@@ -73,11 +73,10 @@ class QueueConfig {
 }
 
 class LLMProviderSettings {
-  constructor({ api_key = null, model, temperature = 0.7, system = "", ...extra }) {
+  constructor({ api_key = null, model, temperature = 0.7, ...extra }) {
     this.api_key = api_key;
     this.model = model;
     this.temperature = temperature;
-    this.system = system;
     // Allow extra fields
     Object.assign(this, extra);
   }
@@ -91,9 +90,6 @@ class LLMProviderSettings {
     }
     if (typeof data.temperature !== 'number') {
       throw new ValidationError('temperature must be a number.', 'configurations.llm_provider_config.provider_config.temperature');
-    }
-    if (typeof data.system !== 'string') {
-      throw new ValidationError('system must be a string.', 'configurations.llm_provider_config.provider_config.system');
     }
     return new LLMProviderSettings(data);
   }
@@ -119,10 +115,11 @@ class LLMProviderConfig {
 
 // Feature Classes
 class AutomaticBotReplyFeature {
-  constructor({ enabled = false, respond_to_whitelist = [], respond_to_whitelist_group = [] }) {
+  constructor({ enabled = false, respond_to_whitelist = [], respond_to_whitelist_group = [], chat_system_prompt = '' }) {
     this.enabled = enabled;
     this.respond_to_whitelist = respond_to_whitelist;
     this.respond_to_whitelist_group = respond_to_whitelist_group;
+    this.chat_system_prompt = chat_system_prompt;
   }
 
   static validate(data) {
@@ -134,6 +131,9 @@ class AutomaticBotReplyFeature {
     }
     if (!Array.isArray(data.respond_to_whitelist_group)) {
       throw new ValidationError('respond_to_whitelist_group must be an array.', 'features.automatic_bot_reply.respond_to_whitelist_group');
+    }
+    if (data.chat_system_prompt !== undefined && typeof data.chat_system_prompt !== 'string') {
+      throw new ValidationError('chat_system_prompt must be a string.', 'features.automatic_bot_reply.chat_system_prompt');
     }
     return new AutomaticBotReplyFeature(data);
   }
