@@ -152,6 +152,7 @@ button:disabled {
   display: flex !important;
   align-items: center;
   gap: 0.5rem;
+  text-align: left;
 }
 
 /* Add API Key Source label before the dropdown */
@@ -186,4 +187,12 @@ select[id^="root_configurations_llm_provider_config"] {
 
 #root_configurations_llm_provider_config_provider_config_api_key {
   width: 239px !important;
+}
+
+/* Chat System Prompt textarea - fills width and is resizable */
+#root_features_automatic_bot_reply_chat_system_prompt {
+  width: 100% !important;
+  max-width: 100%;
+  resize: both;
+  box-sizing: border-box;
 }

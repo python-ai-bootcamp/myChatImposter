@@ -191,15 +191,11 @@ class FeaturesConfiguration {
 }
 
 class ConfigurationsSettings {
-  constructor({ chat_provider_config, queue_config, context_config, llm_provider_config = null }) {
+  constructor({ chat_provider_config, queue_config, context_config, llm_provider_config }) {
     this.chat_provider_config = new ChatProviderConfig(chat_provider_config);
     this.queue_config = new QueueConfig(queue_config || {});
     this.context_config = context_config || {};
-    if (llm_provider_config) {
-      this.llm_provider_config = new LLMProviderConfig(llm_provider_config);
-    } else {
-      this.llm_provider_config = null;
-    }
+    this.llm_provider_config = new LLMProviderConfig(llm_provider_config);
   }
 
   static validate(data) {
@@ -212,12 +208,10 @@ class ConfigurationsSettings {
       QueueConfig.validate(data.queue_config);
     }
 
-    if (data.llm_provider_config !== null && data.llm_provider_config !== undefined) {
-      if (typeof data.llm_provider_config !== 'object') {
-        throw new ValidationError('llm_provider_config must be an object or null.', 'configurations.llm_provider_config');
-      }
-      LLMProviderConfig.validate(data.llm_provider_config);
+    if (!data.llm_provider_config || typeof data.llm_provider_config !== 'object') {
+      throw new ValidationError('llm_provider_config is required.', 'configurations.llm_provider_config');
     }
+    LLMProviderConfig.validate(data.llm_provider_config);
 
     return new ConfigurationsSettings(data);
   }

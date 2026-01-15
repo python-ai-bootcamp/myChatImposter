@@ -59,7 +59,10 @@ def test_save_and_get_single_configuration():
         "configurations": {
             "chat_provider_config": {"provider_name": "dummy", "provider_config": {}},
             "queue_config": {"max_messages": 5},
-            "llm_provider_config": None
+            "llm_provider_config": {
+                "provider_name": "fakeLlm",
+                "provider_config": {"model": "fake", "temperature": 0.7}
+            }
         },
         "features": {
             "automatic_bot_reply": {
@@ -90,7 +93,10 @@ def test_save_and_get_array_configuration():
             "configurations": {
                 "chat_provider_config": {"provider_name": "dummy", "provider_config": {}},
                 "queue_config": {"max_messages": 10},
-                "llm_provider_config": None
+                "llm_provider_config": {
+                    "provider_name": "fakeLlm",
+                    "provider_config": {"model": "fake", "temperature": 0.7}
+                }
             },
             "features": {
                 "automatic_bot_reply": {
@@ -148,7 +154,11 @@ def test_delete_configuration():
         "user_id": user_id,
         "configurations": {
             "chat_provider_config": {"provider_name": "dummy", "provider_config": {}},
-            "queue_config": {}
+            "queue_config": {},
+            "llm_provider_config": {
+                "provider_name": "fakeLlm",
+                "provider_config": {"model": "fake", "temperature": 0.7}
+            }
         },
         "features": {
             "automatic_bot_reply": {

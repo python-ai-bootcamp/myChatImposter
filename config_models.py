@@ -71,12 +71,11 @@ class FeaturesConfiguration(BaseModel):
     periodic_group_tracking: PeriodicGroupTrackingFeature = Field(default_factory=PeriodicGroupTrackingFeature, title="Periodic Group Tracking")
     kid_phone_safety_tracking: KidPhoneSafetyTrackingFeature = Field(default_factory=KidPhoneSafetyTrackingFeature, title="Kid Phone Safety Tracking")
 
-# General Configuration Models
 class ConfigurationsSettings(BaseModel):
     chat_provider_config: ChatProviderConfig = Field(..., title="Chat Provider Config")
     queue_config: QueueConfig = Field(default_factory=QueueConfig, title="Queue Config")
     context_config: ContextConfig = Field(default_factory=ContextConfig, title="Context Config")
-    llm_provider_config: Optional[LLMProviderConfig] = Field(default=None, title="LLM Provider Config")
+    llm_provider_config: LLMProviderConfig = Field(..., title="LLM Provider Config")
 
 class UserConfiguration(BaseModel):
     user_id: str
