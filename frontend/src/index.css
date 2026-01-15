@@ -181,5 +181,9 @@ select[id^="root_configurations_llm_provider_config"] {
 
 /* Ensure inner Reasoning Effort dropdown also follows the same width */
 #root_configurations_llm_provider_config_provider_config_reasoning_effort {
-  max-width: 300px !important;
+  max-width: 156px !important;
+}
+
+#root_configurations_llm_provider_config_provider_config_api_key {
+  width: 239px !important;
 }
