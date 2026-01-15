@@ -381,8 +381,9 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
     }
 
     const messageTimestamp = (typeof msg.messageTimestamp === 'number' ? msg.messageTimestamp * 1000 : msg.messageTimestamp.toNumber() * 1000);
-    if (!processOffline && messageTimestamp < serverStartTime) {
-        console.log(`[${userId}] Skipping offline message from ${msg.key.remoteJid} (ts: ${messageTimestamp} < start: ${serverStartTime}).`);
+    const offlineThreshold = session.sessionOpenTime || serverStartTime;
+    if (!processOffline && messageTimestamp < offlineThreshold) {
+        console.log(`[${userId}] Skipping offline message from ${msg.key.remoteJid} (ts: ${messageTimestamp} < sessionOpen: ${offlineThreshold}).`);
         return null;
     }
 
@@ -769,6 +770,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         sessions[userId].retryCount = 0;
         sessions[userId].lidCache = {}; // Reset cache on reconnect (will load from DB below)
         sessions[userId].pushNameCache = {}; // Reset pushName cache
+        sessions[userId].lastHeartbeat = Date.now(); // Reset heartbeat to prevent zombie detection during reload
         resetHttp405Tracker(sessions[userId]);
         // Do not reset store here, preserve what we have?
         // Or reset if it's a new connection?
@@ -816,6 +818,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
         if (connection === 'open') {
             console.log(`[${userId}] WhatsApp connection opened.`);
+            session.sessionOpenTime = Date.now(); // Track when this session actually connected
             session.currentQR = null;
             session.retryCount = 0; // Reset retry count
             resetHttp405Tracker(session);

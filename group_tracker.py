@@ -61,6 +61,20 @@ class GroupTracker:
                 self.scheduler.remove_job(job_id)
             del self.jobs[job_id]
 
+        # Clean up stale groups from MongoDB that are no longer in the config
+        current_group_ids = {config.groupIdentifier for config in tracking_configs}
+        existing_groups = self.tracked_groups_collection.find({"user_id": user_id}, {"group_id": 1})
+        for group_doc in existing_groups:
+            group_id = group_doc.get("group_id")
+            if group_id and group_id not in current_group_ids:
+                # Delete group metadata
+                self.tracked_groups_collection.delete_one({"user_id": user_id, "group_id": group_id})
+                # Delete associated periods
+                self.tracked_group_periods_collection.delete_many({"user_id": user_id, "tracked_group_unique_identifier": group_id})
+                # Delete tracking state
+                self.tracking_state_collection.delete_one({"user_id": user_id, "group_id": group_id})
+                logger.info(f"Cleaned up stale tracked group {group_id} for user {user_id}")
+
         # Add new jobs
         for config in tracking_configs:
             job_id = f"{user_id}_{config.groupIdentifier}"
