@@ -44,11 +44,12 @@ def setup_and_teardown_function(monkeypatch):
     with TestClient(app):
         yield
 
-    # Teardown: clean up any created test data
+    # Teardown: clean up only TEST data (documents with user_id starting with "test_")
+    # NEVER use delete_many({}) - it wipes all real user data!
     if mongo_client:
         db = mongo_client.get_database("chat_manager")
-        db.get_collection("configurations").delete_many({})
-        db.get_collection("queues").delete_many({})
+        db.get_collection("configurations").delete_many({"user_id": {"$regex": "^test_"}})
+        db.get_collection("queues").delete_many({"user_id": {"$regex": "^test_"}})
         mongo_client.close()
 
 
