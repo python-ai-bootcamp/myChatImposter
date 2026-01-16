@@ -422,9 +422,12 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
 
         console_log(f"API: Instance {instance_id} for user '{user_id}' is starting in the background.")
 
-        # Update group tracker with new config
+        # Update group tracker with new config (only if enabled)
         if group_tracker:
-            group_tracker.update_jobs(user_id, config.features.periodic_group_tracking.tracked_groups)
+            if config.features.periodic_group_tracking.enabled:
+                group_tracker.update_jobs(user_id, config.features.periodic_group_tracking.tracked_groups)
+            else:
+                group_tracker.update_jobs(user_id, [])  # Clear jobs when disabled
 
         return {
             "successful": [{
@@ -684,9 +687,12 @@ async def reload_chatbot(user_id: str):
         # Update the active user tracking
         active_users[user_id] = new_instance_id
 
-        # Update group tracker with new config
+        # Update group tracker with new config (only if enabled)
         if group_tracker:
-            group_tracker.update_jobs(user_id, config.features.periodic_group_tracking.tracked_groups)
+            if config.features.periodic_group_tracking.enabled:
+                group_tracker.update_jobs(user_id, config.features.periodic_group_tracking.tracked_groups)
+            else:
+                group_tracker.update_jobs(user_id, [])  # Clear jobs when disabled
 
         console_log(f"API: Instance {new_instance_id} for user '{user_id}' has been successfully reloaded.")
 
