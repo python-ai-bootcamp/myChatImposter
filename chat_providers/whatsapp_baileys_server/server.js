@@ -100,10 +100,14 @@ const pushStatusToPython = (userId) => {
         session.currentQR ? 'linking' :
             session.connectionStatus || 'initializing';
 
+    // Include user JID when connected so Python can send messages to self
+    const userJid = session.sock?.user?.id ? jidNormalizedUser(session.sock.user.id) : null;
+
     ws.send(JSON.stringify({
         type: 'status_update',
         status: status,
-        qr: session.currentQR || null
+        qr: session.currentQR || null,
+        user_jid: userJid
     }));
 };
 

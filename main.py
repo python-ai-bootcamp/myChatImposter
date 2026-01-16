@@ -425,7 +425,7 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
         # Update group tracker with new config (only if enabled)
         if group_tracker:
             if config.features.periodic_group_tracking.enabled:
-                group_tracker.update_jobs(user_id, config.features.periodic_group_tracking.tracked_groups)
+                group_tracker.update_jobs(user_id, config.features.periodic_group_tracking.tracked_groups, config.configurations.user_details.timezone)
             else:
                 group_tracker.update_jobs(user_id, [])  # Clear jobs when disabled
 
@@ -690,7 +690,7 @@ async def reload_chatbot(user_id: str):
         # Update group tracker with new config (only if enabled)
         if group_tracker:
             if config.features.periodic_group_tracking.enabled:
-                group_tracker.update_jobs(user_id, config.features.periodic_group_tracking.tracked_groups)
+                group_tracker.update_jobs(user_id, config.features.periodic_group_tracking.tracked_groups, config.configurations.user_details.timezone)
             else:
                 group_tracker.update_jobs(user_id, [])  # Clear jobs when disabled
 

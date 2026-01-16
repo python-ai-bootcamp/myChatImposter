@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate, LLMProviderConfigFieldTemplate, FlatProviderConfigTemplate } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate, LLMProviderConfigFieldTemplate, FlatProviderConfigTemplate, TimezoneSelectWidget } from '../components/FormTemplates';
 
 // Stable widget definitions - defined outside component to prevent re-creation on re-render
 const ReadOnlyTextWidget = (props) => {
@@ -302,6 +302,11 @@ function EditPage() {
           initialFormData = {
             user_id: userId,
             configurations: {
+              user_details: {
+                first_name: '',
+                last_name: '',
+                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+              },
               chat_provider_config: {
                 provider_name: 'whatsapp_baileys',
                 provider_config: {
@@ -742,7 +747,8 @@ function EditPage() {
     GroupNameSelectorWidget: GroupNameSelectorWidget,
     ReadOnlyTextWidget: ReadOnlyTextWidget,
     CronInputWidget: CronInputWidget,
-    SystemPromptWidget: SystemPromptWidget
+    SystemPromptWidget: SystemPromptWidget,
+    TimezoneSelectWidget: TimezoneSelectWidget
   };
 
   const uiSchema = {
@@ -755,6 +761,13 @@ function EditPage() {
     configurations: {
       "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
       "ui:title": "General Configurations",
+      user_details: {
+        "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
+        "ui:title": "User Details",
+        timezone: {
+          "ui:widget": "TimezoneSelectWidget"
+        }
+      },
       chat_provider_config: {
         "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
         "ui:title": "Chat Provider Config",

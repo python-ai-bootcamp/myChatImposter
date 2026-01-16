@@ -52,6 +52,11 @@ class PeriodicGroupTrackingConfig(BaseModel):
     cronTrackingSchedule: str = Field(..., title="Cron Schedule", description="Cron expression for tracking frequency.")
     displayName: str = Field(..., title="Display Name", description="User-friendly name of the group.")
 
+class UserDetails(BaseModel):
+    first_name: str = Field(default="", title="First Name")
+    last_name: str = Field(default="", title="Last Name")
+    timezone: str = Field(default="UTC", title="Timezone")
+
 # Feature Models
 class AutomaticBotReplyFeature(BaseModel):
     enabled: bool = Field(default=False, title="Enable automatic bot replies")
@@ -72,6 +77,7 @@ class FeaturesConfiguration(BaseModel):
     kid_phone_safety_tracking: KidPhoneSafetyTrackingFeature = Field(default_factory=KidPhoneSafetyTrackingFeature, title="Kid Phone Safety Tracking")
 
 class ConfigurationsSettings(BaseModel):
+    user_details: UserDetails = Field(default_factory=UserDetails, title="User Details")
     chat_provider_config: ChatProviderConfig = Field(..., title="Chat Provider Config")
     queue_config: QueueConfig = Field(default_factory=QueueConfig, title="Queue Config")
     context_config: ContextConfig = Field(default_factory=ContextConfig, title="Context Config")

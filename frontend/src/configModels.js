@@ -190,8 +190,30 @@ class FeaturesConfiguration {
   }
 }
 
+class UserDetails {
+  constructor({ first_name = '', last_name = '', timezone = 'UTC' }) {
+    this.first_name = first_name;
+    this.last_name = last_name;
+    this.timezone = timezone;
+  }
+
+  static validate(data) {
+    if (data.first_name !== undefined && typeof data.first_name !== 'string') {
+      throw new ValidationError('first_name must be a string.', 'configurations.user_details.first_name');
+    }
+    if (data.last_name !== undefined && typeof data.last_name !== 'string') {
+      throw new ValidationError('last_name must be a string.', 'configurations.user_details.last_name');
+    }
+    if (data.timezone !== undefined && typeof data.timezone !== 'string') {
+      throw new ValidationError('timezone must be a string.', 'configurations.user_details.timezone');
+    }
+    return new UserDetails(data);
+  }
+}
+
 class ConfigurationsSettings {
-  constructor({ chat_provider_config, queue_config, context_config, llm_provider_config }) {
+  constructor({ user_details, chat_provider_config, queue_config, context_config, llm_provider_config }) {
+    this.user_details = new UserDetails(user_details || {});
     this.chat_provider_config = new ChatProviderConfig(chat_provider_config);
     this.queue_config = new QueueConfig(queue_config || {});
     this.context_config = context_config || {};
@@ -199,6 +221,10 @@ class ConfigurationsSettings {
   }
 
   static validate(data) {
+    if (data.user_details && typeof data.user_details === 'object') {
+      UserDetails.validate(data.user_details);
+    }
+
     if (!data.chat_provider_config || typeof data.chat_provider_config !== 'object') {
       throw new ValidationError('chat_provider_config is required.', 'configurations.chat_provider_config');
     }

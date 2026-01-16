@@ -33,6 +33,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         # Status cache for push-based updates
         self._cached_status = {"status": "initializing", "qr": None}
         self._ws_connection = None  # Reference to active WebSocket for sending messages
+        self.user_jid = None  # User's own WhatsApp JID for sending messages to self
 
     def update_cache_policy(self, max_interval: int):
         self.max_cache_interval = max_interval
@@ -206,6 +207,10 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     "qr": data.get('qr')
                 }
                 if self.logger: self.logger.log(f"Status update received: {self._cached_status['status']}")
+                # Store user JID for sending messages to self
+                if data.get('user_jid'):
+                    self.user_jid = data.get('user_jid')
+                    if self.logger: self.logger.log(f"User JID received: {self.user_jid}")
                 return
             # Handle message arrays (existing behavior)
             if isinstance(data, list):

@@ -6,6 +6,7 @@ from apscheduler.triggers.cron import CronTrigger
 from pymongo import MongoClient
 from croniter import croniter
 import logging
+from zoneinfo import ZoneInfo
 
 from chatbot_manager import ChatbotInstance
 from config_models import PeriodicGroupTrackingConfig
@@ -53,7 +54,7 @@ class GroupTracker:
             return int(max_interval) + 900 # Add 15 minutes buffer
         return 0
 
-    def update_jobs(self, user_id: str, tracking_configs: list[PeriodicGroupTrackingConfig]):
+    def update_jobs(self, user_id: str, tracking_configs: list[PeriodicGroupTrackingConfig], timezone: str = "UTC"):
         # Remove existing jobs for this user
         jobs_to_remove = [job_id for job_id in self.jobs if job_id.startswith(f"{user_id}_")]
         for job_id in jobs_to_remove:
@@ -84,7 +85,7 @@ class GroupTracker:
                     self.track_group_context,
                     trigger,
                     id=job_id,
-                    args=[user_id, config],
+                    args=[user_id, config, timezone],
                     replace_existing=True
                 )
                 self.jobs[job_id] = True
@@ -103,7 +104,7 @@ class GroupTracker:
         if target_instance and isinstance(target_instance.provider_instance, WhatsAppBaileysProvider):
             target_instance.provider_instance.update_cache_policy(max_interval)
 
-    async def track_group_context(self, user_id: str, config: PeriodicGroupTrackingConfig):
+    async def track_group_context(self, user_id: str, config: PeriodicGroupTrackingConfig, timezone: str = "UTC"):
         logger.info(f"Starting tracking job for user {user_id}, group {config.groupIdentifier}")
 
         # Find the chatbot instance for this user
@@ -232,6 +233,28 @@ class GroupTracker:
         )
 
         logger.info(f"Completed tracking job for {user_id}/{config.groupIdentifier}. Saved {len(transformed_messages)} messages.")
+
+        # Send digest notification to user (message to self)
+        # Use user's configured timezone for the timestamp
+        try:
+            user_tz = ZoneInfo(timezone)
+        except Exception:
+            logger.warning(f"Invalid timezone '{timezone}' for user {user_id}, using UTC")
+            user_tz = ZoneInfo("UTC")
+        
+        now = datetime.now(user_tz)
+        digest_message = f"{now.strftime('%Y-%m-%d')} {now.strftime('%H:%M')}: Tracked Group Digest"
+        
+        # Use the user's actual WhatsApp JID for sending message to self
+        recipient_jid = target_instance.provider_instance.user_jid
+        if not recipient_jid:
+            logger.warning(f"User JID not available for {user_id}, cannot send digest notification")
+        else:
+            try:
+                await target_instance.provider_instance.sendMessage(recipient_jid, digest_message)
+                logger.info(f"Sent digest notification to user {user_id} (JID: {recipient_jid}, TZ: {timezone})")
+            except Exception as e:
+                logger.error(f"Failed to send digest notification to user {user_id}: {e}")
 
     def _build_period_query(self, user_id, group_id, time_from=None, time_until=None):
         query = {
