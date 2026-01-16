@@ -17,6 +17,3 @@ class FakeLlmProvider(BaseLlmProvider):
 
         return FakeListLLM(responses=formatted_responses)
 
-    def get_system_prompt(self):
-        # The system prompt can also be customized
-        return self.config.provider_config.system.format(user_id=self.user_id)

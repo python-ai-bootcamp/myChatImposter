@@ -147,22 +147,7 @@ async def get_configuration_schema():
     schema = UserConfiguration.model_json_schema()
     defs_key = '$defs' if '$defs' in schema else 'definitions'
 
-    # Add descriptive titles to the oneOf choices for llm_provider_config for the dropdown
-    # Navigate to llm_provider_config inside configurations
-    configs_schema = schema['properties'].get('configurations', {})
-    if '$ref' in configs_schema:
-        # Get ConfigurationsSettings definition
-        ref_name = configs_schema['$ref'].split('/')[-1]
-        if defs_key in schema and ref_name in schema[defs_key]:
-            configs_def = schema[defs_key][ref_name]
-            if 'properties' in configs_def and 'llm_provider_config' in configs_def['properties']:
-                llm_config_schema = configs_def['properties']['llm_provider_config']
-                if 'anyOf' in llm_config_schema:
-                    for item in llm_config_schema['anyOf']:
-                        if '$ref' in item:
-                            item['title'] = "Respond Using Llm"
-                        elif item.get('type') == 'null':
-                            item['title'] = "Collection Only"
+    # llm_provider_config is now mandatory, no dropdown needed
 
     # To fix the conditional API key, we will restructure the entire LLMProviderSettings schema.
     # Instead of using dependencies, we will define two distinct objects in a oneOf.

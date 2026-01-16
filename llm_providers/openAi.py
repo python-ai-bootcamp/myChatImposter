@@ -10,7 +10,6 @@ class OpenAiLlmProvider(BaseLlmProvider):
 
     def _build_llm_params(self) -> Dict[str, Any]:
         llm_params = self.config.provider_config.model_dump()
-        llm_params.pop("system", None)
         api_key_source = llm_params.pop("api_key_source", "environment")
         api_key = llm_params.get("api_key")
 
@@ -75,6 +74,3 @@ class OpenAiLlmProvider(BaseLlmProvider):
             httpx_logger.addHandler(handler)
         
         return llm
-
-    def get_system_prompt(self):
-        return self.config.provider_config.system.format(user_id=self.user_id)

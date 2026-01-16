@@ -324,28 +324,24 @@ class ChatbotInstance:
         self.provider_instance = ProviderClass(**provider_init_params)
         console_log(f"INSTANCE ({self.user_id}): Initialized chat provider '{provider_name}'.")
 
-        # 3. Initialize Chatbot Model (Optional)
-        if self.config.configurations.llm_provider_config:
-            self.mode = "fully_functional"
-            llm_provider_name = self.config.configurations.llm_provider_config.provider_name
-            llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
-            LlmProviderClass = _find_provider_class(llm_provider_module, BaseLlmProvider)
-            if not LlmProviderClass:
-                raise ImportError(f"Could not find a valid LLM provider class in module 'llm_providers.{llm_provider_name}'")
+        # 4. Initialize Chatbot Model (llm_provider_config is mandatory)
+        llm_provider_name = self.config.configurations.llm_provider_config.provider_name
+        llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
+        LlmProviderClass = _find_provider_class(llm_provider_module, BaseLlmProvider)
+        if not LlmProviderClass:
+            raise ImportError(f"Could not find a valid LLM provider class in module 'llm_providers.{llm_provider_name}'")
 
-            llm_provider = LlmProviderClass(config=self.config.configurations.llm_provider_config, user_id=self.user_id)
-            llm_instance = llm_provider.get_llm()
-            system_prompt = llm_provider.get_system_prompt()
-            self.chatbot_model = ChatbotModel(
-                self.user_id,
-                llm_instance,
-                system_prompt,
-                self.config.configurations.context_config
-            )
-            console_log(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.")
-        else:
-            self.mode = "collection_only"
-            console_log(f"INSTANCE_WARNING ({self.user_id}): No 'llm_provider_config' found. Instance will run in collection-only mode.")
+        llm_provider = LlmProviderClass(config=self.config.configurations.llm_provider_config, user_id=self.user_id)
+        llm_instance = llm_provider.get_llm()
+        # Get system prompt from the automatic_bot_reply feature, not from LLM provider
+        system_prompt = self.config.features.automatic_bot_reply.chat_system_prompt.format(user_id=self.user_id)
+        self.chatbot_model = ChatbotModel(
+            self.user_id,
+            llm_instance,
+            system_prompt,
+            self.config.configurations.context_config
+        )
+        console_log(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.")
 
     async def _message_callback(self, user_id: str, correspondent_id: str, message: Message):
         """Processes a new message from a correspondent's queue."""

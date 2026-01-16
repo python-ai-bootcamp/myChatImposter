@@ -57,10 +57,22 @@ def test_save_and_get_single_configuration():
     user_id = "test_user_single"
     config_data = {
         "user_id": user_id,
-        "respond_to_whitelist": ["12345"],
-        "chat_provider_config": {"provider_name": "dummy", "provider_config": {}},
-        "queue_config": {"max_messages": 5},
-        "llm_provider_config": None
+        "configurations": {
+            "chat_provider_config": {"provider_name": "dummy", "provider_config": {}},
+            "queue_config": {"max_messages": 5},
+            "llm_provider_config": {
+                "provider_name": "fakeLlm",
+                "provider_config": {"model": "fake", "temperature": 0.7}
+            }
+        },
+        "features": {
+            "automatic_bot_reply": {
+                "enabled": False,
+                "respond_to_whitelist": ["12345"],
+                "respond_to_whitelist_group": [],
+                "chat_system_prompt": ""
+            }
+        }
     }
 
     # PUT to save
@@ -79,10 +91,22 @@ def test_save_and_get_array_configuration():
     config_data = [
         {
             "user_id": user_id,
-            "respond_to_whitelist": ["67890"],
-            "chat_provider_config": {"provider_name": "dummy", "provider_config": {}},
-            "queue_config": {"max_messages": 10},
-            "llm_provider_config": None
+            "configurations": {
+                "chat_provider_config": {"provider_name": "dummy", "provider_config": {}},
+                "queue_config": {"max_messages": 10},
+                "llm_provider_config": {
+                    "provider_name": "fakeLlm",
+                    "provider_config": {"model": "fake", "temperature": 0.7}
+                }
+            },
+            "features": {
+                "automatic_bot_reply": {
+                    "enabled": False,
+                    "respond_to_whitelist": ["67890"],
+                    "respond_to_whitelist_group": [],
+                    "chat_system_prompt": ""
+                }
+            }
         }
     ]
 
@@ -127,7 +151,25 @@ def test_get_configuration_schema_api_key_logic():
 
 def test_delete_configuration():
     user_id = "test_user_to_delete"
-    config_data = {"user_id": user_id, "respond_to_whitelist": [], "chat_provider_config": {"provider_name": "dummy", "provider_config": {}}, "queue_config": {}}
+    config_data = {
+        "user_id": user_id,
+        "configurations": {
+            "chat_provider_config": {"provider_name": "dummy", "provider_config": {}},
+            "queue_config": {},
+            "llm_provider_config": {
+                "provider_name": "fakeLlm",
+                "provider_config": {"model": "fake", "temperature": 0.7}
+            }
+        },
+        "features": {
+            "automatic_bot_reply": {
+                "enabled": False,
+                "respond_to_whitelist": [],
+                "respond_to_whitelist_group": [],
+                "chat_system_prompt": ""
+            }
+        }
+    }
 
     # Create it first
     client.put(f"/api/configurations/{user_id}", json=config_data)

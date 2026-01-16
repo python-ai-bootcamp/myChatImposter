@@ -77,6 +77,21 @@ export function InlineCheckboxFieldTemplate(props) {
   );
 }
 
+// A flat object template that renders children without the panel-body wrapper
+// Used for llm_provider_config.provider_config to flatten the oneOf dropdown alignment
+export function FlatProviderConfigTemplate(props) {
+  // Render properties in a table layout matching other fields
+  return (
+    <div style={{ display: 'table', width: '100%', borderCollapse: 'collapse' }}>
+      {props.properties.map(element => (
+        <React.Fragment key={element.content.key}>
+          {element.content}
+        </React.Fragment>
+      ))}
+    </div>
+  );
+}
+
 // A custom collapsible field template for LLM Provider Config
 // This wraps the entire field (including anyOf dropdown) in a collapsible section
 // ONLY applies to the outer anyOf container, not the selected inner content
@@ -139,14 +154,15 @@ export function CustomFieldTemplate(props) {
     return null;
   }
 
-  // Add "API Key Source" label for the oneOf dropdown (API Key From User Input/Environment)
+  // Render API Key Source dropdown with proper table-row layout matching other fields
+  // This needs to output the same structure as the standard CustomFieldTemplate for consistency
   if (id && id.includes('provider_config__oneof_select')) {
     return (
-      <div style={{ display: 'table-row' }}>
+      <div className={classNames} style={{ display: 'table-row', textAlign: 'left' }}>
         <label style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
           API Key Source
         </label>
-        <div style={{ display: 'table-cell', textAlign: 'left', width: '100%' }}>
+        <div style={{ boxSizing: 'border-box', textAlign: 'left', display: 'table-cell', width: '100%' }}>
           {children}
         </div>
       </div>
@@ -154,7 +170,7 @@ export function CustomFieldTemplate(props) {
   }
 
   // Flatten the provider_config field structure - render children directly
-  if (id && id.endsWith('llm_provider_config_provider_config')) {
+  if (id && (id.endsWith('chat_provider_config_provider_config') || id.endsWith('llm_provider_config_provider_config'))) {
     return children;
   }
 

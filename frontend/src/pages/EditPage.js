@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate, LLMProviderConfigFieldTemplate } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate, LLMProviderConfigFieldTemplate, FlatProviderConfigTemplate } from '../components/FormTemplates';
 
 // Stable widget definitions - defined outside component to prevent re-creation on re-render
 const ReadOnlyTextWidget = (props) => {
@@ -771,21 +771,19 @@ function EditPage() {
         "ui:title": "Context Config"
       },
       llm_provider_config: {
-        "ui:FieldTemplate": LLMProviderConfigFieldTemplate,
+        "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
+        "ui:title": "LLM Provider Config",
         provider_name: {
           "ui:title": "Provider Name"
         },
         provider_config: {
-          "ui:title": "API Key Source",
+          "ui:ObjectFieldTemplate": FlatProviderConfigTemplate,
+          "ui:title": " ",
           api_key_source: {
             "ui:title": "API Key Source"
           },
           reasoning_effort: {
             "ui:title": "Reasoning Effort"
-          },
-          system: {
-            "ui:title": "System Prompt",
-            "ui:widget": "SystemPromptWidget"
           }
         }
       }
@@ -805,6 +803,12 @@ function EditPage() {
         },
         respond_to_whitelist_group: {
           "ui:title": " "
+        },
+        chat_system_prompt: {
+          "ui:widget": "textarea",
+          "ui:options": {
+            rows: 5
+          }
         }
       },
       periodic_group_tracking: {

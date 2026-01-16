@@ -27,7 +27,6 @@
         "api_key": null,
         "model": "fake",
         "temperature": 0.7,
-        "system": "Test system prompt for test_user",
         "response_array": [
           "Test response"
         ]
@@ -38,7 +37,8 @@
     "automatic_bot_reply": {
       "enabled": false,
       "respond_to_whitelist": [],
-      "respond_to_whitelist_group": []
+      "respond_to_whitelist_group": [],
+      "chat_system_prompt": "Test system prompt for test_user"
     },
     "periodic_group_tracking": {
       "enabled": false,

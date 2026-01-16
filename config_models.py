@@ -32,7 +32,6 @@ class LLMProviderSettings(BaseModel):
     model: str
     temperature: float = 0.7
     reasoning_effort: Optional[Literal["low", "medium", "high", "minimal"]] = None
-    system: str = ""
 
     class Config:
         extra = 'allow'
@@ -58,6 +57,7 @@ class AutomaticBotReplyFeature(BaseModel):
     enabled: bool = Field(default=False, title="Enable automatic bot replies")
     respond_to_whitelist: List[str] = Field(default_factory=list, title="Respond To Direct Contact Whitelist")
     respond_to_whitelist_group: List[str] = Field(default_factory=list, title="Respond To Group Whitelist")
+    chat_system_prompt: str = Field(default="", title="Chat System Prompt")
 
 class PeriodicGroupTrackingFeature(BaseModel):
     enabled: bool = Field(default=False, title="Enable periodic group tracking")
@@ -71,12 +71,11 @@ class FeaturesConfiguration(BaseModel):
     periodic_group_tracking: PeriodicGroupTrackingFeature = Field(default_factory=PeriodicGroupTrackingFeature, title="Periodic Group Tracking")
     kid_phone_safety_tracking: KidPhoneSafetyTrackingFeature = Field(default_factory=KidPhoneSafetyTrackingFeature, title="Kid Phone Safety Tracking")
 
-# General Configuration Models
 class ConfigurationsSettings(BaseModel):
     chat_provider_config: ChatProviderConfig = Field(..., title="Chat Provider Config")
     queue_config: QueueConfig = Field(default_factory=QueueConfig, title="Queue Config")
     context_config: ContextConfig = Field(default_factory=ContextConfig, title="Context Config")
-    llm_provider_config: Optional[LLMProviderConfig] = Field(default=None, title="LLM Provider Config")
+    llm_provider_config: LLMProviderConfig = Field(..., title="LLM Provider Config")
 
 class UserConfiguration(BaseModel):
     user_id: str
