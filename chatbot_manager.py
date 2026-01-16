@@ -344,18 +344,28 @@ class ChatbotInstance:
         console_log(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.")
 
     async def _message_callback(self, user_id: str, correspondent_id: str, message: Message):
-        """Processes a new message from a correspondent's queue."""
+        """Routes incoming messages to enabled feature handlers."""
         console_log(f"INSTANCE ({user_id}/{correspondent_id}): Callback received for message {message.id}.")
 
+        # Skip bot messages and outgoing user messages
         if message.source == 'bot' or message.source == 'user_outgoing':
             return
 
+        # Route to automatic bot reply feature
+        if self.config.features.automatic_bot_reply.enabled:
+            await self._handle_bot_reply(user_id, correspondent_id, message)
+
+        # Route to kid phone safety tracking feature
+        if self.config.features.kid_phone_safety_tracking.enabled:
+            await self._handle_kid_safety(user_id, correspondent_id, message)
+
+    async def _handle_bot_reply(self, user_id: str, correspondent_id: str, message: Message):
+        """Handles automatic bot reply feature for whitelisted senders/groups."""
         if message.group:
             if self.whitelist_group:
                 group = message.group
                 all_identifiers = [group.identifier, group.display_name]
                 console_log(f"INSTANCE ({user_id}): Evaluating group '{group.display_name}' against group whitelist. Identifiers: {all_identifiers}, Whitelist: {self.whitelist_group}")
-
 
                 matching_identifier = None
                 matching_whitelist_entry = None
@@ -378,6 +388,9 @@ class ChatbotInstance:
                 else:
                     console_log(f"INSTANCE ({user_id}): Group '{group.display_name}' not in group whitelist. Ignoring.")
                     return
+            else:
+                # No group whitelist configured, skip
+                return
         elif self.whitelist:
             sender = message.sender
             all_identifiers = [sender.identifier] + getattr(sender, 'alternate_identifiers', [])
@@ -404,6 +417,9 @@ class ChatbotInstance:
             else:
                 console_log(f"INSTANCE ({user_id}): Sender '{sender.display_name}' not in whitelist. Ignoring.")
                 return
+        else:
+            # No whitelist configured for direct messages, skip
+            return
 
         if not self.chatbot_model or not self.provider_instance:
             console_log(f"INSTANCE_ERROR ({user_id}): Chatbot or provider not initialized.")
@@ -423,7 +439,11 @@ class ChatbotInstance:
             # The bot's response is no longer added directly to the queue.
             # It will be processed when it comes back from the WebSocket as an outgoing message.
         except Exception as e:
-            console_log(f"Error in callback for user {user_id}: {e}")
+            console_log(f"Error in bot reply handler for user {user_id}: {e}")
+
+    async def _handle_kid_safety(self, user_id: str, correspondent_id: str, message: Message):
+        """Handles kid phone safety tracking feature. (Placeholder for future implementation)"""
+        console_log(f"INSTANCE ({user_id}): Handling live kid phone safety message for user {user_id}.")
 
 
     async def start(self):
