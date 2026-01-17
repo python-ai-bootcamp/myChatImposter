@@ -32,6 +32,10 @@ class LLMProviderSettings(BaseModel):
     model: str
     temperature: float = 0.7
     reasoning_effort: Optional[Literal["low", "medium", "high", "minimal"]] = None
+    record_llm_interactions: bool = Field(
+        default=False,
+        title="Record Traffic"
+    )
 
     class Config:
         extra = 'allow'
@@ -56,6 +60,10 @@ class UserDetails(BaseModel):
     first_name: str = Field(default="", title="First Name")
     last_name: str = Field(default="", title="Last Name")
     timezone: str = Field(default="UTC", title="Timezone")
+    language_code: str = Field(
+        default="en",
+        title="Language"
+    )
 
 # Feature Models
 class AutomaticBotReplyFeature(BaseModel):

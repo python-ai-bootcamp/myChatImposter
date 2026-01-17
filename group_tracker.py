@@ -85,24 +85,54 @@ class GroupTracker:
             formatted_messages.append(formatted_msg)
         return json.dumps(formatted_messages, indent=2, ensure_ascii=False)
 
-    async def _extract_action_items(self, messages_json: str, llm_config: LLMProviderConfig, user_id: str) -> str:
+    async def _extract_action_items(self, messages_json: str, llm_config: LLMProviderConfig, user_id: str, group_id: str = "", language_code: str = "en") -> str:
         """
         Uses LLM to extract action items from group messages.
         Returns the raw LLM output string.
+        
+        Args:
+            messages_json: JSON string of messages to analyze
+            llm_config: LLM provider configuration
+            user_id: User identifier
+            group_id: Group identifier for recording purposes
+            language_code: ISO 639-1 language code for response language
         """
-        # System prompt as specified in the requirements
+        from llm_providers.recorder import LLMRecorder
+        
+        # System prompt with language placeholder
         # Note: Curly braces are escaped with double braces for LangChain template compatibility
-        system_prompt = """You are a helpful assistant. each time you get a chat group message correspondence you take out of it all of the possible action items in the group correspondence and prepare a summary of it with following details per each action item in a form of a json array of objects of the following structure:
-[{{
-"originating_time": <string representing the time the key message representing this action item was sent, probably first mention of it, or first mention of it with a deadline>,
-"sender": <string representing the sender of key message representing this action item, preferably the first mention of it, or the first person giving it some kind of deadline>,
+        # Use single braces for language_code since we format() it before passing to LangChain
+        system_prompt_template = """IMPORTANT: task_title and task_description must be in {language_code} language.
+You are a helpful assistant. 
+each time you get a chat group message correspondence you extract from it all of the possible action items in the group correspondence and prepare a summary of it.
+the summary of action items is a json array, with objects, each object representing an action item and must include the following details:
+[{{{{
+"relevant_task_messages":<an array of messages that are relevant to this specific action item of format RELEVANT_TASK_MESSAGE>,
 "text_deadline": <string representing the sender quoted deadline of this action item, if available>,
-"timestamp_deadline": <string representing the sender quoted deadline of this action item, but translated to timestamp string. if deadline was given originally as relative time for example ()'next week' or 'next wednsday') please translate it relative to the time message was originally sent. if the deadline has not specific hour please set it to 12:00:00 noon at that designated day>,
-"content": <the content of the key message representing this action item>,
-"task_title": <a concise description of the task to be done as short as possible>,
+"timestamp_deadline": <string representing the sender quoted deadline of this action item, but translated to timestamp string. if deadline was given originally as relative time (for example 'next week' or 'next wednsday') translate it relative to the time message with deadline was originally sent. if the deadline has not specific hour please set it to 12:00:00 noon at that designated day>,
+"task_title": <a concise description of the task phrased as short as possible as a title>,
 "task_description": <a concise description of the task to be done with details, if task spans more than a single message, aggragate the information from all messages that are part of this task>
-}},...] 
+}}}},...] 
+
+RELEVANT_TASK_MESSAGE is an object of format:
+{
+    "originating_time": <string representing the time in which the message was sent>,
+    "sender": <string representing the sender of the message>,
+    "content": <the content of the message>
+}
 """
+        
+        # Inject language code into prompt
+        system_prompt = system_prompt_template.format(language_code=language_code)
+        
+        # Setup recorder if enabled
+        record_enabled = llm_config.provider_config.record_llm_interactions
+        recorder = None
+        epoch_ts = None
+        if record_enabled:
+            recorder = LLMRecorder(user_id, "periodic_group_tracking", group_id)
+            epoch_ts = recorder.start_recording()
+            recorder.record_prompt(system_prompt, messages_json, epoch_ts=epoch_ts)
         
         try:
             # Dynamically load the LLM provider
@@ -130,11 +160,21 @@ class GroupTracker:
             result = await chain.ainvoke({"input": messages_json})
             logger.info(f"LLM action items extraction completed for user {user_id}")
             
+            # Record response if enabled
+            if recorder and epoch_ts:
+                recorder.record_response(result, epoch_ts=epoch_ts)
+            
             return result
             
         except Exception as e:
             logger.error(f"Failed to extract action items for user {user_id}: {e}")
-            return f"[Error extracting action items: {e}]"
+            error_msg = f"[Error extracting action items: {e}]"
+            
+            # Record error as response if enabled
+            if recorder and epoch_ts:
+                recorder.record_response(error_msg, epoch_ts=epoch_ts)
+            
+            return error_msg
 
     def update_jobs(self, user_id: str, tracking_configs: list[PeriodicGroupTrackingConfig], timezone: str = "UTC"):
         # Remove existing jobs for this user
@@ -334,15 +374,22 @@ class GroupTracker:
             action_items_output = "\n\nNo messages in this period"
         else:
             try:
-                # Get user's LLM config
+                # Get user's LLM config and language preference
                 llm_config = target_instance.config.configurations.llm_provider_config
+                language_code = target_instance.config.configurations.user_details.language_code
                 
                 # Build the JSON input for LLM
                 messages_json = self._build_llm_input_json(transformed_messages, user_tz)
                 logger.info(f"Built LLM input JSON with {len(transformed_messages)} messages for user {user_id}")
                 
                 # Extract action items
-                action_items_output = await self._extract_action_items(messages_json, llm_config, user_id)
+                action_items_output = await self._extract_action_items(
+                    messages_json, 
+                    llm_config, 
+                    user_id,
+                    group_id=config.groupIdentifier,
+                    language_code=language_code
+                )
                 action_items_output = f"\n\n{action_items_output}"
                 
             except Exception as e:

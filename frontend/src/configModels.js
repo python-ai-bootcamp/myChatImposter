@@ -73,10 +73,11 @@ class QueueConfig {
 }
 
 class LLMProviderSettings {
-  constructor({ api_key = null, model, temperature = 0.7, ...extra }) {
+  constructor({ api_key = null, model, temperature = 0.7, record_llm_interactions = false, ...extra }) {
     this.api_key = api_key;
     this.model = model;
     this.temperature = temperature;
+    this.record_llm_interactions = record_llm_interactions;
     // Allow extra fields
     Object.assign(this, extra);
   }
@@ -90,6 +91,9 @@ class LLMProviderSettings {
     }
     if (typeof data.temperature !== 'number') {
       throw new ValidationError('temperature must be a number.', 'configurations.llm_provider_config.provider_config.temperature');
+    }
+    if (data.record_llm_interactions !== undefined && typeof data.record_llm_interactions !== 'boolean') {
+      throw new ValidationError('record_llm_interactions must be a boolean.', 'configurations.llm_provider_config.provider_config.record_llm_interactions');
     }
     return new LLMProviderSettings(data);
   }
@@ -191,10 +195,11 @@ class FeaturesConfiguration {
 }
 
 class UserDetails {
-  constructor({ first_name = '', last_name = '', timezone = 'UTC' }) {
+  constructor({ first_name = '', last_name = '', timezone = 'UTC', language_code = 'en' }) {
     this.first_name = first_name;
     this.last_name = last_name;
     this.timezone = timezone;
+    this.language_code = language_code;
   }
 
   static validate(data) {
@@ -206,6 +211,9 @@ class UserDetails {
     }
     if (data.timezone !== undefined && typeof data.timezone !== 'string') {
       throw new ValidationError('timezone must be a string.', 'configurations.user_details.timezone');
+    }
+    if (data.language_code !== undefined && typeof data.language_code !== 'string') {
+      throw new ValidationError('language_code must be a string.', 'configurations.user_details.language_code');
     }
     return new UserDetails(data);
   }

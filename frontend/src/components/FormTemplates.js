@@ -254,6 +254,159 @@ export function TimezoneSelectWidget(props) {
   );
 }
 
+// Common ISO 639-1 language codes with display names
+const COMMON_LANGUAGES = [
+  { code: 'en', name: 'English' },
+  { code: 'he', name: 'Hebrew (עברית)' },
+  { code: 'ar', name: 'Arabic (العربية)' },
+  { code: 'es', name: 'Spanish (Español)' },
+  { code: 'fr', name: 'French (Français)' },
+  { code: 'de', name: 'German (Deutsch)' },
+  { code: 'ru', name: 'Russian (Русский)' },
+  { code: 'zh', name: 'Chinese (中文)' },
+  { code: 'ja', name: 'Japanese (日本語)' },
+  { code: 'pt', name: 'Portuguese (Português)' },
+  { code: 'it', name: 'Italian (Italiano)' },
+  { code: 'ko', name: 'Korean (한국어)' },
+  { code: 'nl', name: 'Dutch (Nederlands)' },
+  { code: 'pl', name: 'Polish (Polski)' },
+  { code: 'tr', name: 'Turkish (Türkçe)' },
+  { code: 'hi', name: 'Hindi (हिन्दी)' },
+  { code: 'th', name: 'Thai (ไทย)' },
+  { code: 'vi', name: 'Vietnamese (Tiếng Việt)' },
+  { code: 'uk', name: 'Ukrainian (Українська)' },
+  { code: 'sv', name: 'Swedish (Svenska)' }
+];
+
+// Filterable language dropdown widget
+export function LanguageSelectWidget(props) {
+  const [isOpen, setIsOpen] = React.useState(false);
+  const [filter, setFilter] = React.useState('');
+  const containerRef = React.useRef(null);
+
+  // Build language options
+  const languageOptions = React.useMemo(() => {
+    return COMMON_LANGUAGES.map(lang => ({
+      value: lang.code,
+      label: lang.name,
+      code: lang.code.toUpperCase()
+    })).sort((a, b) => a.label.localeCompare(b.label));
+  }, []);
+
+  // Filter options based on input
+  const filteredOptions = React.useMemo(() => {
+    if (!filter) return languageOptions;
+    const lowerFilter = filter.toLowerCase();
+    return languageOptions.filter(opt =>
+      opt.label.toLowerCase().includes(lowerFilter) ||
+      opt.value.toLowerCase().includes(lowerFilter)
+    );
+  }, [filter, languageOptions]);
+
+  // Get display text for current value
+  const currentOption = languageOptions.find(opt => opt.value === props.value);
+  const displayText = currentOption
+    ? `${currentOption.label} (${currentOption.code})`
+    : props.value || 'Select language...';
+
+  // Close dropdown when clicking outside
+  React.useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (containerRef.current && !containerRef.current.contains(event.target)) {
+        setIsOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const handleSelect = (value) => {
+    props.onChange(value);
+    setIsOpen(false);
+    setFilter('');
+  };
+
+  return (
+    <div ref={containerRef} style={{ position: 'relative', display: 'inline-block', width: '250px' }}>
+      <div
+        onClick={() => setIsOpen(!isOpen)}
+        style={{
+          padding: '4px 8px',
+          border: '1px solid #ccc',
+          borderRadius: '3px',
+          cursor: 'pointer',
+          backgroundColor: '#fff',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center'
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {displayText}
+        </span>
+        <span style={{ marginLeft: '8px' }}>{isOpen ? '▲' : '▼'}</span>
+      </div>
+
+      {isOpen && (
+        <div style={{
+          position: 'absolute',
+          top: '100%',
+          left: 0,
+          right: 0,
+          border: '1px solid #ccc',
+          borderRadius: '3px',
+          backgroundColor: '#fff',
+          zIndex: 1000,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.15)',
+          maxHeight: '250px',
+          display: 'flex',
+          flexDirection: 'column'
+        }}>
+          <input
+            type="text"
+            placeholder="Filter..."
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              padding: '6px 8px',
+              border: 'none',
+              borderBottom: '1px solid #eee',
+              outline: 'none',
+              width: '100%',
+              boxSizing: 'border-box'
+            }}
+            autoFocus
+          />
+          <div style={{ overflowY: 'auto', maxHeight: '200px' }}>
+            {filteredOptions.map(opt => (
+              <div
+                key={opt.value}
+                onClick={() => handleSelect(opt.value)}
+                style={{
+                  padding: '6px 8px',
+                  cursor: 'pointer',
+                  backgroundColor: opt.value === props.value ? '#e6f7ff' : 'transparent',
+                  display: 'flex',
+                  justifyContent: 'space-between'
+                }}
+                onMouseEnter={(e) => e.target.style.backgroundColor = '#f5f5f5'}
+                onMouseLeave={(e) => e.target.style.backgroundColor = opt.value === props.value ? '#e6f7ff' : 'transparent'}
+              >
+                <span>{opt.label}</span>
+                <span style={{ color: '#888', fontSize: '0.9em' }}>{opt.code}</span>
+              </div>
+            ))}
+            {filteredOptions.length === 0 && (
+              <div style={{ padding: '8px', color: '#888', textAlign: 'center' }}>No matches</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // An inline checkbox field template - label and checkbox on same line
 export function InlineCheckboxFieldTemplate(props) {
   const { id, label, children, required } = props;
@@ -399,6 +552,24 @@ export function CustomFieldTemplate(props) {
   // For object containers, we let the ObjectFieldTemplate handle the title and layout.
   if (schema.type === 'object') {
     return children;
+  }
+
+  // Special handling for boolean fields (checkboxes) - label and checkbox inline in content cell
+  if (schema.type === 'boolean') {
+    return (
+      <div className={classNames} style={{ display: 'table-row' }}>
+        <div style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
+          <label htmlFor={id} style={{ margin: 0, cursor: 'pointer' }}>
+            {label}
+          </label>
+        </div>
+        <div style={{ boxSizing: 'border-box', textAlign: 'left', display: 'table-cell', width: '100%' }}>
+          {children}
+          {rawErrors.length > 0 && <ul>{rawErrors.map((error, i) => <li key={i} className="text-danger">{error}</li>)}</ul>}
+          {help}
+        </div>
+      </div>
+    );
   }
 
   // A single, consistent layout for all other fields.

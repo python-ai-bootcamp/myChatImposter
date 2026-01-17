@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate, LLMProviderConfigFieldTemplate, FlatProviderConfigTemplate, TimezoneSelectWidget } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate, LLMProviderConfigFieldTemplate, FlatProviderConfigTemplate, TimezoneSelectWidget, LanguageSelectWidget } from '../components/FormTemplates';
 
 // Stable widget definitions - defined outside component to prevent re-creation on re-render
 const ReadOnlyTextWidget = (props) => {
@@ -748,7 +748,8 @@ function EditPage() {
     ReadOnlyTextWidget: ReadOnlyTextWidget,
     CronInputWidget: CronInputWidget,
     SystemPromptWidget: SystemPromptWidget,
-    TimezoneSelectWidget: TimezoneSelectWidget
+    TimezoneSelectWidget: TimezoneSelectWidget,
+    LanguageSelectWidget: LanguageSelectWidget
   };
 
   const uiSchema = {
@@ -766,6 +767,9 @@ function EditPage() {
         "ui:title": "User Details",
         timezone: {
           "ui:widget": "TimezoneSelectWidget"
+        },
+        language_code: {
+          "ui:widget": "LanguageSelectWidget"
         }
       },
       chat_provider_config: {
