@@ -423,15 +423,31 @@ export function InlineCheckboxFieldTemplate(props) {
 // A flat object template that renders children without the panel-body wrapper
 // Used for llm_provider_config.provider_config to flatten the oneOf dropdown alignment
 export function FlatProviderConfigTemplate(props) {
-  // Render properties in a table layout matching other fields
+  // Separate boolean fields from other fields - booleans render outside the table
+  const tableFields = props.properties.filter(element => {
+    const schema = element.content?.props?.schema;
+    return schema?.type !== 'boolean';
+  });
+  const booleanFields = props.properties.filter(element => {
+    const schema = element.content?.props?.schema;
+    return schema?.type === 'boolean';
+  });
+
   return (
-    <div style={{ display: 'table', width: '100%', borderCollapse: 'collapse' }}>
-      {props.properties.map(element => (
+    <>
+      <div style={{ display: 'table', width: '100%', borderCollapse: 'collapse' }}>
+        {tableFields.map(element => (
+          <React.Fragment key={element.content.key}>
+            {element.content}
+          </React.Fragment>
+        ))}
+      </div>
+      {booleanFields.map(element => (
         <React.Fragment key={element.content.key}>
           {element.content}
         </React.Fragment>
       ))}
-    </div>
+    </>
   );
 }
 
@@ -554,20 +570,29 @@ export function CustomFieldTemplate(props) {
     return children;
   }
 
-  // Special handling for boolean fields (checkboxes) - label and checkbox inline in content cell
+  // Special handling for boolean fields - pure flex layout to avoid table-cell centering issues
   if (schema.type === 'boolean') {
     return (
-      <div className={classNames} style={{ display: 'table-row' }}>
-        <div style={{ display: 'table-cell', whiteSpace: 'nowrap', verticalAlign: 'top', textAlign: 'left', paddingRight: '1rem', boxSizing: 'border-box', margin: 0 }}>
-          <label htmlFor={id} style={{ margin: 0, cursor: 'pointer' }}>
-            {label}
-          </label>
-        </div>
-        <div style={{ boxSizing: 'border-box', textAlign: 'left', display: 'table-cell', width: '100%' }}>
-          {children}
-          {rawErrors.length > 0 && <ul>{rawErrors.map((error, i) => <li key={i} className="text-danger">{error}</li>)}</ul>}
-          {help}
-        </div>
+      <div className={classNames} style={{
+        display: 'flex',
+        flexDirection: 'row',
+        justifyContent: 'flex-start',
+        alignItems: 'center',
+        gap: '1rem',
+        marginTop: '0.5rem',
+        marginBottom: '0.5rem',
+        textAlign: 'left'
+      }}>
+        <span style={{ whiteSpace: 'nowrap', minWidth: '110px' }}>
+          {label}
+        </span>
+        <input
+          type="checkbox"
+          id={id}
+          checked={typeof props.formData === 'undefined' ? false : props.formData}
+          onChange={(e) => props.onChange(e.target.checked)}
+          style={{ margin: 0, marginLeft: '18px' }}
+        />
       </div>
     );
   }

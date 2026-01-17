@@ -141,11 +141,15 @@ button:disabled {
 }
 
 /* Remove padding from panel-body inside LLM provider config to fix field alignment */
+/* Also set display: table to isolate nested table-cells from parent table */
 .panel-body {
   padding: 0 !important;
   border: none !important;
   box-shadow: none !important;
+  display: table !important;
+  width: 100%;
 }
+
 
 /* Container for API Key Source dropdown - make it flex to put label inline */
 .panel-body>.form-group:has(#root_configurations_llm_provider_config_provider_config__oneof_select) {
@@ -168,7 +172,8 @@ label[for^="root_configurations_llm_provider_config"] {
 }
 
 /* Make all LLM Provider Config inputs extend to fill available width */
-input[id^="root_configurations_llm_provider_config"],
+/* Exclude checkbox inputs which should stay their natural size */
+input[id^="root_configurations_llm_provider_config"]:not([type="checkbox"]),
 select[id^="root_configurations_llm_provider_config"] {
   width: 100% !important;
   max-width: 300px;
