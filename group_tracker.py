@@ -99,31 +99,27 @@ class GroupTracker:
         """
         from llm_providers.recorder import LLMRecorder
         
-        # System prompt with language placeholder
-        # Note: Curly braces are escaped with double braces for LangChain template compatibility
-        # Use single braces for language_code since we format() it before passing to LangChain
-        system_prompt_template = """IMPORTANT: task_title and task_description must be in {language_code} language.
+        # System prompt with language placeholder - uses LangChain template syntax
+        # Curly braces for JSON are escaped with {{ and }}
+        system_prompt_template = """IMPORTANT: task_title and task_description must be written in a language with ISO 639-1 language code {language_code}.
 You are a helpful assistant. 
 each time you get a chat group message correspondence you extract from it all of the possible action items in the group correspondence and prepare a summary of it.
 the summary of action items is a json array, with objects, each object representing an action item and must include the following details:
-[{{{{
+[{{
 "relevant_task_messages":<an array of messages that are relevant to this specific action item of format RELEVANT_TASK_MESSAGE>,
 "text_deadline": <string representing the sender quoted deadline of this action item, if available>,
 "timestamp_deadline": <string representing the sender quoted deadline of this action item, but translated to timestamp string. if deadline was given originally as relative time (for example 'next week' or 'next wednsday') translate it relative to the time message with deadline was originally sent. if the deadline has not specific hour please set it to 12:00:00 noon at that designated day>,
 "task_title": <a concise description of the task phrased as short as possible as a title>,
 "task_description": <a concise description of the task to be done with details, if task spans more than a single message, aggragate the information from all messages that are part of this task>
-}}}},...] 
+}},...] 
 
 RELEVANT_TASK_MESSAGE is an object of format:
-{
+{{
     "originating_time": <string representing the time in which the message was sent>,
     "sender": <string representing the sender of the message>,
     "content": <the content of the message>
-}
+}}
 """
-        
-        # Inject language code into prompt
-        system_prompt = system_prompt_template.format(language_code=language_code)
         
         # Setup recorder if enabled
         record_enabled = llm_config.provider_config.record_llm_interactions
@@ -132,7 +128,9 @@ RELEVANT_TASK_MESSAGE is an object of format:
         if record_enabled:
             recorder = LLMRecorder(user_id, "periodic_group_tracking", group_id)
             epoch_ts = recorder.start_recording()
-            recorder.record_prompt(system_prompt, messages_json, epoch_ts=epoch_ts)
+            # Format prompt for recording - substitute language_code variable
+            formatted_prompt = system_prompt_template.replace("{language_code}", language_code)
+            recorder.record_prompt(formatted_prompt, messages_json, epoch_ts=epoch_ts)
         
         try:
             # Dynamically load the LLM provider
@@ -147,17 +145,17 @@ RELEVANT_TASK_MESSAGE is an object of format:
             llm_provider = LlmProviderClass(config=llm_config, user_id=f"action_items_{user_id}")
             llm = llm_provider.get_llm()
             
-            # Create the prompt and chain
+            # Create the prompt and chain - language_code passed as template variable
             prompt = ChatPromptTemplate.from_messages([
-                ("system", system_prompt),
+                ("system", system_prompt_template),
                 ("human", "{input}")
             ])
             
             chain = prompt | llm | StrOutputParser()
             
-            # Invoke the chain
+            # Invoke the chain with all template variables
             logger.info(f"Invoking LLM for action items extraction for user {user_id}")
-            result = await chain.ainvoke({"input": messages_json})
+            result = await chain.ainvoke({"input": messages_json, "language_code": language_code})
             logger.info(f"LLM action items extraction completed for user {user_id}")
             
             # Record response if enabled
