@@ -1,5 +1,8 @@
 import asyncio
 import time
+import json
+import importlib
+import inspect
 from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -8,9 +11,13 @@ from croniter import croniter
 import logging
 from zoneinfo import ZoneInfo
 
+from langchain_core.prompts import ChatPromptTemplate
+from langchain_core.output_parsers import StrOutputParser
+
 from chatbot_manager import ChatbotInstance
-from config_models import PeriodicGroupTrackingConfig
+from config_models import PeriodicGroupTrackingConfig, LLMProviderConfig
 from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider
+from llm_providers.base import BaseLlmProvider
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -53,6 +60,81 @@ class GroupTracker:
         if max_interval > 0:
             return int(max_interval) + 900 # Add 15 minutes buffer
         return 0
+
+    def _find_provider_class(self, module, base_class):
+        """Finds a class in the module that is a subclass of the base_class."""
+        for name, obj in inspect.getmembers(module):
+            if inspect.isclass(obj) and issubclass(obj, base_class) and obj is not base_class:
+                return obj
+        return None
+
+    def _build_llm_input_json(self, messages: list, timezone: ZoneInfo) -> str:
+        """
+        Builds a JSON array of messages formatted for LLM input.
+        Each message has: when (timestamp in user's timezone), sender (display name), content.
+        """
+        formatted_messages = []
+        for msg in messages:
+            originating_time_ms = msg.get('originating_time', 0)
+            originating_dt = datetime.fromtimestamp(originating_time_ms / 1000, tz=timezone)
+            formatted_msg = {
+                "when": originating_dt.strftime('%Y-%m-%d %H:%M'),
+                "sender": msg.get('sender', {}).get('display_name', 'Unknown'),
+                "content": msg.get('message', '')
+            }
+            formatted_messages.append(formatted_msg)
+        return json.dumps(formatted_messages, indent=2, ensure_ascii=False)
+
+    async def _extract_action_items(self, messages_json: str, llm_config: LLMProviderConfig, user_id: str) -> str:
+        """
+        Uses LLM to extract action items from group messages.
+        Returns the raw LLM output string.
+        """
+        # System prompt as specified in the requirements
+        # Note: Curly braces are escaped with double braces for LangChain template compatibility
+        system_prompt = """You are a helpful assistant. each time you get a chat group message correspondence you take out of it all of the possible action items in the group correspondence and prepare a summary of it with following details per each action item in a form of a json array of objects of the following structure:
+[{{
+"originating_time": <string representing the time the key message representing this action item was sent, probably first mention of it, or first mention of it with a deadline>,
+"sender": <string representing the sender of key message representing this action item, preferably the first mention of it, or the first person giving it some kind of deadline>,
+"text_deadline": <string representing the sender quoted deadline of this action item, if available>,
+"timestamp_deadline": <string representing the sender quoted deadline of this action item, but translated to timestamp string. if deadline was given originally as relative time for example ()'next week' or 'next wednsday') please translate it relative to the time message was originally sent. if the deadline has not specific hour please set it to 12:00:00 noon at that designated day>,
+"content": <the content of the key message representing this action item>,
+"task_title": <a concise description of the task to be done as short as possible>,
+"task_description": <a concise description of the task to be done with details, if task spans more than a single message, aggragate the information from all messages that are part of this task>
+}},...] 
+"""
+        
+        try:
+            # Dynamically load the LLM provider
+            llm_provider_name = llm_config.provider_name
+            llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
+            LlmProviderClass = self._find_provider_class(llm_provider_module, BaseLlmProvider)
+            
+            if not LlmProviderClass:
+                logger.error(f"Could not find LLM provider class for {llm_provider_name}")
+                return "[Error: LLM provider not found]"
+            
+            llm_provider = LlmProviderClass(config=llm_config, user_id=f"action_items_{user_id}")
+            llm = llm_provider.get_llm()
+            
+            # Create the prompt and chain
+            prompt = ChatPromptTemplate.from_messages([
+                ("system", system_prompt),
+                ("human", "{input}")
+            ])
+            
+            chain = prompt | llm | StrOutputParser()
+            
+            # Invoke the chain
+            logger.info(f"Invoking LLM for action items extraction for user {user_id}")
+            result = await chain.ainvoke({"input": messages_json})
+            logger.info(f"LLM action items extraction completed for user {user_id}")
+            
+            return result
+            
+        except Exception as e:
+            logger.error(f"Failed to extract action items for user {user_id}: {e}")
+            return f"[Error extracting action items: {e}]"
 
     def update_jobs(self, user_id: str, tracking_configs: list[PeriodicGroupTrackingConfig], timezone: str = "UTC"):
         # Remove existing jobs for this user
@@ -243,7 +325,32 @@ class GroupTracker:
             user_tz = ZoneInfo("UTC")
         
         now = datetime.now(user_tz)
-        digest_message = f"{now.strftime('%Y-%m-%d')} {now.strftime('%H:%M')}: Tracked Group Digest"
+        digest_message = f"{now.strftime('%Y-%m-%d')} {now.strftime('%H:%M:%S')}: Tracked Group {config.displayName} Digest"
+        
+        # Extract action items if there are messages
+        action_items_output = ""
+        
+        if not transformed_messages:
+            action_items_output = "\n\nNo messages in this period"
+        else:
+            try:
+                # Get user's LLM config
+                llm_config = target_instance.config.configurations.llm_provider_config
+                
+                # Build the JSON input for LLM
+                messages_json = self._build_llm_input_json(transformed_messages, user_tz)
+                logger.info(f"Built LLM input JSON with {len(transformed_messages)} messages for user {user_id}")
+                
+                # Extract action items
+                action_items_output = await self._extract_action_items(messages_json, llm_config, user_id)
+                action_items_output = f"\n\n{action_items_output}"
+                
+            except Exception as e:
+                logger.error(f"Failed to extract action items for user {user_id}: {e}")
+                action_items_output = f"\n\n[Error extracting action items: {e}]"
+        
+        # Append action items to digest message
+        digest_message = digest_message + action_items_output
         
         # Use the user's actual WhatsApp JID for sending message to self
         recipient_jid = target_instance.provider_instance.user_jid
