@@ -101,16 +101,16 @@ class GroupTracker:
         
         # System prompt with language placeholder - uses LangChain template syntax
         # Curly braces for JSON are escaped with {{ and }}
-        system_prompt_template = """IMPORTANT: task_title and task_description must be written in a language with ISO 639-1 language code {language_code}.
+        system_prompt_template = """IMPORTANT: task_title and task_description must be written in a language with language code {language_code}.
 You are a helpful assistant. 
 each time you get a chat group message correspondence you extract from it all of the possible action items in the group correspondence and prepare a summary of it.
 the summary of action items is a json array, with objects, each object representing an action item and must include the following details:
 [{{
 "relevant_task_messages":<an array of messages that are relevant to this specific action item of format RELEVANT_TASK_MESSAGE>,
-"text_deadline": <string representing the sender quoted deadline of this action item, if available>,
-"timestamp_deadline": <string representing the sender quoted deadline of this action item, but translated to timestamp string. if deadline was given originally as relative time (for example 'next week' or 'next wednsday') translate it relative to the time message with deadline was originally sent. if the deadline has not specific hour please set it to 12:00:00 noon at that designated day>,
+"text_deadline": <string representing the sender quoted deadline of this action item, if available, if not available set as empty string>,
+"timestamp_deadline": <string representing the sender quoted deadline of this action item, but translated to timestamp string. if deadline was given originally as relative time (for example 'next week' or 'next wednsday') translate it relative to the time message with deadline was originally sent. if the deadline has no specific hour, please set it to 12:00:00 noon at that designated day. if deadline was not given set as empty string>,
 "task_title": <a concise description of the task phrased as short as possible as a title>,
-"task_description": <a concise description of the task to be done with details, if task spans more than a single message, aggragate the information from all messages that are part of this task>
+"task_description": <a concise description of the task to be done with details. if task spans more than a single message, aggragate the information from all messages that are part of this task. if deadline is given as relative time (for example 'next week' or 'next wednsday') please give absolute date and time information (adjusting the time to the time the message with deadline was sent). if the deadline has no specific hour, please set it to 12:00:00 noon at that designated day>,
 }},...] 
 
 RELEVANT_TASK_MESSAGE is an object of format:
@@ -131,6 +131,11 @@ RELEVANT_TASK_MESSAGE is an object of format:
             # Format prompt for recording - substitute language_code variable
             formatted_prompt = system_prompt_template.replace("{language_code}", language_code)
             recorder.record_prompt(formatted_prompt, messages_json, epoch_ts=epoch_ts)
+            # Record full LLM config (model, temperature, reasoning_effort, etc.)
+            config_dict = llm_config.provider_config.model_dump()
+            config_dict['provider_name'] = llm_config.provider_name
+            config_dict['language_code'] = language_code
+            recorder.record_config(config_dict, epoch_ts=epoch_ts)
         
         try:
             # Dynamically load the LLM provider

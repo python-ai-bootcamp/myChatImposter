@@ -48,30 +48,30 @@ def task_matches(expected: Dict, response: Dict) -> bool:
     
     Criteria:
     1. timestamp_deadline exact match
-    2. task_title regex match
-    3. task_description regex match
+    2. task_title regex search (pattern can match anywhere in response)
+    3. task_description regex search (pattern can match anywhere in response)
     4. relevant_task_messages bidirectional containment
     """
     # 1. timestamp_deadline exact match
     if expected.get("timestamp_deadline") != response.get("timestamp_deadline"):
         return False
     
-    # 2. task_title regex match
+    # 2. task_title regex search (match anywhere in string)
     task_title_pattern = expected.get("task_title", "")
     response_title = response.get("task_title", "")
     try:
-        if not re.match(task_title_pattern, response_title, re.IGNORECASE | re.DOTALL):
+        if not re.search(task_title_pattern, response_title, re.IGNORECASE | re.DOTALL):
             return False
     except re.error:
         # Invalid regex, fall back to exact match
         if task_title_pattern != response_title:
             return False
     
-    # 3. task_description regex match
+    # 3. task_description regex search (match anywhere in string)
     task_desc_pattern = expected.get("task_description", "")
     response_desc = response.get("task_description", "")
     try:
-        if not re.match(task_desc_pattern, response_desc, re.IGNORECASE | re.DOTALL):
+        if not re.search(task_desc_pattern, response_desc, re.IGNORECASE | re.DOTALL):
             return False
     except re.error:
         # Invalid regex, fall back to exact match
@@ -113,7 +113,7 @@ def score_triplet(expected: List[Dict], response: List[Dict]) -> float:
     return matched / len(expected)
 
 
-def score_triplet_detailed(expected: List[Dict], response: List[Dict]) -> Dict[str, Any]:
+def score_triplet_detailed(expected: List[Dict], response: List[Dict], debug: bool = False) -> Dict[str, Any]:
     """
     Score a triplet with detailed results for debugging.
     
@@ -134,8 +134,47 @@ def score_triplet_detailed(expected: List[Dict], response: List[Dict]) -> Dict[s
     
     for exp_idx, exp_item in enumerate(expected):
         found_match = False
+        failure_reasons = []
+        
         for i, resp_item in enumerate(response):
-            if i not in used_response_indices and task_matches(exp_item, resp_item):
+            if i in used_response_indices:
+                continue
+                
+            # Check each criterion and collect failure reasons
+            reasons = []
+            
+            # 1. timestamp_deadline
+            if exp_item.get("timestamp_deadline") != resp_item.get("timestamp_deadline"):
+                reasons.append(f"timestamp_deadline: expected '{exp_item.get('timestamp_deadline')}' vs response '{resp_item.get('timestamp_deadline')}'")
+            
+            # 2. task_title regex
+            title_pattern = exp_item.get("task_title", "")
+            resp_title = resp_item.get("task_title", "")
+            try:
+                if not re.search(title_pattern, resp_title, re.IGNORECASE | re.DOTALL):
+                    reasons.append(f"task_title: pattern '{title_pattern}' not found in '{resp_title}'")
+            except re.error:
+                if title_pattern != resp_title:
+                    reasons.append(f"task_title: '{title_pattern}' != '{resp_title}' (invalid regex, exact match failed)")
+            
+            # 3. task_description regex
+            desc_pattern = exp_item.get("task_description", "")
+            resp_desc = resp_item.get("task_description", "")
+            try:
+                if not re.search(desc_pattern, resp_desc, re.IGNORECASE | re.DOTALL):
+                    pattern_display = desc_pattern[:50] + ('...' if len(desc_pattern) > 50 else '')
+                    reasons.append(f"task_description: pattern '{pattern_display}' not found")
+            except re.error:
+                if desc_pattern != resp_desc:
+                    reasons.append(f"task_description: exact match failed (invalid regex)")
+            
+            # 4. messages match
+            exp_msgs = exp_item.get("relevant_task_messages", [])
+            resp_msgs = resp_item.get("relevant_task_messages", [])
+            if not messages_match(exp_msgs, resp_msgs):
+                reasons.append(f"relevant_task_messages: {len(exp_msgs)} expected vs {len(resp_msgs)} in response")
+            
+            if not reasons:
                 matched += 1
                 used_response_indices.add(i)
                 match_details.append({
@@ -145,14 +184,19 @@ def score_triplet_detailed(expected: List[Dict], response: List[Dict]) -> Dict[s
                 })
                 found_match = True
                 break
+            else:
+                failure_reasons.append({"response_idx": i, "reasons": reasons})
         
         if not found_match:
-            match_details.append({
+            detail = {
                 "expected_idx": exp_idx,
                 "response_idx": None,
                 "matched": False,
                 "expected_task": exp_item.get("task_title", "Unknown")
-            })
+            }
+            if debug and failure_reasons:
+                detail["failure_reasons"] = failure_reasons
+            match_details.append(detail)
     
     return {
         "score": matched / len(expected),

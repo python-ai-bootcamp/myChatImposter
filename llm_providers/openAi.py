@@ -23,21 +23,14 @@ class OpenAiLlmProvider(BaseLlmProvider):
         else:
             raise ValueError(f"Unknown api_key_source value: {api_key_source}")
 
-        # "reasoning_effort" might not be a direct init arg in older LangChain versions,
-        # so we move it to model_kwargs to be safe, or leave it if ChatOpenAI handles it.
-        # Safest approach for new O1-like params is often model_kwargs.
-        reasoning_effort = llm_params.pop("reasoning_effort", None)
+        # reasoning_effort is now a direct ChatOpenAI parameter
+        # Just pop it if None so we don't pass null to the constructor
+        reasoning_effort = llm_params.get("reasoning_effort")
+        if reasoning_effort is None:
+            llm_params.pop("reasoning_effort", None)
         
         print(f"DEBUG: Configured reasoning_effort: {reasoning_effort}")
-
-        if reasoning_effort:
-            if "model_kwargs" not in llm_params:
-                llm_params["model_kwargs"] = {}
-            llm_params["model_kwargs"]["reasoning_effort"] = reasoning_effort
-
         print(f"DEBUG: Final llm_params keys: {list(llm_params.keys())}")
-        if "model_kwargs" in llm_params:
-             print(f"DEBUG: Final model_kwargs: {llm_params['model_kwargs']}")
 
         return llm_params
 

@@ -4,11 +4,13 @@ LLM Recorder - Records LLM prompts and responses to files for evaluation.
 File structure:
 ./log/llm_recordings/<USER_ID>/<FEATURE_NAME>/<CORRESPONDENT_ID>/<EPOCH>_prompt.txt
 ./log/llm_recordings/<USER_ID>/<FEATURE_NAME>/<CORRESPONDENT_ID>/<EPOCH>_response.txt
+./log/llm_recordings/<USER_ID>/<FEATURE_NAME>/<CORRESPONDENT_ID>/<EPOCH>_config.json
 """
 
 from pathlib import Path
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 import time
+import json
 
 
 class LLMRecorder:
@@ -42,6 +44,28 @@ class LLMRecorder:
         """Start a new recording session and return the epoch timestamp."""
         self._epoch_ts = int(time.time())
         return self._epoch_ts
+    
+    def record_config(self, llm_config: Dict[str, Any], epoch_ts: Optional[int] = None):
+        """
+        Write the LLM config to <epoch>_config.json
+        
+        Args:
+            llm_config: Dictionary with LLM configuration (model, temperature, etc.)
+            epoch_ts: Optional epoch timestamp (uses current session if not provided)
+        """
+        ts = epoch_ts or self._epoch_ts
+        if ts is None:
+            ts = self.start_recording()
+        
+        path = self.get_recording_dir() / f"{ts}_config.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Mask API key if present
+        safe_config = dict(llm_config)
+        if 'api_key' in safe_config:
+            safe_config['api_key'] = '***MASKED***'
+        
+        path.write_text(json.dumps(safe_config, indent=2, ensure_ascii=False), encoding='utf-8')
     
     def record_prompt(self, system_prompt: str, user_input: str, history: Optional[List] = None, epoch_ts: Optional[int] = None):
         """
@@ -83,3 +107,4 @@ class LLMRecorder:
         path.parent.mkdir(parents=True, exist_ok=True)
         
         path.write_text(response, encoding='utf-8')
+
