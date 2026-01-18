@@ -12,6 +12,8 @@ class OpenAiLlmProvider(BaseLlmProvider):
         llm_params = self.config.provider_config.model_dump()
         api_key_source = llm_params.pop("api_key_source", "environment")
         api_key = llm_params.get("api_key")
+        # Remove our recording flag - it's not an LLM parameter
+        llm_params.pop("record_llm_interactions", None)
 
         if api_key_source == "environment":
             llm_params.pop("api_key", None)
