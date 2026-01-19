@@ -32,6 +32,16 @@ class LLMProviderSettings(BaseModel):
     model: str
     temperature: float = 0.7
     reasoning_effort: Optional[Literal["low", "medium", "high", "minimal"]] = None
+    seed: Optional[int] = Field(
+        default=None,
+        title="Seed",
+        json_schema_extra={
+            "anyOf": [
+                {"type": "integer", "title": "Defined"},
+                {"type": "null", "title": "Undefined"}
+            ]
+        }
+    )
     record_llm_interactions: bool = Field(
         default=False,
         title="Record Traffic"

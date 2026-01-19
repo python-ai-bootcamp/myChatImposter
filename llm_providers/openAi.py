@@ -29,7 +29,12 @@ class OpenAiLlmProvider(BaseLlmProvider):
         if reasoning_effort is None:
             llm_params.pop("reasoning_effort", None)
         
-        print(f"DEBUG: Configured reasoning_effort: {reasoning_effort}")
+        # seed for reproducibility - pop if None
+        seed = llm_params.get("seed")
+        if seed is None:
+            llm_params.pop("seed", None)
+        
+        print(f"DEBUG: Configured reasoning_effort: {reasoning_effort}, seed: {seed}")
         print(f"DEBUG: Final llm_params keys: {list(llm_params.keys())}")
 
         return llm_params

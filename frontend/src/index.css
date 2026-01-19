@@ -190,6 +190,12 @@ select[id^="root_configurations_llm_provider_config"] {
   max-width: 156px !important;
 }
 
+/* Ensure Seed input matches Reasoning Effort dropdown width */
+#root_configurations_llm_provider_config_provider_config_seed {
+  max-width: 156px !important;
+  width: 156px !important;
+}
+
 #root_configurations_llm_provider_config_provider_config_api_key {
   width: 239px !important;
 }

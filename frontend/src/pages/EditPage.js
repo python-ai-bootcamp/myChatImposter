@@ -449,6 +449,36 @@ function EditPage() {
             providerConfig.reasoning_effort = 'minimal';
           }
         }
+
+        // Logic for Seed auto-selection (similar to reasoning_effort)
+        const oldSeed = oldProviderConfig?.seed;
+        const newSeed = providerConfig.seed;
+
+        // DEBUG: Log seed transition
+        console.log('Seed transition:', { oldSeed, newSeed, typeOfNew: typeof newSeed });
+
+        // When switching anyOf from Undefined to Defined, rjsf sets seed to undefined
+        // We need to detect this and set a default value of 0.
+        // However, when switching FROM Defined TO Undefined, rjsf ALSO sets seed to undefined.
+        // We must distinguish the two cases using oldSeed.
+
+        // Case 1: Switching from Undefined to Defined
+        // oldSeed is null/undefined, newSeed is undefined/empty -> Set default 0
+        if ((oldSeed === null || oldSeed === undefined) &&
+          (newSeed === undefined || newSeed === "")) {
+          console.log('Switching to Defined -> Setting seed to 0');
+          providerConfig.seed = 0;
+        }
+
+        // Case 2: Switching from Defined to Undefined
+        // oldSeed is a number, newSeed is undefined -> Do nothing (let it be undefined)
+
+        // Case 3: Invalid number input while Defined
+        // newSeed is NaN -> Reset to 0
+        if (typeof newSeed === 'number' && isNaN(newSeed)) {
+          console.log('Invalid number -> Resetting seed to 0');
+          providerConfig.seed = 0;
+        }
       }
 
       // Auto-populate displayName when groupIdentifier is selected
@@ -801,6 +831,9 @@ function EditPage() {
           },
           reasoning_effort: {
             "ui:title": "Reasoning Effort"
+          },
+          seed: {
+            "ui:title": "Seed"
           }
         }
       }

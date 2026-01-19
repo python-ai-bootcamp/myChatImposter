@@ -113,7 +113,8 @@ async def execute_prompt(
     model: str,
     temperature: float,
     api_key: Optional[str] = None,
-    reasoning_effort: Optional[str] = None
+    reasoning_effort: Optional[str] = None,
+    seed: Optional[int] = None
 ) -> str:
     """
     Execute a prompt using the LLM.
@@ -133,6 +134,8 @@ async def execute_prompt(
         llm_kwargs["api_key"] = api_key
     if reasoning_effort:
         llm_kwargs["reasoning_effort"] = reasoning_effort
+    if seed is not None:
+        llm_kwargs["seed"] = seed
     
     llm = ChatOpenAI(**llm_kwargs)
     
@@ -224,12 +227,14 @@ async def run_evaluation(
         effective_model = effective_config.get("model", model)
         effective_temp = effective_config.get("temperature", temperature)
         effective_reasoning = effective_config.get("reasoning_effort")
+        effective_seed = effective_config.get("seed")
         
         # Log config sources
         model_source = "override" if "model" in overrides else ("recorded" if "model" in recorded_config else "default")
         temp_source = "override" if "temperature" in overrides else ("recorded" if "temperature" in recorded_config else "default")
         reasoning_str = f", reasoning={effective_reasoning}" if effective_reasoning else ""
-        print(f"  Config: model={effective_model} ({model_source}), temp={effective_temp} ({temp_source}){reasoning_str}")
+        seed_str = f", seed={effective_seed}" if effective_seed is not None else ""
+        print(f"  Config: model={effective_model} ({model_source}), temp={effective_temp} ({temp_source}){reasoning_str}{seed_str}")
         
         # Get API key from config (recorded or override)
         effective_api_key = effective_config.get("api_key")
@@ -259,7 +264,8 @@ async def run_evaluation(
                 model=effective_model,
                 temperature=effective_temp,
                 api_key=effective_api_key,
-                reasoning_effort=effective_reasoning
+                reasoning_effort=effective_reasoning,
+                seed=effective_seed
             )
             if debug:
                 print(f"  === LLM RESPONSE ===")
@@ -344,6 +350,7 @@ def main():
         "model",
         "temperature", 
         "reasoning_effort",
+        "seed",
         "provider_name",
         "language_code",
         "api_key_source",
@@ -378,6 +385,11 @@ def main():
                     value = float(value)
                 except ValueError:
                     parser.error(f"Invalid value for temperature: '{value}'. Must be a number.")
+            elif key == "seed":
+                try:
+                    value = int(value)
+                except ValueError:
+                    parser.error(f"Invalid value for seed: '{value}'. Must be an integer.")
             config_overrides[key] = value
     
     # Handle system_prompt_file: load file content into system_prompt
