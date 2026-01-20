@@ -18,6 +18,7 @@ REASONING_MIN="minimal"
 REASONING_MAX="high"
 ITERATIONS=1
 SEED=""
+MODEL=""
 
 # All reasoning effort values in order (from minimal to highest)
 ALL_REASONING_EFFORTS=("minimal" "low" "medium" "high")
@@ -38,6 +39,7 @@ while [[ $# -gt 0 ]]; do
             echo "  --reasoning-max VALUE  Maximum reasoning effort (default: high)"
             echo "  --iterations N         Number of iterations per config (default: 1)"
             echo "  --seed INT             Seed for reproducible results (optional)"
+            echo "  --model NAME           Override model (e.g. gpt-5-mini)"
             echo "  --suite-path PATH      Path to test suite directory"
             echo "  -h, --help             Show this help message"
             echo ""
@@ -56,8 +58,7 @@ while [[ $# -gt 0 ]]; do
             echo ""
             echo "Examples:"
             echo "  ./run_sweep.sh --temp-min 0.0 --temp-max 0.5 --temp-step 0.1"
-            echo "  ./run_sweep.sh --reasoning-min minimal --reasoning-max medium"
-            echo "  ./run_sweep.sh --iterations 3 --temp-min 0.3 --temp-max 0.7"
+            echo "  ./run_sweep.sh --model gpt-5-mini --iterations 3"
             echo "  ./run_sweep.sh --seed 42 --temp-min 0.0 --temp-max 0.0  # Reproducible run"
             exit 0
             ;;
@@ -87,6 +88,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --seed)
             SEED="$2"
+            shift 2
+            ;;
+        --model)
+            MODEL="$2"
             shift 2
             ;;
         --suite-path)
@@ -136,8 +141,8 @@ mkdir -p "$RESULTS_DIR"
 RAW_RESULTS_FILE="$RESULTS_DIR/sweep_raw_${TIMESTAMP}.csv"
 SUMMARY_FILE="$RESULTS_DIR/sweep_summary_${TIMESTAMP}.csv"
 
-echo "temperature,reasoning_effort,iteration,suite_score" > "$RAW_RESULTS_FILE"
-echo "temperature,reasoning_effort,avg_score,min_score,max_score,stdev" > "$SUMMARY_FILE"
+echo "temperature,reasoning_effort,model,iteration,suite_score" > "$RAW_RESULTS_FILE"
+echo "temperature,reasoning_effort,model,avg_score,min_score,max_score,stdev" > "$SUMMARY_FILE"
 
 echo "============================================================"
 echo "Parameter Sweep"
@@ -161,7 +166,7 @@ start, end, step = float('$TEMP_MIN'), float('$TEMP_MAX'), float('$TEMP_STEP')
 current = start
 temps = []
 while current <= end + 0.0001:  # small epsilon for float comparison
-    temps.append(f'{current:.2f}')
+    temps.append(f'{current:.3f}')
     current += step
 print(' '.join(temps))
 ")
@@ -183,7 +188,8 @@ for temp in "${TEMP_ARRAY[@]}"; do
         for iter in $(seq 1 $ITERATIONS); do
             current_run=$((current_run + 1))
             echo ""
-            echo "[$current_run/$total_runs] Config $config_num: temp=$temp, effort=$effort (iter $iter/$ITERATIONS)"
+            MODEL_DISPLAY="${MODEL:-recorded}"
+            echo "[$current_run/$total_runs] Config $config_num: model=$MODEL_DISPLAY, temp=$temp, effort=$effort (iter $iter/$ITERATIONS)"
             echo "------------------------------------------------------------"
             
             # Build seed override if set
@@ -192,12 +198,19 @@ for temp in "${TEMP_ARRAY[@]}"; do
                 SEED_OVERRIDE="--config-override seed=$SEED"
             fi
             
+            # Build model override if set
+            MODEL_OVERRIDE=""
+            if [ -n "$MODEL" ]; then
+                MODEL_OVERRIDE="--config-override model=$MODEL"
+            fi
+            
             # Run eval and capture output
             output=$(python -m evals.run_evals \
                 --suite-path "$SUITE_PATH" \
                 --config-override "temperature=$temp" \
                 --config-override "reasoning_effort=$effort" \
                 $SEED_OVERRIDE \
+                $MODEL_OVERRIDE \
                 2>&1)
             
             # Extract suite score from output
@@ -218,7 +231,7 @@ for temp in "${TEMP_ARRAY[@]}"; do
             fi
             
             # Append to raw results
-            echo "$temp,$effort,$iter,$suite_score" >> "$RAW_RESULTS_FILE"
+            echo "$temp,$effort,${MODEL:-recorded},$iter,$suite_score" >> "$RAW_RESULTS_FILE"
         done
         
         # Calculate stats for this configuration using Python
@@ -236,7 +249,7 @@ else:
     stdev = 0.0
 print(f'{avg:.4f},{min_s:.4f},{max_s:.4f},{stdev:.4f}')
 ")
-            echo "$temp,$effort,$stats" >> "$SUMMARY_FILE"
+            echo "$temp,$effort,${MODEL:-recorded},$stats" >> "$SUMMARY_FILE"
             echo "  Config stats: avg=$(echo $stats | cut -d, -f1), min=$(echo $stats | cut -d, -f2), max=$(echo $stats | cut -d, -f3), stdev=$(echo $stats | cut -d, -f4)"
         else
             echo "$temp,$effort,ERROR,ERROR,ERROR,ERROR" >> "$SUMMARY_FILE"
@@ -257,7 +270,7 @@ echo "------------------------------------"
 # Sort by avg_score (column 3) descending, skip header
 {
     head -1 "$SUMMARY_FILE"
-    tail -n +2 "$SUMMARY_FILE" | grep -v ERROR | sort -t, -k3 -rn
+    tail -n +2 "$SUMMARY_FILE" | grep -v ERROR | sort -t, -k4 -rn
 } | if command -v column &> /dev/null; then
     column -t -s,
 else
@@ -266,7 +279,7 @@ fi
 echo ""
 
 # Find best configuration
-best=$(tail -n +2 "$SUMMARY_FILE" | grep -v ERROR | sort -t, -k3 -rn | head -1)
+best=$(tail -n +2 "$SUMMARY_FILE" | grep -v ERROR | sort -t, -k4 -rn | head -1)
 if [ -n "$best" ]; then
     echo "Best configuration: $best"
 else

@@ -101,7 +101,10 @@ class GroupTracker:
         
         # System prompt with language placeholder - uses LangChain template syntax
         # Curly braces for JSON are escaped with {{ and }}
-        system_prompt_template = """IMPORTANT: task_title and task_description must be written in a language with language code {language_code}.
+        system_prompt_template = """IMPORTANT: 
+        - task_title and task_description must be written in a language with language code {language_code}.
+        - an important event without a deadline is still an event to be added
+		- if there is a date or deadline of some sort representing the event/task it must be added to text_deadline and parsed into timestamp_deadline as explained in output strucure below
 You are a helpful assistant. 
 each time you get a chat group message correspondence you extract from it all of the possible action items in the group correspondence and prepare a summary of it.
 the summary of action items is a json array, with objects, each object representing an action item and must include the following details:
@@ -110,7 +113,7 @@ the summary of action items is a json array, with objects, each object represent
 "text_deadline": <string representing the sender quoted deadline of this action item, if available, if not available set as empty string>,
 "timestamp_deadline": <string representing the sender quoted deadline of this action item, but translated to timestamp string. if deadline was given originally as relative time (for example 'next week' or 'next wednsday') translate it relative to the time message with deadline was originally sent. if the deadline has no specific hour, please set it to 12:00:00 noon at that designated day. if deadline was not given set as empty string>,
 "task_title": <a concise description of the task phrased as short as possible as a title>,
-"task_description": <a concise description of the task to be done with details. if task spans more than a single message, aggragate the information from all messages that are part of this task. if deadline is given as relative time (for example 'next week' or 'next wednsday') please give absolute date and time information (adjusting the time to the time the message with deadline was sent). if the deadline has no specific hour, please set it to 12:00:00 noon at that designated day>,
+"task_description": <a concise description of the task to be done with details. if task spans more than a single message, aggragate the information from all messages that are part of this task. if deadline is given as relative time (for example 'next week' or 'next wednsday') please give absolute date and time information (both day name and date and time adjustws to the time to the time the message in which the deadline was sent). if the deadline has no specific hour, please set it to 12:00:00 noon at that designated day>
 }},...] 
 
 RELEVANT_TASK_MESSAGE is an object of format:

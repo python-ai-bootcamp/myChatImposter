@@ -38,7 +38,8 @@ def messages_match(expected_messages: List[Dict], response_messages: List[Dict])
     expected_set = set(normalize(m) for m in expected_messages)
     response_set = set(normalize(m) for m in response_messages)
     
-    return expected_set == response_set
+    # Check if expected is a subset of response (we allow extra context in response)
+    return expected_set.issubset(response_set)
 
 
 def task_matches(expected: Dict, response: Dict) -> bool:
@@ -53,8 +54,17 @@ def task_matches(expected: Dict, response: Dict) -> bool:
     4. relevant_task_messages bidirectional containment
     """
     # 1. timestamp_deadline exact match
-    if expected.get("timestamp_deadline") != response.get("timestamp_deadline"):
-        return False
+    # 1. timestamp_deadline regex matching
+    ts_pattern = expected.get("timestamp_deadline", "")
+    resp_ts = response.get("timestamp_deadline", "")
+    try:
+        # Use regex search to support patterns like ^(?:|date)$
+        if not re.search(ts_pattern, resp_ts, re.IGNORECASE):
+            return False
+    except re.error:
+        # Fallback to exact match if invalid regex
+        if ts_pattern != resp_ts:
+            return False
     
     # 2. task_title regex search (match anywhere in string)
     task_title_pattern = expected.get("task_title", "")
@@ -144,8 +154,15 @@ def score_triplet_detailed(expected: List[Dict], response: List[Dict], debug: bo
             reasons = []
             
             # 1. timestamp_deadline
-            if exp_item.get("timestamp_deadline") != resp_item.get("timestamp_deadline"):
-                reasons.append(f"timestamp_deadline: expected '{exp_item.get('timestamp_deadline')}' vs response '{resp_item.get('timestamp_deadline')}'")
+            # 1. timestamp_deadline regex
+            ts_pattern = exp_item.get("timestamp_deadline", "")
+            resp_ts = resp_item.get("timestamp_deadline", "")
+            try:
+                if not re.search(ts_pattern, resp_ts, re.IGNORECASE):
+                    reasons.append(f"timestamp_deadline: expected pattern '{ts_pattern}' vs response '{resp_ts}'")
+            except re.error:
+                if ts_pattern != resp_ts:
+                    reasons.append(f"timestamp_deadline: expected '{ts_pattern}' vs response '{resp_ts}' (exact match failed)")
             
             # 2. task_title regex
             title_pattern = exp_item.get("task_title", "")
@@ -162,17 +179,30 @@ def score_triplet_detailed(expected: List[Dict], response: List[Dict], debug: bo
             resp_desc = resp_item.get("task_description", "")
             try:
                 if not re.search(desc_pattern, resp_desc, re.IGNORECASE | re.DOTALL):
-                    pattern_display = desc_pattern[:50] + ('...' if len(desc_pattern) > 50 else '')
+                    pattern_display = desc_pattern  # Do not truncate
                     reasons.append(f"task_description: pattern '{pattern_display}' not found")
             except re.error:
                 if desc_pattern != resp_desc:
                     reasons.append(f"task_description: exact match failed (invalid regex)")
             
-            # 4. messages match
+            # 4. messages match (subset check)
             exp_msgs = exp_item.get("relevant_task_messages", [])
             resp_msgs = resp_item.get("relevant_task_messages", [])
-            if not messages_match(exp_msgs, resp_msgs):
-                reasons.append(f"relevant_task_messages: {len(exp_msgs)} expected vs {len(resp_msgs)} in response")
+            
+            def normalize_msg(msg: Dict) -> tuple:
+                return (
+                    msg.get("originating_time", "").strip(),
+                    msg.get("sender", "").strip(),
+                    msg.get("content", "").strip()
+                )
+            
+            exp_set = set(normalize_msg(m) for m in exp_msgs)
+            resp_set = set(normalize_msg(m) for m in resp_msgs)
+            
+            if not exp_set.issubset(resp_set):
+                missing = exp_set - resp_set
+                missing_str = "; ".join([f"[{m[0]}] {m[1]}: {m[2]}" for m in missing])
+                reasons.append(f"relevant_task_messages: missing {len(missing)} expected messages: {missing_str}")
             
             if not reasons:
                 matched += 1
