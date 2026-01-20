@@ -12,6 +12,7 @@ import asyncio
 import json
 import os
 import sys
+import time
 from pathlib import Path
 from typing import Optional, Dict, Any, List
 
@@ -401,6 +402,7 @@ def main():
         del config_overrides["system_prompt_file"]
     
     # Run evaluation - model/temperature come from config_overrides or use defaults
+    start_time = time.time()
     results = asyncio.run(run_evaluation(
         suite_path=args.suite_path,
         model=config_overrides.get("model", "gpt-4o"),
@@ -409,6 +411,8 @@ def main():
         debug=args.debug,
         config_overrides=config_overrides
     ))
+    execution_time = time.time() - start_time
+    print(f"EXECUTION TIME: {execution_time:.2f}")
     
     # Output results
     if args.output:

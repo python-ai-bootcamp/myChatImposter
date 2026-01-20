@@ -141,8 +141,8 @@ mkdir -p "$RESULTS_DIR"
 RAW_RESULTS_FILE="$RESULTS_DIR/sweep_raw_${TIMESTAMP}.csv"
 SUMMARY_FILE="$RESULTS_DIR/sweep_summary_${TIMESTAMP}.csv"
 
-echo "temperature,reasoning_effort,model,iteration,suite_score" > "$RAW_RESULTS_FILE"
-echo "temperature,reasoning_effort,model,avg_score,min_score,max_score,stdev" > "$SUMMARY_FILE"
+echo "temperature,reasoning_effort,model,iteration,suite_score,execution_time" > "$RAW_RESULTS_FILE"
+echo "temperature,reasoning_effort,model,avg_score,min_score,max_score,stdev,avg_time" > "$SUMMARY_FILE"
 
 echo "============================================================"
 echo "Parameter Sweep"
@@ -184,6 +184,7 @@ for temp in "${TEMP_ARRAY[@]}"; do
     for effort in "${REASONING_EFFORTS[@]}"; do
         config_num=$((config_num + 1))
         scores=()
+        times=()
         
         for iter in $(seq 1 $ITERATIONS); do
             current_run=$((current_run + 1))
@@ -221,17 +222,25 @@ for temp in "${TEMP_ARRAY[@]}"; do
                 suite_score=$(echo "$output" | grep "SUITE SCORE:" | sed 's/.*SUITE SCORE: \([0-9.]*\).*/\1/')
             fi
             
+            # Extract execution time
+            exec_time=$(echo "$output" | grep -oP 'EXECUTION TIME: \K[0-9.]+' || echo "")
+            if [ -z "$exec_time" ]; then
+                exec_time=$(echo "$output" | grep "EXECUTION TIME:" | sed 's/.*EXECUTION TIME: \([0-9.]*\).*/\1/')
+            fi
+            if [ -z "$exec_time" ]; then exec_time="0.00"; fi
+            
             if [ -z "$suite_score" ]; then
                 echo "  ERROR: Could not extract score"
                 echo "$output"
                 suite_score="ERROR"
             else
-                echo "  Score: $suite_score"
+                echo "  Score: $suite_score (Time: ${exec_time}s)"
                 scores+=("$suite_score")
+                times+=("$exec_time")
             fi
             
             # Append to raw results
-            echo "$temp,$effort,${MODEL:-recorded},$iter,$suite_score" >> "$RAW_RESULTS_FILE"
+            echo "$temp,$effort,${MODEL:-recorded},$iter,$suite_score,$exec_time" >> "$RAW_RESULTS_FILE"
         done
         
         # Calculate stats for this configuration using Python
@@ -239,20 +248,22 @@ for temp in "${TEMP_ARRAY[@]}"; do
             stats=$(python -c "
 import statistics
 scores = [float(x) for x in '${scores[*]}'.split()]
+times = [float(x) for x in '${times[*]}'.split()]
 n = len(scores)
 avg = statistics.mean(scores)
 min_s = min(scores)
 max_s = max(scores)
+avg_time = statistics.mean(times) if times else 0.0
 if n > 1:
     stdev = statistics.stdev(scores)
 else:
     stdev = 0.0
-print(f'{avg:.4f},{min_s:.4f},{max_s:.4f},{stdev:.4f}')
+print(f'{avg:.4f},{min_s:.4f},{max_s:.4f},{stdev:.4f},{avg_time:.2f}')
 ")
             echo "$temp,$effort,${MODEL:-recorded},$stats" >> "$SUMMARY_FILE"
-            echo "  Config stats: avg=$(echo $stats | cut -d, -f1), min=$(echo $stats | cut -d, -f2), max=$(echo $stats | cut -d, -f3), stdev=$(echo $stats | cut -d, -f4)"
+            echo "  Config stats: avg=$(echo $stats | cut -d, -f1), min=$(echo $stats | cut -d, -f2), max=$(echo $stats | cut -d, -f3), stdev=$(echo $stats | cut -d, -f4), time=$(echo $stats | cut -d, -f5)s"
         else
-            echo "$temp,$effort,ERROR,ERROR,ERROR,ERROR" >> "$SUMMARY_FILE"
+            echo "$temp,$effort,ERROR,ERROR,ERROR,ERROR,0.00" >> "$SUMMARY_FILE"
         fi
     done
 done
