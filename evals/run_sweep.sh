@@ -186,62 +186,88 @@ for temp in "${TEMP_ARRAY[@]}"; do
         scores=()
         times=()
         
-        for iter in $(seq 1 $ITERATIONS); do
-            current_run=$((current_run + 1))
-            echo ""
-            MODEL_DISPLAY="${MODEL:-recorded}"
-            echo "[$current_run/$total_runs] Config $config_num: model=$MODEL_DISPLAY, temp=$temp, effort=$effort (iter $iter/$ITERATIONS)"
-            echo "------------------------------------------------------------"
+        # Prepare for parallel execution
+        BATCH_SIZE=$ITERATIONS
+        config_dir="$RESULTS_DIR/tmp_batch_${TIMESTAMP}_${temp}_${effort}"
+        mkdir -p "$config_dir"
+        
+        # Calculate batches
+        for ((batch_start=1; batch_start<=ITERATIONS; batch_start+=BATCH_SIZE)); do
+            batch_end=$((batch_start + BATCH_SIZE - 1))
+            if [ $batch_end -gt $ITERATIONS ]; then batch_end=$ITERATIONS; fi
             
-            # Build seed override if set
-            SEED_OVERRIDE=""
-            if [ -n "$SEED" ]; then
-                SEED_OVERRIDE="--config-override seed=$SEED"
-            fi
+            echo "Starting batch: Iterations $batch_start to $batch_end for config $config_num..."
             
-            # Build model override if set
-            MODEL_OVERRIDE=""
-            if [ -n "$MODEL" ]; then
-                MODEL_OVERRIDE="--config-override model=$MODEL"
-            fi
+            # Launch jobs in background
+            for ((iter=batch_start; iter<=batch_end; iter++)); do
+                current_run=$((current_run + 1))
+                output_file="$config_dir/iter_${iter}.log"
+                
+                # Build seed override if set (re-eval per iter if needed, but constant here)
+                SEED_OVERRIDE=""
+                if [ -n "$SEED" ]; then
+                    SEED_OVERRIDE="--config-override seed=$SEED"
+                fi
+                
+                # Build model override if set
+                MODEL_OVERRIDE=""
+                if [ -n "$MODEL" ]; then
+                    MODEL_OVERRIDE="--config-override model=$MODEL"
+                fi
+                
+                # Run eval in background
+                (
+                    python -m evals.run_evals \
+                        --suite-path "$SUITE_PATH" \
+                        --config-override "temperature=$temp" \
+                        --config-override "reasoning_effort=$effort" \
+                        $SEED_OVERRIDE \
+                        $MODEL_OVERRIDE \
+                        2>&1
+                ) > "$output_file" &
+            done
             
-            # Run eval and capture output
-            output=$(python -m evals.run_evals \
-                --suite-path "$SUITE_PATH" \
-                --config-override "temperature=$temp" \
-                --config-override "reasoning_effort=$effort" \
-                $SEED_OVERRIDE \
-                $MODEL_OVERRIDE \
-                2>&1)
+            # Wait for all jobs in this batch to complete
+            wait
             
-            # Extract suite score from output
-            suite_score=$(echo "$output" | grep -oP 'SUITE SCORE: \K[0-9.]+' || echo "")
-            
-            if [ -z "$suite_score" ]; then
-                # Try alternative grep for systems without -P
-                suite_score=$(echo "$output" | grep "SUITE SCORE:" | sed 's/.*SUITE SCORE: \([0-9.]*\).*/\1/')
-            fi
-            
-            # Extract execution time
-            exec_time=$(echo "$output" | grep -oP 'EXECUTION TIME: \K[0-9.]+' || echo "")
-            if [ -z "$exec_time" ]; then
-                exec_time=$(echo "$output" | grep "EXECUTION TIME:" | sed 's/.*EXECUTION TIME: \([0-9.]*\).*/\1/')
-            fi
-            if [ -z "$exec_time" ]; then exec_time="0.00"; fi
-            
-            if [ -z "$suite_score" ]; then
-                echo "  ERROR: Could not extract score"
-                echo "$output"
-                suite_score="ERROR"
-            else
-                echo "  Score: $suite_score (Time: ${exec_time}s)"
-                scores+=("$suite_score")
-                times+=("$exec_time")
-            fi
-            
-            # Append to raw results
-            echo "$temp,$effort,${MODEL:-recorded},$iter,$suite_score,$exec_time" >> "$RAW_RESULTS_FILE"
+            # Process results for this batch
+            for ((iter=batch_start; iter<=batch_end; iter++)); do
+                output_file="$config_dir/iter_${iter}.log"
+                output=$(cat "$output_file")
+                
+                MODEL_DISPLAY="${MODEL:-recorded}"
+                echo "[$((current_run - (batch_end - iter) ))/$total_runs] Config $config_num: model=$MODEL_DISPLAY, temp=$temp, effort=$effort (iter $iter/$ITERATIONS)"
+                
+                # Extract suite score
+                suite_score=$(echo "$output" | grep -oP 'SUITE SCORE: \K[0-9.]+' || echo "")
+                if [ -z "$suite_score" ]; then
+                    suite_score=$(echo "$output" | grep "SUITE SCORE:" | sed 's/.*SUITE SCORE: \([0-9.]*\).*/\1/')
+                fi
+                
+                # Extract execution time
+                exec_time=$(echo "$output" | grep -oP 'EXECUTION TIME: \K[0-9.]+' || echo "")
+                if [ -z "$exec_time" ]; then
+                    exec_time=$(echo "$output" | grep "EXECUTION TIME:" | sed 's/.*EXECUTION TIME: \([0-9.]*\).*/\1/')
+                fi
+                if [ -z "$exec_time" ]; then exec_time="0.00"; fi
+                
+                if [ -z "$suite_score" ]; then
+                    echo "  ERROR: Could not extract score"
+                    echo "$output"
+                    suite_score="ERROR"
+                else
+                    echo "  Score: $suite_score (Time: ${exec_time}s)"
+                    scores+=("$suite_score")
+                    times+=("$exec_time")
+                fi
+                
+                # Append to raw results
+                echo "$temp,$effort,${MODEL:-recorded},$iter,$suite_score,$exec_time" >> "$RAW_RESULTS_FILE"
+            done
         done
+        
+        # Cleanup temp dir
+        rm -rf "$config_dir"
         
         # Calculate stats for this configuration using Python
         if [ ${#scores[@]} -gt 0 ]; then

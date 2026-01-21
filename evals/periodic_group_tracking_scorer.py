@@ -224,8 +224,12 @@ def score_triplet_detailed(expected: List[Dict], response: List[Dict], debug: bo
                 "matched": False,
                 "expected_task": exp_item.get("task_title", "Unknown")
             }
-            if debug and failure_reasons:
-                detail["failure_reasons"] = failure_reasons
+            if debug:
+                if failure_reasons:
+                    detail["failure_reasons"] = failure_reasons
+                elif not response:
+                     # If no response tasks, explicitly state it so run_evals prints something
+                     detail["failure_reasons"] = [{"response_idx": "None", "reasons": ["No response tasks found (parsing error or empty output)"]}]
             match_details.append(detail)
     
     return {
@@ -289,14 +293,17 @@ def parse_response_json(response_text: str) -> List[Dict]:
     Handles cases where the response may have extra text around the JSON.
     """
     # Try direct parse first
+    # Fix common LLM mistake: escaped single quotes (\') is invalid JSON
+    cleaned_text = response_text.replace("\\'", "'")
+    
     try:
-        return json.loads(response_text)
+        return json.loads(cleaned_text)
     except json.JSONDecodeError:
         pass
     
     # Try to find JSON array in the text
     # Look for pattern starting with [ and ending with ]
-    match = re.search(r'\[.*\]', response_text, re.DOTALL)
+    match = re.search(r'\[.*\]', cleaned_text, re.DOTALL)
     if match:
         try:
             return json.loads(match.group())
