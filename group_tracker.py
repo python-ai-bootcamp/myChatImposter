@@ -253,7 +253,7 @@ RELEVANT_TASK_MESSAGE format:
         for config in tracking_configs:
             job_id = f"{user_id}_{config.groupIdentifier}"
             try:
-                trigger = CronTrigger.from_crontab(config.cronTrackingSchedule)
+                trigger = CronTrigger.from_crontab(config.cronTrackingSchedule, timezone=ZoneInfo(timezone))
                 self.scheduler.add_job(
                     self.track_group_context,
                     trigger,
@@ -312,14 +312,85 @@ RELEVANT_TASK_MESSAGE format:
         # The window is [previous_cron_time, current_cron_time].
 
         try:
-            now_ts_raw = time.time()
-            now_dt = datetime.fromtimestamp(now_ts_raw)
-            # Add a small buffer to ensure that if we run exactly on the second, we still catch the current slot.
-            safe_now_dt = now_dt + timedelta(seconds=1)
-
-            iter = croniter(config.cronTrackingSchedule, safe_now_dt)
+            # Current Trigger Time (Window End)
+            # Use timezone-aware now to ensure correct local time interpretation
+            tz = ZoneInfo(timezone)
+            now_dt = datetime.now(tz)
+            
+            # Snap to the scheduled time (removes jitter/execution delay)
+            iter = croniter(config.cronTrackingSchedule, now_dt)
             current_cron_end_dt = iter.get_prev(datetime)
-            current_cron_start_dt = iter.get_prev(datetime)
+            
+            # Window Start Logic (Hybrid Approach)
+            current_cron_start_dt = None
+            
+            # 1. Try to use persisted state from DB (Most Robust for Continuity)
+            state_key = {"user_id": user_id, "group_id": config.groupIdentifier}
+            state_doc = self.tracking_state_collection.find_one(state_key)
+            
+            if state_doc and state_doc.get("last_run_ts"):
+                last_run_ms = state_doc.get("last_run_ts")
+                # Safety check: If last run was surprisingly recent (< 2 days), trust it.
+                # If it was very old (downtime), we might want to strictly limit to 1 interval.
+                # User requested "Strict Last Interval".
+                # But "If daylight changed, I don't wanna skip".
+                # If we use last_run_ts from yesterday, good.
+                # If last_run_ts is from a month ago, we skip it.
+                
+                last_run_dt_utc = datetime.fromtimestamp(last_run_ms / 1000, tz=ZoneInfo("UTC"))
+                if (datetime.now(ZoneInfo("UTC")) - last_run_dt_utc).total_seconds() < 48 * 3600:
+                    current_cron_start_dt = last_run_dt_utc.astimezone(tz)
+                    logger.info(f"Using persisted last_run_ts as start: {current_cron_start_dt}")
+
+            # 2. Fallback Calculation (First Run or after Long Downtime)
+            if not current_cron_start_dt:
+                # We need to find the "Previous Valid Occurrence" relative to End.
+                # Standard croniter.get_prev() is known to be buggy around DST Fall Back (skips hour).
+                # We implement "Wiggle Recovery".
+                
+                # A. Try Standard Backward
+                iter_back = croniter(config.cronTrackingSchedule, current_cron_end_dt)
+                candidate_prev = iter_back.get_prev(datetime)
+                
+                if croniter.match(config.cronTrackingSchedule, candidate_prev):
+                    # It looks valid, but is it the *immediate* previous?
+                    # Fall Back Bug: 20:00 -> 19:00 (Invalid) -> 20:00 (Previous Day).
+                    # Validated by match() check. 19:00 fails match. 20:00 Previous Day passes.
+                    # But we skipped the "Shifted" 20:00 (DST repeat).
+                    
+                    # Wiggle Check: Can we find a valid time strictly between candidate and end?
+                    iter_fwd_check = croniter(config.cronTrackingSchedule, candidate_prev)
+                    # Use a small epsilon to step forward from the candidate
+                    intermediate = iter_fwd_check.get_next(datetime)
+                    
+                    if intermediate < current_cron_end_dt and croniter.match(config.cronTrackingSchedule, intermediate):
+                         logger.info(f"Wiggle Recovery: Found intermediate valid time {intermediate} (Skipped by standard prev)")
+                         current_cron_start_dt = intermediate
+                    else:
+                         current_cron_start_dt = candidate_prev
+                         
+                else: 
+                     # Candidate is invalid (e.g. 19:00). 
+                     # This happens in Spring Forward or Fall Back intermediate steps.
+                     # Wiggle from the invalid point.
+                     iter_wiggle = croniter(config.cronTrackingSchedule, candidate_prev)
+                     wiggle_candidate = iter_wiggle.get_next(datetime)
+                     
+                     if wiggle_candidate < current_cron_end_dt and croniter.match(config.cronTrackingSchedule, wiggle_candidate):
+                         current_cron_start_dt = wiggle_candidate
+                     else:
+                         # Keep going back until valid (Safety loop)
+                         # This handles Spring Forward phantom hours
+                         found = False
+                         for _ in range(5):
+                             candidate_prev = iter_back.get_prev(datetime)
+                             if croniter.match(config.cronTrackingSchedule, candidate_prev):
+                                 current_cron_start_dt = candidate_prev
+                                 found = True
+                                 break
+                         if not found:
+                             logger.error("Failed to find valid previous cron time.")
+                             return
 
             now_ts = int(current_cron_end_dt.timestamp() * 1000)
             last_run_ts = int(current_cron_start_dt.timestamp() * 1000)
