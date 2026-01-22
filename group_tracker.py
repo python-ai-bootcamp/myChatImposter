@@ -3,6 +3,7 @@ import time
 import json
 import importlib
 import inspect
+import random
 from datetime import datetime, timedelta
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -192,9 +193,17 @@ RELEVANT_TASK_MESSAGE format:
             
             chain = prompt | llm | StrOutputParser()
             
+            # Inspect and log the actul formatted messages
+            formatted_messages = await prompt.aformat_messages(input=messages_json, language_code=language_code)
+            print(f"--- LLM PROMPT DEBUG ---")
+            print(f"System Message Content: {formatted_messages[0].content}")
+            print(f"Human Message Content: {formatted_messages[1].content}")
+            print(f"------------------------")
+
             # Invoke the chain with all template variables
             logger.info(f"Invoking LLM for action items extraction for user {user_id}")
             result = await chain.ainvoke({"input": messages_json, "language_code": language_code})
+            print(f"--- LLM RESULT DEBUG ---\n{result}\n-----------------------")
             
             # Sanitize LLM common error (escaped single quotes are invalid JSON)
             if isinstance(result, str):
@@ -269,6 +278,11 @@ RELEVANT_TASK_MESSAGE format:
             target_instance.provider_instance.update_cache_policy(max_interval)
 
     async def track_group_context(self, user_id: str, config: PeriodicGroupTrackingConfig, timezone: str = "UTC"):
+        # Add jitter to prevent rate limiting if multiple groups trigger at the same cron time
+        delay = random.uniform(0, 60)
+        logger.info(f"Scheduled tracking for {user_id}/{config.groupIdentifier} starting in {delay:.2f}s")
+        await asyncio.sleep(delay)
+        
         logger.info(f"Starting tracking job for user {user_id}, group {config.groupIdentifier}")
 
         # Find the chatbot instance for this user
