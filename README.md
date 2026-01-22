@@ -9,11 +9,8 @@
 *   [🚀 Key Features](#key-features)
 *   [🐳 Deployment & Installation](#deployment)
 *   [🛠️ Configuration Reference](#configuration)
-    *   [1. Identity & Whitelisting](#identity)
-    *   [2. Periodic Group Tracking](#tracking)
-    *   [3. Messaging Config](#messaging-config)
-    *   [4. AI Brain Config](#ai-config)
-    *   [5. Context & Memory](#context-config)
+    *   [A. General Configurations](#general-config)
+    *   [B. Feature Configurations](#feature-config)
 *   [💻 Usage](#usage)
 *   [📚 Complete API Reference](#api-reference)
 *   [📝 Logging & Debugging](#logging)
@@ -24,12 +21,9 @@
 
 ## <a id="key-features"></a>🚀 Key Features <small>[↑](#main-menu)</small>
 
--   **Modular Architecture**: Easily swap Chat Providers (WhatsApp, etc.) and LLM Providers (OpenAI, Local, etc.).
--   **Context Management**: Sophisticated handling of chat history, including shared context across different correspondents or isolated sessions.
--   **Smart Whitelisting**: Granular control over who the bot replies to—supports both individual contacts and specific groups.
--   **Group Tracking**: distinct from chatting, the bot can periodically "scrape" or track messages from specific groups on a CRON schedule.
--   **Robust Linking**: Features a heartbeat-monitored QR linking process to prevent "zombie" sessions.
--   **Message Queuing**: Configurable limits on message history and character counts to manage LLM costs and context window.
+*   **🤖 Automatic Bot Reply**: Your digital twin. It learns your style and replies to whitelisted contacts or groups on your behalf, so you never leave anyone hanging.
+*   **🕵️ Periodic Group Tracking**: The ultimate lurker. It silently monitors group chats on a schedule you define and sends you AI-powered digests with action items, events, and summaries.
+*   **👶 Kid Phone Safety**: (Coming Soon) A safety guardian that monitors your child's phone for risky interactions without being invasive.
 
 ---
 
@@ -57,132 +51,64 @@ Recommended method for installation and deployment is using **docker compose**.
 
 ## <a id="configuration"></a>🛠️ Configuration Reference <small>[↑](#main-menu)</small>
 
-The system is configured via a JSON object (the **User Configuration**). Below is the complete reference for every available field.
+The system is configured via a JSON object. The configuration is split into **General Settings** (core plumbing) and **Feature Settings** (what the bot actually does).
 
-### <a id="identity"></a>**1. Identity & Whitelisting** <small>[↑](#main-menu)</small>
+### <a id="general-config"></a>**A. General Configurations** (Under `configurations` key)
 
-| Field | Type | Required | Description |
-| :--- | :--- | :--- | :--- |
-| `user_id` | `string` | **Yes** | Unique identifier for this bot instance (e.g., "yahav"). Used for database keys and API routes. |
-| `respond_to_whitelist` | `string[]` | No | List of phone numbers or contact display names the bot is allowed to reply to *specifically*. Empty list = no direct replies. |
-| `respond_to_whitelist_group` | `string[]` | No | List of **Group Names** or Group IDs tracking the bot is allowed to reply in. |
+This section details the sub-objects within the `configurations` key.
 
-### <a id="tracking"></a>**2. Periodic Group Tracking** <small>[↑](#main-menu)</small>
+#### **1. Identity & Locals** (`configurations.user_details`)
+Defines the user's identity and localization settings.
 
-This feature allows the bot to track specifically selected groups, periodically collecting messages to (1) maintain context window per group and (2) generate actionable digests (summaries, tasks, events) for you based on the messages collected in the group during the last context window.
-
-#### **Key Capabilities**
-*   **Silent Monitoring**: Collects message history in batches based on a schedule.
-*   **Timezone-Aware Scheduling**: Respects your local timezone (including DST) for accurate daily/hourly windows.
-*   **Actionable Digests**: Uses an LLM to analyze the collected messages and sends a report to your private chat with the bot. The report includes:
-    *   **Tasks & Deadlines**: Extracted action items with absolute timestamps.
-    *   **Events**: Calendar-worthy events mentioned in the chat.
-
-#### **Configuration**
-This feature is configured in the `features.periodic_group_tracking` section.
-
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `enabled` | `boolean` | Master switch for the feature. |
-| `tracked_groups` | `array` | List of groups to monitor. |
-
-**Tracked Group Object**:
-| Field | Type | Description |
-| :--- | :--- | :--- |
-| `groupIdentifier` | `string` | The stable JID of the group (e.g., `123456789@g.us`). |
-| `displayName` | `string` | Human-readable name (used in logs/digests). |
-| `cronTrackingSchedule` | `string` | CRON expression defining the tracking window (e.g., `0 20 * * *` for daily at 8 PM). |
-
-#### **How It Works**
-1.  **Scheduling**: The bot calculates execution times using the `cronTrackingSchedule` relative to your configured `user_details.timezone`.
-    *   *Robustness*: It includes "Wiggle Recovery" to handle DST transitions (e.g., avoiding skipped hours during Spring Forward).
-2.  **Collection**: When triggered, it fetches all messages since the *last successful run*.
-    *   *Windowing*: It uses strict cron-based windows to ensure no message is missed or duplicated, even if the bot was offline.
-3.  **Processing**: The messages are analyzed by the LLM.
-    *   *Language*: Extracted tasks are localized based on your `user_details.language_code`.
-4.  **Reporting**: You receive a digest message from the bot configuration.
-
-> **⚠️ Important**: You cannot add new groups unless the bot is **CONNECTED**, as it needs to verify the JID. You *can* edit the CRON schedule while disconnected.
-
-### <a id="messaging-config"></a>**3. chatbot_provider_config** (Messaging) <small>[↑](#main-menu)</small>
-
-Configures the connection to the messaging platform.
-**Provider Name**: `whatsAppBaileyes`
-
-#### `provider_config` Options:
 | Field | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `allow_group_messages` | `boolean` | `false` | If `true`, the bot *can* process messages from groups (subject to whitelist). If `false`, it acts as if it left all groups. |
-| `process_offline_messages` | `boolean` | `false` | If `true`, processes startup backlog. **RISKY**. <br>1. **Crash Loop**: A bad message can endlessly crash & restart the bot.<br>2. **Flooding**: Mass replies on startup can trigger spam bans. |
-| `sync_full_history` | `boolean` | `true` | If `true`, attempts to fetch available history from the phone on connection. Essential for context awareness. |
+| `first_name` | `string` | `""` | User's first name. |
+| `last_name` | `string` | `""` | User's last name. |
+| `timezone` | `string` | `"UTC"` | IANA Timezone (e.g., `America/New_York`). Controls tracking schedules and log timestamps. |
+| `language_code` | `string` | `"en"` | ISO Code (e.g., `en`, `he`). Controls the language of AI digests. |
 
-> **📦 Non-Text Messages**: Images, videos, stickers, and other non-text content are currently normalized to `[User sent a non-text message: <type>]`.
-> *This is temporary behavior until smart LLM-based normalization is implemented.*
+#### **2. Messaging Provider** (`configurations.chat_provider_config`)
+Settings for the WhatsApp connection.
 
-```json
-"chat_provider_config": {
-  "provider_name": "whatsAppBaileyes",
-  "provider_config": {
-    "allow_group_messages": true,
-    "process_offline_messages": false,
-    "sync_full_history": true
-  }
-}
-```
+*   `provider_name`: `string` (Fixed: `"whatsAppBaileyes"`)
+*   `provider_config`: Object containing specific settings:
 
-### <a id="ai-config"></a>**4. llm_provider_config** (AI Brain) <small>[↑](#main-menu)</small>
-
-Configures the Large Language Model.
-**Provider Name**: `openAi`
-
-> **📌 Optional Section**: This entire `llm_provider_config` block is **optional**.
-> If omitted, the bot runs in **Collection Only** mode: it collects and logs messages but **never responds**.
-> This is useful for passive monitoring or group tracking without active chatting.
-
-#### `provider_config` Options:
 | Field | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `api_key_source` | `string` | `"environment"` | `"environment"` (use `OPENAI_API_KEY` env var) or `"explicit"` (use `api_key` field). |
-| `api_key` | `string` | `null` | The actual API key string. Required if source is `"explicit"`. |
-| `model` | `string` | **Required** | The model ID (e.g., `gpt-4`, `gpt-4o`, `gpt-3.5-turbo`, `o1-mini`). |
-| `temperature` | `float` | `0.7` | Randomness of the output (0.0 to 1.0). Lower is more deterministic. |
-| `reasoning_effort` | `string` | `null` | **For o1 models only.** Controls reasoning depth. <br>Values: `"low"`, `"medium"`, `"high"`, `"minimal"`. |
-| `system` | `string` | `""` | The **System Prompt**. Core personality instruction. Supports `{user_id}` variable only (no other variables). |
+| `allow_group_messages` | `boolean` | `false` | If `false`, ignores ALL group traffic. |
+| `process_offline_messages` | `boolean` | `false` | If `true`, processes startup backlog. **Use with caution**. |
+| `sync_full_history` | `boolean` | `true` | Fetches phone history on connection for context. |
 
-```json
-"llm_provider_config": {
-  "provider_name": "openAi",
-  "provider_config": {
-    "api_key_source": "explicit",
-    "api_key": "sk-...",
-    "model": "gpt-4o",
-    "temperature": 0.8,
-    "reasoning_effort": "medium",
-    "system": "You are a witty chatbot..."
-  }
-}
-```
+#### **3. AI Brain** (`configurations.llm_provider_config`)
+Settings for the LLM provider.
 
-> **🔧 Advanced: Extra Parameters**
-> Both `chat_provider_config.provider_config` and `llm_provider_config.provider_config` accept **arbitrary extra keys**.
-> These are passed directly to the underlying SDK (e.g., `ChatOpenAI()` for LLM, Baileys for chat).
-> Useful for experimenting with undocumented or new parameters like `max_tokens`, `top_p`, etc. **Typos are silently ignored.**
+*   `provider_name`: `string` (Fixed: `"openAi"`)
+*   `provider_config`: Object containing specific settings:
 
-### <a id="context-config"></a>**5. Context & Memory Management** <small>[↑](#main-menu)</small>
-
-Controls how much history the bot "remembers" when generating a reply. This is crucial for managing token costs and staying within context windows.
-
-#### `context_config` (LLM Context)
 | Field | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `max_messages` | `int` | `10` | Max count of recent messages to include in the prompt. |
+| `api_key_source` | `string` | `"environment"` | `"environment"` (use `OPENAI_API_KEY` env var) or `"explicit"`. |
+| `api_key` | `string` | `null` | Required if source is `"explicit"`. |
+| `model` | `string` | **Required** | The model ID (e.g., `gpt-4o`, `gpt-3.5-turbo`, `o1-mini`). |
+| `temperature` | `float` | `0.7` | Creativity (0.0: strict, 1.0: creative). |
+| `reasoning_effort` | `string` | `null` | **o1 models only**: `"low"`, `"medium"`, `"high"`, `"minimal"`. |
+| `seed` | `int` | `null` | Optional deterministic seed. |
+| `record_llm_interactions` | `boolean` | `false` | If `true`, logs inputs/outputs for debugging/evals. |
+
+#### **4. Context Memory** (`configurations.context_config`)
+Settings for the conversation context window.
+
+| Field | Type | Default | Description |
+| :--- | :--- | :--- | :--- |
+| `max_messages` | `int` | `10` | Max recent messages to include in the prompt. |
 | `max_characters` | `int` | `1000` | Hard cap on total characters in history (trims oldest). |
 | `max_days` | `int` | `1` | Max age of messages to include (e.g., forget yesterday's chat). |
 | `max_characters_single_message` | `int` | `300` | Truncate individual messages longer than this before adding to context. |
-| `shared_context` | `boolean` | `true` | **Experimental**. If `true`, the bot maintains a single history across ALL contacts (knows what it said to Bob while talking to Alice). If `false`, every chat is isolated. |
+| `shared_context` | `boolean` | `true` | If `true`, bot uses one shared history for ALL contacts. If `false`, each chat has isolated memory. |
 
-#### `queue_config` (Incoming Buffer)
-Controls the raw message buffer before processing.
+#### **5. Inbound Queue** (`configurations.queue_config`)
+Settings for the message buffer.
+
 | Field | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | `max_messages` | `int` | `10` | Max incoming messages to hold in memory. |
@@ -190,21 +116,48 @@ Controls the raw message buffer before processing.
 | `max_days` | `int` | `1` | Max age of messages to keep in buffer. |
 | `max_characters_single_message` | `int` | `300` | Truncate incoming messages longer than this before queuing. |
 
-```json
-"context_config": {
-  "max_messages": 20,
-  "max_characters": 4000,
-  "max_days": 1,
-  "max_characters_single_message": 500,
-  "shared_context": false
-},
-"queue_config": {
-  "max_messages": 10,
-  "max_characters": 1000,
-  "max_days": 1,
-  "max_characters_single_message": 300
-}
-```
+---
+
+### <a id="feature-config"></a>**B. Feature Configurations**
+
+These settings live under the `features` object.
+
+#### **1. Automatic Bot Reply** (`features.automatic_bot_reply`)
+The core chatbot functionality.
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `enabled` | `boolean` | Master switch. |
+| `respond_to_whitelist` | `string[]` | Phone numbers/names to reply to. |
+| `respond_to_whitelist_group` | `string[]` | Group names/IDs to reply in. |
+| `chat_system_prompt` | `string` | **The Persona**. Instructions on how the bot should behave. |
+
+#### **2. Periodic Group Tracking** (`features.periodic_group_tracking`)
+Silent monitoring and digests (Task Extraction).
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `enabled` | `boolean` | Master switch. |
+| `tracked_groups` | `array` | List of groups to monitor. |
+
+**Tracked Group Configuration**:
+*   `groupIdentifier`: WhatsApp JID.
+*   `displayName`: Friendly name.
+*   `cronTrackingSchedule`: Execution schedule (uses your `timezone`).
+
+> **Feature Note**: This generates a "Digest" message to yourself with extracted tasks and events found in the group chat.
+>
+> **Technical Details**:
+> *   **Scheduling**: Calculated relative to your configured `timezone` with "Wiggle Recovery" for DST transitions.
+> *   **Integrity**: Uses strict cron-based windows to ensure no message is missed or duplicated.
+> *   **Language**: Extracts tasks in your configured `language_code`.
+
+#### **3. Kid Phone Safety** (`features.kid_phone_safety_tracking`)
+*Coming Soon*
+
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `enabled` | `boolean` | Master switch. |
 
 ---
 
