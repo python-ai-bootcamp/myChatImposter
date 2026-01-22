@@ -3,6 +3,7 @@ import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
 import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate, LLMProviderConfigFieldTemplate, FlatProviderConfigTemplate, TimezoneSelectWidget, LanguageSelectWidget } from '../components/FormTemplates';
+import CronPickerWidget from '../components/CronPickerWidget';
 
 // Stable widget definitions - defined outside component to prevent re-creation on re-render
 const ReadOnlyTextWidget = (props) => {
@@ -11,7 +12,7 @@ const ReadOnlyTextWidget = (props) => {
       type="text"
       value={props.value || ''}
       disabled
-      style={{ width: '180px', backgroundColor: '#f5f5f5', color: '#666' }}
+      style={{ width: '90px', backgroundColor: '#f5f5f5', color: '#666', fontSize: '0.45rem', padding: '2px 4px' }}
       title="Auto-filled from group selection"
     />
   );
@@ -776,7 +777,8 @@ function EditPage() {
     SizedTextWidget: SizedTextWidget,
     GroupNameSelectorWidget: GroupNameSelectorWidget,
     ReadOnlyTextWidget: ReadOnlyTextWidget,
-    CronInputWidget: CronInputWidget,
+    CronInputWidget: CronPickerWidget, // Map old name to new widget, or just use new name
+    CronPickerWidget: CronPickerWidget,
     SystemPromptWidget: SystemPromptWidget,
     TimezoneSelectWidget: TimezoneSelectWidget,
     LanguageSelectWidget: LanguageSelectWidget
@@ -880,14 +882,14 @@ function EditPage() {
             },
             groupIdentifier: {
               "ui:FieldTemplate": InlineFieldTemplate,
-              "ui:title": "Identifier",
+              "ui:title": "ID",
               "ui:widget": "ReadOnlyTextWidget"
             },
             cronTrackingSchedule: {
               "ui:FieldTemplate": InlineFieldTemplate,
-              "ui:title": "Schedule",
-              "ui:widget": "CronInputWidget",
-              "ui:options": { width: "90px" },
+              "ui:title": " ",
+              "ui:widget": "CronPickerWidget",
+              "ui:options": { width: "100%" },
               "ui:placeholder": "0/15 * * * *"
             }
           }
