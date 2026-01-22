@@ -69,21 +69,40 @@ The system is configured via a JSON object (the **User Configuration**). Below i
 
 ### <a id="tracking"></a>**2. Periodic Group Tracking** <small>[↑](#main-menu)</small>
 
-Allows the bot to silently monitor specific groups on a schedule without necessarily replying.
+This feature allows the bot to track specifically selected groups, periodically collecting messages to (1) maintain context window per group and (2) generate actionable digests (summaries, tasks, events) for you based on the messages collected in the group during the last context window.
+
+#### **Key Capabilities**
+*   **Silent Monitoring**: Collects message history in batches based on a schedule.
+*   **Timezone-Aware Scheduling**: Respects your local timezone (including DST) for accurate daily/hourly windows.
+*   **Actionable Digests**: Uses an LLM to analyze the collected messages and sends a report to your private chat with the bot. The report includes:
+    *   **Tasks & Deadlines**: Extracted action items with absolute timestamps.
+    *   **Events**: Calendar-worthy events mentioned in the chat.
+
+#### **Configuration**
+This feature is configured in the `features.periodic_group_tracking` section.
 
 | Field | Type | Description |
 | :--- | :--- | :--- |
-| `groupIdentifier` | `string` | The stable JID of the group (e.g., `123456789@g.us`). |
-| `displayName` | `string` | Human-readable name for the group (for logs/UI). |
-| `cronTrackingSchedule` | `string` | CRON expression for tracking frequency (e.g., `0/20 * * * *` for every 20 mins). |
+| `enabled` | `boolean` | Master switch for the feature. |
+| `tracked_groups` | `array` | List of groups to monitor. |
 
-> **⚠️ Important Constraint**: You cannot add new groups or change the group identifier unless the bot is **CONNECTED**.
-> Efficiently configuring this requires fetching the list of groups from WhatsApp, which is only possible with an active session.
-> *You can, however, edit the CRON schedule of existing tracked groups even while disconnected.*
->
-> **Note on History**: When tracking starts, the bot attempts to fetch recent message history (up to `max_messages` limit) from the group to seed its context.
->
-> **🔄 Automatic Cache Adjustment**: The system automatically adjusts internal message caching based on your CRON schedule to ensure reliable message retrieval during each tracking period.
+**Tracked Group Object**:
+| Field | Type | Description |
+| :--- | :--- | :--- |
+| `groupIdentifier` | `string` | The stable JID of the group (e.g., `123456789@g.us`). |
+| `displayName` | `string` | Human-readable name (used in logs/digests). |
+| `cronTrackingSchedule` | `string` | CRON expression defining the tracking window (e.g., `0 20 * * *` for daily at 8 PM). |
+
+#### **How It Works**
+1.  **Scheduling**: The bot calculates execution times using the `cronTrackingSchedule` relative to your configured `user_details.timezone`.
+    *   *Robustness*: It includes "Wiggle Recovery" to handle DST transitions (e.g., avoiding skipped hours during Spring Forward).
+2.  **Collection**: When triggered, it fetches all messages since the *last successful run*.
+    *   *Windowing*: It uses strict cron-based windows to ensure no message is missed or duplicated, even if the bot was offline.
+3.  **Processing**: The messages are analyzed by the LLM.
+    *   *Language*: Extracted tasks are localized based on your `user_details.language_code`.
+4.  **Reporting**: You receive a digest message from the bot configuration.
+
+> **⚠️ Important**: You cannot add new groups unless the bot is **CONNECTED**, as it needs to verify the JID. You *can* edit the CRON schedule while disconnected.
 
 ### <a id="messaging-config"></a>**3. chatbot_provider_config** (Messaging) <small>[↑](#main-menu)</small>
 
