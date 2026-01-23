@@ -251,11 +251,12 @@ class CorrespondenceIngester:
 
 class ChatbotInstance:
     """Manages all components for a single chatbot instance."""
-    def __init__(self, config: UserConfiguration, on_session_end: Optional[Callable[[str], None]] = None, queues_collection: Optional[Collection] = None, main_loop = None):
+    def __init__(self, config: UserConfiguration, on_session_end: Optional[Callable[[str], None]] = None, queues_collection: Optional[Collection] = None, main_loop = None, on_status_change: Optional[Callable[[str, str], None]] = None):
         self.user_id = config.user_id
         self.config = config
         self.on_session_end = on_session_end
         self.main_loop = main_loop
+        self.on_status_change = on_status_change
         self.user_queues_manager: Optional[UserQueuesManager] = None
         self.chatbot_model: Optional[ChatbotModel] = None
         self.provider_instance: Optional[Any] = None
@@ -317,6 +318,7 @@ class ChatbotInstance:
             "user_queues": {self.user_id: self.user_queues_manager},
             "on_session_end": self.on_session_end,
             "logger": file_logger,
+            "on_status_change": self.on_status_change
         }
         if provider_name == "whatsAppBaileyes":
             provider_init_params["main_loop"] = self.main_loop

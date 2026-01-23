@@ -17,8 +17,8 @@ from config_models import ChatProviderConfig
 
 
 class WhatsAppBaileysProvider(BaseChatProvider):
-    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, logger: Optional[FileLogger] = None, main_loop=None):
-        super().__init__(user_id, config, user_queues, on_session_end, logger)
+    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, logger: Optional[FileLogger] = None, main_loop=None, on_status_change: Optional[Callable[[str, str], None]] = None):
+        super().__init__(user_id, config, user_queues, on_session_end, logger, on_status_change)
         self.is_listening = False
         self.session_ended = False
         self.main_loop = main_loop
@@ -207,6 +207,20 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     "qr": data.get('qr')
                 }
                 if self.logger: self.logger.log(f"Status update received: {self._cached_status['status']}")
+                
+                # Notify listener of status change (e.g., to trigger queue movements)
+                if self.on_status_change:
+                     try:
+                         # We invoke it synchronously as it should be lightweight/async-safe or fire-and-forget
+                         # But since it might do DB ops, better to ensure we don't block heavily.
+                         # Assuming the listener handles its own concurrency or is fast.
+                         if asyncio.iscoroutinefunction(self.on_status_change):
+                            asyncio.create_task(self.on_status_change(self.user_id, self._cached_status['status']))
+                         else:
+                            self.on_status_change(self.user_id, self._cached_status['status'])
+                     except Exception as e:
+                         if self.logger: self.logger.log(f"ERROR: Failed to invoke on_status_change callback: {e}")
+
                 # Store user JID for sending messages to self
                 if data.get('user_jid'):
                     self.user_jid = data.get('user_jid')
@@ -372,9 +386,12 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     else:
                         if self.logger: self.logger.log("WARN: Sent message but got no provider_message_id in response.")
                 else:
-                    if self.logger: self.logger.log(f"ERROR: Failed to send message. Status: {response.status_code}, Body: {response.text}")
+                    error_msg = f"Failed to send message. Status: {response.status_code}, Body: {response.text}"
+                    if self.logger: self.logger.log(f"ERROR: {error_msg}")
+                    raise Exception(error_msg)
         except Exception as e:
             if self.logger: self.logger.log(f"ERROR: Exception while sending message: {e}")
+            raise e
 
     async def get_status(self, heartbeat: bool = False) -> Dict:
         """Returns cached status. If heartbeat=True, sends heartbeat ping over WebSocket."""

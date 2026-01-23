@@ -20,6 +20,7 @@ from chatbot_manager import ChatbotInstance
 from group_tracker import GroupTracker
 from logging_lock import console_log
 from config_models import UserConfiguration, PeriodicGroupTrackingConfig
+from actionable_items_message_delivery_queue_manager import ActionableItemsDeliveryQueueManager
 
 
 # Suppress the default uvicorn access logger
@@ -47,15 +48,18 @@ baileys_sessions_collection = None
 chatbot_instances: Dict[str, ChatbotInstance] = {}
 active_users: Dict[str, str] = {} # Maps user_id to instance_id
 group_tracker: GroupTracker = None
+actionable_queue_manager: ActionableItemsDeliveryQueueManager = None
 
 @app.on_event("startup")
 async def startup_event():
     """
     Connect to MongoDB and create a unique index on startup.
     """
-    global mongo_client, db, configurations_collection, queues_collection, baileys_sessions_collection, group_tracker
+    global mongo_client, db, configurations_collection, queues_collection, baileys_sessions_collection, group_tracker, actionable_queue_manager
+    mongodb_url = os.environ.get("MONGODB_URL", "mongodb://mongodb:27017/")
     mongodb_url = os.environ.get("MONGODB_URL", "mongodb://mongodb:27017/")
     console_log(f"API: Connecting to MongoDB at {mongodb_url}")
+
     try:
         mongo_client = MongoClient(mongodb_url, serverSelectionTimeoutMS=5000)
         mongo_client.admin.command('ismaster')
@@ -73,8 +77,16 @@ async def startup_event():
 
         console_log("API: Successfully connected to MongoDB.")
 
-        # Initialize GroupTracker
-        group_tracker = GroupTracker(mongodb_url, chatbot_instances)
+        # Initialize ActionableItemsDeliveryQueueManager
+        actionable_queue_manager = ActionableItemsDeliveryQueueManager(mongodb_url, chatbot_instances)
+        
+        # Lifecycle: Move all items to Holding Queue on Startup
+        actionable_queue_manager.move_all_to_holding()
+        
+        await actionable_queue_manager.start_consumer()
+
+        # Initialize GroupTracker with queue manager
+        group_tracker = GroupTracker(mongodb_url, chatbot_instances, actionable_queue_manager)
         group_tracker.start()
 
     except Exception as e:
@@ -362,6 +374,23 @@ async def delete_configuration_by_user_id(user_id: str):
                 {"config_data.0.user_id": user_id}
             ]
         }
+
+        # Shutdown active instance if exists
+        if user_id in active_users:
+            instance_id = active_users[user_id]
+            if instance_id in chatbot_instances:
+                console_log(f"API: Stopping active instance for {user_id} before configuration deletion (Cleanup=True).")
+                try:
+                    await chatbot_instances[instance_id].stop(cleanup_session=True)
+                except Exception as e:
+                    console_log(f"API_ERROR: Failed to stop instance for {user_id}: {e}")
+                
+                # Force remove from maps immediately
+                if user_id in active_users:
+                   del active_users[user_id]
+                if instance_id in chatbot_instances:
+                   del chatbot_instances[instance_id]
+
         result = configurations_collection.delete_one(query)
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Configuration not found.")
@@ -383,6 +412,13 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
     """
     instance_id = str(uuid.uuid4())
     user_id = config.user_id
+
+    # Listener to handle queue movement on connection
+    async def status_change_listener(uid: str, status: str):
+        if status == 'connected':
+             if actionable_queue_manager:
+                 actionable_queue_manager.move_user_to_active(uid)
+                 console_log(f"EVENT: User {uid} connected. Moved items to ACTIVE queue.")
 
     if user_id in active_users:
         # Check if the existing session is effectively dead
@@ -412,8 +448,7 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
 
     try:
         loop = asyncio.get_running_loop()
-        loop = asyncio.get_running_loop()
-        instance = ChatbotInstance(config=config, on_session_end=remove_active_user, queues_collection=queues_collection, main_loop=loop)
+        instance = ChatbotInstance(config=config, on_session_end=remove_active_user, queues_collection=queues_collection, main_loop=loop, on_status_change=status_change_listener)
         chatbot_instances[instance_id] = instance
         await instance.start()
 
@@ -428,6 +463,9 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
                 group_tracker.update_jobs(user_id, config.features.periodic_group_tracking.tracked_groups, config.configurations.user_details.timezone)
             else:
                 group_tracker.update_jobs(user_id, [])  # Clear jobs when disabled
+        
+        # Lifecycle: Queue activation is now handled by status_change_listener upon 'connected' event.
+        # No immediate move to active queue here.
 
         return {
             "successful": [{
@@ -620,11 +658,19 @@ async def unlink_chatbot(user_id: str):
         console_log(f"API_ERROR: Inconsistency detected. user_id '{user_id}' is in active_users but instance '{instance_id}' not found during unlink.")
         # Still, we should clean up the active_users entry
         del active_users[user_id]
+        # Invalidate queue even if instance missing
+        if actionable_queue_manager:
+             actionable_queue_manager.move_user_to_holding(user_id)
         raise HTTPException(status_code=500, detail="Internal server error: instance not found for active user.")
 
     try:
         # Stop the instance and clean up the session data on the provider.
         await instance.stop(cleanup_session=True)
+        
+        # Lifecycle: User Unlinked -> Move items to Holding Queue
+        if actionable_queue_manager:
+             actionable_queue_manager.move_user_to_holding(user_id)
+             
         return {"status": "success", "message": f"Session for user '{user_id}' is being terminated and cleaned up."}
     except Exception as e:
         console_log(f"API_ERROR: Failed to stop instance for user '{user_id}': {e}")
@@ -649,6 +695,10 @@ async def reload_chatbot(user_id: str):
         if instance:
             await instance.stop(cleanup_session=False)
             console_log(f"API: Gracefully stopped instance {instance_id} for user '{user_id}' for reload.")
+            
+            # Lifecycle: User stopping (Reload) -> Move to Holding
+            if actionable_queue_manager:
+                actionable_queue_manager.move_user_to_holding(user_id)
         else:
             # Clean up the active_users entry if the instance is missing for some reason
             remove_active_user(user_id)
@@ -677,10 +727,15 @@ async def reload_chatbot(user_id: str):
         new_instance_id = str(uuid.uuid4())
         console_log(f"API: Restarting instance for user {user_id} as {new_instance_id}")
 
+        # Listener to handle queue movement on connection (reload scenario)
+        async def status_change_listener_reload(uid: str, status: str):
+            if status == 'connected':
+                 if actionable_queue_manager:
+                     actionable_queue_manager.move_user_to_active(uid)
+                     console_log(f"EVENT: User {uid} connected (Reload). Moved items to ACTIVE queue.")
+
         loop = asyncio.get_running_loop()
-        loop = asyncio.get_running_loop()
-        loop = asyncio.get_running_loop()
-        new_instance = ChatbotInstance(config=config, on_session_end=remove_active_user, queues_collection=queues_collection, main_loop=loop)
+        new_instance = ChatbotInstance(config=config, on_session_end=remove_active_user, queues_collection=queues_collection, main_loop=loop, on_status_change=status_change_listener_reload)
         chatbot_instances[new_instance_id] = new_instance
         await new_instance.start()
 
@@ -727,9 +782,13 @@ def shutdown_event():
     console_log("API: All instances stopped and cleaned up.")
 
     # Shutdown GroupTracker
-    global group_tracker
     if group_tracker:
         group_tracker.shutdown()
+
+    # Shutdown ActionableQueueManager
+    global actionable_queue_manager
+    if actionable_queue_manager:
+        asyncio.run(actionable_queue_manager.stop_consumer())
 
     # Close MongoDB connection
     if mongo_client:
@@ -825,6 +884,47 @@ async def delete_all_tracked_group_messages(user_id: str, lastPeriods: int = 0, 
 
 
 
+
+
+# --- Queue Management Endpoints ---
+
+@app.get("/queues/{queue_type}")
+async def get_queue_items(queue_type: str, user_id: Union[str, None] = None):
+    """
+    Get items from a specific queue (active, failed, unconnected).
+    Optional user_id filter.
+    """
+    if not actionable_queue_manager:
+        raise HTTPException(status_code=503, detail="Queue Manager not initialized")
+    
+    try:
+        items = actionable_queue_manager.get_queue_items(queue_type, user_id)
+        return {"items": items}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to get queue items: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.delete("/queues/{queue_type}/{message_id}")
+async def delete_queue_item(queue_type: str, message_id: str):
+    """
+    Delete a specific item by message_id from the specified queue.
+    """
+    if not actionable_queue_manager:
+        raise HTTPException(status_code=503, detail="Queue Manager not initialized")
+    
+    try:
+        success = actionable_queue_manager.delete_queue_item(queue_type, message_id)
+        if success:
+            return {"status": "success", "message": f"Item {message_id} deleted from {queue_type}"}
+        else:
+            raise HTTPException(status_code=404, detail=f"Item {message_id} not found in {queue_type}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        console_log(f"API_ERROR: Failed to delete queue item: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 if __name__ == "__main__":
     import uvicorn

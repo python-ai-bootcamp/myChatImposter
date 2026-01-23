@@ -224,12 +224,12 @@ const processContacts = (session, userId, contacts) => {
 
 // --- Message Processing Helper ---
 async function processMessage(session, userId, msg, processOffline, allowGroups) {
-    if (msg?.key?.senderPn) {
-        console.log(`[${userId}] Normalized senderPn detected: ${msg.key.senderPn}`);
-    }
-    if (msg?.messageKey?.senderPn) {
-        console.log(`[${userId}] messageKey senderPn present: ${msg.messageKey.senderPn}`);
-    }
+    // if (msg?.key?.senderPn) {
+    //    console.log(`[${userId}] Normalized senderPn detected: ${msg.key.senderPn}`);
+    // }
+    // if (msg?.messageKey?.senderPn) {
+    //    console.log(`[${userId}] messageKey senderPn present: ${msg.messageKey.senderPn}`);
+    // }
 
     const isGroup = msg.key.remoteJid.endsWith('@g.us');
     const senderId = isGroup ? (msg.participant || msg.key.participant) : msg.key.remoteJid;
@@ -263,9 +263,9 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
         const isSelfMessage = msg.key.fromMe || isSelfBySenderId || isSelfByCache;
 
         // DEBUG: Trace why we are missing self messages
-        if (msg.key.fromMe || isSelfBySenderId) {
-            console.log(`[${userId}] Self msg check. fromMe: ${msg.key.fromMe}, isGroup: ${isGroup}, senderId: ${senderId}, selfId: ${selfId}, selfLid: ${selfLidFromSession}, LID Cached: ${!!cachedSelfLid}`);
-        }
+        // if (msg.key.fromMe || isSelfBySenderId) {
+        //    console.log(`[${userId}] Self msg check. fromMe: ${msg.key.fromMe}, isGroup: ${isGroup}, senderId: ${senderId}, selfId: ${selfId}, selfLid: ${selfLidFromSession}, LID Cached: ${!!cachedSelfLid}`);
+        // }
 
         if (isSelfMessage && isGroup) {
             // For group messages, learn the LID mapping from senderId (which is participant)
@@ -745,7 +745,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
     const { state, saveCreds } = authState;
 
-    const logger = pino({ level: 'debug' });
+    const logger = pino({ level: 'info' });
 
     // DEBUG: Check Auth State 'me'
     if (state && state.creds && state.creds.me) {
@@ -919,6 +919,10 @@ async function connectToWhatsApp(userId, vendorConfig) {
                 baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } })
                     .then(() => {
                         console.log(`[${userId}] Auth info deleted. Re-initializing to generate new QR code.`);
+                        // CRITICAL FIX: Clear the in-memory auth state so we don't reuse the old keys!
+                        if (sessions[userId]) {
+                            sessions[userId].authState = null;
+                        }
                         setTimeout(() => connectToWhatsApp(userId, vendorConfig), 1000);
                     })
                     .catch(err => {
@@ -1019,7 +1023,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
                     if (m.type === 'append' || m.type === 'notify') {
                         // Log first message of batch for debug
                         if (m.messages.indexOf(msg) === 0) {
-                            console.log(`[${userId}] Stored message in buffer for ${jid}. ID: ${msg.key.id}`);
+                            // console.log(`[${userId}] Stored message in buffer for ${jid}. ID: ${msg.key.id}`);
                         }
                     }
                 }
@@ -1267,7 +1271,7 @@ app.post('/sessions/:userId/fetch-messages', async (req, res) => {
         } else if (session.store && session.store.messages[groupId]) {
             // Use local store buffer (active provider state)
             const storedMessages = session.store.messages[groupId];
-            console.log(`[${userId}] Using local store buffer for ${groupId}. Found ${storedMessages.length} total messages.`);
+            // console.log(`[${userId}] Using local store buffer for ${groupId}. Found ${storedMessages.length} total messages.`);
             // Get last 'limit' messages
             messages = storedMessages.slice(-limit);
         } else {

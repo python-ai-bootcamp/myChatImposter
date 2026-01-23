@@ -19,18 +19,20 @@ from chatbot_manager import ChatbotInstance
 from config_models import PeriodicGroupTrackingConfig, LLMProviderConfig
 from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider
 from llm_providers.base import BaseLlmProvider
+from actionable_items_message_delivery_queue_manager import ActionableItemsDeliveryQueueManager
 
 # Initialize logger
 logger = logging.getLogger(__name__)
 
 class GroupTracker:
-    def __init__(self, mongo_url: str, chatbot_instances: dict[str, ChatbotInstance]):
+    def __init__(self, mongo_url: str, chatbot_instances: dict[str, ChatbotInstance], actionable_queue_manager: ActionableItemsDeliveryQueueManager = None):
         self.mongo_client = MongoClient(mongo_url)
         self.db = self.mongo_client['chat_manager']
         self.tracked_groups_collection = self.db['tracked_groups']
         self.tracked_group_periods_collection = self.db['tracked_group_periods']
         self.tracking_state_collection = self.db['group_tracking_state']
         self.chatbot_instances = chatbot_instances
+        self.actionable_queue_manager = actionable_queue_manager  # Store the queue manager
         self.scheduler = AsyncIOScheduler()
         self.jobs = {}
 
@@ -85,6 +87,33 @@ class GroupTracker:
             }
             formatted_messages.append(formatted_msg)
         return json.dumps(formatted_messages, indent=2, ensure_ascii=False)
+
+    def _parse_llm_json(self, json_str: str) -> list:
+        """
+        Parses the LLM response which is expected to be a JSON array.
+        Handles code blocks and other common LLM artifacts.
+        """
+        cleaned_response = json_str.strip()
+        # Remove markdown code blocks if present
+        if cleaned_response.startswith("```json"):
+            cleaned_response = cleaned_response[7:]
+        elif cleaned_response.startswith("```"):
+            cleaned_response = cleaned_response[3:]
+        if cleaned_response.endswith("```"):
+            cleaned_response = cleaned_response[:-3]
+        
+        cleaned_response = cleaned_response.strip()
+
+        try:
+            parsed = json.loads(cleaned_response)
+            if isinstance(parsed, list):
+                return parsed
+            else:
+                logger.warning(f"LLM returned valid JSON but not a list: {type(parsed)}")
+                return []
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse LLM JSON: {e}. Raw: {json_str[:200]}...")
+            return []
 
     async def _extract_action_items(self, messages_json: str, llm_config: LLMProviderConfig, user_id: str, group_id: str = "", language_code: str = "en") -> str:
         """
@@ -498,7 +527,13 @@ RELEVANT_TASK_MESSAGE format:
         action_items_output = ""
         
         if not transformed_messages:
-            action_items_output = "\n\nNo messages in this period"
+            logger.info(f"No messages in this period for {user_id}/{config.groupIdentifier}")
+            # Optional: Send "No messages" digest? Current logic sends only if items found or if we want to confirm emptiness.
+            # User wants "Actionable Items". If none, maybe silent? 
+            # Original code sent "\n\nNo messages in this period"
+            # Let's keep silence or minimal log for now, as we moved to "Per Item" delivery. 
+            # Attempting to send "No items" as a single message might be annoying if frequent.
+            return 
         else:
             try:
                 # Get user's LLM config and language preference
@@ -509,33 +544,44 @@ RELEVANT_TASK_MESSAGE format:
                 messages_json = self._build_llm_input_json(transformed_messages, user_tz)
                 logger.info(f"Built LLM input JSON with {len(transformed_messages)} messages for user {user_id}")
                 
-                # Extract action items
-                action_items_output = await self._extract_action_items(
+                # Extract action items (Returns JSON String)
+                llm_output_str = await self._extract_action_items(
                     messages_json, 
                     llm_config, 
                     user_id,
                     group_id=config.groupIdentifier,
                     language_code=language_code
                 )
-                action_items_output = f"\n\n{action_items_output}"
                 
+                # Parse the output
+                if "[Error" in llm_output_str:
+                     logger.error(f"LLM Error for {user_id}: {llm_output_str}")
+                     return
+
+                action_items = self._parse_llm_json(llm_output_str)
+                
+                if not action_items:
+                     logger.info(f"No actionable items found by LLM for {user_id}/{config.groupIdentifier}")
+                     return
+
+                # Send items to Queue
+                if self.actionable_queue_manager:
+                    logger.info(f"Queuing {len(action_items)} items for {user_id}")
+                    for item in action_items:
+                        # Inject Group Name
+                        item["group_display_name"] = config.displayName
+                        
+                        # Add to Queue
+                        self.actionable_queue_manager.add_item(
+                            actionable_item=item,
+                            user_id=user_id,
+                            provider_name="whatsapp_baileys" # Currently hardcoded, could be dynamic
+                        )
+                else:
+                    logger.error("ActionableItemsDeliveryQueueManager not initialized! Cannot send items.")
+
             except Exception as e:
-                logger.error(f"Failed to extract action items for user {user_id}: {e}")
-                action_items_output = f"\n\n[Error extracting action items: {e}]"
-        
-        # Append action items to digest message
-        digest_message = digest_message + action_items_output
-        
-        # Use the user's actual WhatsApp JID for sending message to self
-        recipient_jid = target_instance.provider_instance.user_jid
-        if not recipient_jid:
-            logger.warning(f"User JID not available for {user_id}, cannot send digest notification")
-        else:
-            try:
-                await target_instance.provider_instance.sendMessage(recipient_jid, digest_message)
-                logger.info(f"Sent digest notification to user {user_id} (JID: {recipient_jid}, TZ: {timezone})")
-            except Exception as e:
-                logger.error(f"Failed to send digest notification to user {user_id}: {e}")
+                logger.error(f"Failed to process action items for user {user_id}: {e}")
 
     def _build_period_query(self, user_id, group_id, time_from=None, time_until=None):
         query = {

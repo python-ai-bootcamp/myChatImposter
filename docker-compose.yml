@@ -21,6 +21,7 @@ services:
       - WHATSAPP_SERVER_URL=http://whatsapp_baileys_server:9000
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - MONGODB_URL=mongodb://mongodb:27017
+      - PYTHONUNBUFFERED=1
     depends_on:
       - mongodb
       - whatsapp_baileys_server
