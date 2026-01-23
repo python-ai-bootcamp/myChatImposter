@@ -2,6 +2,7 @@ import asyncio
 import json
 import os
 import threading
+import base64
 from concurrent.futures import TimeoutError as FuturesTimeoutError
 from typing import Dict, Optional, Callable, List
 from collections import deque
@@ -391,6 +392,45 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     raise Exception(error_msg)
         except Exception as e:
             if self.logger: self.logger.log(f"ERROR: Exception while sending message: {e}")
+            raise e
+
+    async def send_file(self, recipient: str, file_data: bytes, filename: str, mime_type: str, caption: Optional[str] = None):
+        """
+        Sends a file to the specified recipient using the Baileys HTTP API.
+        """
+        if not recipient:
+            if self.logger: self.logger.log("WARN: send_file called with empty recipient.")
+            return
+
+        url = f"{self.base_url}/sessions/{self.user_id}/send"
+        
+        # Convert bytes to base64 string
+        content_b64 = base64.b64encode(file_data).decode('utf-8')
+
+        payload = {
+            "recipient": recipient,
+            "type": "document",
+            "content": content_b64,
+            "fileName": filename,
+            "mimetype": mime_type,
+            "caption": caption
+        }
+
+        try:
+            if self.logger: self.logger.log(f"DEBUG: sending file {filename} to {recipient}...")
+            async with httpx.AsyncClient() as client:
+                response = await client.post(url, json=payload, timeout=30.0)
+                if response.status_code != 200:
+                        error_msg = f"Failed to send file. Status: {response.status_code}, Body: {response.text}"
+                        if self.logger: self.logger.log(f"ERROR: {error_msg}")
+                        raise Exception(error_msg)
+                
+                result = response.json()
+                if self.logger: self.logger.log(f"File sent to {recipient}. ID: {result.get('provider_message_id')}")
+                return result
+
+        except Exception as e:
+            if self.logger: self.logger.log(f"ERROR: send_file failed: {e}")
             raise e
 
     async def get_status(self, heartbeat: bool = False) -> Dict:

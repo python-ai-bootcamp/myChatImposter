@@ -1063,7 +1063,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
 // --- Express Server ---
 const app = express();
-app.use(express.json());
+app.use(express.json({ limit: '50mb' }));
 
 
 
@@ -1090,8 +1090,19 @@ app.post('/sessions/:userId/send', async (req, res) => {
     if (!session || !session.sock) {
         return res.status(404).json({ error: 'Session not found or not ready.' });
     }
-    if (!recipient || !message) {
-        return res.status(400).json({ error: 'Recipient and message are required.' });
+    const type = req.body.type || 'text';
+
+    if (!session || !session.sock) {
+        return res.status(404).json({ error: 'Session not found or not ready.' });
+    }
+
+    // Validation depends on type
+    if (!recipient) {
+        return res.status(400).json({ error: 'Recipient is required.' });
+    }
+
+    if (type === 'text' && !message) {
+        return res.status(400).json({ error: 'Message is required for text type.' });
     }
 
     try {
@@ -1105,8 +1116,25 @@ app.post('/sessions/:userId/send', async (req, res) => {
                 return res.status(400).json({ error: `Recipient ${recipient} is not on WhatsApp.` });
             }
         }
-        const sentMsgData = await session.sock.sendMessage(recipient, { text: message });
-        console.log(`[${userId}] sendMessage() invoked for ${recipient}`);
+        if (req.body.type === 'document') {
+            const { content, fileName, mimetype, caption } = req.body;
+            if (!content || !fileName || !mimetype) {
+                console.error(`[${userId}] Invalid document request. fileName: ${fileName}, mimetype: ${mimetype}, content length: ${content ? content.length : 'missing'}`);
+                return res.status(400).json({ error: 'content (base64), fileName, and mimetype are required for document type.' });
+            }
+            const buffer = Buffer.from(content, 'base64');
+            sentMsgData = await session.sock.sendMessage(recipient, {
+                document: buffer,
+                fileName: fileName,
+                mimetype: mimetype,
+                caption: caption
+            });
+            console.log(`[${userId}] sendFile() invoked for ${recipient} (File: ${fileName})`);
+        } else {
+            // Default to text
+            sentMsgData = await session.sock.sendMessage(recipient, { text: message });
+            console.log(`[${userId}] sendMessage() invoked for ${recipient}`);
+        }
 
         // Learn self LID from sent message (especially for group messages)
         if (sentMsgData?.key?.participant && sentMsgData.key.participant.endsWith('@lid')) {
@@ -1125,7 +1153,7 @@ app.post('/sessions/:userId/send', async (req, res) => {
         res.status(200).json({
             status: 'Message sent',
             recipient,
-            message,
+            message: message || '[Document]',
             provider_message_id: sentMsgData.key.id
         });
     } catch (error) {

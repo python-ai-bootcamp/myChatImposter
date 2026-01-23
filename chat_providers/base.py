@@ -41,6 +41,13 @@ class BaseChatProvider(ABC):
         pass
 
     @abstractmethod
+    async def send_file(self, recipient: str, file_data: bytes, filename: str, mime_type: str, caption: Optional[str] = None):
+        """
+        Sends a file attachment to the specified recipient.
+        """
+        pass
+
+    @abstractmethod
     def get_status(self) -> Dict[str, Any]:
         """
         Returns the current status of the provider.

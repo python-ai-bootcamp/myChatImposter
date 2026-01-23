@@ -6,6 +6,7 @@ from datetime import datetime
 from pymongo import MongoClient
 from chatbot_manager import ChatbotInstance
 from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider
+from actionable_item_formatter import ActionableItemFormatter
 from logging_lock import console_log
 
 # logger = logging.getLogger(__name__) # Removed in favor of console_log consistency
@@ -197,12 +198,32 @@ class ActionableItemsDeliveryQueueManager:
                 
                 try:
                     actionable_item = updated_doc["actionable_item"]
-                    item_json_str = json.dumps(actionable_item, indent=2, ensure_ascii=False)
                     recipient_jid = target_instance.provider_instance.user_jid # Already checked above
                     
-                    await target_instance.provider_instance.sendMessage(recipient_jid, item_json_str)
+                    # Determine language code
+                    language_code = "en" # Default
+                    if target_instance.config and target_instance.config.configurations and target_instance.config.configurations.user_details:
+                        language_code = target_instance.config.configurations.user_details.language_code
+
+                    # 1. Format the Visual Card (Text)
+                    formatted_text = ActionableItemFormatter.format_card(actionable_item, language_code)
                     
-                    # 5. Success -> Delete
+                    # 2. Generate Calendar Event
+                    ics_bytes = ActionableItemFormatter.generate_ics(actionable_item)
+                    ics_filename = f"task_{message_id[:8]}.ics"
+                    
+                    # 3. Send as Single Message (File + Caption)
+                    # Try to send the file with the visual card as the caption.
+                    # We rely on the retry mechanism if this fails transiently.
+                    await target_instance.provider_instance.send_file(
+                        recipient=recipient_jid,
+                        file_data=ics_bytes,
+                        filename=ics_filename,
+                        mime_type="text/calendar",
+                        caption=formatted_text
+                    )
+
+                    # 4. Success (Atomic) -> Delete
                     self.queue_collection.delete_one({"_id": candidate["_id"]})
                     console_log(f"ACTIONABLE_QUEUE: Sent item {message_id} successfully. Removed from queue.")
                     
