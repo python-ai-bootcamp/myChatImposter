@@ -18,22 +18,22 @@ from pymongo.errors import DuplicateKeyError
 
 from chatbot_manager import ChatbotInstance
 from group_tracker import GroupTracker
-from logging_lock import console_log
 from config_models import UserConfiguration, PeriodicGroupTrackingConfig
 from actionable_items_message_delivery_queue_manager import ActionableItemsDeliveryQueueManager
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='[%(asctime)s]::%(levelname)s::%(message)s',
+    datefmt='%Y-%m-%d %H:%M:%S',
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
 
 # Suppress the default uvicorn access logger
 access_logger = logging.getLogger("uvicorn.access")
 access_logger.disabled = True
-# Keep the default uvicorn logger for startup/shutdown messages, but without timestamps for now
-# as we can't reliably reformat them.
+# Keep the default uvicorn logger for startup/shutdown messages
 default_logger = logging.getLogger("uvicorn")
-default_logger.propagate = False # Prevent logs from reaching root logger
-# You might want to add a handler if you want to see uvicorn's default logs,
-# but for now, we are suppressing them to avoid un-timestamped messages.
-# For a production setup, a more sophisticated logging setup would be needed.
-
+default_logger.propagate = False 
 
 app = FastAPI()
 
@@ -58,7 +58,7 @@ async def startup_event():
     global mongo_client, db, configurations_collection, queues_collection, baileys_sessions_collection, group_tracker, actionable_queue_manager
     mongodb_url = os.environ.get("MONGODB_URL", "mongodb://mongodb:27017/")
     mongodb_url = os.environ.get("MONGODB_URL", "mongodb://mongodb:27017/")
-    console_log(f"API: Connecting to MongoDB at {mongodb_url}")
+    logging.info(f"API: Connecting to MongoDB at {mongodb_url}")
 
     try:
         mongo_client = MongoClient(mongodb_url, serverSelectionTimeoutMS=5000)
@@ -71,11 +71,11 @@ async def startup_event():
         try:
             # This index is on the user_id field *within* the config_data object.
             configurations_collection.create_index("config_data.user_id", unique=True)
-            console_log("API: Ensured unique index exists for 'config_data.user_id'.")
+            logging.info("API: Ensured unique index exists for 'config_data.user_id'.")
         except Exception as index_e:
-            console_log(f"API_WARN: Could not create unique index, it may already exist or there's a data issue: {index_e}")
+            logging.warning(f"API: Could not create unique index, it may already exist or there's a data issue: {index_e}")
 
-        console_log("API: Successfully connected to MongoDB.")
+        logging.info("API: Successfully connected to MongoDB.")
 
         # Initialize ActionableItemsDeliveryQueueManager
         actionable_queue_manager = ActionableItemsDeliveryQueueManager(mongodb_url, chatbot_instances)
@@ -90,7 +90,7 @@ async def startup_event():
         group_tracker.start()
 
     except Exception as e:
-        console_log(f"API_ERROR: Could not connect to MongoDB: {e}")
+        logging.error(f"API: Could not connect to MongoDB: {e}")
         mongo_client = None
 
 @app.middleware("http")
@@ -104,7 +104,7 @@ async def log_requests(request: Request, call_next):
     process_time = (time.time() - start_time) * 1000
 
     # Recreate a uvicorn-like access log, but with our timestamp
-    console_log(f'INFO:     {request.client.host}:{request.client.port} - "{request.method} {request.url.path} HTTP/{request.scope["http_version"]}" {response.status_code} ({process_time:.2f}ms)')
+    logging.info(f'{request.client.host}:{request.client.port} - "{request.method} {request.url.path} HTTP/{request.scope["http_version"]}" {response.status_code} ({process_time:.2f}ms)')
 
     return response
 
@@ -113,13 +113,13 @@ def remove_active_user(user_id: str):
     """Callback function to remove a user from the active list."""
     if user_id in active_users:
         instance_id = active_users[user_id]
-        console_log(f"API: Session ended for user '{user_id}'. Removing from active list.")
+        logging.info(f"API: Session ended for user '{user_id}'. Removing from active list.")
         del active_users[user_id]
         if instance_id in chatbot_instances:
             # Also remove the main instance object to free memory
             del chatbot_instances[instance_id]
     else:
-        console_log(f"API_WARN: Tried to remove non-existent user '{user_id}' from active list.")
+        logging.warning(f"API: Tried to remove non-existent user '{user_id}' from active list.")
 
 @app.get("/api/configurations")
 async def get_configuration_user_ids():
@@ -146,7 +146,7 @@ async def get_configuration_user_ids():
 
         return {"user_ids": user_ids}
     except Exception as e:
-        console_log(f"API_ERROR: Could not list user_ids from DB: {e}")
+        logging.error(f"API: Could not list user_ids from DB: {e}")
         raise HTTPException(status_code=500, detail="Could not list user_ids.")
 
 
@@ -257,9 +257,9 @@ async def get_all_configurations_status():
                          if auth_doc:
                              is_authenticated = True
                     else:
-                        console_log("API_WARN: baileys_sessions_collection is None during status check.")
+                        logging.warning("API: baileys_sessions_collection is None during status check.")
                 except Exception as auth_e:
-                    console_log(f"API_WARN: Error checking auth status for {user_id_from_config}: {auth_e}")
+                    logging.warning(f"API: Error checking auth status for {user_id_from_config}: {auth_e}")
                 
                 # Check for active session
                 if user_id_from_config in active_users:
@@ -285,13 +285,13 @@ async def get_all_configurations_status():
                 elif isinstance(config_data, dict):
                     uid = config_data.get('user_id', 'unknown')
 
-                console_log(f"API_WARN: Could not process config for user_id '{uid}': {e}")
+                logging.warning(f"API: Could not process config for user_id '{uid}': {e}")
                 statuses.append({"user_id": uid, "status": "invalid_config", "authenticated": False})
                 continue
 
         return {"configurations": statuses}
     except Exception as e:
-        console_log(f"API_ERROR: Could not get configuration statuses from DB: {e}")
+        logging.error(f"API: Could not get configuration statuses from DB: {e}")
         raise HTTPException(status_code=500, detail="Could not get configuration statuses.")
 
 
@@ -315,7 +315,7 @@ async def get_configuration_by_user_id(user_id: str):
     except HTTPException:
         raise
     except Exception as e:
-        console_log(f"API_ERROR: Could not retrieve config for user_id '{user_id}' from DB: {e}")
+        logging.error(f"API: Could not retrieve config for user_id '{user_id}' from DB: {e}")
         raise HTTPException(status_code=500, detail="Could not retrieve configuration.")
 
 
@@ -349,13 +349,13 @@ async def save_configuration_by_user_id(user_id: str, config: Union[UserConfigur
         }
         configurations_collection.update_one(query, {"$set": db_document}, upsert=True)
 
-        console_log(f"API: Successfully saved configuration for user_id '{user_id}' to DB.")
+        logging.info(f"API: Successfully saved configuration for user_id '{user_id}' to DB.")
         return {"status": "success", "user_id": user_id}
     except DuplicateKeyError:
-        console_log(f"API_ERROR: Duplicate key error for user_id '{user_id}'.")
+        logging.error(f"API: Duplicate key error for user_id '{user_id}'.")
         raise HTTPException(status_code=409, detail=f"A configuration with user_id '{user_id}' already exists.")
     except Exception as e:
-        console_log(f"API_ERROR: Could not save configuration for user_id '{user_id}' to DB: {e}")
+        logging.error(f"API: Could not save configuration for user_id '{user_id}' to DB: {e}")
         raise HTTPException(status_code=500, detail=f"Could not save configuration: {e}")
 
 
@@ -379,11 +379,11 @@ async def delete_configuration_by_user_id(user_id: str):
         if user_id in active_users:
             instance_id = active_users[user_id]
             if instance_id in chatbot_instances:
-                console_log(f"API: Stopping active instance for {user_id} before configuration deletion (Cleanup=True).")
+                logging.info(f"API: Stopping active instance for {user_id} before configuration deletion (Cleanup=True).")
                 try:
                     await chatbot_instances[instance_id].stop(cleanup_session=True)
                 except Exception as e:
-                    console_log(f"API_ERROR: Failed to stop instance for {user_id}: {e}")
+                    logging.error(f"API: Failed to stop instance for {user_id}: {e}")
                 
                 # Force remove from maps immediately
                 if user_id in active_users:
@@ -395,12 +395,12 @@ async def delete_configuration_by_user_id(user_id: str):
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Configuration not found.")
 
-        console_log(f"API: Successfully deleted configuration for user_id '{user_id}' from DB.")
+        logging.info(f"API: Successfully deleted configuration for user_id '{user_id}' from DB.")
         return {"status": "success", "user_id": user_id}
     except HTTPException:
         raise
     except Exception as e:
-        console_log(f"API_ERROR: Could not delete configuration for user_id '{user_id}': {e}")
+        logging.error(f"API: Could not delete configuration for user_id '{user_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Could not delete configuration: {e}")
 
 
@@ -418,7 +418,7 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
         if status == 'connected':
              if actionable_queue_manager:
                  actionable_queue_manager.move_user_to_active(uid)
-                 console_log(f"EVENT: User {uid} connected. Moved items to ACTIVE queue.")
+                 logging.info(f"EVENT: User {uid} connected. Moved items to ACTIVE queue.")
 
     if user_id in active_users:
         # Check if the existing session is effectively dead
@@ -428,7 +428,7 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
         try:
             status = await existing_instance.get_status() if existing_instance else {"status": "error"}
             if status.get("status") == "disconnected" or status.get("status") == "error":
-                console_log(f"API_WARN: Found existing 'disconnected' session for user '{user_id}'. Cleaning up to allow new link.")
+                logging.warning(f"API: Found existing 'disconnected' session for user '{user_id}'. Cleaning up to allow new link.")
                 if existing_instance:
                     await existing_instance.stop(cleanup_session=False) 
                 # Remove from active_users so we can proceed
@@ -436,15 +436,15 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
                     del active_users[user_id]
             else:
                 error_message = f"Conflict: An active session for user_id '{user_id}' already exists (Status: {status.get('status')})."
-                console_log(f"API_WARN: {error_message}")
+                logging.warning(f"API: {error_message}")
                 raise HTTPException(status_code=409, detail=error_message)
         except Exception as e:
             # If we fail to check status, assume it's stuck and fail safe? Or block?
             # Let's block to be safe, but log it.
-            console_log(f"API_ERROR: Failed to check status of conflicting session for '{user_id}': {e}")
+            logging.error(f"API: Failed to check status of conflicting session for '{user_id}': {e}")
             raise HTTPException(status_code=409, detail=f"Conflict: Active session exists and status check failed: {e}")
 
-    console_log(f"API: Received request to create instance {instance_id} for user {user_id}")
+    logging.info(f"API: Received request to create instance {instance_id} for user {user_id}")
 
     try:
         loop = asyncio.get_running_loop()
@@ -455,7 +455,7 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
         # Add the new instance to our active user tracking
         active_users[user_id] = instance_id
 
-        console_log(f"API: Instance {instance_id} for user '{user_id}' is starting in the background.")
+        logging.info(f"API: Instance {instance_id} for user '{user_id}' is starting in the background.")
 
         # Update group tracker with new config (only if enabled)
         if group_tracker:
@@ -478,7 +478,7 @@ async def create_chatbot(config: UserConfiguration = Body(...)):
         }
 
     except Exception as e:
-        console_log(f"API_ERROR: Failed to create instance for user {user_id}: {e}")
+        logging.error(f"API: Failed to create instance for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.get("/chatbot/{user_id}/status")
@@ -495,7 +495,7 @@ async def get_chatbot_status(user_id: str):
 
     if not instance:
         # This case should ideally not happen if active_users is consistent with chatbot_instances
-        console_log(f"API_ERROR: Inconsistency detected. user_id '{user_id}' is in active_users but instance '{instance_id}' not found.")
+        logging.error(f"API: Inconsistency detected. user_id '{user_id}' is in active_users but instance '{instance_id}' not found.")
         raise HTTPException(status_code=500, detail="Internal server error: instance not found for active user.")
 
     try:
@@ -503,7 +503,7 @@ async def get_chatbot_status(user_id: str):
         status = await instance.get_status(heartbeat=True)
         return status
     except Exception as e:
-        console_log(f"API_ERROR: Failed to get status for instance {instance_id}: {e}")
+        logging.error(f"API: Failed to get status for instance {instance_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get status: {e}")
 
 
@@ -532,7 +532,7 @@ async def get_user_queue(user_id: str):
 
         return JSONResponse(content=grouped_messages)
     except Exception as e:
-        console_log(f"API_ERROR: Failed to get queue for user '{user_id}' from DB: {e}")
+        logging.error(f"API: Failed to get queue for user '{user_id}' from DB: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get queue from database: {e}")
 
 
@@ -558,7 +558,7 @@ async def get_user_context(user_id: str):
         }
         return JSONResponse(content=formatted_histories)
     except Exception as e:
-        console_log(f"API_ERROR: Failed to get context for user '{user_id}': {e}")
+        logging.error(f"API: Failed to get context for user '{user_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get context: {e}")
 
 
@@ -585,7 +585,7 @@ async def clear_correspondent_queue(user_id: str, correspondent_id: str):
 
         # Delete messages from MongoDB
         result = queues_collection.delete_many(query)
-        console_log(f"API: Deleted {result.deleted_count} messages from DB for user '{user_id}', correspondent '{correspondent_id}'.")
+        logging.info(f"API: Deleted {result.deleted_count} messages from DB for user '{user_id}', correspondent '{correspondent_id}'.")
 
         # If there's an active session, clear the in-memory queue as well
         if user_id in active_users:
@@ -595,12 +595,12 @@ async def clear_correspondent_queue(user_id: str, correspondent_id: str):
                 queue = instance.user_queues_manager.get_queue(correspondent_id)
                 if queue:
                     queue.clear()
-                    console_log(f"API: Cleared in-memory queue for user '{user_id}', correspondent '{correspondent_id}'.")
+                    logging.info(f"API: Cleared in-memory queue for user '{user_id}', correspondent '{correspondent_id}'.")
 
         return Response(status_code=204)
 
     except Exception as e:
-        console_log(f"API_ERROR: Failed to clear queue for user '{user_id}', correspondent '{correspondent_id}': {e}")
+        logging.error(f"API: Failed to clear queue for user '{user_id}', correspondent '{correspondent_id}': {e}")
         raise HTTPException(status_code=500, detail="Failed to clear queue.")
 
 
@@ -622,7 +622,7 @@ async def clear_all_user_queues(user_id: str):
 
         # Delete all user's messages from MongoDB
         result = queues_collection.delete_many(query)
-        console_log(f"API: Deleted {result.deleted_count} total messages from DB for user '{user_id}'.")
+        logging.info(f"API: Deleted {result.deleted_count} total messages from DB for user '{user_id}'.")
 
         # If there's an active session, clear all in-memory queues for the user
         if user_id in active_users:
@@ -632,12 +632,12 @@ async def clear_all_user_queues(user_id: str):
                 all_queues = instance.user_queues_manager.get_all_queues()
                 for queue in all_queues:
                     queue.clear()
-                console_log(f"API: Cleared all {len(all_queues)} in-memory queues for user '{user_id}'.")
+                logging.info(f"API: Cleared all {len(all_queues)} in-memory queues for user '{user_id}'.")
 
         return Response(status_code=204)
 
     except Exception as e:
-        console_log(f"API_ERROR: Failed to clear queues for user '{user_id}': {e}")
+        logging.error(f"API: Failed to clear queues for user '{user_id}': {e}")
         raise HTTPException(status_code=500, detail="Failed to clear queues.")
 
 
@@ -655,7 +655,7 @@ async def unlink_chatbot(user_id: str):
 
     if not instance:
         # This case should ideally not happen.
-        console_log(f"API_ERROR: Inconsistency detected. user_id '{user_id}' is in active_users but instance '{instance_id}' not found during unlink.")
+        logging.error(f"API: Inconsistency detected. user_id '{user_id}' is in active_users but instance '{instance_id}' not found during unlink.")
         # Still, we should clean up the active_users entry
         del active_users[user_id]
         # Invalidate queue even if instance missing
@@ -673,7 +673,7 @@ async def unlink_chatbot(user_id: str):
              
         return {"status": "success", "message": f"Session for user '{user_id}' is being terminated and cleaned up."}
     except Exception as e:
-        console_log(f"API_ERROR: Failed to stop instance for user '{user_id}': {e}")
+        logging.error(f"API: Failed to stop instance for user '{user_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to stop instance: {e}")
 
 
@@ -686,7 +686,7 @@ async def reload_chatbot(user_id: str):
     if user_id not in active_users:
         raise HTTPException(status_code=404, detail=f"No active session found for user_id '{user_id}' to reload.")
 
-    console_log(f"API: Received request to reload instance for user '{user_id}'.")
+    logging.info(f"API: Received request to reload instance for user '{user_id}'.")
 
     try:
         # Step 1: Gracefully stop the current instance, preserving the session
@@ -694,7 +694,7 @@ async def reload_chatbot(user_id: str):
         instance = chatbot_instances.get(instance_id)
         if instance:
             await instance.stop(cleanup_session=False)
-            console_log(f"API: Gracefully stopped instance {instance_id} for user '{user_id}' for reload.")
+            logging.info(f"API: Gracefully stopped instance {instance_id} for user '{user_id}' for reload.")
             
             # Lifecycle: User stopping (Reload) -> Move to Holding
             if actionable_queue_manager:
@@ -725,14 +725,14 @@ async def reload_chatbot(user_id: str):
 
         # Step 3: Create and start a new instance with the latest configuration
         new_instance_id = str(uuid.uuid4())
-        console_log(f"API: Restarting instance for user {user_id} as {new_instance_id}")
+        logging.info(f"API: Restarting instance for user {user_id} as {new_instance_id}")
 
         # Listener to handle queue movement on connection (reload scenario)
         async def status_change_listener_reload(uid: str, status: str):
             if status == 'connected':
                  if actionable_queue_manager:
                      actionable_queue_manager.move_user_to_active(uid)
-                     console_log(f"EVENT: User {uid} connected (Reload). Moved items to ACTIVE queue.")
+                     logging.info(f"EVENT: User {uid} connected (Reload). Moved items to ACTIVE queue.")
 
         loop = asyncio.get_running_loop()
         new_instance = ChatbotInstance(config=config, on_session_end=remove_active_user, queues_collection=queues_collection, main_loop=loop, on_status_change=status_change_listener_reload)
@@ -749,12 +749,12 @@ async def reload_chatbot(user_id: str):
             else:
                 group_tracker.update_jobs(user_id, [])  # Clear jobs when disabled
 
-        console_log(f"API: Instance {new_instance_id} for user '{user_id}' has been successfully reloaded.")
+        logging.info(f"API: Instance {new_instance_id} for user '{user_id}' has been successfully reloaded.")
 
         return {"status": "success", "message": f"Chatbot for user '{user_id}' is being reloaded."}
 
     except Exception as e:
-        console_log(f"API_ERROR: Failed to reload instance for user '{user_id}': {e}")
+        logging.error(f"API: Failed to reload instance for user '{user_id}': {e}")
         # Attempt to clean up if the reload failed midway
         if user_id in active_users:
             del active_users[user_id]
@@ -767,10 +767,10 @@ def shutdown_event():
     Gracefully shut down all running chatbot instances when the server is stopped.
     This should NOT delete the session data, so it can be resumed on next startup.
     """
-    console_log("API: Server is shutting down. Stopping all chatbot instances...")
+    logging.info("API: Server is shutting down. Stopping all chatbot instances...")
     # Create a copy of the dictionary to avoid issues with modifying it while iterating
     for instance_id, instance in list(chatbot_instances.items()):
-        console_log(f"API: Stopping instance {instance_id} for user '{instance.user_id}' (no cleanup)...")
+        logging.info(f"API: Stopping instance {instance_id} for user '{instance.user_id}' (no cleanup)...")
         # We call stop() without cleanup to ensure sessions are persisted.
         asyncio.run(instance.stop(cleanup_session=False))
         # Clean up the dictionaries
@@ -779,7 +779,7 @@ def shutdown_event():
 
     # It's good practice to clear the main dict as well
     chatbot_instances.clear()
-    console_log("API: All instances stopped and cleaned up.")
+    logging.info("API: All instances stopped and cleaned up.")
 
     # Shutdown GroupTracker
     if group_tracker:
@@ -793,7 +793,7 @@ def shutdown_event():
     # Close MongoDB connection
     if mongo_client:
         mongo_client.close()
-        console_log("API: MongoDB connection closed.")
+        logging.info("API: MongoDB connection closed.")
 
 @app.get("/chatbot/{user_id}/groups")
 async def get_active_groups(user_id: str):
@@ -813,7 +813,7 @@ async def get_active_groups(user_id: str):
         groups = await instance.provider_instance.get_active_groups()
         return {"groups": groups}
     except Exception as e:
-        console_log(f"API_ERROR: Failed to get active groups for user '{user_id}': {e}")
+        logging.error(f"API: Failed to get active groups for user '{user_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get active groups: {e}")
 
 @app.get("/api/trackedGroupMessages/{user_id}/{group_id}")
@@ -832,7 +832,7 @@ async def get_tracked_group_messages(user_id: str, group_id: str, lastPeriods: i
     except HTTPException:
         raise
     except Exception as e:
-        console_log(f"API_ERROR: Failed to get tracked group messages for user '{user_id}' group '{group_id}': {e}")
+        logging.error(f"API: Failed to get tracked group messages for user '{user_id}' group '{group_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get tracked group messages: {e}")
 
 @app.get("/api/trackedGroupMessages/{user_id}")
@@ -847,7 +847,7 @@ async def get_all_tracked_group_messages(user_id: str, lastPeriods: int = 0, fro
         data = group_tracker.get_all_user_messages(user_id, last_periods=lastPeriods, time_from=from_time, time_until=until_time)
         return JSONResponse(content=data)
     except Exception as e:
-        console_log(f"API_ERROR: Failed to get all tracked group messages for user '{user_id}': {e}")
+        logging.error(f"API: Failed to get all tracked group messages for user '{user_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get all tracked group messages: {e}")
 
 @app.delete("/api/trackedGroupMessages/{user_id}/{group_id}")
@@ -862,7 +862,7 @@ async def delete_tracked_group_messages(user_id: str, group_id: str, lastPeriods
         count = group_tracker.delete_group_messages(user_id, group_id, last_periods=lastPeriods, time_from=from_time, time_until=until_time)
         return {"status": "success", "deleted_count": count}
     except Exception as e:
-        console_log(f"API_ERROR: Failed to delete tracked group messages for user '{user_id}' group '{group_id}': {e}")
+        logging.error(f"API: Failed to delete tracked group messages for user '{user_id}' group '{group_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete tracked group messages: {e}")
 
 @app.delete("/api/trackedGroupMessages/{user_id}")
@@ -877,7 +877,7 @@ async def delete_all_tracked_group_messages(user_id: str, lastPeriods: int = 0, 
         count = group_tracker.delete_all_user_messages(user_id, last_periods=lastPeriods, time_from=from_time, time_until=until_time)
         return {"status": "success", "deleted_count": count}
     except Exception as e:
-        console_log(f"API_ERROR: Failed to delete all tracked group messages for user '{user_id}': {e}")
+        logging.error(f"API: Failed to delete all tracked group messages for user '{user_id}': {e}")
         raise HTTPException(status_code=500, detail=f"Failed to delete all tracked group messages: {e}")
 
 
@@ -903,7 +903,7 @@ async def get_queue_items(queue_type: str, user_id: Union[str, None] = None):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        console_log(f"API_ERROR: Failed to get queue items: {e}")
+        logging.error(f"API: Failed to get queue items: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.delete("/queues/{queue_type}/{message_id}")
@@ -923,11 +923,11 @@ async def delete_queue_item(queue_type: str, message_id: str):
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        console_log(f"API_ERROR: Failed to delete queue item: {e}")
+        logging.error(f"API: Failed to delete queue item: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 if __name__ == "__main__":
     import uvicorn
     # The log_config is modified at the module level to suppress the access logger.
     # We don't need to pass it here again, but we do for clarity.
-    uvicorn.run(app, host="0.0.0.0", port=8000, log_config=LOGGING_CONFIG)
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -7,7 +7,8 @@ import inspect
 import asyncio
 from typing import Dict, Any, Optional, Type, List
 
-from logging_lock import console_log, FileLogger
+import logging
+from logging_lock import FileLogger
 from config_models import UserConfiguration, ContextConfig
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -161,13 +162,13 @@ class ChatbotModel:
         history.add_message(HumanMessage(content=formatted_message))
 
         # Invoke the underlying runnable directly, passing the current history manually
-        console_log(f"INVOKING LANCHAIN CHAIN for session {session_id}")
-        console_log(f"--- FULL PROMPT CONTEXT ---\nSystem: {self.system_prompt}\nHistory: {history.messages}\nUser: {formatted_message}\n---------------------------")
+        logging.info(f"INVOKING LANCHAIN CHAIN for session {session_id}")
+        logging.info(f"--- FULL PROMPT CONTEXT ---\nSystem: {self.system_prompt}\nHistory: {history.messages}\nUser: {formatted_message}\n---------------------------")
         response = await self.runnable.ainvoke(
             {"question": formatted_message, "history": history.messages},
             config={"configurable": {"session_id": session_id}}
         )
-        console_log(f"LANCHAIN CHAIN RETURNED for session {session_id}")
+        logging.info(f"LANCHAIN CHAIN RETURNED for session {session_id}")
 
         # Manually add the AI response to history
         history.add_message(AIMessage(content=response))
@@ -204,7 +205,7 @@ class CorrespondenceIngester:
 
     async def _run(self):
         """The main async loop for the ingester."""
-        console_log(f"INGESTER ({self.user_id}): Starting up.")
+        logging.info(f"INGESTER ({self.user_id}): Starting up.")
         while not self._stop_event.is_set():
             any_message_processed = False
             all_queues = self.user_queues_manager.get_all_queues()
@@ -225,9 +226,9 @@ class CorrespondenceIngester:
                         # Run the blocking DB call in a separate thread to not block the event loop
                         await asyncio.to_thread(self.queues_collection.insert_one, message_doc)
 
-                        console_log(f"INGESTER ({self.user_id}/{queue.correspondent_id}): Successfully persisted message {message.id}.")
+                        logging.info(f"INGESTER ({self.user_id}/{queue.correspondent_id}): Successfully persisted message {message.id}.")
                     except Exception as e:
-                        console_log(f"INGESTER_ERROR ({self.user_id}/{queue.correspondent_id}): Failed to process or save message {message.id}: {e}")
+                        logging.info(f"INGESTER ({self.user_id}/{queue.correspondent_id}): Failed to process or save message {message.id}: {e}")
 
             if not any_message_processed:
                 try:
@@ -235,7 +236,7 @@ class CorrespondenceIngester:
                 except asyncio.TimeoutError:
                     pass
 
-        console_log(f"INGESTER ({self.user_id}): Shutting down.")
+        logging.info(f"INGESTER ({self.user_id}): Shutting down.")
 
     def start(self):
         """Starts the ingester task."""
@@ -275,7 +276,7 @@ class ChatbotInstance:
         The chat provider is essential. The LLM provider is optional; if not
         provided, the instance will run in "collection only" mode.
         """
-        console_log(f"INSTANCE ({self.user_id}): Initializing components...")
+        logging.info(f"INSTANCE ({self.user_id}): Initializing components...")
 
         # 1. Initialize Queue (Essential)
         self.whitelist = self.config.features.automatic_bot_reply.respond_to_whitelist
@@ -289,7 +290,7 @@ class ChatbotInstance:
             queues_collection=self._queues_collection,
             main_loop=self.main_loop
         )
-        console_log(f"INSTANCE ({self.user_id}): Initialized queue manager.")
+        logging.info(f"INSTANCE ({self.user_id}): Initialized queue manager.")
 
         # 2. Initialize Ingester (if DB is available)
         if self._queues_collection is not None:
@@ -300,9 +301,9 @@ class ChatbotInstance:
                 queues_collection=self._queues_collection,
                 main_loop=self.main_loop
             )
-            console_log(f"INSTANCE ({self.user_id}): Initialized correspondence ingester.")
+            logging.info(f"INSTANCE ({self.user_id}): Initialized correspondence ingester.")
         else:
-            console_log(f"INSTANCE_WARNING ({self.user_id}): No database collection provided. Ingester will not run.")
+            logging.warning(f"INSTANCE ({self.user_id}): No database collection provided. Ingester will not run.")
 
         # 3. Initialize Chat Provider (Essential)
         provider_module = importlib.import_module(f"chat_providers.{provider_name}")
@@ -324,7 +325,7 @@ class ChatbotInstance:
             provider_init_params["main_loop"] = self.main_loop
 
         self.provider_instance = ProviderClass(**provider_init_params)
-        console_log(f"INSTANCE ({self.user_id}): Initialized chat provider '{provider_name}'.")
+        logging.info(f"INSTANCE ({self.user_id}): Initialized chat provider '{provider_name}'.")
 
         # 4. Initialize Chatbot Model (llm_provider_config is mandatory)
         llm_provider_name = self.config.configurations.llm_provider_config.provider_name
@@ -343,11 +344,11 @@ class ChatbotInstance:
             system_prompt,
             self.config.configurations.context_config
         )
-        console_log(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.")
+        logging.info(f"INSTANCE ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.")
 
     async def _message_callback(self, user_id: str, correspondent_id: str, message: Message):
         """Routes incoming messages to enabled feature handlers."""
-        console_log(f"INSTANCE ({user_id}/{correspondent_id}): Callback received for message {message.id}.")
+        logging.info(f"INSTANCE ({user_id}/{correspondent_id}): Callback received for message {message.id}.")
 
         # Skip bot messages and outgoing user messages
         if message.source == 'bot' or message.source == 'user_outgoing':
@@ -367,7 +368,7 @@ class ChatbotInstance:
             if self.whitelist_group:
                 group = message.group
                 all_identifiers = [group.identifier, group.display_name]
-                console_log(f"INSTANCE ({user_id}): Evaluating group '{group.display_name}' against group whitelist. Identifiers: {all_identifiers}, Whitelist: {self.whitelist_group}")
+                logging.info(f"INSTANCE ({user_id}): Evaluating group '{group.display_name}' against group whitelist. Identifiers: {all_identifiers}, Whitelist: {self.whitelist_group}")
 
                 matching_identifier = None
                 matching_whitelist_entry = None
@@ -386,9 +387,9 @@ class ChatbotInstance:
                         break
 
                 if is_whitelisted:
-                    console_log(f"INSTANCE ({user_id}): Group whitelist check passed for group '{group.display_name}'. Identifier '{matching_identifier}' matched whitelist entry '{matching_whitelist_entry}'.")
+                    logging.info(f"INSTANCE ({user_id}): Group whitelist check passed for group '{group.display_name}'. Identifier '{matching_identifier}' matched whitelist entry '{matching_whitelist_entry}'.")
                 else:
-                    console_log(f"INSTANCE ({user_id}): Group '{group.display_name}' not in group whitelist. Ignoring.")
+                    logging.info(f"INSTANCE ({user_id}): Group '{group.display_name}' not in group whitelist. Ignoring.")
                     return
             else:
                 # No group whitelist configured, skip
@@ -396,7 +397,7 @@ class ChatbotInstance:
         elif self.whitelist:
             sender = message.sender
             all_identifiers = [sender.identifier] + getattr(sender, 'alternate_identifiers', [])
-            console_log(f"INSTANCE ({user_id}): Evaluating sender '{sender.display_name}' against direct message whitelist. Identifiers: {all_identifiers}, Whitelist: {self.whitelist}")
+            logging.info(f"INSTANCE ({user_id}): Evaluating sender '{sender.display_name}' against direct message whitelist. Identifiers: {all_identifiers}, Whitelist: {self.whitelist}")
 
             matching_identifier = None
             matching_whitelist_entry = None
@@ -415,16 +416,16 @@ class ChatbotInstance:
                     break
 
             if is_whitelisted:
-                console_log(f"INSTANCE ({user_id}): Whitelist check passed for sender '{sender.display_name}'. Identifier '{matching_identifier}' matched whitelist entry '{matching_whitelist_entry}'.")
+                logging.info(f"INSTANCE ({user_id}): Whitelist check passed for sender '{sender.display_name}'. Identifier '{matching_identifier}' matched whitelist entry '{matching_whitelist_entry}'.")
             else:
-                console_log(f"INSTANCE ({user_id}): Sender '{sender.display_name}' not in whitelist. Ignoring.")
+                logging.info(f"INSTANCE ({user_id}): Sender '{sender.display_name}' not in whitelist. Ignoring.")
                 return
         else:
             # No whitelist configured for direct messages, skip
             return
 
         if not self.chatbot_model or not self.provider_instance:
-            console_log(f"INSTANCE_ERROR ({user_id}): Chatbot or provider not initialized.")
+            logging.error(f"INSTANCE ({user_id}): Chatbot or provider not initialized.")
             return
 
         try:
@@ -441,11 +442,11 @@ class ChatbotInstance:
             # The bot's response is no longer added directly to the queue.
             # It will be processed when it comes back from the WebSocket as an outgoing message.
         except Exception as e:
-            console_log(f"Error in bot reply handler for user {user_id}: {e}")
+            logging.error(f"Error in bot reply handler for user {user_id}: {e}")
 
     async def _handle_kid_safety(self, user_id: str, correspondent_id: str, message: Message):
         """Handles kid phone safety tracking feature. (Placeholder for future implementation)"""
-        console_log(f"INSTANCE ({user_id}): Handling live kid phone safety message for user {user_id}.")
+        logging.info(f"INSTANCE ({user_id}): Handling live kid phone safety message for user {user_id}.")
 
 
     async def start(self):
@@ -458,14 +459,14 @@ class ChatbotInstance:
             # This will be caught by the exception handler in main.py and reported to the user.
             raise RuntimeError(f"Instance {self.user_id} cannot start: queue manager or provider not initialized.")
 
-        console_log(f"INSTANCE ({self.user_id}): Registering callback and starting provider listener...")
+        logging.info(f"INSTANCE ({self.user_id}): Registering callback and starting provider listener...")
         self.user_queues_manager.register_callback(self._message_callback)
 
         if self.ingester:
             self.ingester.start()
 
         await self.provider_instance.start_listening()
-        console_log(f"INSTANCE ({self.user_id}): System is running.")
+        logging.info(f"INSTANCE ({self.user_id}): System is running.")
 
     async def stop(self, cleanup_session: bool = False):
         """
@@ -479,9 +480,9 @@ class ChatbotInstance:
             await self.ingester.stop()
 
         if self.provider_instance:
-            console_log(f"INSTANCE ({self.user_id}): Shutting down... (cleanup={cleanup_session})")
+            logging.info(f"INSTANCE ({self.user_id}): Shutting down... (cleanup={cleanup_session})")
             await self.provider_instance.stop_listening(cleanup_session=cleanup_session)
-            console_log(f"INSTANCE ({self.user_id}): Shutdown complete.")
+            logging.info(f"INSTANCE ({self.user_id}): Shutdown complete.")
 
     async def get_status(self, heartbeat: bool = False):
         """Gets the connection status from the provider."""

@@ -9,7 +9,8 @@ from typing import Optional, Callable, List
 from pymongo.collection import Collection
 from pymongo import DESCENDING
 
-from logging_lock import lock, get_timestamp, console_log
+import logging
+from logging_lock import lock, get_timestamp
 from config_models import QueueConfig
 
 @dataclass
@@ -70,11 +71,11 @@ class CorrespondentQueue:
             )
             if last_message and 'id' in last_message:
                 self._next_message_id = last_message['id'] + 1
-                console_log(f"QUEUE INIT ({self.user_id}/{self.correspondent_id}): Initialized next message ID to {self._next_message_id} from database.")
+                logging.info(f"QUEUE INIT ({self.user_id}/{self.correspondent_id}): Initialized next message ID to {self._next_message_id} from database.")
             else:
-                console_log(f"QUEUE INIT ({self.user_id}/{self.correspondent_id}): No previous messages found in DB. Starting message ID at 1.")
+                logging.info(f"QUEUE INIT ({self.user_id}/{self.correspondent_id}): No previous messages found in DB. Starting message ID at 1.")
         except Exception as e:
-            console_log(f"QUEUE DB_ERROR ({self.user_id}/{self.correspondent_id}): Could not initialize next message ID from DB: {e}")
+            logging.error(f"QUEUE: Could not initialize next message ID from DB: {e}")
 
     def register_callback(self, callback: Callable[[str, Message], None]):
         """Register a callback function to be triggered on new messages."""
@@ -86,7 +87,7 @@ class CorrespondentQueue:
             if self.main_loop:
                 asyncio.run_coroutine_threadsafe(callback(self.user_id, self.correspondent_id, message), self.main_loop)
             else:
-                console_log(f"QUEUE ERROR ({self.user_id}/{self.correspondent_id}): No main event loop provided to run async callback.")
+                logging.error(f"QUEUE: No main event loop provided to run async callback.")
 
     def _enforce_limits(self, new_message_size: int):
         """Evict old messages until the new message can be added."""
@@ -97,33 +98,33 @@ class CorrespondentQueue:
             evicted_msg = self._messages.popleft()
             self._total_chars -= evicted_msg.message_size
             self._log_retention_event(evicted_msg, "age", new_message_size)
-            console_log(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to age.")
+            logging.info(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to age.")
 
         # Evict by total characters
         while self._messages and (self._total_chars + new_message_size) > self.max_characters:
             evicted_msg = self._messages.popleft()
             self._total_chars -= evicted_msg.message_size
             self._log_retention_event(evicted_msg, "total_characters", new_message_size)
-            console_log(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to total characters limit.")
+            logging.info(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to total characters limit.")
 
         # Evict by total message count
         while len(self._messages) >= self.max_messages:
             evicted_msg = self._messages.popleft()
             self._total_chars -= evicted_msg.message_size
             self._log_retention_event(evicted_msg, "message_count", new_message_size)
-            console_log(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to message count limit.")
+            logging.info(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to message count limit.")
 
     def add_message(self, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None, provider_message_id: Optional[str] = None):
         """Create, add, and process a new message for the queue."""
         if provider_message_id:
             if provider_message_id in self._recent_provider_message_ids:
-                console_log(f"QUEUE DUPE ({self.user_id}): Duplicate message ID {provider_message_id} received, ignoring.")
+                logging.info(f"QUEUE DUPE ({self.user_id}): Duplicate message ID {provider_message_id} received, ignoring.")
                 return
             self._recent_provider_message_ids.append(provider_message_id)
 
         # Truncate the message if it exceeds the single message character limit.
         if len(content) > self.max_characters_single_message:
-            console_log(f"QUEUE TRUNCATE ({self.user_id}): Message from {sender.display_name} is larger than the single message character limit ({self.max_characters_single_message}), truncating.")
+            logging.warning(f"QUEUE TRUNCATE ({self.user_id}): Message from {sender.display_name} is larger than the single message character limit ({self.max_characters_single_message}), truncating.")
             content = content[:self.max_characters_single_message]
 
         new_message_size = len(content)
@@ -147,7 +148,7 @@ class CorrespondentQueue:
         # Log the message
         self._log_message(message)
 
-        console_log(f"QUEUE ADD ({self.user_id}): Added message {message.id} from {message.sender.display_name}. Queue stats: {len(self._messages)} msgs, {self._total_chars} chars.")
+        logging.info(f"QUEUE ADD ({self.user_id}): Added message {message.id} from {message.sender.display_name}. Queue stats: {len(self._messages)} msgs, {self._total_chars} chars.")
 
         self._new_message_event.set()
         self._trigger_callbacks(message)
@@ -227,7 +228,7 @@ class CorrespondentQueue:
         self._messages.clear()
         self._total_chars = 0
         self._next_message_id = 1
-        console_log(f"QUEUE CLEAR ({self.user_id}/{self.correspondent_id}): In-memory queue cleared and message ID reset.")
+        logging.info(f"QUEUE CLEAR ({self.user_id}/{self.correspondent_id}): In-memory queue cleared and message ID reset.")
 
     def _log_retention_event(self, evicted_message: Message, reason: str, new_message_size: int = 0):
         """
@@ -267,7 +268,7 @@ class UserQueuesManager:
     def get_or_create_queue(self, correspondent_id: str) -> CorrespondentQueue:
         with self._lock:
             if correspondent_id not in self._queues:
-                console_log(f"QUEUE_MANAGER ({self.user_id}): Creating new queue for correspondent '{correspondent_id}'.")
+                logging.info(f"QUEUE_MANAGER ({self.user_id}): Creating new queue for correspondent '{correspondent_id}'.")
                 queue = CorrespondentQueue(
                     user_id=self.user_id,
                     provider_name=self.provider_name,

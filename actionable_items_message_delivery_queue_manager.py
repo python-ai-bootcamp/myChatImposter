@@ -7,9 +7,8 @@ from pymongo import MongoClient
 from chatbot_manager import ChatbotInstance
 from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider
 from actionable_item_formatter import ActionableItemFormatter
-from logging_lock import console_log
-
-# logger = logging.getLogger(__name__) # Removed in favor of console_log consistency
+import logging
+# from logging_lock import console_log
 class ActionableItemsDeliveryQueueManager:
     def __init__(self, mongo_url: str, chatbot_instances: dict[str, ChatbotInstance]):
         self.mongo_client = MongoClient(mongo_url)
@@ -34,7 +33,7 @@ class ActionableItemsDeliveryQueueManager:
             return
         self.running = True
         self.consumer_task = asyncio.create_task(self._consumer_loop())
-        console_log("ACTIONABLE_QUEUE: ActionableItemsDeliveryQueueManager consumer started.")
+        logging.info("ACTIONABLE_QUEUE: ActionableItemsDeliveryQueueManager consumer started.")
 
     async def stop_consumer(self):
         self.running = False
@@ -44,7 +43,7 @@ class ActionableItemsDeliveryQueueManager:
                 await self.consumer_task
             except asyncio.CancelledError:
                 pass
-        console_log("ACTIONABLE_QUEUE: ActionableItemsDeliveryQueueManager consumer stopped.")
+        logging.info("ACTIONABLE_QUEUE: ActionableItemsDeliveryQueueManager consumer stopped.")
 
     def add_item(self, actionable_item: dict, user_id: str, provider_name: str):
         """
@@ -66,9 +65,9 @@ class ActionableItemsDeliveryQueueManager:
         
         try:
             self.queue_collection.insert_one(doc)
-            console_log(f"ACTIONABLE_QUEUE: Added item to delivery queue: {message_id} for user {user_id}")
+            logging.info(f"ACTIONABLE_QUEUE: Added item to delivery queue: {message_id} for user {user_id}")
         except Exception as e:
-            console_log(f"ACTIONABLE_QUEUE_ERROR: Failed to add item to delivery queue: {e}")
+            logging.error(f"ACTIONABLE_QUEUE: Failed to add item to delivery queue: {e}")
 
     def move_user_to_holding(self, user_id: str):
         """
@@ -84,11 +83,11 @@ class ActionableItemsDeliveryQueueManager:
                 self.unconnected_collection.insert_many(items)
                 # Delete from active
                 self.queue_collection.delete_many(query)
-                console_log(f"ACTIONABLE_QUEUE: Moved {len(items)} items for user {user_id} to UNCONNECTED holding queue.")
+                logging.info(f"ACTIONABLE_QUEUE: Moved {len(items)} items for user {user_id} to UNCONNECTED holding queue.")
             else:
                 pass # console_log(f"ACTIONABLE_QUEUE_DEBUG: No items to move to holding for user {user_id}.")
         except Exception as e:
-            console_log(f"ACTIONABLE_QUEUE_ERROR: Failed to move items to holding for user {user_id}: {e}")
+            logging.error(f"ACTIONABLE_QUEUE: Failed to move items to holding for user {user_id}: {e}")
 
     def move_user_to_active(self, user_id: str):
         """
@@ -104,11 +103,11 @@ class ActionableItemsDeliveryQueueManager:
                 self.queue_collection.insert_many(items)
                 # Delete from unconnected
                 self.unconnected_collection.delete_many(query)
-                console_log(f"ACTIONABLE_QUEUE: Moved {len(items)} items for user {user_id} to ACTIVE delivery queue.")
+                logging.info(f"ACTIONABLE_QUEUE: Moved {len(items)} items for user {user_id} to ACTIVE delivery queue.")
             else:
                 pass # console_log(f"ACTIONABLE_QUEUE_DEBUG: No items to move to active for user {user_id}.")
         except Exception as e:
-            console_log(f"ACTIONABLE_QUEUE_ERROR: Failed to move items to active for user {user_id}: {e}")
+            logging.error(f"ACTIONABLE_QUEUE: Failed to move items to active for user {user_id}: {e}")
 
     def move_all_to_holding(self):
         """
@@ -120,14 +119,14 @@ class ActionableItemsDeliveryQueueManager:
             if items:
                 self.unconnected_collection.insert_many(items)
                 self.queue_collection.delete_many({})
-                console_log(f"ACTIONABLE_QUEUE: Startup: Moved {len(items)} items to UNCONNECTED holding queue.")
+                logging.info(f"ACTIONABLE_QUEUE: Startup: Moved {len(items)} items to UNCONNECTED holding queue.")
             else:
-                console_log("ACTIONABLE_QUEUE: Startup: No pending items to move to holding.")
+                logging.info("ACTIONABLE_QUEUE: Startup: No pending items to move to holding.")
         except Exception as e:
-            console_log(f"ACTIONABLE_QUEUE_ERROR: Failed to move all items to holding: {e}")
+            logging.error(f"ACTIONABLE_QUEUE: Failed to move all items to holding: {e}")
 
     async def _consumer_loop(self):
-        console_log("ACTIONABLE_QUEUE: ActionableItemsDeliveryQueueManager loop running.")
+        logging.info("ACTIONABLE_QUEUE: ActionableItemsDeliveryQueueManager loop running.")
         while self.running:
             try:
                 # Jitter: Sleep random time between 1 and 12 seconds
@@ -149,12 +148,12 @@ class ActionableItemsDeliveryQueueManager:
 
                 # 1. Check Attempts Limit
                 if attempts >= 3:
-                    console_log(f"ACTIONABLE_QUEUE_WARN: Item {message_id} reached max attempts (3). Moving to FAILED queue.")
+                    logging.warning(f"ACTIONABLE_QUEUE: Item {message_id} reached max attempts (3). Moving to FAILED queue.")
                     try:
                         self.failed_collection.insert_one(candidate)
                         self.queue_collection.delete_one({"_id": candidate["_id"]})
                     except Exception as e:
-                        console_log(f"ACTIONABLE_QUEUE_ERROR: Failed to move item {message_id} to failed queue: {e}")
+                        logging.error(f"ACTIONABLE_QUEUE: Failed to move item {message_id} to failed queue: {e}")
                     continue
 
                 # 2. Check User Connection (Presend Check)
@@ -194,7 +193,7 @@ class ActionableItemsDeliveryQueueManager:
                 # 4. Attempt Send
                 # Using updated attempts count for logging
                 current_attempt = updated_doc["message_metadata"]["send_attempts"]
-                console_log(f"ACTIONABLE_QUEUE: Sending item {message_id} to {user_id} (Attempt {current_attempt}/3)")
+                logging.info(f"ACTIONABLE_QUEUE: Sending item {message_id} to {user_id} (Attempt {current_attempt}/3)")
                 
                 try:
                     actionable_item = updated_doc["actionable_item"]
@@ -225,10 +224,10 @@ class ActionableItemsDeliveryQueueManager:
 
                     # 4. Success (Atomic) -> Delete
                     self.queue_collection.delete_one({"_id": candidate["_id"]})
-                    console_log(f"ACTIONABLE_QUEUE: Sent item {message_id} successfully. Removed from queue.")
+                    logging.info(f"ACTIONABLE_QUEUE: Sent item {message_id} successfully. Removed from queue.")
                     
                 except Exception as e:
-                    console_log(f"ACTIONABLE_QUEUE_ERROR: Failed to send item {message_id}: {e}")
+                    logging.error(f"ACTIONABLE_QUEUE: Failed to send item {message_id}: {e}")
                     # CRITICAL FIX: Do NOT delete the item.
                     # The item remains in the queue with incremented 'send_attempts'.
                     # It will be picked up again by the consumer loop (subject to jitter).
@@ -241,7 +240,7 @@ class ActionableItemsDeliveryQueueManager:
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                console_log(f"ACTIONABLE_QUEUE_ERROR: Error in consumer loop: {e}")
+                logging.error(f"ACTIONABLE_QUEUE: Error in consumer loop: {e}")
                 await asyncio.sleep(5)
 
     def get_queue_items(self, queue_type: str, user_id: str = None) -> list:
@@ -286,9 +285,9 @@ class ActionableItemsDeliveryQueueManager:
 
         result = collection.delete_one({"message_metadata.message_id": message_id})
         if result.deleted_count > 0:
-            console_log(f"ACTIONABLE_QUEUE: Deleted item {message_id} from {queue_type} queue.")
+            logging.info(f"ACTIONABLE_QUEUE: Deleted item {message_id} from {queue_type} queue.")
             return True
         else:
-            console_log(f"ACTIONABLE_QUEUE_WARN: Item {message_id} not found in {queue_type} queue for deletion.")
+            logging.warning(f"ACTIONABLE_QUEUE: Item {message_id} not found in {queue_type} queue for deletion.")
             return False
 
