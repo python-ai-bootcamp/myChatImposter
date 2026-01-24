@@ -675,7 +675,7 @@ const saveLidMapping = async (userId, lid, pn) => {
             { $set: update },
             { upsert: true }
         );
-        console.log(`[${userId}] Persisted LID mapping: ${lid} -> ${pn}`);
+        // console.log(`[${userId}] Persisted LID mapping: ${lid} -> ${pn}`);
     } catch (e) {
         console.error(`[${userId}] Failed to save LID mapping:`, e);
     }
@@ -775,6 +775,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
         sessions[userId].lidCache = {}; // Reset cache on reconnect (will load from DB below)
         sessions[userId].pushNameCache = {}; // Reset pushName cache
         sessions[userId].lastHeartbeat = Date.now(); // Reset heartbeat to prevent zombie detection during reload
+        sessions[userId].isGracefulDisconnect = false; // Reset flags
+        sessions[userId].isZombie = false;
         resetHttp405Tracker(sessions[userId]);
         // Do not reset store here, preserve what we have?
         // Or reset if it's a new connection?
@@ -796,7 +798,9 @@ async function connectToWhatsApp(userId, vendorConfig) {
             http405Tracker: createHttp405Tracker(),
             store: { messages: {} }, // Initialize in-memory message store
             authState: authState, // Store auth state
-            lastHeartbeat: Date.now() // Initialize heartbeat
+            lastHeartbeat: Date.now(), // Initialize heartbeat
+            isGracefulDisconnect: false,
+            isZombie: false
         };
     }
 

@@ -449,7 +449,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
 
 
-    async def get_active_groups(self):
+    async def get_groups(self):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(f"{self.base_url}/sessions/{self.user_id}/groups", timeout=10)

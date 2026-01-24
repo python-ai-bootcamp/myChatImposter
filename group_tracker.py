@@ -257,12 +257,23 @@ RELEVANT_TASK_MESSAGE format:
             return error_msg
 
     def update_jobs(self, user_id: str, tracking_configs: list[PeriodicGroupTrackingConfig], timezone: str = "UTC"):
-        # Remove existing jobs for this user
-        jobs_to_remove = [job_id for job_id in self.jobs if job_id.startswith(f"{user_id}_")]
-        for job_id in jobs_to_remove:
-            if self.scheduler.get_job(job_id):
-                self.scheduler.remove_job(job_id)
-            del self.jobs[job_id]
+        # Remove existing jobs for this user by querying the scheduler directly
+        # This ensures we catch any zombie jobs even if self.jobs is out of sync
+        all_jobs = self.scheduler.get_jobs()
+        prefix = f"{user_id}_"
+        
+        for job in all_jobs:
+            if job.id.startswith(prefix):
+                try:
+                    self.scheduler.remove_job(job.id)
+                    logger.info(f"Removed tracking job {job.id} for user {user_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove job {job.id}: {e}")
+        
+        # Sync self.jobs (optional, but good for consistency)
+        keys_to_remove = [k for k in self.jobs if k.startswith(prefix)]
+        for k in keys_to_remove:
+            del self.jobs[k]
 
         # Clean up stale groups from MongoDB that are no longer in the config
         current_group_ids = {config.groupIdentifier for config in tracking_configs}

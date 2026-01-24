@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
 
 function HomePage() {
   const [configs, setConfigs] = useState([]);
@@ -13,11 +13,13 @@ function HomePage() {
   const [linkStatus, setLinkStatus] = useState(null);
 
   const navigate = useNavigate();
+  const location = useLocation();
+  const [searchParams, setSearchParams] = useSearchParams();
   const pollIntervalRef = useRef(null);
 
   const fetchStatuses = async () => {
     try {
-      const response = await fetch('/api/configurations/status');
+      const response = await fetch('/api/users/status');
       if (!response.ok) {
         // limit error noise if it's just a transient issue, or handle gracefully
         console.error('Failed to fetch configuration statuses.');
@@ -36,8 +38,25 @@ function HomePage() {
   useEffect(() => {
     fetchStatuses();
     const interval = setInterval(fetchStatuses, 3000);
+
+
+
     return () => clearInterval(interval);
   }, []);
+
+  // Dedicated effect for handling auto-link navigation state (via Query Params)
+  useEffect(() => {
+    const autoLinkUser = searchParams.get('auto_link');
+
+    if (autoLinkUser) {
+      setLinkingUser(autoLinkUser);
+      setLinkStatus('Initializing...');
+      setIsLinking(true);
+
+      // Clear the query param to prevent re-triggering
+      setSearchParams({}, { replace: true });
+    }
+  }, [searchParams, setSearchParams]);
 
   // Polling for specific user status (QR code) when the modal is open
   useEffect(() => {
@@ -46,7 +65,8 @@ function HomePage() {
     if (linkingUser) {
       const pollSpecificStatus = async () => {
         try {
-          const response = await fetch(`/chatbot/${linkingUser}/status`);
+          // Heartbeat is handled by backend logic on this endpoint
+          const response = await fetch(`/api/users/${linkingUser}/status`);
           if (response.ok) {
             const data = await response.json();
             setLinkStatus(data.status);
@@ -93,16 +113,8 @@ function HomePage() {
       const status = selectedConfig?.status || 'disconnected';
 
       if (status === 'disconnected') {
-        const configResponse = await fetch(`/api/configurations/${userId}`);
-        if (!configResponse.ok) throw new Error('Failed to fetch configuration.');
-
-        const configData = await configResponse.json();
-        const payload = Array.isArray(configData) ? configData[0] : configData;
-
-        const createResponse = await fetch('/chatbot', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
+        const createResponse = await fetch(`/api/users/${userId}/actions/link`, {
+          method: 'POST',
         });
 
         if (!createResponse.ok) {
@@ -111,7 +123,7 @@ function HomePage() {
         }
       } else {
         // If 'close' or 'error', reload
-        const reloadResponse = await fetch(`/chatbot/${userId}/reload`, {
+        const reloadResponse = await fetch(`/api/users/${userId}/actions/reload`, {
           method: 'POST',
         });
         if (!reloadResponse.ok) {
@@ -132,8 +144,8 @@ function HomePage() {
   const handleUnlink = async (userId) => {
     if (window.confirm(`Are you sure you want to unlink user "${userId}"?`)) {
       try {
-        const response = await fetch(`/chatbot/${userId}`, {
-          method: 'DELETE',
+        const response = await fetch(`/api/users/${userId}/actions/unlink`, {
+          method: 'POST',
         });
         if (!response.ok) {
           const errorBody = await response.json();
@@ -149,7 +161,7 @@ function HomePage() {
   const handleDelete = async (userId) => {
     if (window.confirm(`Are you sure you want to delete the configuration for "${userId}"?`)) {
       try {
-        const response = await fetch(`/api/configurations/${userId}`, {
+        const response = await fetch(`/api/users/${userId}`, {
           method: 'DELETE',
         });
 
@@ -347,6 +359,8 @@ function HomePage() {
       <h2 style={{ margin: 0, marginBottom: '1rem' }}>User Configurations</h2>
 
       {error && <div style={{ color: 'red', marginTop: '1rem', padding: '10px', backgroundColor: '#fff5f5', borderRadius: '4px' }}>Error: {error}</div>}
+
+
 
       <div style={{ overflowX: 'auto' }}>
         <table style={tableStyle}>

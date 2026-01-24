@@ -33,11 +33,15 @@ const GroupNameSelectorWidget = (props) => {
   }, [props.value]);
 
   const groups = availableGroups || [];
+  // DEBUG: Check groups in widget
+  // console.log("GroupNameSelectorWidget groups:", groups.length, "input:", inputValue);
+
   const filteredGroups = groups.filter(g =>
     (g.subject || '').toLowerCase().includes((inputValue || '').toLowerCase())
   );
 
   const handleInputChange = (e) => {
+    // console.log("Input changed:", e.target.value);
     setInputValue(e.target.value);
     setIsMenuOpen(true);
     props.onChange(e.target.value);
@@ -292,7 +296,7 @@ function EditPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const schemaResponse = await fetch('/api/configurations/schema');
+        const schemaResponse = await fetch('/api/users/schema');
         if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
         const schemaData = await schemaResponse.json();
         setSchema(schemaData);
@@ -345,7 +349,7 @@ function EditPage() {
             }
           };
         } else {
-          const dataResponse = await fetch(`/api/configurations/${userId}`);
+          const dataResponse = await fetch(`/api/users/${userId}`);
           if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');
           const data = await dataResponse.json();
           const originalData = Array.isArray(data) ? data[0] : data;
@@ -384,7 +388,7 @@ function EditPage() {
   useEffect(() => {
     const fetchStatusAndGroups = async () => {
       try {
-        const response = await fetch(`/chatbot/${userId}/status`);
+        const response = await fetch(`/api/users/${userId}/status`);
         if (response.ok) {
           const data = await response.json();
           const status = data.status ? data.status.toLowerCase() : '';
@@ -394,10 +398,14 @@ function EditPage() {
             setIsLinked(true);
             // Fetch available groups when connected
             try {
-              const groupsRes = await fetch(`/chatbot/${userId}/groups`);
+              console.log("Fetching groups for connected user...");
+              const groupsRes = await fetch(`/api/users/${userId}/groups`);
               if (groupsRes.ok) {
                 const groupsData = await groupsRes.json();
+                console.log("Fetched groups:", groupsData.groups?.length);
                 setAvailableGroups(groupsData.groups || []);
+              } else {
+                console.error("Failed to fetch groups:", groupsRes.status);
               }
             } catch (groupsError) {
               console.warn("Could not fetch groups:", groupsError);
@@ -456,7 +464,7 @@ function EditPage() {
         const newSeed = providerConfig.seed;
 
         // DEBUG: Log seed transition
-        console.log('Seed transition:', { oldSeed, newSeed, typeOfNew: typeof newSeed });
+        // console.log('Seed transition:', { oldSeed, newSeed, typeOfNew: typeof newSeed });
 
         // When switching anyOf from Undefined to Defined, rjsf sets seed to undefined
         // We need to detect this and set a default value of 0.
@@ -557,7 +565,7 @@ function EditPage() {
 
       const finalApiData = { ...formData, user_id: userId };
 
-      const response = await fetch(`/api/configurations/${userId}`, {
+      const response = await fetch(`/api/users/${userId}`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
@@ -628,7 +636,7 @@ function EditPage() {
 
       const finalApiData = { ...formData, user_id: userId };
 
-      const saveResponse = await fetch(`/api/configurations/${userId}`, {
+      const saveResponse = await fetch(`/api/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify([finalApiData]),
@@ -640,7 +648,7 @@ function EditPage() {
       }
 
       // If save is successful, then reload
-      const reloadResponse = await fetch(`/chatbot/${userId}/reload`, {
+      const reloadResponse = await fetch(`/api/users/${userId}/actions/reload`, {
         method: 'POST',
       });
 
@@ -706,7 +714,7 @@ function EditPage() {
 
       const finalApiData = { ...formData, user_id: userId };
 
-      const saveResponse = await fetch(`/api/configurations/${userId}`, {
+      const saveResponse = await fetch(`/api/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify([finalApiData]),
@@ -717,11 +725,9 @@ function EditPage() {
         throw new Error(errorBody.detail || 'Failed to save configuration.');
       }
 
-      // Start the session by calling PUT /chatbot with the config payload
-      const createResponse = await fetch('/chatbot', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(finalApiData),
+      // Start the session by calling POST /actions/link (no body needed since config is saved)
+      const createResponse = await fetch(`/api/users/${userId}/actions/link`, {
+        method: 'POST',
       });
 
       if (!createResponse.ok) {
@@ -730,7 +736,8 @@ function EditPage() {
       }
 
       // Navigate to the link page to show linking status
-      navigate('/');
+      // Use query parameter for robust state passing
+      navigate(`/?auto_link=${userId}`);
 
     } catch (err) {
       setError(`Failed to save and link: ${err.message}`);
