@@ -65,11 +65,11 @@
 
 ## Summary Table
 
-| Serial | Title | Importance | ROI | Effort | Risk |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **001** | **Deconstruct Monolithic `main.py`** | **CRITICAL** | **EXTREME** | **MEDIUM** | **MEDIUM** |
-| **002** | **Fix Hardcoded Provider Dependency** | **HIGH** | **HIGH** | **LOW** | **LOW** |
-| **003** | **The "Naming of Length" Issue** | **LOW** | **HIGH** | **LOW** | **LOW** |
-| **004** | **Decouple Logic in `GroupTracker`** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **MEDIUM** |
-| **005** | **Standardize Logging** | **LOW** | **MEDIUM** | **LOW** | **LOW** |
-| **006** | **Global State Management** | **HIGH** | **LOW** | **HIGH** | **HIGH** |
+| Serial | Title | Importance | ROI | Effort | Risk | Status |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **001** | **Deconstruct Monolithic `main.py`** | **CRITICAL** | **EXTREME** | **MEDIUM** | **MEDIUM** | **COMPLETED** |
+| **002** | **Fix Hardcoded Provider Dependency** | **HIGH** | **HIGH** | **LOW** | **LOW** | **PENDING** |
+| **003** | **The "Naming of Length" Issue** | **LOW** | **HIGH** | **LOW** | **LOW** | **PENDING** |
+| **004** | **Decouple Logic in `GroupTracker`** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **PENDING** |
+| **005** | **Standardize Logging** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **COMPLETED** |
+| **006** | **Global State Management** | **HIGH** | **LOW** | **HIGH** | **HIGH** | **COMPLETED** |

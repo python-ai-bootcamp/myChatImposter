@@ -8,7 +8,7 @@ from chatbot_manager import ChatbotInstance
 from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider
 from actionable_item_formatter import ActionableItemFormatter
 import logging
-# from logging_lock import console_log
+
 class ActionableItemsDeliveryQueueManager:
     def __init__(self, mongo_url: str, chatbot_instances: dict[str, ChatbotInstance]):
         self.mongo_client = MongoClient(mongo_url)
@@ -85,7 +85,8 @@ class ActionableItemsDeliveryQueueManager:
                 self.queue_collection.delete_many(query)
                 logging.info(f"ACTIONABLE_QUEUE: Moved {len(items)} items for user {user_id} to UNCONNECTED holding queue.")
             else:
-                pass # console_log(f"ACTIONABLE_QUEUE_DEBUG: No items to move to holding for user {user_id}.")
+                pass
+                # logging.debug(f"ACTIONABLE_QUEUE_DEBUG: No items to move to holding for user {user_id}.")
         except Exception as e:
             logging.error(f"ACTIONABLE_QUEUE: Failed to move items to holding for user {user_id}: {e}")
 
@@ -105,7 +106,8 @@ class ActionableItemsDeliveryQueueManager:
                 self.unconnected_collection.delete_many(query)
                 logging.info(f"ACTIONABLE_QUEUE: Moved {len(items)} items for user {user_id} to ACTIVE delivery queue.")
             else:
-                pass # console_log(f"ACTIONABLE_QUEUE_DEBUG: No items to move to active for user {user_id}.")
+                pass
+                # logging.debug(f"ACTIONABLE_QUEUE_DEBUG: No items to move to active for user {user_id}.")
         except Exception as e:
             logging.error(f"ACTIONABLE_QUEUE: Failed to move items to active for user {user_id}: {e}")
 
@@ -176,7 +178,7 @@ class ActionableItemsDeliveryQueueManager:
                 if not is_connected:
                     # Just skip this iteration. Do NOT move to holding automatically.
                     # Let external lifecycle events handle the queue movement.
-                    # console_log(f"ACTIONABLE_QUEUE_DEBUG: User {user_id} momentarily not connected/ready. Skipping item {message_id}.")
+                    # logging.debug(f"ACTIONABLE_QUEUE_DEBUG: User {user_id} momentarily not connected/ready. Skipping item {message_id}.")
                     continue
 
                 # 3. Increment Attempts (in DB)

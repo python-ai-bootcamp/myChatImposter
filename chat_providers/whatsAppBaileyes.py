@@ -4,7 +4,7 @@ import os
 import threading
 import base64
 from concurrent.futures import TimeoutError as FuturesTimeoutError
-from typing import Dict, Optional, Callable, List
+from typing import Dict, Optional, Callable, List, Any
 from collections import deque
 import time
 
@@ -13,14 +13,14 @@ import websockets
 
 from queue_manager import UserQueuesManager, Sender, Group, Message
 import logging
-from logging_lock import FileLogger
+
 from .base import BaseChatProvider
 from config_models import ChatProviderConfig
 
 
 class WhatsAppBaileysProvider(BaseChatProvider):
-    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, logger: Optional[FileLogger] = None, main_loop=None, on_status_change: Optional[Callable[[str, str], None]] = None):
-        super().__init__(user_id, config, user_queues, on_session_end, logger, on_status_change)
+    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, main_loop=None, on_status_change: Optional[Callable[[str, str], None]] = None):
+        super().__init__(user_id, config, user_queues, on_session_end, on_status_change=on_status_change)
         self.is_listening = False
         self.session_ended = False
         self.main_loop = main_loop
@@ -39,7 +39,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
     def update_cache_policy(self, max_interval: int):
         self.max_cache_interval = max_interval
-        if self.logger: self.logger.log(f"Updated cache policy: max_interval={max_interval}s, max_size={self.max_cache_size}")
+        logging.info(f"Updated cache policy: max_interval={max_interval}s, max_size={self.max_cache_size}")
 
     def _cleanup_cache(self):
         cutoff = time.time() - self.max_cache_interval
@@ -108,26 +108,26 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         return False
 
     async def _send_config_to_server(self):
-        if self.logger: self.logger.log(f"Connecting to Node.js server at {self.base_url}")
+        logging.info(f"Connecting to Node.js server at {self.base_url}")
         try:
             config_data = {"userId": self.user_id, "config": self.config.provider_config.model_dump()}
             async with httpx.AsyncClient() as client:
                 response = await client.post(f"{self.base_url}/initialize", json=config_data, headers={'Content-Type': 'application/json'})
                 if response.status_code == 200:
-                    if self.logger: self.logger.log("Successfully sent configuration to Node.js server.")
+                    logging.info("Successfully sent configuration to Node.js server.")
                 else:
-                    if self.logger: self.logger.log(f"Failed to send config. Status: {response.status_code}, Body: {response.text}")
+                    logging.warning(f"Failed to send config. Status: {response.status_code}, Body: {response.text}")
         except Exception as e:
-            if self.logger: self.logger.log(f"Exception while sending configuration: {e}")
+            logging.error(f"Exception while sending configuration: {e}")
 
     async def start_listening(self):
         if self.is_listening:
-            if self.logger: self.logger.log("Already listening.")
+            logging.warning("Already listening.")
             return
         await self._send_config_to_server()
         self.is_listening = True
         self.listen_task = self.main_loop.create_task(self._listen())
-        if self.logger: self.logger.log("Started WebSocket listener for messages.")
+        logging.info("Started WebSocket listener for messages.")
 
     async def _listen(self):
         uri = f"{self.ws_url}/{self.user_id}"
@@ -139,13 +139,13 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 break
             try:
                 async with websockets.connect(uri, open_timeout=10) as websocket:
-                    if self.logger: self.logger.log(f"WebSocket connection established to {uri}")
+                    logging.info(f"WebSocket connection established to {uri}")
                     self._ws_connection = websocket
                     # Request initial status sync from Baileys
                     try:
                         await websocket.send(json.dumps({"action": "request_status"}))
                     except Exception as e:
-                        if self.logger: self.logger.log(f"Could not send request_status: {e}")
+                        logging.warning(f"Could not send request_status: {e}")
                     # Connection successful, now enter the main listening loop
                     while self.is_listening:
                         try:
@@ -154,11 +154,11 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                         except asyncio.TimeoutError:
                             continue
                         except websockets.exceptions.ConnectionClosed:
-                            if self.logger: self.logger.log("WebSocket connection closed unexpectedly.")
+                            logging.info("WebSocket connection closed unexpectedly.")
                             break # Break inner loop to reconnect
 
                     if self.is_listening: # If we broke due to connection closed, retry
-                        if self.logger: self.logger.log("Attempting to re-establish WebSocket connection...")
+                        logging.info("Attempting to re-establish WebSocket connection...")
                         continue # Go to the next attempt in the outer loop
                     else: # If we broke because listening stopped, exit
                         break
@@ -166,38 +166,38 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             except websockets.exceptions.InvalidStatusCode as e:
                 # This is the key change: catch specific connection rejection errors
                 if e.status_code == 404 and attempt < max_retries - 1:
-                     if self.logger: self.logger.log(f"WebSocket connection rejected (404), likely a race condition. Retrying in {retry_delay}s... ({attempt + 1}/{max_retries})")
+                     logging.warning(f"WebSocket connection rejected (404), likely a race condition. Retrying in {retry_delay}s... ({attempt + 1}/{max_retries})")
                      await asyncio.sleep(retry_delay)
                      continue # Go to the next attempt
                 else:
-                    if self.logger: self.logger.log(f"WebSocket connection failed with status {e.status_code}. Giving up after {attempt + 1} attempts.")
+                    logging.error(f"WebSocket connection failed with status {e.status_code}. Giving up after {attempt + 1} attempts.")
                     break # Give up
 
             except asyncio.CancelledError:
-                if self.logger: self.logger.log("Listen task cancelled.")
+                logging.info("Listen task cancelled.")
                 break
             except Exception as e:
                 if self.is_listening:
                     if isinstance(e, (websockets.exceptions.ConnectionClosed, ConnectionRefusedError, asyncio.TimeoutError)):
-                        if self.logger: self.logger.log(f"WebSocket connection issue: {e}. Reconnecting in 5s...")
+                        logging.warning(f"WebSocket connection issue: {e}. Reconnecting in 5s...")
                     else:
-                        if self.logger: self.logger.log(f"Unhandled exception in WebSocket listener: {e}. Retrying in 10s...")
+                        logging.error(f"Unhandled exception in WebSocket listener: {e}. Retrying in 10s...")
                     await asyncio.sleep(5)
 
-        if self.logger: self.logger.log("Listen loop is stopping. Performing cleanup...")
+        logging.info("Listen loop is stopping. Performing cleanup...")
         try:
             async with websockets.connect(uri, open_timeout=5) as ws:
-                if self.logger: self.logger.log(f"Temporary WebSocket connection established for cleanup.")
+                logging.info(f"Temporary WebSocket connection established for cleanup.")
                 payload = json.dumps({"action": "disconnect", "cleanup_session": self.cleanup_on_stop})
                 await ws.send(payload)
                 await asyncio.sleep(0.5)
-                if self.logger: self.logger.log(f"Sent final disconnect message (cleanup={self.cleanup_on_stop}).")
+                logging.info(f"Sent final disconnect message (cleanup={self.cleanup_on_stop}).")
         except Exception as e:
-            if self.logger: self.logger.log(f"Could not send final disconnect message via WebSocket: {e}")
+            logging.error(f"Could not send final disconnect message via WebSocket: {e}")
             if self.cleanup_on_stop:
                 await self._cleanup_server_session()
 
-        if self.logger: self.logger.log("Listen loop has gracefully exited.")
+        logging.info("Listen loop has gracefully exited.")
 
     async def _process_ws_message(self, message: str):
         try:
@@ -208,7 +208,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     "status": data.get('status', 'unknown'),
                     "qr": data.get('qr')
                 }
-                if self.logger: self.logger.log(f"Status update received: {self._cached_status['status']}")
+                logging.info(f"Status update received: {self._cached_status['status']}")
                 
                 # Notify listener of status change (e.g., to trigger queue movements)
                 if self.on_status_change:
@@ -221,24 +221,24 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                          else:
                             self.on_status_change(self.user_id, self._cached_status['status'])
                      except Exception as e:
-                         if self.logger: self.logger.log(f"ERROR: Failed to invoke on_status_change callback: {e}")
+                         logging.error(f"ERROR: Failed to invoke on_status_change callback: {e}")
 
                 # Store user JID for sending messages to self
                 if data.get('user_jid'):
                     self.user_jid = data.get('user_jid')
-                    if self.logger: self.logger.log(f"User JID received: {self.user_jid}")
+                    logging.info(f"User JID received: {self.user_jid}")
                 return
             # Handle message arrays (existing behavior)
             if isinstance(data, list):
-                if self.logger: self.logger.log(f"Fetched {len(data)} new message(s) via WebSocket.")
+                logging.info(f"Fetched {len(data)} new message(s) via WebSocket.")
                 self._process_messages(data)
         except json.JSONDecodeError:
-            if self.logger: self.logger.log(f"ERROR: Could not decode JSON from WebSocket: {message}")
+            logging.error(f"ERROR: Could not decode JSON from WebSocket: {message}")
 
     def _process_messages(self, messages):
         queues_manager = self.user_queues.get(self.user_id)
         if not queues_manager:
-            if self.logger: self.logger.log("ERROR: Could not find a queues manager for myself.")
+            logging.error("ERROR: Could not find a queues manager for myself.")
             return
 
         for msg in messages:
@@ -274,7 +274,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                         if not any(x[0] == provider_message_id for x in self.sent_message_ids):
                             self.sent_message_ids.append((provider_message_id, time.time()))
                             self._cleanup_cache()
-                            if self.logger: self.logger.log(f"Race condition resolved: Added ID {provider_message_id} to cache from pending match.")
+                            logging.info(f"Race condition resolved: Added ID {provider_message_id} to cache from pending match.")
 
                 if is_bot:
                     source = 'bot'
@@ -320,7 +320,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 source = 'user'
 
             if not correspondent_id:
-                if self.logger: self.logger.log(f"ERROR: Could not determine correspondent_id for message. Skipping. Data: {msg}")
+                logging.error(f"ERROR: Could not determine correspondent_id for message. Skipping. Data: {msg}")
                 continue
 
             originating_time = msg.get('originating_time')
@@ -336,7 +336,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             )
 
     async def stop_listening(self, cleanup_session: bool = False):
-        if self.logger: self.logger.log(f"Stopping... (cleanup={cleanup_session})")
+        logging.info(f"Stopping... (cleanup={cleanup_session})")
         self.is_listening = False
         self.cleanup_on_stop = cleanup_session
 
@@ -345,24 +345,24 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             try:
                 await self.listen_task
             except asyncio.CancelledError:
-                if self.logger: self.logger.log("Listen task successfully cancelled.")
+                logging.info("Listen task successfully cancelled.")
 
         if self.on_session_end and not self.session_ended:
             self.session_ended = True
             self.on_session_end(self.user_id)
 
     async def _cleanup_server_session(self):
-        if self.logger: self.logger.log("Requesting session cleanup on Node.js server via HTTP DELETE.")
+        logging.info("Requesting session cleanup on Node.js server via HTTP DELETE.")
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.delete(f"{self.base_url}/sessions/{self.user_id}")
                 if response.status_code == 200:
-                    if self.logger: self.logger.log("Successfully requested session cleanup via HTTP.")
+                    logging.info("Successfully requested session cleanup via HTTP.")
         except Exception as e:
-            if self.logger: self.logger.log(f"Failed to request session cleanup via HTTP: {e}")
+            logging.error(f"Failed to request session cleanup via HTTP: {e}")
 
     async def sendMessage(self, recipient: str, message: str):
-        if self.logger: self.logger.log(f"Sending reply to {recipient} ---> {message[:50]}...")
+        logging.info(f"Sending reply to {recipient} ---> {message[:50]}...")
         logging.info(f"BOT: Adding to pending: Recipient: '{recipient}', Content: '{message[:30]}...'")
 
         # Add to pending buffer immediately to handle race conditions
@@ -384,15 +384,15 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                         if not any(x[0] == provider_message_id for x in self.sent_message_ids):
                             self.sent_message_ids.append((provider_message_id, time.time()))
                             self._cleanup_cache()
-                            if self.logger: self.logger.log(f"Successfully sent message. Tracking provider_message_id: {provider_message_id}")
+                            logging.info(f"Successfully sent message. Tracking provider_message_id: {provider_message_id}")
                     else:
-                        if self.logger: self.logger.log("WARN: Sent message but got no provider_message_id in response.")
+                        logging.warning("WARN: Sent message but got no provider_message_id in response.")
                 else:
                     error_msg = f"Failed to send message. Status: {response.status_code}, Body: {response.text}"
-                    if self.logger: self.logger.log(f"{error_msg}")
+                    logging.error(f"{error_msg}")
                     raise Exception(error_msg)
         except Exception as e:
-            if self.logger: self.logger.log(f"Exception while sending message: {e}")
+            logging.error(f"Exception while sending message: {e}")
             raise e
 
     async def send_file(self, recipient: str, file_data: bytes, filename: str, mime_type: str, caption: Optional[str] = None):
@@ -400,7 +400,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         Sends a file to the specified recipient using the Baileys HTTP API.
         """
         if not recipient:
-            if self.logger: self.logger.log("send_file called with empty recipient.")
+            logging.error("send_file called with empty recipient.")
             return
 
         url = f"{self.base_url}/sessions/{self.user_id}/send"
@@ -418,20 +418,20 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         }
 
         try:
-            if self.logger: self.logger.log(f"DEBUG: sending file {filename} to {recipient}...")
+            logging.info(f"DEBUG: sending file {filename} to {recipient}...")
             async with httpx.AsyncClient() as client:
                 response = await client.post(url, json=payload, timeout=30.0)
                 if response.status_code != 200:
                         error_msg = f"Failed to send file. Status: {response.status_code}, Body: {response.text}"
-                        if self.logger: self.logger.log(f"{error_msg}")
+                        logging.error(f"{error_msg}")
                         raise Exception(error_msg)
                 
                 result = response.json()
-                if self.logger: self.logger.log(f"File sent to {recipient}. ID: {result.get('provider_message_id')}")
+                logging.info(f"File sent to {recipient}. ID: {result.get('provider_message_id')}")
                 return result
 
         except Exception as e:
-            if self.logger: self.logger.log(f"send_file failed: {e}")
+            logging.error(f"send_file failed: {e}")
             raise e
 
     async def get_status(self, heartbeat: bool = False) -> Dict:
@@ -442,7 +442,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 try:
                     await self._ws_connection.send(json.dumps({"action": "heartbeat"}))
                 except Exception as e:
-                    if self.logger: self.logger.log(f"Could not send heartbeat: {e}")
+                    logging.warning(f"Could not send heartbeat: {e}")
         
         # Return cached status (no HTTP call needed)
         return self._cached_status.copy()
@@ -455,10 +455,10 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 response = await client.post(f"{self.base_url}/sessions/{self.user_id}/groups", timeout=10)
                 if response.status_code == 200:
                     return response.json().get('groups', [])
-                if self.logger: self.logger.log(f"Failed to fetch active groups: {response.text}")
+                logging.warning(f"Failed to fetch active groups: {response.text}")
                 return []
         except Exception as e:
-            if self.logger: self.logger.log(f"Exception while fetching active groups: {e}")
+            logging.error(f"Exception while fetching active groups: {e}")
             return []
 
     async def fetch_historic_messages(self, group_id: str, limit: int = 500) -> Optional[List]:
@@ -472,8 +472,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 )
                 if response.status_code == 200:
                     return response.json().get('messages', [])
-                if self.logger: self.logger.log(f"Failed to fetch historic messages: {response.text}")
+                logging.warning(f"Failed to fetch historic messages: {response.text}")
                 return None # Return None to indicate failure
         except Exception as e:
-            if self.logger: self.logger.log(f"Exception while fetching historic messages: {e}")
+            logging.error(f"Exception while fetching historic messages: {e}")
             return None # Return None to indicate failure

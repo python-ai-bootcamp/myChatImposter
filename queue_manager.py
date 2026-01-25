@@ -10,7 +10,7 @@ from pymongo.collection import Collection
 from pymongo import DESCENDING
 
 import logging
-from logging_lock import lock, get_timestamp
+# from logging_lock import lock, get_timestamp
 from config_models import QueueConfig
 
 @dataclass
@@ -173,52 +173,17 @@ class CorrespondentQueue:
 
     def _log_message(self, message: Message):
         """
-        Logs a message to the appropriate files. This method is thread-safe.
+        Logs a message using standard logging. 
+        Previously wrote to specific files manually. Now delegates to the logging framework.
         """
-        with lock:
-            os.makedirs('log', exist_ok=True)
+        originating_time_str = str(message.originating_time) if message.originating_time is not None else 'None'
+        sender_str = f"{message.sender.display_name} ({message.sender.identifier})"
+        group_str = f"[group={message.group.display_name} ({message.group.identifier})]" if message.group else ""
 
-            originating_time_str = str(message.originating_time) if message.originating_time is not None else 'None'
-
-            sender_str = f"{message.sender.display_name} ({message.sender.identifier})"
-            group_str = f"[group={message.group.display_name} ({message.group.identifier})]" if message.group else ""
-
-            log_line_parts = [
-                f"[originating_time={originating_time_str}]",
-                f"[accepted_time={message.accepted_time}]",
-                f"[message_id={message.id}]",
-                f"[sending_user={sender_str}]"
-            ]
-            if group_str:
-                log_line_parts.append(group_str)
-            log_line_parts.append(f":: {message.content}\n")
-
-            user_log_line = get_timestamp() + "::".join(log_line_parts)
-
-            # Correspondent-specific log
-            correspondent_log_path = os.path.join('log', f"{self.provider_name}_{self.user_id}_{self.correspondent_id}.log")
-            with open(correspondent_log_path, 'a', encoding='utf-8') as f:
-                f.write(user_log_line)
-
-            # Global log
-            global_log_path = os.path.join('log', "all_providers.log")
-            global_log_line_parts = [
-                f"[originating_time={originating_time_str}]",
-                f"[accepted_time={message.accepted_time}]",
-                f"[provider_name={self.provider_name}]",
-                f"[user_id={self.user_id}]",
-                f"[correspondent_id={self.correspondent_id}]",
-                f"[message_id={message.id}]",
-                f"[sending_user={sender_str}]"
-            ]
-            if group_str:
-                global_log_line_parts.append(group_str)
-            global_log_line_parts.append(f":: {message.content}\n")
-
-            global_log_line = get_timestamp() + "::".join(global_log_line_parts)
-
-            with open(global_log_path, 'a', encoding='utf-8') as f:
-                f.write(global_log_line)
+        log_msg = f"MESSAGE: [originating={originating_time_str}] [accepted={message.accepted_time}] [id={message.id}] [sender={sender_str}] {group_str} :: {message.content}"
+        
+        # Log to standard logger
+        logging.info(f"({self.provider_name}/{self.user_id}/{self.correspondent_id}) {log_msg}")
 
     def get_messages(self) -> List[Message]:
         return list(self._messages)
@@ -232,27 +197,10 @@ class CorrespondentQueue:
 
     def _log_retention_event(self, evicted_message: Message, reason: str, new_message_size: int = 0):
         """
-        Logs a retention event to the correspondent-specific log file. This method is thread-safe.
+        Logs a retention event using standard logging.
         """
-        with lock:
-            os.makedirs('log', exist_ok=True)
-            correspondent_log_path = os.path.join('log', f"{self.provider_name}_{self.user_id}_{self.correspondent_id}.log")
-
-            log_line = f"{get_timestamp()}[retention_event_time={int(time.time() * 1000)}]::" \
-                       f"[event_type=EVICT]::" \
-                       f"[reason={reason}]::" \
-                       f"[evicted_message_id={evicted_message.id}]::" \
-                       f"[evicted_message_accepted_time={evicted_message.accepted_time}]::" \
-                       f"[evicted_message_size={evicted_message.message_size}]::" \
-                       f"[queue_max_messages={self.max_messages}]::" \
-                       f"[queue_max_chars={self.max_characters}]::" \
-                       f"[queue_max_days={self.max_age_seconds / (24 * 60 * 60)}]::" \
-                       f"[current_messages={len(self._messages) + 1}]::" \
-                       f"[current_chars={self._total_chars + evicted_message.message_size}]::" \
-                       f"[new_message_size={new_message_size}]\n"
-
-            with open(correspondent_log_path, 'a', encoding='utf-8') as f:
-                f.write(log_line)
+        log_msg = f"RETENTION EVENT: [type=EVICT] [reason={reason}] [evicted_id={evicted_message.id}] [queue_size={len(self._messages)+1}]"
+        logging.info(f"({self.user_id}) {log_msg}")
 
 class UserQueuesManager:
     def __init__(self, user_id: str, provider_name: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None, main_loop = None):

@@ -7,7 +7,7 @@ import EditPage from './pages/EditPage';
 
 function App() {
   return (
-    <Router>
+    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <div>
         <Routes>
           <Route path="/" element={<HomePage />} />

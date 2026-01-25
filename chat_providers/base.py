@@ -9,12 +9,12 @@ class BaseChatProvider(ABC):
     Abstract base class for all chat providers.
     It defines the interface that all chat providers must implement.
     """
-    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, logger=None, on_status_change: Optional[Callable[[str, str], None]] = None):
+    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, on_status_change: Optional[Callable[[str, str], None]] = None):
         self.user_id = user_id
         self.config = config
         self.user_queues = user_queues
         self.on_session_end = on_session_end
-        self.logger = logger
+        # self.logger = logger # DEPRECATED
         self.on_status_change = on_status_change
         super().__init__()
 

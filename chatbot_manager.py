@@ -8,7 +8,6 @@ import asyncio
 from typing import Dict, Any, Optional, Type, List
 
 import logging
-from logging_lock import FileLogger
 from config_models import UserConfiguration, ContextConfig
 
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -311,14 +310,14 @@ class ChatbotInstance:
         if not ProviderClass:
             raise ImportError(f"Could not find a valid chat provider class in module 'chat_providers.{provider_name}'")
 
-        file_logger = FileLogger(self.user_id, provider_name)
+        # file_logger = FileLogger(self.user_id, provider_name) # DEPRECATED: Using standard logging
 
         provider_init_params = {
             "user_id": self.user_id,
             "config": chat_provider_config,
             "user_queues": {self.user_id: self.user_queues_manager},
             "on_session_end": self.on_session_end,
-            "logger": file_logger,
+            # "logger": file_logger, # DEPRECATED: Provider should use standard logging
             "on_status_change": self.on_status_change
         }
         if provider_name == "whatsAppBaileyes":
