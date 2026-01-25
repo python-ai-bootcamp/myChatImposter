@@ -54,3 +54,11 @@ class BaseChatProvider(ABC):
         This is used for polling the connection status (e.g., QR code for WhatsApp).
         """
         pass
+
+    @property
+    @abstractmethod
+    def is_connected(self) -> bool:
+        """
+        Returns True if the provider is currently connected and ready to send messages.
+        """
+        pass

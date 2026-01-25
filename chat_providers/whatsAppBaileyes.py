@@ -474,6 +474,15 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     return response.json().get('messages', [])
                 logging.warning(f"Failed to fetch historic messages: {response.text}")
                 return None # Return None to indicate failure
+                return None # Return None to indicate failure
         except Exception as e:
             logging.error(f"Exception while fetching historic messages: {e}")
             return None # Return None to indicate failure
+
+    @property
+    def is_connected(self) -> bool:
+        """
+        Returns True if the provider is currently connected and authenticated.
+        For Baileys, we assume connection if user_jid is set and listening is active.
+        """
+        return bool(self.is_listening and self.user_jid)

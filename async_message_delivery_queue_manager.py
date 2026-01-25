@@ -5,7 +5,6 @@ import json
 from datetime import datetime
 from pymongo import MongoClient
 from chatbot_manager import ChatbotInstance
-from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider
 from actionable_item_formatter import ActionableItemFormatter
 import logging
 
@@ -171,9 +170,8 @@ class AsyncMessageDeliveryQueueManager:
                 # For Baileys, user_jid being present usually implies connection/auth.
                 is_connected = False
                 if target_instance and target_instance.provider_instance:
-                    if isinstance(target_instance.provider_instance, WhatsAppBaileysProvider):
-                         if target_instance.provider_instance.user_jid:
-                             is_connected = True
+                     if target_instance.provider_instance.is_connected:
+                         is_connected = True
                 
                 if not is_connected:
                     # Just skip this iteration. Do NOT move to holding automatically.

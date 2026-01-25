@@ -145,9 +145,8 @@ class DummyProvider(BaseChatProvider):
         # For the simulation, we just print to the console.
         logging.info(f"Sending reply to {recipient} ---> {message}")
 
-    def get_status(self) -> Dict[str, Any]:
-        """
-        Returns the current status of the provider.
-        For the dummy provider, it always returns a 'connected' status.
-        """
         return {"status": "connected", "message": "Dummy provider is running."}
+
+    @property
+    def is_connected(self) -> bool:
+        return True
