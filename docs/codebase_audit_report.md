@@ -79,6 +79,20 @@
 *   **Findings**: `periodic_group_tracking` endpoints failed to return JSON due to `datetime` objects.
 *   **Recommendation**: Add JSON serialization helper.
 
+### 9. Refactor: Queue Content Polymorphism
+*   **Serial Number**: 009
+*   **Importance**: **HIGH** (Architectural Flexibility)
+*   **ROI**: **HIGH** (Support for Text/Image/File messages)
+*   **Effort**: **MEDIUM** (Refactor `add_item` schema and `_consumer_loop` dispatch)
+*   **Risk**: **LOW** (Internal logic change)
+*   **Findings**: The `AsyncMessageDeliveryQueueManager` is tightly coupled to "Actionable Items".
+    *   `add_item` expects `actionable_item` dict.
+    *   `_consumer_loop` hardcodes `ActionableItemFormatter` calls (ICS generation, visual card).
+    *   It only calls `send_file`.
+*   **Recommendation**:
+    *   Update schema to support `content_type` (e.g., `ACTIONABLE_ITEM`, `TEXT`, `IMAGE`).
+    *   Use a factory/strategy pattern in consumer to format and send based on type.
+
 ---
 
 ## Summary Table
@@ -86,10 +100,11 @@
 | Serial | Title | Importance | ROI | Effort | Risk | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **001** | **Deconstruct Monolithic `main.py`** | **CRITICAL** | **EXTREME** | **MEDIUM** | **MEDIUM** | **COMPLETED** |
-| **002** | **Fix Hardcoded Provider Dependency** | **HIGH** | **HIGH** | **LOW** | **LOW** | **PENDING** |
+| **002** | **Fix Hardcoded Provider Dependency** | **HIGH** | **HIGH** | **LOW** | **LOW** | **COMPLETED** |
 | **003** | **The "Naming of Length" Issue** | **LOW** | **HIGH** | **LOW** | **LOW** | **COMPLETED** |
 | **004** | **Decouple Logic in `GroupTracker`** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **PENDING** |
 | **005** | **Standardize Logging** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **COMPLETED** |
 | **006** | **Global State Management** | **HIGH** | **LOW** | **HIGH** | **HIGH** | **COMPLETED** |
 | **007** | **Fix GroupTracker Data Loss** | **CRITICAL** | **EXTREME** | **LOW** | **LOW** | **COMPLETED** |
 | **008** | **Fix API Serialization (500 Error)** | **HIGH** | **HIGH** | **LOW** | **LOW** | **COMPLETED** |
+| **009** | **Refactor: Queue Content Polymorphism** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **PENDING** |

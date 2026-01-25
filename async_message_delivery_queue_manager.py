@@ -2,11 +2,17 @@ import asyncio
 import random
 import uuid
 import json
+from enum import Enum
+from typing import Any
 from datetime import datetime
 from pymongo import MongoClient
 from chatbot_manager import ChatbotInstance
 from actionable_item_formatter import ActionableItemFormatter
 import logging
+
+class QueueMessageType(str, Enum):
+    TEXT = "text"
+    ICS_ACTIONABLE_ITEM = "ics_actionable_item"
 
 class AsyncMessageDeliveryQueueManager:
     def __init__(self, mongo_url: str, chatbot_instances: dict[str, ChatbotInstance]):
@@ -44,13 +50,14 @@ class AsyncMessageDeliveryQueueManager:
                 pass
         logging.info("ACTIONABLE_QUEUE: ActionableItemsDeliveryQueueManager consumer stopped.")
 
-    def add_item(self, actionable_item: dict, user_id: str, provider_name: str):
+    def add_item(self, content: Any, message_type: QueueMessageType, user_id: str, provider_name: str):
         """
-        Adds an actionable item to the main delivery queue.
+        Adds an item to the queue.
         """
         message_id = str(uuid.uuid4())
         doc = {
-            "actionable_item": actionable_item,
+            "content": content, # Generic content (dict for ICS, str for TEXT)
+            "message_type": message_type.value,
             "message_metadata": {
                 "message_id": message_id,
                 "message_destination": {
@@ -64,7 +71,7 @@ class AsyncMessageDeliveryQueueManager:
         
         try:
             self.queue_collection.insert_one(doc)
-            logging.info(f"ACTIONABLE_QUEUE: Added item to delivery queue: {message_id} for user {user_id}")
+            logging.info(f"ACTIONABLE_QUEUE: Added item {message_id} ({message_type.value}) for user {user_id}")
         except Exception as e:
             logging.error(f"ACTIONABLE_QUEUE: Failed to add item to delivery queue: {e}")
 
@@ -196,31 +203,49 @@ class AsyncMessageDeliveryQueueManager:
                 logging.info(f"ACTIONABLE_QUEUE: Sending item {message_id} to {user_id} (Attempt {current_attempt}/3)")
                 
                 try:
-                    actionable_item = updated_doc["actionable_item"]
+                    content = updated_doc.get("content")
+                    # Backwards compatibility: if content missing, look for actionable_item
+                    if content is None:
+                        content = updated_doc.get("actionable_item")
+                    
+                    message_type = updated_doc.get("message_type", QueueMessageType.ICS_ACTIONABLE_ITEM.value)
                     recipient_jid = target_instance.provider_instance.user_jid # Already checked above
                     
-                    # Determine language code
-                    language_code = "en" # Default
-                    if target_instance.config and target_instance.config.configurations and target_instance.config.configurations.user_details:
-                        language_code = target_instance.config.configurations.user_details.language_code
+                    if message_type == QueueMessageType.ICS_ACTIONABLE_ITEM.value:
+                        # --- Strategy: ICS Actionable Item ---
+                        actionable_item = content
+                        
+                        # Determine language code
+                        language_code = "en" # Default
+                        if target_instance.config and target_instance.config.configurations and target_instance.config.configurations.user_details:
+                            language_code = target_instance.config.configurations.user_details.language_code
 
-                    # 1. Format the Visual Card (Text)
-                    formatted_text = ActionableItemFormatter.format_card(actionable_item, language_code)
+                        # 1. Format the Visual Card (Text)
+                        formatted_text = ActionableItemFormatter.format_card(actionable_item, language_code)
+                        
+                        # 2. Generate Calendar Event
+                        ics_bytes = ActionableItemFormatter.generate_ics(actionable_item)
+                        ics_filename = f"task_{message_id[:8]}.ics"
+                        
+                        # 3. Send as Single Message (File + Caption)
+                        await target_instance.provider_instance.send_file(
+                            recipient=recipient_jid,
+                            file_data=ics_bytes,
+                            filename=ics_filename,
+                            mime_type="text/calendar",
+                            caption=formatted_text
+                        )
                     
-                    # 2. Generate Calendar Event
-                    ics_bytes = ActionableItemFormatter.generate_ics(actionable_item)
-                    ics_filename = f"task_{message_id[:8]}.ics"
+                    elif message_type == QueueMessageType.TEXT.value:
+                        # --- Strategy: Simple Text ---
+                        text_content = str(content)
+                        await target_instance.provider_instance.sendMessage(
+                            recipient=recipient_jid,
+                            message=text_content
+                        )
                     
-                    # 3. Send as Single Message (File + Caption)
-                    # Try to send the file with the visual card as the caption.
-                    # We rely on the retry mechanism if this fails transiently.
-                    await target_instance.provider_instance.send_file(
-                        recipient=recipient_jid,
-                        file_data=ics_bytes,
-                        filename=ics_filename,
-                        mime_type="text/calendar",
-                        caption=formatted_text
-                    )
+                    else:
+                        logging.warning(f"ACTIONABLE_QUEUE: Unknown message type {message_type} for item {message_id}. Skipping.")
 
                     # 4. Success (Atomic) -> Delete
                     self.queue_collection.delete_one({"_id": candidate["_id"]})
@@ -230,11 +255,6 @@ class AsyncMessageDeliveryQueueManager:
                     logging.error(f"ACTIONABLE_QUEUE: Failed to send item {message_id}: {e}")
                     # CRITICAL FIX: Do NOT delete the item.
                     # The item remains in the queue with incremented 'send_attempts'.
-                    # It will be picked up again by the consumer loop (subject to jitter).
-                    # If it reaches max attempts (3), it will be moved to failed queue.
-                    
-                    # Optional: Check for disconnection error specifically to move to unconnected immediately?
-                    # For now, we rely on the retry limit or external lifecycle events to move it.
                     pass
 
             except asyncio.CancelledError:

@@ -19,7 +19,7 @@ from chatbot_manager import ChatbotInstance
 from config_models import PeriodicGroupTrackingConfig, LLMProviderConfig
 from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider
 from llm_providers.base import BaseLlmProvider
-from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager
+from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager, QueueMessageType
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -605,7 +605,8 @@ RELEVANT_TASK_MESSAGE format:
                         
                         # Add to Queue
                         self.async_message_delivery_queue_manager.add_item(
-                            actionable_item=item,
+                            content=item,
+                            message_type=QueueMessageType.ICS_ACTIONABLE_ITEM,
                             user_id=user_id,
                             provider_name="whatsapp_baileys" # Currently hardcoded, could be dynamic
                         )
