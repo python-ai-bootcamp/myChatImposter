@@ -9,15 +9,15 @@ from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider
 from actionable_item_formatter import ActionableItemFormatter
 import logging
 
-class ActionableItemsDeliveryQueueManager:
+class AsyncMessageDeliveryQueueManager:
     def __init__(self, mongo_url: str, chatbot_instances: dict[str, ChatbotInstance]):
         self.mongo_client = MongoClient(mongo_url)
         self.db = self.mongo_client['chat_manager']
         
         # Collections
-        self.queue_collection = self.db['actionable_items_message_delivery_queue']
-        self.failed_collection = self.db['actionable_items_message_delivery_queue_failed']
-        self.unconnected_collection = self.db['actionable_items_message_delivery_queue_unconnected_users_messages']
+        self.queue_collection = self.db['async_message_delivery_queue_active']
+        self.failed_collection = self.db['async_message_delivery_queue_failed']
+        self.unconnected_collection = self.db['async_message_delivery_queue_holding']
         
         self.chatbot_instances = chatbot_instances
         self.running = False

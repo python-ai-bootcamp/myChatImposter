@@ -5,13 +5,13 @@ import os
 import asyncio
 from fastapi import FastAPI
 from dependencies import GlobalStateManager
-from actionable_items_message_delivery_queue_manager import ActionableItemsDeliveryQueueManager
+from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager
 from group_tracker import GroupTracker
 
 # Import Routers
 from routers import user_management
 from routers.features import automatic_bot_reply, periodic_group_tracking
-from routers import delivery_queue
+from routers import async_message_delivery_queue
 
 # Logging Setup
 logging.basicConfig(
@@ -24,6 +24,8 @@ logging.basicConfig(
 # Suppress uvicorn access logger
 logging.getLogger("uvicorn.access").disabled = True
 logging.getLogger("uvicorn").propagate = False
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpcore").setLevel(logging.WARNING)
 
 app = FastAPI()
 
@@ -41,16 +43,16 @@ async def startup_event():
     global_state.initialize_mongodb(mongodb_url)
     
     try:
-        # 2. Initialize ActionableItemsDeliveryQueueManager
-        global_state.actionable_queue_manager = ActionableItemsDeliveryQueueManager(mongodb_url, global_state.chatbot_instances)
+        # 2. Initialize AsyncMessageDeliveryQueueManager
+        global_state.async_message_delivery_queue_manager = AsyncMessageDeliveryQueueManager(mongodb_url, global_state.chatbot_instances)
         
         # Lifecycle: Move all items to Holding Queue on Startup
-        global_state.actionable_queue_manager.move_all_to_holding()
+        global_state.async_message_delivery_queue_manager.move_all_to_holding()
         
-        await global_state.actionable_queue_manager.start_consumer()
+        await global_state.async_message_delivery_queue_manager.start_consumer()
         
         # 3. Initialize GroupTracker
-        global_state.group_tracker = GroupTracker(mongodb_url, global_state.chatbot_instances, global_state.actionable_queue_manager)
+        global_state.group_tracker = GroupTracker(mongodb_url, global_state.chatbot_instances, global_state.async_message_delivery_queue_manager)
         global_state.group_tracker.start()
         
     except Exception as e:
@@ -78,14 +80,14 @@ def shutdown_event():
     global_state.shutdown()
     
     # Shutdown Queue Manager (Specific)
-    if global_state.actionable_queue_manager:
-        asyncio.run(global_state.actionable_queue_manager.stop_consumer())
+    if global_state.async_message_delivery_queue_manager:
+        asyncio.run(global_state.async_message_delivery_queue_manager.stop_consumer())
 
 # Include Routers
 app.include_router(user_management.router)
 app.include_router(automatic_bot_reply.router)
 app.include_router(periodic_group_tracking.router)
-app.include_router(delivery_queue.router)
+app.include_router(async_message_delivery_queue.router)
 
 @app.middleware("http")
 async def log_requests(request, call_next):

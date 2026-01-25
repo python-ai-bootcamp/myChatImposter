@@ -25,8 +25,9 @@ async def _status_change_listener(uid: str, status: str):
     """Listener to handle queue movement and tracking on connection status change."""
     if status == 'connected':
         # 1. Move items to Active Queue
-        if global_state.actionable_queue_manager:
-            global_state.actionable_queue_manager.move_user_to_active(uid)
+        # 1. Move items to Active Queue
+        if global_state.async_message_delivery_queue_manager:
+            global_state.async_message_delivery_queue_manager.move_user_to_active(uid)
             logging.info(f"EVENT: User {uid} connected. Moved items to ACTIVE queue.")
         
         # 2. Start Group Tracking (Late Binding)
@@ -51,10 +52,10 @@ async def _status_change_listener(uid: str, status: str):
                 logging.error(f"EVENT: Failed to start tracking for {uid}: {e}")
 
     elif status == 'disconnected':
-         # Stop tracking on disconnect
+         # Stop tracking on disconnect (Safe Pause)
          if global_state.group_tracker:
-             logging.info(f"EVENT: User {uid} disconnected. Stopping tracking jobs.")
-             global_state.group_tracker.update_jobs(uid, [])
+             logging.info(f"EVENT: User {uid} disconnected. Pausing tracking jobs.")
+             global_state.group_tracker.stop_tracking_jobs(uid)
 
 def _ensure_db_connected():
     if global_state.configurations_collection is None:
@@ -269,8 +270,8 @@ async def delete_user(user_id: str):
                 global_state.remove_active_user(user_id)
         
         # Cleanup Lifecycle: Move items to Holding Queue
-        if global_state.actionable_queue_manager:
-             global_state.actionable_queue_manager.move_user_to_holding(user_id)
+        if global_state.async_message_delivery_queue_manager:
+             global_state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
 
         query = {
             "$or": [
@@ -398,8 +399,8 @@ async def unlink_user(user_id: str):
 
     if not instance:
         global_state.remove_active_user(user_id)
-        if global_state.actionable_queue_manager:
-             global_state.actionable_queue_manager.move_user_to_holding(user_id)
+        if global_state.async_message_delivery_queue_manager:
+             global_state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
         # Ensure trackers stopped
         if global_state.group_tracker:
              global_state.group_tracker.update_jobs(user_id, [])
@@ -407,14 +408,15 @@ async def unlink_user(user_id: str):
 
     try:
         # Stop tracking jobs
+        # Stop tracking jobs (Safe Stop)
         if global_state.group_tracker:
              logging.info(f"API: Stopping tracking jobs for {user_id}")
-             global_state.group_tracker.update_jobs(user_id, [])
+             global_state.group_tracker.stop_tracking_jobs(user_id)
 
         await instance.stop(cleanup_session=True)
          # Lifecycle: User Unlinked -> Move items to Holding Queue
-        if global_state.actionable_queue_manager:
-             global_state.actionable_queue_manager.move_user_to_holding(user_id)
+        if global_state.async_message_delivery_queue_manager:
+             global_state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
              
         # remove_active_user is called by callback in instance.stop usually, but calling explicit cleanup doesn't hurt if we want to be sure
         # instance.stop calls on_session_end if it finishes gracefully.
@@ -442,8 +444,8 @@ async def reload_user(user_id: str):
     try:
         if instance:
             await instance.stop(cleanup_session=False)
-            if global_state.actionable_queue_manager:
-                global_state.actionable_queue_manager.move_user_to_holding(user_id)
+            if global_state.async_message_delivery_queue_manager:
+                global_state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
         else:
              global_state.remove_active_user(user_id)
              raise HTTPException(status_code=500, detail="Instance missing.")
@@ -480,7 +482,7 @@ async def reload_user(user_id: str):
         global_state.active_users[user_id] = new_id
         
         if global_state.group_tracker:
-                 global_state.group_tracker.update_jobs(user_id, [])
+                  global_state.group_tracker.stop_tracking_jobs(user_id)
         
         return {"status": "success", "message": "Reloaded"}
 

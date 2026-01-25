@@ -6,14 +6,14 @@ from fastapi.responses import JSONResponse
 from dependencies import GlobalStateManager
 
 router = APIRouter(
-    prefix="/api/actionable-items-delivery-queue",
-    tags=["delivery_queue"]
+    prefix="/api/async-message-delivery-queue",
+    tags=["async_message_delivery_queue"]
 )
 
 global_state = GlobalStateManager.get_instance()
 
 def _get_collection(queue_type: str):
-    manager = global_state.actionable_queue_manager
+    manager = global_state.async_message_delivery_queue_manager
     if not manager:
         raise HTTPException(status_code=503, detail="Delivery Queue Manager not initialized.")
     

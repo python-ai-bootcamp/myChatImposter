@@ -8,7 +8,7 @@ from pymongo.collection import Collection
 if TYPE_CHECKING:
     from chatbot_manager import ChatbotInstance
     from group_tracker import GroupTracker
-    from actionable_items_message_delivery_queue_manager import ActionableItemsDeliveryQueueManager
+    from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager
 
 class GlobalStateManager:
     _instance = None
@@ -27,7 +27,7 @@ class GlobalStateManager:
         
         # Managers
         self.group_tracker: Optional['GroupTracker'] = None
-        self.actionable_queue_manager: Optional['ActionableItemsDeliveryQueueManager'] = None
+        self.async_message_delivery_queue_manager: Optional['AsyncMessageDeliveryQueueManager'] = None
 
     @classmethod
     def get_instance(cls):

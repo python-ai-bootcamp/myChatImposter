@@ -16,6 +16,24 @@ def _ensure_tracker_db():
     if not global_state.group_tracker:
         raise HTTPException(status_code=503, detail="Group Tracking not initialized.")
 
+def _serialize_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
+    """Convert MongoDB types to JSON serializable."""
+    if not doc:
+        return doc
+    new_doc = {}
+    for k, v in doc.items():
+        if k == '_id':
+            new_doc[k] = str(v)
+        elif hasattr(v, 'isoformat'):
+             new_doc[k] = v.isoformat()
+        elif isinstance(v, list):
+             new_doc[k] = [_serialize_doc(i) if isinstance(i, dict) else i for i in v]
+        elif isinstance(v, dict):
+             new_doc[k] = _serialize_doc(v)
+        else:
+             new_doc[k] = v
+    return new_doc
+
 @router.get("/trackedGroupMessages/{user_id}")
 async def get_all_tracked_messages(user_id: str):
     """
@@ -24,8 +42,8 @@ async def get_all_tracked_messages(user_id: str):
     _ensure_tracker_db()
     try:
         # Assuming tracked_group_periods_collection holds the data
-        cursor = global_state.group_tracker.tracked_group_periods_collection.find({"user_id": user_id}, {"_id": 0})
-        results = list(cursor)
+        cursor = global_state.group_tracker.tracked_group_periods_collection.find({"user_id": user_id}).sort("periodEnd", -1)
+        results = [_serialize_doc(doc) for doc in cursor]
         return JSONResponse(content=results)
     except Exception as e:
         logging.error(f"API: Error getting tracked messages for {user_id}: {e}")
@@ -39,10 +57,9 @@ async def get_group_tracked_messages(user_id: str, group_id: str):
     _ensure_tracker_db()
     try:
         cursor = global_state.group_tracker.tracked_group_periods_collection.find(
-            {"user_id": user_id, "group_id": group_id}, 
-            {"_id": 0}
-        )
-        results = list(cursor)
+            {"user_id": user_id, "group_id": group_id}
+        ).sort("periodEnd", -1)
+        results = [_serialize_doc(doc) for doc in cursor]
         return JSONResponse(content=results)
     except Exception as e:
         logging.error(f"API: Error getting tracked messages for {user_id}/{group_id}: {e}")

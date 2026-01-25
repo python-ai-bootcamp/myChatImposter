@@ -19,20 +19,20 @@ from chatbot_manager import ChatbotInstance
 from config_models import PeriodicGroupTrackingConfig, LLMProviderConfig
 from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider
 from llm_providers.base import BaseLlmProvider
-from actionable_items_message_delivery_queue_manager import ActionableItemsDeliveryQueueManager
+from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager
 
 # Initialize logger
 logger = logging.getLogger(__name__)
 
 class GroupTracker:
-    def __init__(self, mongo_url: str, chatbot_instances: dict[str, ChatbotInstance], actionable_queue_manager: ActionableItemsDeliveryQueueManager = None):
+    def __init__(self, mongo_url: str, chatbot_instances: dict[str, ChatbotInstance], async_message_delivery_queue_manager: AsyncMessageDeliveryQueueManager = None):
         self.mongo_client = MongoClient(mongo_url)
         self.db = self.mongo_client['chat_manager']
         self.tracked_groups_collection = self.db['tracked_groups']
         self.tracked_group_periods_collection = self.db['tracked_group_periods']
         self.tracking_state_collection = self.db['group_tracking_state']
         self.chatbot_instances = chatbot_instances
-        self.actionable_queue_manager = actionable_queue_manager  # Store the queue manager
+        self.async_message_delivery_queue_manager = async_message_delivery_queue_manager  # Store the queue manager
         self.scheduler = AsyncIOScheduler()
         self.jobs = {}
 
@@ -255,6 +255,27 @@ RELEVANT_TASK_MESSAGE format:
                 recorder.record_response(error_msg, epoch_ts=epoch_ts)
             
             return error_msg
+
+    def stop_tracking_jobs(self, user_id: str):
+        """
+        Stops all tracking jobs for a user WITHOUT deleting the data.
+        Used for disconnects, reloads, and unlinks.
+        """
+        all_jobs = self.scheduler.get_jobs()
+        prefix = f"{user_id}_"
+        
+        for job in all_jobs:
+            if job.id.startswith(prefix):
+                try:
+                    self.scheduler.remove_job(job.id)
+                    logger.info(f"Stopped tracking job {job.id} for user {user_id}")
+                except Exception as e:
+                    logger.warning(f"Failed to remove job {job.id}: {e}")
+        
+        # Sync self.jobs
+        keys_to_remove = [k for k in self.jobs if k.startswith(prefix)]
+        for k in keys_to_remove:
+            del self.jobs[k]
 
     def update_jobs(self, user_id: str, tracking_configs: list[PeriodicGroupTrackingConfig], timezone: str = "UTC"):
         # Remove existing jobs for this user by querying the scheduler directly
@@ -576,20 +597,20 @@ RELEVANT_TASK_MESSAGE format:
                      return
 
                 # Send items to Queue
-                if self.actionable_queue_manager:
+                if self.async_message_delivery_queue_manager:
                     logger.info(f"Queuing {len(action_items)} items for {user_id}")
                     for item in action_items:
                         # Inject Group Name
                         item["group_display_name"] = config.displayName
                         
                         # Add to Queue
-                        self.actionable_queue_manager.add_item(
+                        self.async_message_delivery_queue_manager.add_item(
                             actionable_item=item,
                             user_id=user_id,
                             provider_name="whatsapp_baileys" # Currently hardcoded, could be dynamic
                         )
                 else:
-                    logger.error("ActionableItemsDeliveryQueueManager not initialized! Cannot send items.")
+                    logger.error("AsyncMessageDeliveryQueueManager not initialized! Cannot send items.")
 
             except Exception as e:
                 logger.error(f"Failed to process action items for user {user_id}: {e}")
