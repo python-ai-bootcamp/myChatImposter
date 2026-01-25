@@ -1,6 +1,6 @@
 # Codebase Audit Report
 
-**Date**: 2026-01-24
+**Date**: 2026-01-25 (Updated)
 **Auditor**: Sir Gravitush, Master of Tech
 
 ---
@@ -61,6 +61,24 @@
 *   **Findings**: `active_users`, `chatbot_instances`, and `mongo_client` are globals in `main.py`. This makes unit testing impossible and state management fragile.
 *   **Recommendation**: Implement a singleton `ChatbotRegistry` to manage these instances and inject it where needed.
 
+### 7. Fix GroupTracker Data Loss
+*   **Serial Number**: 007
+*   **Importance**: **CRITICAL** (Data Integrity)
+*   **ROI**: **EXTREME** (Prevents user data deletion)
+*   **Effort**: **LOW** (Decouple stop logic from delete logic)
+*   **Risk**: **LOW**
+*   **Findings**: User tracking history was deleted on disconnect/reload.
+*   **Recommendation**: Implement `stop_tracking_jobs` to safely pause tracking.
+
+### 8. Fix API Serialization (500 Error)
+*   **Serial Number**: 008
+*   **Importance**: **HIGH** (API Usability)
+*   **ROI**: **HIGH** (Enables frontend usage)
+*   **Effort**: **LOW** (Add serializer)
+*   **Risk**: **LOW**
+*   **Findings**: `periodic_group_tracking` endpoints failed to return JSON due to `datetime` objects.
+*   **Recommendation**: Add JSON serialization helper.
+
 ---
 
 ## Summary Table
@@ -69,7 +87,9 @@
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **001** | **Deconstruct Monolithic `main.py`** | **CRITICAL** | **EXTREME** | **MEDIUM** | **MEDIUM** | **COMPLETED** |
 | **002** | **Fix Hardcoded Provider Dependency** | **HIGH** | **HIGH** | **LOW** | **LOW** | **PENDING** |
-| **003** | **The "Naming of Length" Issue** | **LOW** | **HIGH** | **LOW** | **LOW** | **PENDING** |
+| **003** | **The "Naming of Length" Issue** | **LOW** | **HIGH** | **LOW** | **LOW** | **COMPLETED** |
 | **004** | **Decouple Logic in `GroupTracker`** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **PENDING** |
 | **005** | **Standardize Logging** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **COMPLETED** |
 | **006** | **Global State Management** | **HIGH** | **LOW** | **HIGH** | **HIGH** | **COMPLETED** |
+| **007** | **Fix GroupTracker Data Loss** | **CRITICAL** | **EXTREME** | **LOW** | **LOW** | **COMPLETED** |
+| **008** | **Fix API Serialization (500 Error)** | **HIGH** | **HIGH** | **LOW** | **LOW** | **COMPLETED** |
