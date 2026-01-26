@@ -570,7 +570,7 @@ function EditPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify([finalApiData]),
+        body: JSON.stringify(finalApiData),
       });
 
       if (!response.ok) {
@@ -639,7 +639,7 @@ function EditPage() {
       const saveResponse = await fetch(`/api/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([finalApiData]),
+        body: JSON.stringify(finalApiData),
       });
 
       if (!saveResponse.ok) {
@@ -717,7 +717,7 @@ function EditPage() {
       const saveResponse = await fetch(`/api/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify([finalApiData]),
+        body: JSON.stringify(finalApiData),
       });
 
       if (!saveResponse.ok) {

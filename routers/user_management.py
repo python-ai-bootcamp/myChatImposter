@@ -55,21 +55,17 @@ async def _status_change_listener(uid: str, status: str):
 
 async def _get_user_config(user_id: str, configurations_collection) -> Union[dict, None]:
     """
-    Helper to retrieve user configuration from DB, handling structure variations (List vs Dict)
-    and fallback queries.
+    Helper to retrieve user configuration from DB.
+    Expects config_data to be a dict (legacy list format has been migrated).
     """
     try:
         db_config = await run_in_threadpool(configurations_collection.find_one, {"config_data.user_id": user_id})
-        if not db_config:
-            db_config = await run_in_threadpool(configurations_collection.find_one, {"config_data.0.user_id": user_id})
         
         if not db_config:
             return None
 
         config_data = db_config.get("config_data")
-        if isinstance(config_data, list) and config_data:
-            return config_data[0]
-        elif isinstance(config_data, dict):
+        if isinstance(config_data, dict):
             return config_data
         return None
     except Exception as e:
@@ -94,10 +90,7 @@ async def list_users():
         cursor = global_state.configurations_collection.find({}, {"config_data.user_id": 1, "_id": 0})
         for doc in cursor:
             config_data = doc.get("config_data", {})
-            if isinstance(config_data, list) and config_data:
-                uid = config_data[0].get("user_id")
-                if uid: user_ids.append(uid)
-            elif isinstance(config_data, dict):
+            if isinstance(config_data, dict):
                 uid = config_data.get("user_id")
                 if uid: user_ids.append(uid)
         return {"user_ids": user_ids}
@@ -120,9 +113,7 @@ async def list_users_status():
             user_id = None
             try:
                 # Basic validation/extraction
-                if isinstance(config_data, list) and config_data:
-                    config_val = config_data[0]
-                elif isinstance(config_data, dict):
+                if isinstance(config_data, dict):
                     config_val = config_data
                 else:
                     continue # Skip invalid
@@ -231,18 +222,15 @@ async def get_user_configuration(user_id: str):
         raise HTTPException(status_code=500, detail="Could not retrieve configuration.")
 
 @router.put("/{user_id}")
-async def save_user_configuration(user_id: str, config: Union[UserConfiguration, List[UserConfiguration]] = Body(...)):
+async def save_user_configuration(user_id: str, config: UserConfiguration = Body(...)):
     """
     Create or update user configuration.
+    Only accepts a single UserConfiguration dict (list format is no longer supported).
     """
     _ensure_db_connected()
     try:
-        if isinstance(config, list):
-            json_data = [item.model_dump(exclude_unset=True) for item in config]
-            check_uid = json_data[0].get("user_id")
-        else:
-            json_data = config.model_dump(exclude_unset=True)
-            check_uid = json_data.get("user_id")
+        json_data = config.model_dump(exclude_unset=True)
+        check_uid = json_data.get("user_id")
         
         if check_uid != user_id:
             raise HTTPException(status_code=400, detail="User ID mismatch.")
@@ -251,7 +239,7 @@ async def save_user_configuration(user_id: str, config: Union[UserConfiguration,
         query = {
             "$or": [
                 {"config_data.user_id": user_id},
-                {"config_data.0.user_id": user_id}
+                {"config_data.0.user_id": user_id}  # Still query both for migration support
             ]
         }
         

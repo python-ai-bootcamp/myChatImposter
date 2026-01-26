@@ -7,14 +7,17 @@
 
 ## Detailed Findings
 
-### 1. DRY Violation in User Config Retrieval
+### 1. Remove Legacy List Config Support
 *   **Serial Number**: 001
 *   **Importance**: **MEDIUM** (Maintainability)
-*   **ROI**: **HIGH** (Simpler code, less chance of bugs in future)
-*   **Effort**: **LOW** (Extract helper function, replace calls)
-*   **Risk**: **LOW**
-*   **Findings**: In `routers/user_management.py`, the logic to retrieve user configuration checks both `config_data` as a list (legacy?) and as a dict. This block of 5-6 lines is repeated at least 6 times throughout the file.
-*   **Recommendation**: Create a global helper method `get_config_by_user_id(collection, user_id)` (or in a DAO layer) that handles this schema variation and returns the config object or None.
+*   **ROI**: **HIGH** (Simpler code, fewer edge cases)
+*   **Effort**: **LOW** (Remove legacy code paths)
+*   **Risk**: **LOW** (Requires data migration verification first)
+*   **Findings**: In `routers/user_management.py`, the logic to retrieve user configuration checks both `config_data` as a list (legacy multi-user API) and as a dict (current single-user API). This is legacy code from before the UI and persistence layer existed.
+*   **Status**: [x] COMPLETED
+*   **Refactoring Action**:
+    *   [x] Migrated 3 legacy list-format documents to dict-format.
+    *   [x] Removed all `isinstance(config_data, list)` checks from `user_management.py`.
 
 ### 2. Violations of Liskov Substitution Principle (Hardcoded Provider Checks)
 *   **Serial Number**: 002
