@@ -23,6 +23,8 @@ from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider # DEPRECATED
 from llm_providers.base import BaseLlmProvider
 from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager, QueueMessageType
 from services.action_item_extractor import ActionItemExtractor
+from services.cron_window_calculator import CronWindowCalculator
+
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -40,6 +42,8 @@ class GroupTracker:
         self.scheduler = AsyncIOScheduler()
         self.jobs = {}
         self.extractor = ActionItemExtractor()
+        self.window_calculator = CronWindowCalculator()
+
 
     def start(self):
         self.scheduler.start()
@@ -112,19 +116,9 @@ class GroupTracker:
         for k in keys_to_remove:
             del self.jobs[k]
 
-        # Clean up stale groups from MongoDB that are no longer in the config
-        current_group_ids = {config.groupIdentifier for config in tracking_configs}
-        existing_groups = self.tracked_groups_collection.find({"user_id": user_id}, {"group_id": 1})
-        for group_doc in existing_groups:
-            group_id = group_doc.get("group_id")
-            if group_id and group_id not in current_group_ids:
-                # Delete group metadata
-                self.tracked_groups_collection.delete_one({"user_id": user_id, "group_id": group_id})
-                # Delete associated periods
-                self.tracked_group_periods_collection.delete_many({"user_id": user_id, "tracked_group_unique_identifier": group_id})
-                # Delete tracking state
-                self.tracking_state_collection.delete_one({"user_id": user_id, "group_id": group_id})
-                logger.info(f"Cleaned up stale tracked group {group_id} for user {user_id}")
+        # Clean up stale groups from MongoDB logic REMOVED.
+        # We now rely on explicit DELETE API calls to remove data.
+        # This prevents accidental data loss during config reloads/glitches.
 
         # Add new jobs
         for config in tracking_configs:
@@ -191,93 +185,32 @@ class GroupTracker:
         # The window is [previous_cron_time, current_cron_time].
 
         try:
-            # Current Trigger Time (Window End)
-            # Use timezone-aware now to ensure correct local time interpretation
-            tz = ZoneInfo(timezone)
-            now_dt = datetime.now(tz)
+             # Calculate window using separated service
+             last_run_ts = None
+             state_key = {'user_id': user_id, 'group_id': config.groupIdentifier}
+             state_doc = self.tracking_state_collection.find_one(state_key)
+             if state_doc:
+                 last_run_ts = state_doc.get('last_run_ts')
             
-            # Snap to the scheduled time (removes jitter/execution delay)
-            iter = croniter(config.cronTrackingSchedule, now_dt)
-            current_cron_end_dt = iter.get_prev(datetime)
-            
-            # Window Start Logic (Hybrid Approach)
-            current_cron_start_dt = None
-            
-            # 1. Try to use persisted state from DB (Most Robust for Continuity)
-            state_key = {"user_id": user_id, "group_id": config.groupIdentifier}
-            state_doc = self.tracking_state_collection.find_one(state_key)
-            
-            if state_doc and state_doc.get("last_run_ts"):
-                last_run_ms = state_doc.get("last_run_ts")
-                # Safety check: If last run was surprisingly recent (< 2 days), trust it.
-                # If it was very old (downtime), we might want to strictly limit to 1 interval.
-                # User requested "Strict Last Interval".
-                # But "If daylight changed, I don't wanna skip".
-                # If we use last_run_ts from yesterday, good.
-                # If last_run_ts is from a month ago, we skip it.
-                
-                last_run_dt_utc = datetime.fromtimestamp(last_run_ms / 1000, tz=ZoneInfo("UTC"))
-                if (datetime.now(ZoneInfo("UTC")) - last_run_dt_utc).total_seconds() < 48 * 3600:
-                    current_cron_start_dt = last_run_dt_utc.astimezone(tz)
-                    logger.info(f"Using persisted last_run_ts as start: {current_cron_start_dt}")
+             current_cron_start_dt, current_cron_end_dt = self.window_calculator.calculate_window(
+                 cron_expression=config.cronTrackingSchedule,
+                 timezone=timezone,
+                 now_dt=datetime.now(ZoneInfo("UTC")), 
+                 last_run_ts=last_run_ts
+             )
 
-            # 2. Fallback Calculation (First Run or after Long Downtime)
-            if not current_cron_start_dt:
-                # We need to find the "Previous Valid Occurrence" relative to End.
-                # Standard croniter.get_prev() is known to be buggy around DST Fall Back (skips hour).
-                # We implement "Wiggle Recovery".
-                
-                # A. Try Standard Backward
-                iter_back = croniter(config.cronTrackingSchedule, current_cron_end_dt)
-                candidate_prev = iter_back.get_prev(datetime)
-                
-                if croniter.match(config.cronTrackingSchedule, candidate_prev):
-                    # It looks valid, but is it the *immediate* previous?
-                    # Fall Back Bug: 20:00 -> 19:00 (Invalid) -> 20:00 (Previous Day).
-                    # Validated by match() check. 19:00 fails match. 20:00 Previous Day passes.
-                    # But we skipped the "Shifted" 20:00 (DST repeat).
-                    
-                    # Wiggle Check: Can we find a valid time strictly between candidate and end?
-                    iter_fwd_check = croniter(config.cronTrackingSchedule, candidate_prev)
-                    # Use a small epsilon to step forward from the candidate
-                    intermediate = iter_fwd_check.get_next(datetime)
-                    
-                    if intermediate < current_cron_end_dt and croniter.match(config.cronTrackingSchedule, intermediate):
-                         logger.info(f"Wiggle Recovery: Found intermediate valid time {intermediate} (Skipped by standard prev)")
-                         current_cron_start_dt = intermediate
-                    else:
-                         current_cron_start_dt = candidate_prev
-                         
-                else: 
-                     # Candidate is invalid (e.g. 19:00). 
-                     # This happens in Spring Forward or Fall Back intermediate steps.
-                     # Wiggle from the invalid point.
-                     iter_wiggle = croniter(config.cronTrackingSchedule, candidate_prev)
-                     wiggle_candidate = iter_wiggle.get_next(datetime)
-                     
-                     if wiggle_candidate < current_cron_end_dt and croniter.match(config.cronTrackingSchedule, wiggle_candidate):
-                         current_cron_start_dt = wiggle_candidate
-                     else:
-                         # Keep going back until valid (Safety loop)
-                         # This handles Spring Forward phantom hours
-                         found = False
-                         for _ in range(5):
-                             candidate_prev = iter_back.get_prev(datetime)
-                             if croniter.match(config.cronTrackingSchedule, candidate_prev):
-                                 current_cron_start_dt = candidate_prev
-                                 found = True
-                                 break
-                         if not found:
-                             logger.error("Failed to find valid previous cron time.")
-                             return
+             if not current_cron_start_dt or not current_cron_end_dt:
+                 logger.error(f'Failed to calculate window for {user_id}/{config.groupIdentifier}. Aborting.')
+                 return
 
-            now_ts = int(current_cron_end_dt.timestamp() * 1000)
-            last_run_ts = int(current_cron_start_dt.timestamp() * 1000)
+             now_ts = int(current_cron_end_dt.timestamp() * 1000)
+             last_run_ts = int(current_cron_start_dt.timestamp() * 1000)
 
-            logger.info(f"Tracking job for {user_id}/{config.groupIdentifier}: Window calculated as {current_cron_start_dt} -> {current_cron_end_dt}")
+             logger.info(f'Tracking job for {user_id}/{config.groupIdentifier}: Window calculated as {current_cron_start_dt} -> {current_cron_end_dt}')
         except Exception as e:
-            logger.error(f"Failed to calculate cron window for {user_id}/{config.groupIdentifier}: {e}. Aborting.")
+            logger.error(f'Failed to calculate cron window for {user_id}/{config.groupIdentifier}: {e}. Aborting.')
             return
+
 
         # Filter and Transform
         transformed_messages = []

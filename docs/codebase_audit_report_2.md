@@ -45,7 +45,12 @@
 *   **Effort**: **MEDIUM** (Extract to new class)
 *   **Risk**: **MEDIUM** (Timezone logic is fragile)
 *   **Findings**: `GroupTracker.track_group_context` contains a ~100 line block (lines 189-276) effectively implementing a "Cron Window Calculator" with complex fallback/wiggle logic for Timezones/DST. This is hard to read and impossible to unit test in isolation.
-*   **Recommendation**: Extract this logic into a `CronTimeWindowCalculator` class with a method `calculate_window(schedule, now_dt, last_run_ts) -> (start, end)`. Write extensive unit tests for this new class.
+*   **Status**: [x] COMPLETED
+*   **Refactoring Action**:
+    *   [x] Created `services/cron_window_calculator.py`.
+    *   [x] Moved window calculation and "wiggle" logic to service.
+    *   [x] Updated `group_tracker.py` to use `CronWindowCalculator`.
+    *   [x] Verified with unit tests.
 
 ### 4. Router Logic Leakage (Business Logic in API Layer)
 *   **Serial Number**: 004
@@ -91,7 +96,7 @@
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **001** | **DRY Violation in User Config Retrieval** | **MEDIUM** | **HIGH** | **LOW** | **LOW** | **PENDING** |
 | **002** | **Violations of LSP (Hardcoded Providers)** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **COMPLETED** |
-| **003** | **Separation of Concerns: Cron Schedule Logic** | **HIGH** | **HIGH** | **MEDIUM** | **MEDIUM** | **PENDING** |
+| **003** | **Separation of Concerns: Cron Schedule Logic** | **HIGH** | **HIGH** | **MEDIUM** | **MEDIUM** | **COMPLETED** |
 | **004** | **Router Logic Leakage** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **LOW** | **PENDING** |
 | **005** | **Nested Whitelist Logic** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **PENDING** |
 | **006** | **Queue Consumer Polymorphism** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **PENDING** |
