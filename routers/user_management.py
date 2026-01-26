@@ -21,37 +21,9 @@ router = APIRouter(
 global_state = GlobalStateManager.get_instance()
 
 # --- Helper Functions ---
-async def _status_change_listener(uid: str, status: str):
-    """Listener to handle queue movement and tracking on connection status change."""
-    if status == 'connected':
-        # 1. Move items to Active Queue
-        # 1. Move items to Active Queue
-        if global_state.async_message_delivery_queue_manager:
-            global_state.async_message_delivery_queue_manager.move_user_to_active(uid)
-            logging.info(f"EVENT: User {uid} connected. Moved items to ACTIVE queue.")
-        
-        # 2. Start Group Tracking (Late Binding)
-        if global_state.group_tracker:
-            try:
-                # We need to fetch config to know what to track
-                # This adds a DB read on connect, but safeguards against premature tracking
-                config_dict = await _get_user_config(uid, global_state.configurations_collection)
-                
-                if config_dict:
-                    config = UserConfiguration.model_validate(config_dict)
-                    
-                    if config.features.periodic_group_tracking.enabled:
-                        global_state.group_tracker.update_jobs(uid, config.features.periodic_group_tracking.tracked_groups, config.configurations.user_details.timezone)
-                    else:
-                        global_state.group_tracker.update_jobs(uid, [])
-            except Exception as e:
-                logging.error(f"EVENT: Failed to start tracking for {uid}: {e}")
 
-    elif status == 'disconnected':
-         # Stop tracking on disconnect (Safe Pause)
-         if global_state.group_tracker:
-             logging.info(f"EVENT: User {uid} disconnected. Pausing tracking jobs.")
-             global_state.group_tracker.stop_tracking_jobs(uid)
+# Note: _status_change_listener has been moved to UserLifecycleService
+# Use global_state.user_lifecycle_service.create_status_change_callback() instead
 
 async def _get_user_config(user_id: str, configurations_collection) -> Union[dict, None]:
     """
@@ -359,7 +331,7 @@ async def link_user(user_id: str):
             on_session_end=global_state.remove_active_user,
             queues_collection=global_state.queues_collection,
             main_loop=loop,
-            on_status_change=_status_change_listener
+            on_status_change=global_state.user_lifecycle_service.create_status_change_callback()
         )
         
         global_state.chatbot_instances[instance_id] = instance
@@ -471,7 +443,7 @@ async def reload_user(user_id: str):
             on_session_end=global_state.remove_active_user,
             queues_collection=global_state.queues_collection,
             main_loop=loop,
-            on_status_change=_status_change_listener
+            on_status_change=global_state.user_lifecycle_service.create_status_change_callback()
         )
         
         global_state.chatbot_instances[new_id] = new_instance

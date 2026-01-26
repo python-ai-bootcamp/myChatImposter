@@ -18,6 +18,8 @@
 *   **Refactoring Action**:
     *   [x] Migrated 3 legacy list-format documents to dict-format.
     *   [x] Removed all `isinstance(config_data, list)` checks from `user_management.py`.
+    *   [x] Changed PUT endpoint to only accept dict (reject lists with 422).
+    *   [x] Fixed frontend (`EditPage.js`) to send dict instead of wrapping in array.
 
 ### 2. Violations of Liskov Substitution Principle (Hardcoded Provider Checks)
 *   **Serial Number**: 002
@@ -58,11 +60,17 @@
 ### 4. Router Logic Leakage (Business Logic in API Layer)
 *   **Serial Number**: 004
 *   **Importance**: **MEDIUM** (Architectural Cleanliness)
-*   **ROI**: **MEDIUM**
+*   **Importance**: **MEDIUM** (Maintainability)
+*   **ROI**: **MEDIUM** (Simplified testing)
 *   **Effort**: **MEDIUM**
 *   **Risk**: **LOW**
-*   **Findings**: `routers/user_management.py` contains `_status_change_listener` and complex reload/unlink logic. This involves direct manipulation of `global_state` dictionaries, queue movements, and job scheduling.
-*   **Recommendation**: Encapsulate this logic into a `UserSessionService` or `LifecycleManager` class. The router should only parse the request and call `service.reload_user(uid)`.
+*   **Findings**: The `_status_change_listener` in `routers/user_management.py` contains business logic (queue management, tracking job control) that should be in a service layer.
+*   **Status**: [x] COMPLETED
+*   **Refactoring Action**:
+    *   [x] Created `services/user_lifecycle_service.py` with `UserLifecycleService` class
+    *   [x] Moved `_status_change_listener` logic to `on_user_connected()` and `on_user_disconnected()` methods
+    *   [x] Added service initialization in `main.py`
+    *   [x] Updated `user_management.py` to use service callbacks
 
 ### 5. Nested Whitelist Logic
 *   **Serial Number**: 005
@@ -102,10 +110,10 @@
 
 | Serial | Title | Importance | ROI | Effort | Risk | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **001** | **DRY Violation in User Config Retrieval** | **MEDIUM** | **HIGH** | **LOW** | **LOW** | **PENDING** |
+| **001** | **Remove Legacy List Config Support** | **MEDIUM** | **HIGH** | **LOW** | **LOW** | **COMPLETED** |
 | **002** | **Violations of LSP (Hardcoded Providers)** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **COMPLETED** |
 | **003** | **Separation of Concerns: Cron Schedule Logic** | **HIGH** | **HIGH** | **MEDIUM** | **MEDIUM** | **COMPLETED** |
-| **004** | **Router Logic Leakage** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **LOW** | **PENDING** |
+| **004** | **Router Logic Leakage** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **LOW** | **COMPLETED** |
 | **005** | **Nested Whitelist Logic** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **PENDING** |
 | **006** | **Queue Consumer Polymorphism** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **COMPLETED** |
 | **007** | **Formatting Hardcoding** | **LOW** | **LOW** | **LOW** | **LOW** | **PENDING** |

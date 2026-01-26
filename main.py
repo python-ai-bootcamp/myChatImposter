@@ -7,6 +7,7 @@ from fastapi import FastAPI
 from dependencies import GlobalStateManager
 from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager
 from group_tracker import GroupTracker
+from services.user_lifecycle_service import UserLifecycleService
 
 # Import Routers
 from routers import user_management
@@ -55,12 +56,15 @@ async def startup_event():
         global_state.group_tracker = GroupTracker(mongodb_url, global_state.chatbot_instances, global_state.async_message_delivery_queue_manager)
         global_state.group_tracker.start()
         
+        # 4. Initialize UserLifecycleService
+        global_state.user_lifecycle_service = UserLifecycleService(global_state)
+        
     except Exception as e:
         logging.error(f"API: Startup initialization failed: {e}")
         # We might want to exit or continue with limited functionality
 
 @app.on_event("shutdown")
-def shutdown_event():
+async def shutdown_event():
     """
     Gracefully shut down components.
     """
@@ -70,7 +74,7 @@ def shutdown_event():
     # iterate list(items) to copy keys
     for instance_id, instance in list(global_state.chatbot_instances.items()):
         logging.info(f"API: Stopping instance {instance_id} (No cleanup)...")
-        asyncio.run(instance.stop(cleanup_session=False))
+        await instance.stop(cleanup_session=False)
         # Remove from active maps
         global_state.remove_active_user(instance.user_id)
         
@@ -81,7 +85,7 @@ def shutdown_event():
     
     # Shutdown Queue Manager (Specific)
     if global_state.async_message_delivery_queue_manager:
-        asyncio.run(global_state.async_message_delivery_queue_manager.stop_consumer())
+        await global_state.async_message_delivery_queue_manager.stop_consumer()
 
 # Include Routers
 app.include_router(user_management.router)

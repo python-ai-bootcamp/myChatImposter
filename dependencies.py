@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from chatbot_manager import ChatbotInstance
     from group_tracker import GroupTracker
     from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager
+    from services.user_lifecycle_service import UserLifecycleService
 
 class GlobalStateManager:
     _instance = None
@@ -28,6 +29,7 @@ class GlobalStateManager:
         # Managers
         self.group_tracker: Optional['GroupTracker'] = None
         self.async_message_delivery_queue_manager: Optional['AsyncMessageDeliveryQueueManager'] = None
+        self.user_lifecycle_service: Optional['UserLifecycleService'] = None
 
     @classmethod
     def get_instance(cls):
