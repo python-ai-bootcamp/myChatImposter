@@ -215,6 +215,7 @@ class GroupTracker:
         # Filter and Transform
         transformed_messages = []
         alternate_identifiers_set = set()
+        seen_message_ids = set()  # Deduplication tracking
 
         for msg in messages:
             msg_ts = msg.get('originating_time')
@@ -222,8 +223,14 @@ class GroupTracker:
                 continue
 
             if last_run_ts < msg_ts <= now_ts:
-                # Check if it's a bot message
+                # Check for duplicate message
                 provider_message_id = msg.get('provider_message_id')
+                if provider_message_id in seen_message_ids:
+                    logger.warning(f"Duplicate message {provider_message_id} skipped.")
+                    continue
+                seen_message_ids.add(provider_message_id)
+                
+                # Check if it's a bot message
                 is_bot = target_instance.provider_instance.is_bot_message(provider_message_id)
 
                 if is_bot:

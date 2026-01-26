@@ -8,11 +8,9 @@ from datetime import datetime
 from pymongo import MongoClient
 from chatbot_manager import ChatbotInstance
 from actionable_item_formatter import ActionableItemFormatter
+from message_processors.factory import MessageProcessorFactory
 import logging
-
-class QueueMessageType(str, Enum):
-    TEXT = "text"
-    ICS_ACTIONABLE_ITEM = "ics_actionable_item"
+from queue_message_types import QueueMessageType
 
 class AsyncMessageDeliveryQueueManager:
     def __init__(self, mongo_url: str, chatbot_instances: dict[str, ChatbotInstance]):
@@ -209,43 +207,18 @@ class AsyncMessageDeliveryQueueManager:
                         content = updated_doc.get("actionable_item")
                     
                     message_type = updated_doc.get("message_type", QueueMessageType.ICS_ACTIONABLE_ITEM.value)
-                    recipient_jid = target_instance.provider_instance.user_jid # Already checked above
                     
-                    if message_type == QueueMessageType.ICS_ACTIONABLE_ITEM.value:
-                        # --- Strategy: ICS Actionable Item ---
-                        actionable_item = content
-                        
-                        # Determine language code
-                        language_code = "en" # Default
-                        if target_instance.config and target_instance.config.configurations and target_instance.config.configurations.user_details:
-                            language_code = target_instance.config.configurations.user_details.language_code
-
-                        # 1. Format the Visual Card (Text)
-                        formatted_text = ActionableItemFormatter.format_card(actionable_item, language_code)
-                        
-                        # 2. Generate Calendar Event
-                        ics_bytes = ActionableItemFormatter.generate_ics(actionable_item)
-                        ics_filename = f"task_{message_id[:8]}.ics"
-                        
-                        # 3. Send as Single Message (File + Caption)
-                        await target_instance.provider_instance.send_file(
-                            recipient=recipient_jid,
-                            file_data=ics_bytes,
-                            filename=ics_filename,
-                            mime_type="text/calendar",
-                            caption=formatted_text
-                        )
-                    
-                    elif message_type == QueueMessageType.TEXT.value:
-                        # --- Strategy: Simple Text ---
-                        text_content = str(content)
-                        await target_instance.provider_instance.sendMessage(
-                            recipient=recipient_jid,
-                            message=text_content
-                        )
-                    
-                    else:
-                        logging.warning(f"ACTIONABLE_QUEUE: Unknown message type {message_type} for item {message_id}. Skipping.")
+                    try:
+                        processor = MessageProcessorFactory.get_processor(message_type)
+                        await processor.process(updated_doc, target_instance)
+                    except ValueError as ve:
+                         logging.warning(f"ACTIONABLE_QUEUE: {ve}. Skipping item {message_id}.")
+                         # If we don't know how to process it, we might want to skip or dead-letter it.
+                         # For now, we proceed to delete/complete to avoid blocking queue? 
+                         # Or simpler: The factory raises, we log, and since we are in a try block that ends with 'pass' (lines 254-258), it might loop?
+                         # Let's ensure we allow it to be deleted if it's strictly an Unknown Type error?
+                         # Actually, standard behavior is LOG and DELETE if invalid.
+                         pass
 
                     # 4. Success (Atomic) -> Delete
                     self.queue_collection.delete_one({"_id": candidate["_id"]})

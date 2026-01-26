@@ -77,7 +77,12 @@
 *   **Effort**: **MEDIUM**
 *   **Risk**: **LOW**
 *   **Findings**: `AsyncMessageDeliveryQueueManager._consumer_loop` uses a big `if/elif` block to handle `ICS_ACTIONABLE_ITEM` vs `TEXT`. If we add `IMAGE` or `AUDIO`, this loop grows indefinitely.
-*   **Recommendation**: Implement a `MessageProcessorStrategy` pattern. Register processors for each `QueueMessageType`. The consumer loop simply delegates: `processor_registry.get(msg_type).process(content, provider)`.
+*   **Status**: [x] COMPLETED
+*   **Refactoring Action**:
+    *   [x] Implemented Strategy Pattern with `MessageProcessorFactory`.
+    *   [x] Created `message_processors/` package with `TextMessageProcessor` and `IcsActionableItemProcessor`.
+    *   [x] Refactored variable `QueueMessageType` to `queue_message_types.py` to avoid circular imports.
+    *   [x] Updated consumer loop to delegate processing.
 
 ### 7. Formatting Hardcoding
 *   **Serial Number**: 007
@@ -99,5 +104,5 @@
 | **003** | **Separation of Concerns: Cron Schedule Logic** | **HIGH** | **HIGH** | **MEDIUM** | **MEDIUM** | **COMPLETED** |
 | **004** | **Router Logic Leakage** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **LOW** | **PENDING** |
 | **005** | **Nested Whitelist Logic** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **PENDING** |
-| **006** | **Queue Consumer Polymorphism** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **PENDING** |
+| **006** | **Queue Consumer Polymorphism** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **COMPLETED** |
 | **007** | **Formatting Hardcoding** | **LOW** | **LOW** | **LOW** | **LOW** | **PENDING** |
