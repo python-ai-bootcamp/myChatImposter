@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Dict, Any, Optional, Callable
+from typing import Dict, Any, Optional, Callable, List
 
 from queue_manager import UserQueuesManager
 from config_models import ChatProviderConfig
@@ -9,13 +9,14 @@ class BaseChatProvider(ABC):
     Abstract base class for all chat providers.
     It defines the interface that all chat providers must implement.
     """
-    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, on_status_change: Optional[Callable[[str, str], None]] = None):
+    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, on_status_change: Optional[Callable[[str, str], None]] = None, main_loop=None, **kwargs):
         self.user_id = user_id
         self.config = config
         self.user_queues = user_queues
         self.on_session_end = on_session_end
         # self.logger = logger # DEPRECATED
         self.on_status_change = on_status_change
+        self.main_loop = main_loop
         super().__init__()
 
     @abstractmethod
@@ -48,7 +49,7 @@ class BaseChatProvider(ABC):
         pass
 
     @abstractmethod
-    def get_status(self) -> Dict[str, Any]:
+    def get_status(self, heartbeat: bool = False) -> Dict[str, Any]:
         """
         Returns the current status of the provider.
         This is used for polling the connection status (e.g., QR code for WhatsApp).
@@ -62,3 +63,24 @@ class BaseChatProvider(ABC):
         Returns True if the provider is currently connected and ready to send messages.
         """
         pass
+
+    def update_cache_policy(self, max_interval: int):
+        """
+        Updates the internal cache policy (if applicable) based on tracking intervals.
+        Default implementation does nothing.
+        """
+        pass
+
+    async def fetch_historic_messages(self, identifier: str, limit: int = 500) -> List[Dict]:
+        """
+        Fetches historic messages for a given identifier (group or user).
+        Default implementation returns empty list.
+        """
+        return []
+
+    def is_bot_message(self, message_id: str) -> bool:
+        """
+        Checks if a message with the given ID was sent by the bot itself.
+        Default implementation returns False.
+        """
+        return False

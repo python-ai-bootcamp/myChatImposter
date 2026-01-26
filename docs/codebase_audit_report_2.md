@@ -31,6 +31,12 @@
     *   Ensure all needed methods (like `update_cache_policy`) are defined in `BaseChatProvider` (can be no-op for others).
     *   Remove `isinstance` checks.
     *   Use a factory pattern or configuration dict for provider-specific initialization params instead of hardcoded `if name == "..."`.
+*   **Status**: [x] COMPLETED
+*   **Refactoring Action**:
+    *   [x] Defined `is_connected`, `update_cache_policy`, `fetch_historic_messages`, `is_bot_message` in `BaseChatProvider`.
+    *   [x] Implemented these methods in `WhatsAppBaileysProvider` and `DummyProvider`.
+    *   [x] Updated `GroupTracker` to use polymorphic calls instead of `isinstance`.
+    *   [x] Updated `ChatbotManager` to pass `main_loop` unconditionally.
 
 ### 3. Separation of Concerns: Cron Schedule Logic
 *   **Serial Number**: 003
@@ -84,7 +90,7 @@
 | Serial | Title | Importance | ROI | Effort | Risk | Status |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **001** | **DRY Violation in User Config Retrieval** | **MEDIUM** | **HIGH** | **LOW** | **LOW** | **PENDING** |
-| **002** | **Violations of LSP (Hardcoded Providers)** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **PENDING** |
+| **002** | **Violations of LSP (Hardcoded Providers)** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **COMPLETED** |
 | **003** | **Separation of Concerns: Cron Schedule Logic** | **HIGH** | **HIGH** | **MEDIUM** | **MEDIUM** | **PENDING** |
 | **004** | **Router Logic Leakage** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **LOW** | **PENDING** |
 | **005** | **Nested Whitelist Logic** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **PENDING** |

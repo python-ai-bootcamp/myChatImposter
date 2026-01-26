@@ -13,7 +13,7 @@ class DummyProvider(BaseChatProvider):
     A template and simulation provider. It demonstrates the required interface
     and simulates receiving messages for a user in a background thread.
     """
-    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None):
+    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, **kwargs):
         """
         Initializes the provider.
         - user_id: The specific user this provider instance is for.
@@ -21,7 +21,7 @@ class DummyProvider(BaseChatProvider):
         - user_queues: A dictionary of all user queues, passed by the Orchestrator.
         - on_session_end: A callback function to notify when a session ends.
         """
-        super().__init__(user_id, config, user_queues, on_session_end)
+        super().__init__(user_id, config, user_queues, on_session_end, **kwargs)
         self.is_listening = False
         self.thread = None
         logging.info("Initialized DummyProvider")
@@ -145,6 +145,16 @@ class DummyProvider(BaseChatProvider):
         # For the simulation, we just print to the console.
         logging.info(f"Sending reply to {recipient} ---> {message}")
 
+    async def send_file(self, recipient: str, file_data: bytes, filename: str, mime_type: str, caption: Optional[str] = None):
+        """
+        Sends a file attachment to the specified recipient.
+        """
+        logging.info(f"Sending file {filename} ({mime_type}) to {recipient} with caption: {caption}")
+
+    def get_status(self, heartbeat: bool = False) -> Dict[str, Any]:
+        """
+        Returns the current status of the provider.
+        """
         return {"status": "connected", "message": "Dummy provider is running."}
 
     @property

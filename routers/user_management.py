@@ -35,14 +35,10 @@ async def _status_change_listener(uid: str, status: str):
             try:
                 # We need to fetch config to know what to track
                 # This adds a DB read on connect, but safeguards against premature tracking
-                db_config = await run_in_threadpool(global_state.configurations_collection.find_one, {"config_data.user_id": uid})
-                if not db_config:
-                     db_config = await run_in_threadpool(global_state.configurations_collection.find_one, {"config_data.0.user_id": uid})
+                config_dict = await _get_user_config(uid, global_state.configurations_collection)
                 
-                if db_config:
-                    config_data = db_config.get("config_data")
-                    if isinstance(config_data, list): config_data = config_data[0]
-                    config = UserConfiguration.model_validate(config_data)
+                if config_dict:
+                    config = UserConfiguration.model_validate(config_dict)
                     
                     if config.features.periodic_group_tracking.enabled:
                         global_state.group_tracker.update_jobs(uid, config.features.periodic_group_tracking.tracked_groups, config.configurations.user_details.timezone)
@@ -56,6 +52,29 @@ async def _status_change_listener(uid: str, status: str):
          if global_state.group_tracker:
              logging.info(f"EVENT: User {uid} disconnected. Pausing tracking jobs.")
              global_state.group_tracker.stop_tracking_jobs(uid)
+
+async def _get_user_config(user_id: str, configurations_collection) -> Union[dict, None]:
+    """
+    Helper to retrieve user configuration from DB, handling structure variations (List vs Dict)
+    and fallback queries.
+    """
+    try:
+        db_config = await run_in_threadpool(configurations_collection.find_one, {"config_data.user_id": user_id})
+        if not db_config:
+            db_config = await run_in_threadpool(configurations_collection.find_one, {"config_data.0.user_id": user_id})
+        
+        if not db_config:
+            return None
+
+        config_data = db_config.get("config_data")
+        if isinstance(config_data, list) and config_data:
+            return config_data[0]
+        elif isinstance(config_data, dict):
+            return config_data
+        return None
+    except Exception as e:
+        logging.error(f"HELPER: Error retrieving config for {user_id}: {e}")
+        return None
 
 def _ensure_db_connected():
     if global_state.configurations_collection is None:
@@ -201,14 +220,12 @@ async def get_user_configuration(user_id: str):
     """
     _ensure_db_connected()
     try:
-        db_config = global_state.configurations_collection.find_one({"config_data.user_id": user_id})
-        if not db_config:
-            db_config = global_state.configurations_collection.find_one({"config_data.0.user_id": user_id})
+        config_data = await _get_user_config(user_id, global_state.configurations_collection)
         
-        if not db_config:
+        if not config_data:
              raise HTTPException(status_code=404, detail="Configuration not found.")
         
-        return JSONResponse(content=db_config.get("config_data"))
+        return JSONResponse(content=config_data)
     except Exception as e:
         logging.error(f"API: Error getting config for {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Could not retrieve configuration.")
@@ -337,15 +354,11 @@ async def link_user(user_id: str):
 
     # Load Config
     try:
-        db_config = await run_in_threadpool(global_state.configurations_collection.find_one, {"config_data.user_id": user_id})
-        if not db_config:
-             db_config = await run_in_threadpool(global_state.configurations_collection.find_one, {"config_data.0.user_id": user_id})
+        config_data = await _get_user_config(user_id, global_state.configurations_collection)
         
-        if not db_config:
+        if not config_data:
             raise HTTPException(status_code=404, detail="Configuration not found")
         
-        config_data = db_config.get("config_data")
-        if isinstance(config_data, list): config_data = config_data[0]
         config = UserConfiguration.model_validate(config_data)
 
         # Start Instance
@@ -451,15 +464,11 @@ async def reload_user(user_id: str):
              raise HTTPException(status_code=500, detail="Instance missing.")
         
         # 2. Fetch Config
-        db_config = await run_in_threadpool(global_state.configurations_collection.find_one, {"config_data.user_id": user_id})
-        if not db_config:
-             db_config = await run_in_threadpool(global_state.configurations_collection.find_one, {"config_data.0.user_id": user_id})
+        config_data = await _get_user_config(user_id, global_state.configurations_collection)
         
-        if not db_config:
+        if not config_data:
              raise HTTPException(status_code=404, detail="Config not found for reload.")
              
-        config_data = db_config.get("config_data")
-        if isinstance(config_data, list): config_data = config_data[0]
         config = UserConfiguration.model_validate(config_data)
         
         # 3. Start New

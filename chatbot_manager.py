@@ -318,10 +318,10 @@ class ChatbotInstance:
             "user_queues": {self.user_id: self.user_queues_manager},
             "on_session_end": self.on_session_end,
             # "logger": file_logger, # DEPRECATED: Provider should use standard logging
-            "on_status_change": self.on_status_change
+            "on_status_change": self.on_status_change,
+            # Always pass main_loop, BaseChatProvider accepts it or kwargs handles it
+            "main_loop": self.main_loop
         }
-        if provider_name == "whatsAppBaileyes":
-            provider_init_params["main_loop"] = self.main_loop
 
         self.provider_instance = ProviderClass(**provider_init_params)
         logging.info(f"INSTANCE ({self.user_id}): Initialized chat provider '{provider_name}'.")

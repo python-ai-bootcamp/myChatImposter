@@ -19,13 +19,22 @@ from config_models import ChatProviderConfig
 
 
 class WhatsAppBaileysProvider(BaseChatProvider):
-    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, main_loop=None, on_status_change: Optional[Callable[[str, str], None]] = None):
-        super().__init__(user_id, config, user_queues, on_session_end, on_status_change=on_status_change)
+    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, on_status_change: Optional[Callable[[str, str], None]] = None, main_loop=None, **kwargs):
+        # Pass unknown kwargs up to ensure compatibility
+        super().__init__(user_id, config, user_queues, on_session_end, on_status_change, main_loop=main_loop, **kwargs)
+
+        self.user_jid = None
+        self.sock = None
+        self._connected = False
+        self._listener_task = None
+        self._stop_event = asyncio.Event()
+
+        # Restoring attributes required for logic
         self.is_listening = False
         self.session_ended = False
-        self.main_loop = main_loop
         self.cleanup_on_stop = False
         self.listen_task = None
+
         self.base_url = os.environ.get("WHATSAPP_SERVER_URL", "http://localhost:9000")
         self.ws_url = self.base_url.replace("http", "ws")
         self.sent_message_ids = deque()

@@ -17,7 +17,9 @@ from langchain_core.output_parsers import StrOutputParser
 
 from chatbot_manager import ChatbotInstance
 from config_models import PeriodicGroupTrackingConfig, LLMProviderConfig
-from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider
+from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider # DEPRECATED: Removed direct usage
+# But wait, we can't remove the line if we modify it, just commenting out or removing completely.
+# Let's remove it completely.
 from llm_providers.base import BaseLlmProvider
 from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager, QueueMessageType
 from services.action_item_extractor import ActionItemExtractor
@@ -142,6 +144,7 @@ class GroupTracker:
                 logger.error(f"Failed to add tracking job {job_id}: {e}")
 
         # Update provider cache policy
+        # NOTE: Polymorphic call. Ensure all providers have this method (defined in BaseChatProvider).
         max_interval = self._calculate_max_interval(tracking_configs)
         target_instance = None
         for instance in self.chatbot_instances.values():
@@ -149,7 +152,7 @@ class GroupTracker:
                 target_instance = instance
                 break
 
-        if target_instance and isinstance(target_instance.provider_instance, WhatsAppBaileysProvider):
+        if target_instance and target_instance.provider_instance:
             target_instance.provider_instance.update_cache_policy(max_interval)
 
     async def track_group_context(self, user_id: str, config: PeriodicGroupTrackingConfig, timezone: str = "UTC"):
@@ -167,12 +170,13 @@ class GroupTracker:
                 target_instance = instance
                 break
 
-        if not target_instance or not isinstance(target_instance.provider_instance, WhatsAppBaileysProvider):
+        if not target_instance or not target_instance.provider_instance.is_connected:
             logger.error(f"Chatbot not active or invalid provider for user {user_id}")
             return
 
         # Fetch messages
         try:
+            # Polymorphic call
             messages = await target_instance.provider_instance.fetch_historic_messages(config.groupIdentifier, limit=500)
             if messages is None:
                  logger.error(f"Fetch failed for {user_id}/{config.groupIdentifier} (returned None). Aborting job to prevent data loss. State will NOT be updated.")
