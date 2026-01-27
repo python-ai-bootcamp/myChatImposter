@@ -31,7 +31,7 @@ To objectively rank the tasks, a **Priority Score** was calculated using the fol
 | **1** | **12** | **001** | **Test Suite: WhatsAppBaileysProvider** | **CRITICAL** | **EXTREME** | **HIGH** | **LOW** | **PENDING** |
 | **2** | **10** | **002** | **Backend/Frontend Data Consistency (Defaults)** | **HIGH** | **HIGH** | **LOW** | **LOW** | **PENDING** |
 | **3** | **10** | **003** | **Test Suite: Critical UI Logic** | **HIGH** | **HIGH** | **MEDIUM** | **NONE** | **PENDING** |
-| **4** | **9** | **004** | **Test Suite: User Lifecycle** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **PENDING** |
+| **4** | **9** | **004** | **Test Suite: User Lifecycle** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **DONE** |
 | **5** | **8** | **005** | **Frontend DRY: Select Widgets** | **MEDIUM** | **HIGH** | **LOW** | **LOW** | **PENDING** |
 | **6** | **8** | **006** | **Deconstruct `chatbot_manager.py`** | **HIGH** | **HIGH** | **MEDIUM** | **MEDIUM** | **PENDING** |
 | **7** | **8** | **007** | **Data Consistency: Centralized Timezones** | **MEDIUM** | **HIGH** | **LOW** | **LOW** | **PENDING** |
@@ -39,7 +39,7 @@ To objectively rank the tasks, a **Priority Score** was calculated using the fol
 | **9** | **7** | **009** | **Frontend Monolith: `FormTemplates.js`** | **HIGH** | **MEDIUM** | **MEDIUM** | **LOW** | **PENDING** |
 | **10** | **6** | **010** | **Fix DRY in `EditPage.js` Save Handlers** | **MEDIUM** | **MEDIUM** | **LOW** | **LOW** | **PENDING** |
 | **11** | **5** | **011** | **Refactor `group_tracker.py` Service Layer** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **LOW** | **PENDING** |
-| **12** | **4** | **012** | **Organize Test Suite** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **PENDING** |
+| **12** | **4** | **012** | **Organize Test Suite** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **DONE** |
 | **13** | **4** | **013** | **DRY in Pydantic Models** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **PENDING** |
 | **14** | **2** | **014** | **Deprecated FastAPI Event Handlers** | **LOW** | **LOW** | **LOW** | **LOW** | **PENDING** |
 
