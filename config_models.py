@@ -63,7 +63,7 @@ class ContextConfig(BaseModel):
 
 class PeriodicGroupTrackingConfig(BaseModel):
     groupIdentifier: str = Field(..., title="Group Identifier", description="The stable JID of the group to track.")
-    cronTrackingSchedule: str = Field(..., title="Cron Schedule", description="Cron expression for tracking frequency.")
+    cronTrackingSchedule: str = Field(default="0 20 * * *", title="Cron Schedule", description="Cron expression for tracking frequency.")
     displayName: str = Field(..., title="Display Name", description="User-friendly name of the group.")
 
 class UserDetails(BaseModel):

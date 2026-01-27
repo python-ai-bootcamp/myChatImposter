@@ -32,21 +32,21 @@ To objectively rank the tasks, a **Priority Score** was calculated using the fol
 | **2** | **10** | **002** | **Backend/Frontend Data Consistency (Defaults)** | **HIGH** | **HIGH** | **LOW** | **LOW** | **DONE** |
 | **3** | **10** | **003** | **Test Suite: Critical UI Logic** | **HIGH** | **HIGH** | **MEDIUM** | **NONE** | **DONE** |
 | **4** | **9** | **004** | **Test Suite: User Lifecycle** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **DONE** |
-| **5** | **8** | **005** | **Frontend DRY: Select Widgets** | **MEDIUM** | **HIGH** | **LOW** | **LOW** | **PENDING** |
+| **5** | **8** | **005** | **Frontend DRY: Select Widgets** | **MEDIUM** | **HIGH** | **LOW** | **LOW** | **DONE** |
 | **6** | **8** | **006** | **Deconstruct `chatbot_manager.py`** | **HIGH** | **HIGH** | **MEDIUM** | **MEDIUM** | **PENDING** |
 | **7** | **8** | **007** | **Data Consistency: Centralized Timezones** | **MEDIUM** | **HIGH** | **LOW** | **LOW** | **DONE** |
-| **8** | **7** | **008** | **Refactor `EditPage.js` Monolith** | **HIGH** | **HIGH** | **HIGH** | **MEDIUM** | **PENDING** |
-| **9** | **7** | **009** | **Frontend Monolith: `FormTemplates.js`** | **HIGH** | **MEDIUM** | **MEDIUM** | **LOW** | **PENDING** |
-| **10** | **6** | **010** | **Fix DRY in `EditPage.js` Save Handlers** | **MEDIUM** | **MEDIUM** | **LOW** | **LOW** | **PENDING** |
+| **8** | **7** | **008** | **Refactor `EditPage.js` Monolith** | **HIGH** | **HIGH** | **HIGH** | **MEDIUM** | **DONE** |
+| **9** | **7** | **009** | **Frontend Monolith: `FormTemplates.js`** | **HIGH** | **MEDIUM** | **MEDIUM** | **LOW** | **DONE** |
+| **10** | **6** | **010** | **Fix DRY in `EditPage.js` Save Handlers** | **MEDIUM** | **MEDIUM** | **LOW** | **LOW** | **DONE** |
 | **11** | **5** | **011** | **Refactor `group_tracker.py` Service Layer** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **LOW** | **PENDING** |
 | **12** | **4** | **012** | **Organize Test Suite** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **DONE** |
 | **13** | **4** | **013** | **DRY in Pydantic Models** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **PENDING** |
 | **14** | **2** | **014** | **Deprecated FastAPI Event Handlers** | **LOW** | **LOW** | **LOW** | **LOW** | **PENDING** |
 
 ### Progress Summary
-*   **Completed**: 6 / 14 Tasks (43%)
-*   **Tasks Done**: 001, 002, 003, 004, 007, 012
-*   **Remaining**: 8 Tasks
+*   **Completed**: 10 / 14 Tasks (71%)
+*   **Tasks Done**: 001, 002, 003, 004, 005, 007, 008, 009, 010, 012
+*   **Remaining**: 4 Tasks
 
 ---
 

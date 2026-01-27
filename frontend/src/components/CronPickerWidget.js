@@ -108,10 +108,12 @@ const styles = {
     },
     cancelButton: {
         padding: '8px 16px',
-        backgroundColor: '#f0f0f0',
-        border: '1px solid #ddd',
+        backgroundColor: '#fff',
+        color: '#dc3545',
+        border: '1px solid #dc3545',
         borderRadius: '4px',
         cursor: 'pointer',
+        fontWeight: '500',
     },
     saveButton: {
         padding: '8px 16px',
@@ -139,7 +141,7 @@ const CronPickerWidget = (props) => {
     const [activeTab, setActiveTab] = useState('daily'); // daily, weekly, custom
 
     // State for builder
-    const [time, setTime] = useState('09:00');
+    const [time, setTime] = useState('20:00');
     const [selectedDays, setSelectedDays] = useState(['1']); // Default Monday
     const [customCron, setCustomCron] = useState(value || '');
 

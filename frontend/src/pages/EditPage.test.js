@@ -111,24 +111,45 @@ beforeEach(() => {
 
 const renderComponent = () => {
   fetch.mockImplementation((url) => {
-    if (url.includes('/api/configurations/schema')) {
+    if (url.includes('/api/users/schema')) {
       return Promise.resolve({
         ok: true,
         json: () => Promise.resolve(mockSchema),
       });
     }
-    if (url.includes('/api/configurations/test-user')) {
+    // New defaults endpoint
+    if (url.includes('/api/users/defaults')) {
       return Promise.resolve({
         ok: true,
-        json: () => Promise.resolve([mockInitialData]),
+        json: () => Promise.resolve(mockInitialData),
       });
     }
-    if (url.includes('/api/configurations/')) {
+    // GET /api/users/{userId}
+    if (url.includes('/api/users/test-user')) {
+      return Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(mockInitialData), // Return object, not array [mockInitialData] (FastAPI returns Pydantic model)
+      });
+    }
+    // PUT /api/users/{userId}
+    if (url.includes('/api/users/')) {
+      // Start/Link/Reload actions
+      if (url.includes('/actions/')) {
+        return Promise.resolve({ ok: true, json: () => ({ status: 'success' }) });
+      }
       return Promise.resolve({
         ok: true,
         json: () => Promise.resolve({ status: 'success' }),
       });
     }
+    // Resources
+    if (url.includes('/api/resources/timezones')) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve(['UTC', 'Europe/London']) });
+    }
+    if (url.includes('/api/resources/languages')) {
+      return Promise.resolve({ ok: true, json: () => Promise.resolve([{ code: 'en', name: 'English', native_name: 'English' }]) });
+    }
+    // Chatbot status
     if (url.includes('/chatbot/')) {
       return Promise.resolve({
         ok: false,
@@ -178,15 +199,15 @@ test('renders the form and saves updated data with new structure', async () => {
   fireEvent.change(maxMessagesInput, { target: { value: '50' } });
   expect(maxMessagesInput.value).toBe('50');
 
-  const saveButton = screen.getByRole('button', { name: /Save/i });
+  const saveButton = screen.getByRole('button', { name: /^Save$/i });
   fireEvent.click(saveButton);
 
   await waitFor(() => {
     const putCall = fetch.mock.calls.find(call => call[1] && call[1].method === 'PUT');
     expect(putCall).toBeDefined();
-    expect(putCall[0]).toBe('/api/configurations/test-user');
+    expect(putCall[0]).toBe('/api/users/test-user');
 
-    const savedData = JSON.parse(putCall[1].body)[0];
+    const savedData = JSON.parse(putCall[1].body);
     expect(savedData.configurations.queue_config.max_messages).toBe(50);
   });
 

@@ -21,7 +21,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-    jest.useRealTimers();
+  jest.useRealTimers();
 });
 
 const mockStatuses = [
@@ -44,9 +44,9 @@ test('renders files with correct status dots and handles button states', async (
   const user3 = await screen.findByText('user3');
 
   // Check for status dots
-  expect(user1.querySelector('.status-dot')).toHaveClass('gray');
-  expect(user2.querySelector('.status-dot')).toHaveClass('orange');
-  expect(user3.querySelector('.status-dot')).toHaveClass('green');
+  expect(user1.closest('tr').querySelector('.status-dot')).toHaveClass('gray');
+  expect(user2.closest('tr').querySelector('.status-dot')).toHaveClass('orange');
+  expect(user3.closest('tr').querySelector('.status-dot')).toHaveClass('green');
 
   // --- Test button state for DISCONNECTED ---
   fireEvent.click(user1);
@@ -78,11 +78,13 @@ test('Unlink button successfully unlinks a user', async () => {
   // Mock the refresh call after delete
   fetch.mockResolvedValueOnce({
     ok: true,
-    json: async () => ({ configurations: [
+    json: async () => ({
+      configurations: [
         { user_id: 'user1', status: 'disconnected' },
         { user_id: 'user2', status: 'linking' },
         { user_id: 'user3', status: 'disconnected' }, // Status changed
-    ]}),
+      ]
+    }),
   });
 
   jest.spyOn(window, 'confirm').mockImplementation(() => true);
@@ -98,12 +100,12 @@ test('Unlink button successfully unlinks a user', async () => {
 
   // Check that the DELETE API was called
   await waitFor(() => {
-    expect(fetch).toHaveBeenCalledWith('/chatbot/user3', { method: 'DELETE' });
+    expect(fetch).toHaveBeenCalledWith('/api/users/user3/actions/unlink', { method: 'POST' });
   });
 
   // Check that the status dot has changed to gray after the refresh
   await waitFor(() => {
-    expect(connectedUser.querySelector('.status-dot')).toHaveClass('gray');
+    expect(connectedUser.closest('tr').querySelector('.status-dot')).toHaveClass('gray');
   });
 
   window.confirm.mockRestore();

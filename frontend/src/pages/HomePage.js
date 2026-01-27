@@ -397,13 +397,15 @@ function HomePage() {
                   </td>
                   <td style={tdStyle}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-                      <span style={{
-                        height: '10px',
-                        width: '10px',
-                        backgroundColor: getStatusColor(config.status),
-                        borderRadius: '50%',
-                        display: 'inline-block'
-                      }}></span>
+                      <span
+                        className={`status-dot ${getStatusColor(config.status)}`}
+                        style={{
+                          height: '10px',
+                          width: '10px',
+                          backgroundColor: getStatusColor(config.status),
+                          borderRadius: '50%',
+                          display: 'inline-block'
+                        }}></span>
                       {config.status}
                     </div>
                   </td>

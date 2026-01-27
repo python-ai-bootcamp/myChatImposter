@@ -2,217 +2,21 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate, FlatProviderConfigTemplate, TimezoneSelectWidget, LanguageSelectWidget } from '../components/FormTemplates';
+import {
+  CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget,
+  CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate,
+  InlineFieldTemplate, NarrowTextWidget, SizedTextWidget,
+  NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate,
+  FlatProviderConfigTemplate, TimezoneSelectWidget, LanguageSelectWidget
+} from '../components/FormTemplates';
+import { GroupTrackingArrayTemplate } from '../components/templates/GroupTrackingArrayTemplate';
+import { NullFieldTemplate } from '../components/templates/NullFieldTemplate';
+import { GroupNameSelectorWidget } from '../components/widgets/GroupNameSelectorWidget';
+import { ReadOnlyTextWidget } from '../components/widgets/ReadOnlyTextWidget';
+import { validateCronExpression } from '../utils/validation';
 import CronPickerWidget from '../components/CronPickerWidget';
 
-// Stable widget definitions - defined outside component to prevent re-creation on re-render
-const ReadOnlyTextWidget = (props) => {
-  return (
-    <input
-      type="text"
-      value={props.value || ''}
-      disabled
-      style={{ width: '90px', backgroundColor: '#f5f5f5', color: '#666', fontSize: '0.45rem', padding: '2px 4px' }}
-      title="Auto-filled from group selection"
-    />
-  );
-};
 
-// Group Name Selector Widget - uses formContext to access state
-const GroupNameSelectorWidget = (props) => {
-  const { availableGroups, isLinked, formData, setFormData } = props.formContext || {};
-  const [inputValue, setInputValue] = React.useState(props.value || '');
-  const [isMenuOpen, setIsMenuOpen] = React.useState(false);
-  const isFocusedRef = React.useRef(false);
-
-  // Only sync from props when not focused (external changes like JSON editor)
-  React.useEffect(() => {
-    if (!isFocusedRef.current) {
-      setInputValue(props.value || '');
-    }
-  }, [props.value]);
-
-  const groups = availableGroups || [];
-  // DEBUG: Check groups in widget
-  // console.log("GroupNameSelectorWidget groups:", groups.length, "input:", inputValue);
-
-  const filteredGroups = groups.filter(g =>
-    (g.subject || '').toLowerCase().includes((inputValue || '').toLowerCase())
-  );
-
-  const handleInputChange = (e) => {
-    // console.log("Input changed:", e.target.value);
-    setInputValue(e.target.value);
-    setIsMenuOpen(true);
-    props.onChange(e.target.value);
-  };
-
-  const handleFocus = () => {
-    isFocusedRef.current = true;
-    setIsMenuOpen(true);
-  };
-
-  const handleBlur = () => {
-    isFocusedRef.current = false;
-    setTimeout(() => setIsMenuOpen(false), 200);
-  };
-
-  const handleSelect = (group) => {
-    setInputValue(group.subject);
-    setIsMenuOpen(false);
-
-    // Extract the array index from the widget's id
-    // New path: root_features_periodic_group_tracking_tracked_groups_0_displayName
-    const idMatch = props.id.match(/tracked_groups_(\d+)_displayName$/);
-    if (idMatch && formData && setFormData) {
-      const idx = parseInt(idMatch[1], 10);
-      const currentData = JSON.parse(JSON.stringify(formData));
-      if (currentData?.features?.periodic_group_tracking?.tracked_groups?.[idx]) {
-        currentData.features.periodic_group_tracking.tracked_groups[idx].groupIdentifier = group.id;
-        currentData.features.periodic_group_tracking.tracked_groups[idx].displayName = group.subject;
-        setFormData(currentData);
-      }
-    }
-  };
-
-  if (!isLinked) {
-    return (
-      <input
-        type="text"
-        value={props.value || '(connect to select)'}
-        disabled
-        style={{ width: '150px', backgroundColor: '#f0f0f0' }}
-        title="Adding or changing group details is prohibited for disconnected users"
-      />
-    );
-  }
-
-  return (
-    <div style={{ position: 'relative' }}>
-      <input
-        type="text"
-        placeholder="Type group name..."
-        value={inputValue}
-        onChange={handleInputChange}
-        onFocus={handleFocus}
-        onBlur={handleBlur}
-        style={{ width: '150px', padding: '4px' }}
-      />
-      {isMenuOpen && filteredGroups.length > 0 && (
-        <div style={{
-          position: 'absolute',
-          top: '100%',
-          left: 0,
-          width: '300px',
-          maxHeight: '200px',
-          overflowY: 'auto',
-          border: '1px solid #ccc',
-          backgroundColor: '#fff',
-          zIndex: 1000,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
-        }}>
-          {filteredGroups.map(g => (
-            <div
-              key={g.id}
-              onMouseDown={() => handleSelect(g)}
-              style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #eee' }}
-            >
-              <strong>{g.subject}</strong><br />
-              <small style={{ color: '#666' }}>{g.id}</small>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-};
-
-// Custom array template for tracked_groups - disables Add when not connected
-// Uses formContext to access isLinked state
-const GroupTrackingArrayTemplate = (props) => {
-  const { isLinked } = props.formContext || {};
-
-  const btnStyle = {
-    padding: '0.1rem 0.4rem',
-    fontSize: '0.8rem',
-    lineHeight: 1.2,
-    border: '1px solid #ccc',
-    borderRadius: '3px',
-    cursor: 'pointer'
-  };
-  const disabledBtnStyle = {
-    ...btnStyle,
-    cursor: 'not-allowed',
-    backgroundColor: '#f8f8f8',
-    color: '#ccc',
-  };
-
-  return (
-    <div style={{ border: '1px solid #ccc', borderRadius: '4px', padding: '1rem' }}>
-      {props.title && (
-        <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
-          {props.title}
-        </h3>
-      )}
-      {props.items &&
-        props.items.map(element => (
-          <div key={element.key} style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
-            <span style={{ marginRight: '0.5rem' }}>•</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <div>{element.children}</div>
-              <div style={{ display: 'flex', gap: '0.3rem' }}>
-                <button
-                  type="button"
-                  onClick={element.onReorderClick(element.index, element.index - 1)}
-                  style={element.hasMoveUp ? btnStyle : disabledBtnStyle}
-                  disabled={!element.hasMoveUp}
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  onClick={element.onReorderClick(element.index, element.index + 1)}
-                  style={element.hasMoveDown ? btnStyle : disabledBtnStyle}
-                  disabled={!element.hasMoveDown}
-                >
-                  ↓
-                </button>
-                <button
-                  type="button"
-                  onClick={element.onDropIndexClick(element.index)}
-                  style={element.hasRemove ? btnStyle : disabledBtnStyle}
-                  disabled={!element.hasRemove}
-                >
-                  -
-                </button>
-              </div>
-            </div>
-          </div>
-        ))}
-
-      {/* Add button - only enabled when connected */}
-      <button
-        type="button"
-        onClick={props.onAddClick}
-        disabled={!isLinked}
-        style={{
-          ...btnStyle,
-          padding: '0.3rem 0.6rem',
-          marginTop: '0.5rem',
-          opacity: isLinked ? 1 : 0.5
-        }}
-        title={isLinked ? 'Add new group' : 'Adding or changing group details is prohibited for disconnected users'}
-      >
-        + Add
-      </button>
-    </div>
-  );
-};
-
-
-
-// A template that renders nothing, used to completely hide a field including its label and required asterisk
-const NullFieldTemplate = () => null;
 
 
 function EditPage() {
@@ -456,15 +260,18 @@ function EditPage() {
     }
   };
 
-  const handleSave = async ({ formData }) => {
+  const saveConfiguration = async (mode, submitData = formData) => {
     setIsSaving(true);
     setError(null);
     try {
-      // Validate cron expressions before saving
-      setCronErrors([]); // Reset errors
+      const currentData = submitData;
+
+      // 1. Validate Cron Expressions
+      setCronErrors([]);
       let hasCronErrors = false;
       const newCronErrors = [];
-      const tracking = formData?.features?.periodic_group_tracking?.tracked_groups;
+      const tracking = currentData?.features?.periodic_group_tracking?.tracked_groups;
+
       if (tracking && Array.isArray(tracking)) {
         for (let i = 0; i < tracking.length; i++) {
           const cron = tracking[i].cronTrackingSchedule;
@@ -480,7 +287,7 @@ function EditPage() {
         setCronErrors(newCronErrors);
         setSaveAttempt(prev => prev + 1);
         setIsSaving(false);
-        // Scroll to the first error
+        // Scroll to error
         setTimeout(() => {
           const firstIndex = newCronErrors.findIndex(e => e);
           if (firstIndex !== -1) {
@@ -495,210 +302,67 @@ function EditPage() {
         return;
       }
 
-      if (!isNew && formData.user_id !== userId) {
+      // 2. Validate User ID
+      if (!isNew && currentData.user_id !== userId) {
         throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
       }
 
-      const finalApiData = { ...formData, user_id: userId };
-
-      const response = await fetch(`/api/users/${userId}`, {
+      // 3. Save Configuration (PUT)
+      const finalApiData = { ...currentData, user_id: userId };
+      const saveResponse = await fetch(`/api/users/${userId}`, {
         method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(finalApiData),
       });
 
-      if (!response.ok) {
-        const errorBody = await response.json();
+      if (!saveResponse.ok) {
+        const errorBody = await saveResponse.json();
         const detail = typeof errorBody.detail === 'object' && errorBody.detail !== null
           ? JSON.stringify(errorBody.detail, null, 2)
           : errorBody.detail;
         throw new Error(detail || 'Failed to save configuration.');
       }
 
-      navigate('/');
-    } catch (err) {
-      setError(`Failed to save: ${err.message}`);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleSaveAndReload = async () => {
-    setIsSaving(true);
-    setError(null);
-    try {
-      // Validate cron expressions before saving
-      setCronErrors([]); // Reset errors
-      let hasCronErrors = false;
-      const newCronErrors = [];
-      const currentFormData = formData;
-      const tracking = currentFormData?.features?.periodic_group_tracking?.tracked_groups;
-      if (tracking && Array.isArray(tracking)) {
-        for (let i = 0; i < tracking.length; i++) {
-          const cron = tracking[i].cronTrackingSchedule;
-          const validation = validateCronExpression(cron);
-          if (!validation.valid) {
-            newCronErrors[i] = validation.error;
-            hasCronErrors = true;
-          }
+      // 4. Handle Post-Save Actions
+      if (mode === 'reload') {
+        const reloadResponse = await fetch(`/api/users/${userId}/actions/reload`, {
+          method: 'POST',
+        });
+        if (!reloadResponse.ok) {
+          const errorBody = await reloadResponse.json();
+          throw new Error(errorBody.detail || 'Failed to reload configuration.');
         }
-      }
-
-      if (hasCronErrors) {
-        setCronErrors(newCronErrors);
-        setSaveAttempt(prev => prev + 1);
-        setIsSaving(false);
-        // Scroll to the first error
-        setTimeout(() => {
-          const firstIndex = newCronErrors.findIndex(e => e);
-          if (firstIndex !== -1) {
-            const elementId = `root_features_periodic_group_tracking_tracked_groups_${firstIndex}_cronTrackingSchedule`;
-            const element = document.getElementById(elementId);
-            if (element) {
-              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              element.focus();
-            }
-          }
-        }, 100);
-        return;
-      }
-
-      // First, save the configuration. We get the form data from the ref.
-      if (!isNew && formData.user_id !== userId) {
-        throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
-      }
-
-      const finalApiData = { ...formData, user_id: userId };
-
-      const saveResponse = await fetch(`/api/users/${userId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(finalApiData),
-      });
-
-      if (!saveResponse.ok) {
-        const errorBody = await saveResponse.json();
-        throw new Error(errorBody.detail || 'Failed to save configuration.');
-      }
-
-      // If save is successful, then reload
-      const reloadResponse = await fetch(`/api/users/${userId}/actions/reload`, {
-        method: 'POST',
-      });
-
-      if (!reloadResponse.ok) {
-        const errorBody = await reloadResponse.json();
-        throw new Error(errorBody.detail || 'Failed to reload configuration.');
-      }
-
-      // If both are successful, navigate to the link page
-      navigate('/');
-
-    } catch (err) {
-      setError(`Failed to save and reload: ${err.message}`);
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const handleSaveAndLink = async () => {
-    setIsSaving(true);
-    setError(null);
-    try {
-      // Validate cron expressions before saving
-      setCronErrors([]); // Reset errors
-      let hasCronErrors = false;
-      const newCronErrors = [];
-      const currentFormData = formData;
-      const tracking = currentFormData?.features?.periodic_group_tracking?.tracked_groups;
-      if (tracking && Array.isArray(tracking)) {
-        for (let i = 0; i < tracking.length; i++) {
-          const cron = tracking[i].cronTrackingSchedule;
-          const validation = validateCronExpression(cron);
-          if (!validation.valid) {
-            newCronErrors[i] = validation.error;
-            hasCronErrors = true;
-          }
+        navigate('/');
+      } else if (mode === 'link') {
+        const createResponse = await fetch(`/api/users/${userId}/actions/link`, {
+          method: 'POST',
+        });
+        if (!createResponse.ok) {
+          const errorBody = await createResponse.json();
+          throw new Error(errorBody.detail || `Failed to start session (HTTP ${createResponse.status})`);
         }
+        navigate(`/?auto_link=${userId}`);
+      } else {
+        // mode === 'save'
+        navigate('/');
       }
-
-      if (hasCronErrors) {
-        setCronErrors(newCronErrors);
-        setSaveAttempt(prev => prev + 1);
-        setIsSaving(false);
-        // Scroll to the first error
-        setTimeout(() => {
-          const firstIndex = newCronErrors.findIndex(e => e);
-          if (firstIndex !== -1) {
-            const elementId = `root_features_periodic_group_tracking_tracked_groups_${firstIndex}_cronTrackingSchedule`;
-            const element = document.getElementById(elementId);
-            if (element) {
-              element.scrollIntoView({ behavior: 'smooth', block: 'center' });
-              element.focus();
-            }
-          }
-        }, 100);
-        return;
-      }
-
-      // Save the configuration first
-      if (!isNew && formData.user_id !== userId) {
-        throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
-      }
-
-      const finalApiData = { ...formData, user_id: userId };
-
-      const saveResponse = await fetch(`/api/users/${userId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(finalApiData),
-      });
-
-      if (!saveResponse.ok) {
-        const errorBody = await saveResponse.json();
-        throw new Error(errorBody.detail || 'Failed to save configuration.');
-      }
-
-      // Start the session by calling POST /actions/link (no body needed since config is saved)
-      const createResponse = await fetch(`/api/users/${userId}/actions/link`, {
-        method: 'POST',
-      });
-
-      if (!createResponse.ok) {
-        const errorBody = await createResponse.json();
-        throw new Error(errorBody.detail || `Failed to start session (HTTP ${createResponse.status})`);
-      }
-
-      // Navigate to the link page to show linking status
-      // Use query parameter for robust state passing
-      navigate(`/?auto_link=${userId}`);
 
     } catch (err) {
-      setError(`Failed to save and link: ${err.message}`);
+      setError(`Failed during ${mode}: ${err.message}`);
     } finally {
       setIsSaving(false);
     }
   };
+
+  const handleSave = ({ formData: submittedData }) => saveConfiguration('save', submittedData);
+  const handleSaveAndReload = () => saveConfiguration('reload');
+  const handleSaveAndLink = () => saveConfiguration('link');
 
   const handleCancel = () => {
     navigate('/');
   };
 
-  // Cron validation helper
-  const validateCronExpression = (cron) => {
-    if (!cron) return { valid: false, error: 'Required' };
-    const parts = cron.trim().split(/\s+/);
-    if (parts.length !== 5) {
-      return { valid: false, error: 'Must have 5 parts (min hour day month weekday)' };
-    }
-    const validChars = /^[0-9*/,-]+$/;
-    if (!parts.every(p => validChars.test(p))) {
-      return { valid: false, error: 'Invalid characters. Allowed: 0-9 * / , -' };
-    }
-    return { valid: true, error: null };
-  };
+
 
   if (error) {
     return <div>Error: {error}</div>;
