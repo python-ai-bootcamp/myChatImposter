@@ -8,7 +8,11 @@ from fastapi.responses import JSONResponse
 from fastapi.concurrency import run_in_threadpool
 from pymongo.errors import DuplicateKeyError
 
-from config_models import UserConfiguration
+from config_models import (
+    UserConfiguration, ConfigurationsSettings, FeaturesConfiguration,
+    ChatProviderConfig, LLMProviderConfig, ChatProviderSettings, LLMProviderSettings,
+    UserDetails, QueueConfig, ContextConfig
+)
 from chatbot_manager import ChatbotInstance
 from dependencies import GlobalStateManager
 
@@ -175,6 +179,33 @@ async def get_configuration_schema():
                                  option['title'] = 'Undefined'
 
     return schema
+
+@router.get("/defaults", response_model=UserConfiguration)
+async def get_user_defaults():
+    """
+    Get default user configuration template.
+    """
+    return UserConfiguration(
+        user_id="default_template",
+        configurations=ConfigurationsSettings(
+            user_details=UserDetails(),
+            chat_provider_config=ChatProviderConfig(
+                provider_name="whatsapp_baileys",
+                provider_config=ChatProviderSettings()
+            ),
+            # Explicitly include LLM config which was missing in frontend defaults
+            llm_provider_config=LLMProviderConfig(
+                provider_name="openai",
+                provider_config=LLMProviderSettings(
+                    model="gpt-4",
+                    api_key_source="environment"
+                )
+            ),
+            queue_config=QueueConfig(),
+            context_config=ContextConfig()
+        ),
+        features=FeaturesConfiguration()
+    )
 
 @router.get("/{user_id}")
 async def get_user_configuration(user_id: str):

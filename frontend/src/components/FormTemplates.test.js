@@ -64,12 +64,24 @@ describe('FormTemplates Widgets', () => {
     // --- Complex Widgets ---
 
     describe('TimezoneSelectWidget', () => {
+        const mockTimezones = ['UTC', 'Europe/London', 'Europe/Paris', 'America/New_York'];
 
-        test('renders current value and opens dropdown', () => {
-            render(<TimezoneSelectWidget value="UTC" onChange={() => { }} />);
+        beforeEach(() => {
+            fetch.mockImplementation((url) => {
+                if (url.includes('timezones')) {
+                    return Promise.resolve({
+                        ok: true,
+                        json: async () => mockTimezones
+                    });
+                }
+                return Promise.resolve({ ok: false });
+            });
+        });
 
-            // Should show selected value (and offset)
-            expect(screen.getByText(/UTC/)).toBeInTheDocument();
+        test('renders current value and opens dropdown', async () => {
+            await act(async () => {
+                render(<TimezoneSelectWidget value="UTC" onChange={() => { }} />);
+            });
 
             // Click to open
             fireEvent.click(screen.getByText(/UTC/));
@@ -81,8 +93,11 @@ describe('FormTemplates Widgets', () => {
             expect(screen.getByText('Europe/London')).toBeInTheDocument();
         });
 
-        test('filters options', () => {
-            render(<TimezoneSelectWidget value="" onChange={() => { }} />);
+        test('filters options', async () => {
+            await act(async () => {
+                render(<TimezoneSelectWidget value="" onChange={() => { }} />);
+            });
+
             fireEvent.click(screen.getByText('Select timezone...'));
 
             const filterInput = screen.getByPlaceholderText('Filter...');
@@ -94,11 +109,13 @@ describe('FormTemplates Widgets', () => {
             expect(screen.queryByText('Europe/London')).not.toBeInTheDocument();
         });
 
-        test('calls onChange when option selected', () => {
+        test('calls onChange when option selected', async () => {
             const handleChange = jest.fn();
-            render(<TimezoneSelectWidget value="" onChange={handleChange} />);
-            fireEvent.click(screen.getByText('Select timezone...'));
+            await act(async () => {
+                render(<TimezoneSelectWidget value="" onChange={handleChange} />);
+            });
 
+            fireEvent.click(screen.getByText('Select timezone...'));
             fireEvent.click(screen.getByText('Europe/Paris'));
 
             expect(handleChange).toHaveBeenCalledWith('Europe/Paris');

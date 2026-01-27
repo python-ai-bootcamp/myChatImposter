@@ -21,3 +21,14 @@ async def list_languages():
     - native_name: Native language name (e.g., 'Русский')
     """
     return get_all_languages()
+
+@router.get("/timezones")
+async def list_timezones():
+    """
+    Get all supported timezones.
+    
+    Returns:
+        List of timezone strings (e.g., 'UTC', 'Europe/London').
+    """
+    from resources import get_all_timezones
+    return get_all_timezones()

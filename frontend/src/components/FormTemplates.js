@@ -65,29 +65,7 @@ export function SystemPromptWidget(props) {
 }
 
 // Common IANA timezones with friendly display names
-const COMMON_TIMEZONES = [
-  'UTC',
-  'Europe/London',
-  'Europe/Paris',
-  'Europe/Berlin',
-  'Europe/Moscow',
-  'Asia/Jerusalem',
-  'Asia/Dubai',
-  'Asia/Kolkata',
-  'Asia/Bangkok',
-  'Asia/Singapore',
-  'Asia/Hong_Kong',
-  'Asia/Tokyo',
-  'Australia/Sydney',
-  'Pacific/Auckland',
-  'America/New_York',
-  'America/Chicago',
-  'America/Denver',
-  'America/Los_Angeles',
-  'America/Sao_Paulo',
-  'Africa/Cairo',
-  'Africa/Johannesburg'
-];
+// Timezones are now fetched from /api/resources/timezones
 
 // Get UTC offset string for a timezone (e.g., "+02:00", "-05:00")
 function getTimezoneOffset(timezone) {
@@ -122,11 +100,22 @@ function getTimezoneOffset(timezone) {
 export function TimezoneSelectWidget(props) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [filter, setFilter] = React.useState('');
+  const [timezones, setTimezones] = React.useState([]);
   const containerRef = React.useRef(null);
+
+  React.useEffect(() => {
+    fetch('/api/resources/timezones')
+      .then(res => {
+        if (!res.ok) throw new Error('Network response was not ok');
+        return res.json();
+      })
+      .then(data => setTimezones(data))
+      .catch(err => console.error("Failed to fetch timezones:", err));
+  }, []);
 
   // Build timezone options with offsets
   const timezoneOptions = React.useMemo(() => {
-    return COMMON_TIMEZONES.map(tz => ({
+    return timezones.map(tz => ({
       value: tz,
       label: tz.replace(/_/g, ' '),
       offset: getTimezoneOffset(tz)
@@ -137,7 +126,7 @@ export function TimezoneSelectWidget(props) {
       if (offsetA !== offsetB) return offsetA.localeCompare(offsetB);
       return a.label.localeCompare(b.label);
     });
-  }, []);
+  }, [timezones]);
 
   // Filter options based on input
   const filteredOptions = React.useMemo(() => {

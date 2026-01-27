@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import Form from '@rjsf/core';
 import validator from '@rjsf/validator-ajv8';
-import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate, LLMProviderConfigFieldTemplate, FlatProviderConfigTemplate, TimezoneSelectWidget, LanguageSelectWidget } from '../components/FormTemplates';
+import { CustomFieldTemplate, CustomObjectFieldTemplate, CustomCheckboxWidget, CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate, InlineFieldTemplate, NarrowTextWidget, SizedTextWidget, NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate, FlatProviderConfigTemplate, TimezoneSelectWidget, LanguageSelectWidget } from '../components/FormTemplates';
 import CronPickerWidget from '../components/CronPickerWidget';
 
 // Stable widget definitions - defined outside component to prevent re-creation on re-render
@@ -209,39 +209,7 @@ const GroupTrackingArrayTemplate = (props) => {
   );
 };
 
-// Cron input widget that shows validation errors inline
-const CronInputWidget = (props) => {
-  const { cronErrors } = props.formContext || {};
 
-  // Extract index from ID: root_features_periodic_group_tracking_tracked_groups_0_cronTrackingSchedule
-  const idMatch = props.id.match(/tracked_groups_(\d+)_cronTrackingSchedule$/);
-  const index = idMatch ? parseInt(idMatch[1], 10) : -1;
-  const error = cronErrors && cronErrors[index];
-
-  const width = props.options?.width || '120px';
-  const style = {
-    width,
-    // Only apply error styles, let defaults handle the rest
-    ...(error ? {
-      border: '2px solid red',
-      outline: 'none',
-      boxShadow: '0 0 3px red'
-    } : {})
-  };
-
-  return (
-    <input
-      type="text"
-      id={props.id}
-      value={props.value || ''}
-      required={props.required}
-      onChange={(event) => props.onChange(event.target.value)}
-      style={style}
-      placeholder={props.placeholder || "0/15 * * * *"}
-      title={error ? `Error: ${error}` : "Cron expression: minute hour day month weekday"}
-    />
-  );
-};
 
 // A template that renders nothing, used to completely hide a field including its label and required asterisk
 const NullFieldTemplate = () => null;
@@ -303,51 +271,19 @@ function EditPage() {
 
         let initialFormData;
         if (isNew) {
-          // Initialize with the new structure
-          initialFormData = {
-            user_id: userId,
-            configurations: {
-              user_details: {
-                first_name: '',
-                last_name: '',
-                timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
-              },
-              chat_provider_config: {
-                provider_name: 'whatsapp_baileys',
-                provider_config: {
-                  allow_group_messages: false,
-                  process_offline_messages: false
-                }
-              },
-              queue_config: {
-                max_messages: 10,
-                max_characters: 1000,
-                max_days: 1,
-                max_characters_single_message: 300
-              },
-              context_config: {
-                max_messages: 10,
-                max_characters: 1000,
-                max_days: 1,
-                max_characters_single_message: 300,
-                shared_context: true
-              }
-            },
-            features: {
-              automatic_bot_reply: {
-                enabled: false,
-                respond_to_whitelist: [],
-                respond_to_whitelist_group: []
-              },
-              periodic_group_tracking: {
-                enabled: false,
-                tracked_groups: []
-              },
-              kid_phone_safety_tracking: {
-                enabled: false
-              }
-            }
-          };
+          // Fetch dynamic defaults from backend (Single Source of Truth)
+          const defaultsResponse = await fetch('/api/users/defaults');
+          if (!defaultsResponse.ok) throw new Error('Failed to fetch configuration defaults.');
+          initialFormData = await defaultsResponse.json();
+
+          // Override with current context
+          initialFormData.user_id = userId;
+
+          // Use browser's detected timezone instead of backend default (usually UTC)
+          const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+          if (localTimezone && initialFormData.configurations?.user_details) {
+            initialFormData.configurations.user_details.timezone = localTimezone;
+          }
         } else {
           const dataResponse = await fetch(`/api/users/${userId}`);
           if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');
@@ -757,7 +693,7 @@ function EditPage() {
     if (parts.length !== 5) {
       return { valid: false, error: 'Must have 5 parts (min hour day month weekday)' };
     }
-    const validChars = /^[0-9*/,\-]+$/;
+    const validChars = /^[0-9*/,-]+$/;
     if (!parts.every(p => validChars.test(p))) {
       return { valid: false, error: 'Invalid characters. Allowed: 0-9 * / , -' };
     }

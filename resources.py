@@ -91,3 +91,38 @@ def get_all_languages() -> list:
         List of language dicts, each with code, name, native_name.
     """
     return LANGUAGES.copy()
+
+
+# Common IANA timezones (Centralized Source of Truth)
+TIMEZONES = [
+    'UTC',
+    'Europe/London',
+    'Europe/Paris',
+    'Europe/Berlin',
+    'Europe/Moscow',
+    'Asia/Jerusalem',
+    'Asia/Dubai',
+    'Asia/Kolkata',
+    'Asia/Bangkok',
+    'Asia/Singapore',
+    'Asia/Hong_Kong',
+    'Asia/Tokyo',
+    'Australia/Sydney',
+    'Pacific/Auckland',
+    'America/New_York',
+    'America/Chicago',
+    'America/Denver',
+    'America/Los_Angeles',
+    'America/Sao_Paulo',
+    'Africa/Cairo',
+    'Africa/Johannesburg'
+]
+
+def get_all_timezones() -> list:
+    """
+    Get all supported timezones.
+    
+    Returns:
+        List of timezone strings (IANA format).
+    """
+    return TIMEZONES.copy()
