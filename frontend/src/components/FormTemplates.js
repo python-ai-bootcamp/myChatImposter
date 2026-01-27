@@ -254,44 +254,36 @@ export function TimezoneSelectWidget(props) {
   );
 }
 
-// Common ISO 639-1 language codes with display names
-const COMMON_LANGUAGES = [
-  { code: 'en', name: 'English' },
-  { code: 'he', name: 'Hebrew (עברית)' },
-  { code: 'ar', name: 'Arabic (العربية)' },
-  { code: 'es', name: 'Spanish (Español)' },
-  { code: 'fr', name: 'French (Français)' },
-  { code: 'de', name: 'German (Deutsch)' },
-  { code: 'ru', name: 'Russian (Русский)' },
-  { code: 'zh', name: 'Chinese (中文)' },
-  { code: 'ja', name: 'Japanese (日本語)' },
-  { code: 'pt', name: 'Portuguese (Português)' },
-  { code: 'it', name: 'Italian (Italiano)' },
-  { code: 'ko', name: 'Korean (한국어)' },
-  { code: 'nl', name: 'Dutch (Nederlands)' },
-  { code: 'pl', name: 'Polish (Polski)' },
-  { code: 'tr', name: 'Turkish (Türkçe)' },
-  { code: 'hi', name: 'Hindi (हिन्दी)' },
-  { code: 'th', name: 'Thai (ไทย)' },
-  { code: 'vi', name: 'Vietnamese (Tiếng Việt)' },
-  { code: 'uk', name: 'Ukrainian (Українська)' },
-  { code: 'sv', name: 'Swedish (Svenska)' }
-];
-
-// Filterable language dropdown widget
+// Filterable language dropdown widget - fetches from API
 export function LanguageSelectWidget(props) {
   const [isOpen, setIsOpen] = React.useState(false);
   const [filter, setFilter] = React.useState('');
+  const [languages, setLanguages] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
   const containerRef = React.useRef(null);
 
-  // Build language options
+  // Fetch languages from API on mount
+  React.useEffect(() => {
+    fetch('/api/resources/languages')
+      .then(res => res.json())
+      .then(data => {
+        setLanguages(data);
+        setLoading(false);
+      })
+      .catch(err => {
+        console.error('Failed to fetch languages:', err);
+        setLoading(false);
+      });
+  }, []);
+
+  // Build language options from API data
   const languageOptions = React.useMemo(() => {
-    return COMMON_LANGUAGES.map(lang => ({
+    return languages.map(lang => ({
       value: lang.code,
-      label: lang.name,
+      label: `${lang.name} (${lang.native_name})`,
       code: lang.code.toUpperCase()
     })).sort((a, b) => a.label.localeCompare(b.label));
-  }, []);
+  }, [languages]);
 
   // Filter options based on input
   const filteredOptions = React.useMemo(() => {
@@ -306,8 +298,8 @@ export function LanguageSelectWidget(props) {
   // Get display text for current value
   const currentOption = languageOptions.find(opt => opt.value === props.value);
   const displayText = currentOption
-    ? `${currentOption.label} (${currentOption.code})`
-    : props.value || 'Select language...';
+    ? currentOption.label
+    : loading ? 'Loading...' : (props.value || 'Select language...');
 
   // Close dropdown when clicking outside
   React.useEffect(() => {
@@ -329,12 +321,12 @@ export function LanguageSelectWidget(props) {
   return (
     <div ref={containerRef} style={{ position: 'relative', display: 'inline-block', width: '250px' }}>
       <div
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={() => !loading && setIsOpen(!isOpen)}
         style={{
           padding: '4px 8px',
           border: '1px solid #ccc',
           borderRadius: '3px',
-          cursor: 'pointer',
+          cursor: loading ? 'wait' : 'pointer',
           backgroundColor: '#fff',
           display: 'flex',
           justifyContent: 'space-between',

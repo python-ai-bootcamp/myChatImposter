@@ -9,6 +9,7 @@ from langchain_core.output_parsers import StrOutputParser
 
 from config_models import LLMProviderConfig
 from llm_providers.base import BaseLlmProvider
+from resources import get_language_name
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -95,7 +96,7 @@ class ActionItemExtractor:
 
 General rules:
 
-* task_title and task_description fields in output json must be written in the defined language identified by language code = '{language_code}'.
+* task_title and task_description fields in output json must be written in language_code='{language_code}' ({language_name}).
 * any important event must be included, even if no deadline is specified.
 * if a task or event includes any form of date or deadline, it must appear verbatim in text_deadline and be parsed into timestamp_deadline as defined below.
 * if a task or event is canceled it is also considered an actionable item, if new alternative date is suggested, wrap them both in a single actionable item. do not split into two actionable items.
@@ -126,7 +127,7 @@ Field rules:
     - If no deadline exists, use an empty string.
 * task_title:
     - must be a short, concise task title
-    - must be written in the defined language identified by language code = '{language_code}' regardless of relevant_task_messages origin language
+    - must be written in {language_name} regardless of relevant_task_messages origin language
 * task_description: 
     - must aggregate information from all related messages 
     - should includes relevant details: 
@@ -134,12 +135,12 @@ Field rules:
         -- all people mentioned as relevant to the task's essence  
         -- a deadline or event date at the end of the task_description message (if one is available). 
     - deadline or event date format:    
-       -- weekday name (in defined language, full weekday name, no shortname), date(formatted dd/mm/yyyy only), and time (24h formatted). If no hour was specified, neglect it.
-       -- if the deadline was relative, include a resolved absolute deadline in following format: (weekday name (in defined language, full weekday name, no shortname), date(formatted dd/mm/yyyy only), and time (24h formatted). If no hour was specified, neglect it.
+       -- weekday name (in {language_name}, full weekday name, no shortname), date(formatted dd/mm/yyyy only), and time (24h formatted). If no hour was specified, neglect it.
+       -- if the deadline was relative, include a resolved absolute deadline in following format: (weekday name (in {language_name}, full weekday name, no shortname), date(formatted dd/mm/yyyy only), and time (24h formatted). If no hour was specified, neglect it.
        -- double check weekday corresponds to the absolute date found in timestamp_deadline correctly
     - if relevant people are mentioned do not alter their name spelling in any way. copy it AS IS to the letter. no removal of any Matres lectionis (vowel indicators)!!!
     - double check that the quoted names appear identical (string compare) to the actual names appearing in message content or sender field inside relevant_task_messages correspondence    
-    - must be written in the defined language identified by language code = '{language_code}' regardless of relevant_task_messages origin language
+    - must be written in {language_name} regardless of relevant_task_messages origin language
     
 RELEVANT_TASK_MESSAGE format:
 {{
@@ -156,8 +157,9 @@ RELEVANT_TASK_MESSAGE format:
         if record_enabled:
             recorder = LLMRecorder(user_id, "periodic_group_tracking", group_id)
             epoch_ts = recorder.start_recording()
-            # Format prompt for recording - substitute language_code variable
-            formatted_prompt = system_prompt_template.replace("{language_code}", language_code)
+            # Format prompt for recording - substitute language_name variable
+            language_name = get_language_name(language_code)
+            formatted_prompt = system_prompt_template.replace("{language_name}", language_name)
             recorder.record_prompt(formatted_prompt, messages_json, epoch_ts=epoch_ts)
             # Record full LLM config (model, temperature, reasoning_effort, etc.)
             config_dict = llm_config.provider_config.model_dump()
@@ -186,8 +188,9 @@ RELEVANT_TASK_MESSAGE format:
             
             chain = prompt | llm | StrOutputParser()
             
-            # Inspect and log the actul formatted messages
-            formatted_messages = await prompt.aformat_messages(input=messages_json, language_code=language_code)
+            # Inspect and log the actual formatted messages
+            language_name = get_language_name(language_code)
+            formatted_messages = await prompt.aformat_messages(input=messages_json, language_code=language_code, language_name=language_name)
             print(f"--- LLM PROMPT DEBUG ---")
             print(f"System Message Content: {formatted_messages[0].content}")
             print(f"Human Message Content: {formatted_messages[1].content}")
@@ -195,7 +198,7 @@ RELEVANT_TASK_MESSAGE format:
 
             # Invoke the chain with all template variables
             logger.info(f"Invoking LLM for action items extraction for user {user_id}")
-            result = await chain.ainvoke({"input": messages_json, "language_code": language_code})
+            result = await chain.ainvoke({"input": messages_json, "language_code": language_code, "language_name": language_name})
             print(f"--- LLM RESULT DEBUG ---\n{result}\n-----------------------")
             
             # Sanitize LLM common error (escaped single quotes are invalid JSON)
