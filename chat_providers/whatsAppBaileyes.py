@@ -483,7 +483,6 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     return response.json().get('messages', [])
                 logging.warning(f"Failed to fetch historic messages: {response.text}")
                 return None # Return None to indicate failure
-                return None # Return None to indicate failure
         except Exception as e:
             logging.error(f"Exception while fetching historic messages: {e}")
             return None # Return None to indicate failure
