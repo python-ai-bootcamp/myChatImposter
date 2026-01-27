@@ -5,39 +5,28 @@ import datetime
 from typing import Dict, List, Optional
 from email.utils import formatdate
 
+from locale_loader import LocaleLoader
+
+
 class ActionableItemFormatter:
     """
     Formatter for Actionable Items.
-    Handles localization (English/Hebrew) and formatting for WhatsApp "Visual Cards".
+    Handles localization and formatting for WhatsApp "Visual Cards".
     Also generates .ics calendar files.
+    
+    Locale strings are loaded from external JSON files in 'locales/actionable_item/'.
+    If a requested language is not available, English is used as fallback.
     """
 
-    STRINGS = {
-        "en": {
-            "header_icon": "📝",
-            "divider": "─────────────────────",
-            "group": "📂 *Group*",
-            "goal": "📌 *Description*",
-            "deadline_text": "⏰ *Due (from text)*",
-            "deadline_date": "🗓️ *Date*",
-            "context_header": "💬 *Relevant Messages*",
-            "footer": "Attached: 📎 Calendar Event"
-        },
-        "he": {
-            "header_icon": "📝",
-            "divider": "─────────────────────",
-            "group": "📂 *קבוצה*",
-            "goal": "📌 *תיאור*",
-            "deadline_text": "⏰ *מועד (ממקור הטקסט)*",
-            "deadline_date": "🗓️ *תאריך יעד*",
-            "context_header": "💬 *הודעות רלוונטיות*",
-            "footer": "מצורף: 📎 אירוע ליומן"
-        }
-    }
+    LOCALE_DOMAIN = "actionable_item"
 
     @staticmethod
-    def _get_strings(language_code: str):
-        return ActionableItemFormatter.STRINGS.get(language_code, ActionableItemFormatter.STRINGS["en"])
+    def _get_strings(language_code: str) -> dict:
+        """
+        Get locale strings for the specified language.
+        Falls back to English if the language is not available.
+        """
+        return LocaleLoader.get(ActionableItemFormatter.LOCALE_DOMAIN, language_code)
 
     @staticmethod
     def format_card(item: Dict, language_code: str = "en") -> str:

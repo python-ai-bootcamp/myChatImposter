@@ -1,0 +1,10 @@
+{
+    "header_icon": "📝",
+    "divider": "─────────────────────",
+    "group": "📂 *Group*",
+    "goal": "📌 *Description*",
+    "deadline_text": "⏰ *Due (from text)*",
+    "deadline_date": "🗓️ *Date*",
+    "context_header": "💬 *Relevant Messages*",
+    "footer": "Attached: 📎 Calendar Event"
+}

@@ -103,6 +103,12 @@
 *   **Risk**: **LOW**
 *   **Findings**: `ActionableItemFormatter` defines language strings directly in the class code.
 *   **Recommendation**: Move strings to a `locales.json` or similar resource file to separate content from code.
+*   **Action Taken**:
+    *   [x] Created `locales/actionable_item/en.json` with English strings.
+    *   [x] Created `locales/actionable_item/he.json` with Hebrew strings.
+    *   [x] Created `locale_loader.py` with `LocaleLoader` class featuring caching and automatic English fallback.
+    *   [x] Refactored `ActionableItemFormatter` to use `LocaleLoader`.
+    *   [x] Created unit tests in `tests/test_actionable_item_formatter.py`.
 
 ---
 
@@ -116,4 +122,4 @@
 | **004** | **Router Logic Leakage** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **LOW** | **COMPLETED** |
 | **005** | **Nested Whitelist Logic** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **PENDING** |
 | **006** | **Queue Consumer Polymorphism** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **COMPLETED** |
-| **007** | **Formatting Hardcoding** | **LOW** | **LOW** | **LOW** | **LOW** | **PENDING** |
+| **007** | **Formatting Hardcoding** | **LOW** | **LOW** | **LOW** | **LOW** | **COMPLETED** |

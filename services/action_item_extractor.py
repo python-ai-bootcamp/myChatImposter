@@ -95,7 +95,7 @@ class ActionItemExtractor:
 
 General rules:
 
-* task_title and task_description must be written in the defined language identified by language code = '{language_code}'.
+* task_title and task_description fields in output json must be written in the defined language identified by language code = '{language_code}'.
 * any important event must be included, even if no deadline is specified.
 * if a task or event includes any form of date or deadline, it must appear verbatim in text_deadline and be parsed into timestamp_deadline as defined below.
 * if a task or event is canceled it is also considered an actionable item, if new alternative date is suggested, wrap them both in a single actionable item. do not split into two actionable items.
@@ -124,6 +124,9 @@ Field rules:
     - relative deadlines (e.g. "next week", "next Wednesday") must be resolved relative to the time in which the message containing the deadline was sent. 
     - if no hour is specified in deadline, default to 12:00:00 noon. 
     - If no deadline exists, use an empty string.
+* task_title:
+    - must be a short, concise task title
+    - must be written in the defined language identified by language code = '{language_code}' regardless of relevant_task_messages origin language
 * task_description: 
     - must aggregate information from all related messages 
     - should includes relevant details: 
@@ -136,6 +139,7 @@ Field rules:
        -- double check weekday corresponds to the absolute date found in timestamp_deadline correctly
     - if relevant people are mentioned do not alter their name spelling in any way. copy it AS IS to the letter. no removal of any Matres lectionis (vowel indicators)!!!
     - double check that the quoted names appear identical (string compare) to the actual names appearing in message content or sender field inside relevant_task_messages correspondence    
+    - must be written in the defined language identified by language code = '{language_code}' regardless of relevant_task_messages origin language
     
 RELEVANT_TASK_MESSAGE format:
 {{
