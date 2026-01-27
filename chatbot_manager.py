@@ -363,65 +363,40 @@ class ChatbotInstance:
 
     async def _handle_bot_reply(self, user_id: str, correspondent_id: str, message: Message):
         """Handles automatic bot reply feature for whitelisted senders/groups."""
+        from services.whitelist_policy import WhitelistPolicy
+        
         if message.group:
-            if self.whitelist_group:
-                group = message.group
-                all_identifiers = [group.identifier, group.display_name]
-                logging.info(f"INSTANCE ({user_id}): Evaluating group '{group.display_name}' against group whitelist. Identifiers: {all_identifiers}, Whitelist: {self.whitelist_group}")
-
-                matching_identifier = None
-                matching_whitelist_entry = None
-                is_whitelisted = False
-
-                for whitelisted_group in self.whitelist_group:
-                    if not whitelisted_group:
-                        continue
-                    for identifier in all_identifiers:
-                        if identifier and whitelisted_group in identifier:
-                            is_whitelisted = True
-                            matching_identifier = identifier
-                            matching_whitelist_entry = whitelisted_group
-                            break
-                    if is_whitelisted:
-                        break
-
-                if is_whitelisted:
-                    logging.info(f"INSTANCE ({user_id}): Group whitelist check passed for group '{group.display_name}'. Identifier '{matching_identifier}' matched whitelist entry '{matching_whitelist_entry}'.")
-                else:
-                    logging.info(f"INSTANCE ({user_id}): Group '{group.display_name}' not in group whitelist. Ignoring.")
-                    return
-            else:
+            if not self.whitelist_group:
                 # No group whitelist configured, skip
                 return
-        elif self.whitelist:
+            
+            group = message.group
+            identifiers = [group.identifier, group.display_name]
+            logging.info(f"INSTANCE ({user_id}): Evaluating group '{group.display_name}' against group whitelist. Identifiers: {identifiers}, Whitelist: {self.whitelist_group}")
+            
+            result = WhitelistPolicy.check(identifiers, self.whitelist_group)
+            
+            if result.is_allowed:
+                logging.info(f"INSTANCE ({user_id}): Group whitelist check passed for group '{group.display_name}'. Identifier '{result.matched_identifier}' matched whitelist entry '{result.matched_whitelist_entry}'.")
+            else:
+                logging.info(f"INSTANCE ({user_id}): Group '{group.display_name}' not in group whitelist. Ignoring.")
+                return
+        else:
+            if not self.whitelist:
+                # No whitelist configured for direct messages, skip
+                return
+            
             sender = message.sender
-            all_identifiers = [sender.identifier] + getattr(sender, 'alternate_identifiers', [])
-            logging.info(f"INSTANCE ({user_id}): Evaluating sender '{sender.display_name}' against direct message whitelist. Identifiers: {all_identifiers}, Whitelist: {self.whitelist}")
-
-            matching_identifier = None
-            matching_whitelist_entry = None
-            is_whitelisted = False
-
-            for whitelisted_sender in self.whitelist:
-                if not whitelisted_sender:
-                    continue
-                for identifier in all_identifiers:
-                    if identifier and whitelisted_sender in identifier:
-                        is_whitelisted = True
-                        matching_identifier = identifier
-                        matching_whitelist_entry = whitelisted_sender
-                        break
-                if is_whitelisted:
-                    break
-
-            if is_whitelisted:
-                logging.info(f"INSTANCE ({user_id}): Whitelist check passed for sender '{sender.display_name}'. Identifier '{matching_identifier}' matched whitelist entry '{matching_whitelist_entry}'.")
+            identifiers = [sender.identifier] + getattr(sender, 'alternate_identifiers', [])
+            logging.info(f"INSTANCE ({user_id}): Evaluating sender '{sender.display_name}' against direct message whitelist. Identifiers: {identifiers}, Whitelist: {self.whitelist}")
+            
+            result = WhitelistPolicy.check(identifiers, self.whitelist)
+            
+            if result.is_allowed:
+                logging.info(f"INSTANCE ({user_id}): Whitelist check passed for sender '{sender.display_name}'. Identifier '{result.matched_identifier}' matched whitelist entry '{result.matched_whitelist_entry}'.")
             else:
                 logging.info(f"INSTANCE ({user_id}): Sender '{sender.display_name}' not in whitelist. Ignoring.")
                 return
-        else:
-            # No whitelist configured for direct messages, skip
-            return
 
         if not self.chatbot_model or not self.provider_instance:
             logging.error(f"INSTANCE ({user_id}): Chatbot or provider not initialized.")

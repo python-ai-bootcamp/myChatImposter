@@ -79,7 +79,13 @@
 *   **Effort**: **LOW**
 *   **Risk**: **LOW**
 *   **Findings**: `ChatbotInstance._handle_bot_reply` contains deeply nested loops for checking whitelists (Group vs Direct).
-*   **Recommendation**: Extract a `WhitelistPolicy` class with `is_allowed(message, config)` method. This cleans up the message handler.
+*   **Status**: [x] COMPLETED
+*   **Refactoring Action**:
+    *   [x] Created `services/whitelist_policy.py` with `WhitelistPolicy` class.
+    *   [x] Created `WhitelistMatch` dataclass for clean return values.
+    *   [x] Refactored `_handle_bot_reply` to use `WhitelistPolicy.check()`.
+    *   [x] Eliminated duplicated nested loop logic.
+
 
 ### 6. Queue Consumer Polymorphism
 *   **Serial Number**: 006
@@ -120,6 +126,6 @@
 | **002** | **Violations of LSP (Hardcoded Providers)** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **COMPLETED** |
 | **003** | **Separation of Concerns: Cron Schedule Logic** | **HIGH** | **HIGH** | **MEDIUM** | **MEDIUM** | **COMPLETED** |
 | **004** | **Router Logic Leakage** | **MEDIUM** | **MEDIUM** | **MEDIUM** | **LOW** | **COMPLETED** |
-| **005** | **Nested Whitelist Logic** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **PENDING** |
+| **005** | **Nested Whitelist Logic** | **LOW** | **MEDIUM** | **LOW** | **LOW** | **COMPLETED** |
 | **006** | **Queue Consumer Polymorphism** | **HIGH** | **HIGH** | **MEDIUM** | **LOW** | **COMPLETED** |
 | **007** | **Formatting Hardcoding** | **LOW** | **LOW** | **LOW** | **LOW** | **COMPLETED** |

@@ -490,7 +490,7 @@ export function LLMProviderConfigFieldTemplate(props) {
 
 
 export function CustomFieldTemplate(props) {
-  const { id, label, children, required, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
+  const { id, label, children, rawErrors = [], help, description, classNames, schema, uiSchema } = props;
 
   // Hide the inner LLMProviderConfig object box (the one that creates duplicate nested box)
   // This matches the inner object selected by the anyOf dropdown
@@ -741,7 +741,7 @@ export function InlineObjectFieldTemplate(props) {
         const description = schema?.description || '';
         // Use ui:title from uiSchema if available, otherwise fall back to schema title
         const label = uiSchema['ui:title'] || schema?.title || element.name;
-        const isRequired = element.content.props.required;
+        // Note: element.content.props.required available if needed
 
         return (
           <div key={element.content.key} style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
