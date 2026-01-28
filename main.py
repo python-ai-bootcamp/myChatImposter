@@ -6,7 +6,8 @@ import asyncio
 from fastapi import FastAPI
 from dependencies import GlobalStateManager
 from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager
-from group_tracker import GroupTracker
+from services.session_manager import SessionManager
+from features.periodic_group_tracking.service import GroupTracker
 from services.user_lifecycle_service import UserLifecycleService
 
 # Import Routers

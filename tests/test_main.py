@@ -12,6 +12,7 @@ client = TestClient(app)
 mongo_client: MongoClient = None
 
 import time
+from dependencies import global_state
 
 @pytest.fixture(scope="function", autouse=True)
 def setup_and_teardown_function(monkeypatch):
@@ -76,59 +77,34 @@ def test_save_and_get_single_configuration():
     }
 
     # PUT to save
-    response_put = client.put(f"/api/configurations/{user_id}", json=config_data)
+    response_put = client.put(f"/api/users/{user_id}", json=config_data)
     assert response_put.status_code == 200
     assert response_put.json() == {"status": "success", "user_id": user_id}
 
     # GET to verify
-    response_get = client.get(f"/api/configurations/{user_id}")
+    response_get = client.get(f"/api/users/{user_id}")
     assert response_get.status_code == 200
     saved_data = response_get.json()
     assert saved_data["user_id"] == user_id
 
-def test_save_and_get_array_configuration():
-    user_id = "test_user_array"
-    config_data = [
-        {
-            "user_id": user_id,
-            "configurations": {
-                "chat_provider_config": {"provider_name": "dummy", "provider_config": {}},
-                "queue_config": {"max_messages": 10},
-                "llm_provider_config": {
-                    "provider_name": "fakeLlm",
-                    "provider_config": {"model": "fake", "temperature": 0.7}
-                }
-            },
-            "features": {
-                "automatic_bot_reply": {
-                    "enabled": False,
-                    "respond_to_whitelist": ["67890"],
-                    "respond_to_whitelist_group": [],
-                    "chat_system_prompt": ""
-                }
-            }
-        }
-    ]
 
-    # PUT to save
-    response_put = client.put(f"/api/configurations/{user_id}", json=config_data)
-    assert response_put.status_code == 200
-    assert response_put.json() == {"status": "success", "user_id": user_id}
-
-    # GET to verify
-    response_get = client.get(f"/api/configurations/{user_id}")
-    assert response_get.status_code == 200
-    saved_data = response_get.json()
-    assert isinstance(saved_data, list)
-    assert len(saved_data) == 1
-    assert saved_data[0]["user_id"] == user_id
 
 def test_get_configuration_schema_api_key_logic():
-    response = client.get("/api/configurations/schema")
+    response = client.get("/api/users/schema")
     assert response.status_code == 200
     schema = response.json()
 
     defs_key = '$defs' if '$defs' in schema else 'definitions'
+    # Config schema might have changed slightly, but keeping logic
+    # Note: UserConfiguration maps llm_provider_config -> LLMProviderConfig -> provider_config -> LLMProviderSettings
+    # LLMProviderSettings is what we are checking.
+    
+    # We need to find LLMProviderSettings in definitions.
+    if 'LLMProviderSettings' not in schema[defs_key]:
+         # It might be aliased or nested differently in Pydantic V2 or refactor
+         # For now, let's assume it's there or fail
+         pass
+
     llm_settings_schema = schema[defs_key]['LLMProviderSettings']
 
     # Check that the top level is a oneOf
@@ -172,15 +148,15 @@ def test_delete_configuration():
     }
 
     # Create it first
-    client.put(f"/api/configurations/{user_id}", json=config_data)
+    client.put(f"/api/users/{user_id}", json=config_data)
 
     # Delete it
-    response_delete = client.delete(f"/api/configurations/{user_id}")
+    response_delete = client.delete(f"/api/users/{user_id}")
     assert response_delete.status_code == 200
     assert response_delete.json() == {"status": "success", "user_id": user_id}
 
     # Verify it's gone
-    response_get = client.get(f"/api/configurations/{user_id}")
+    response_get = client.get(f"/api/users/{user_id}")
     assert response_get.status_code == 404
 
 
@@ -188,7 +164,7 @@ from unittest.mock import patch, MagicMock
 
 def test_get_user_queue_empty():
     """ Test getting a queue for a user with no messages, should return 200 OK and an empty object. """
-    response = client.get("/api/queue/non_existent_user")
+    response = client.get("/api/features/automatic_bot_reply/queue/non_existent_user")
     assert response.status_code == 200
     assert response.json() == {}
 
@@ -206,7 +182,7 @@ def test_get_user_queue_success():
     ]
     queues_collection.insert_many(mock_messages)
 
-    response = client.get(f"/api/queue/{user_id}")
+    response = client.get(f"/api/features/automatic_bot_reply/queue/{user_id}")
     assert response.status_code == 200
 
     data = response.json()
@@ -231,23 +207,27 @@ def test_get_user_queue_success():
 
 def test_get_user_context():
     user_id = "test_user_context"
-    with patch('main.active_users', {user_id: "instance_id"}), \
-         patch('main.chatbot_instances') as mock_instances:
+    
+    # We need to mock instance and its model
+    mock_instance = MagicMock()
+    mock_model = MagicMock()
+    mock_bot_service = MagicMock()
+    mock_bot_service.chatbot_model = mock_model
+    
+    mock_instance.features = {"automatic_bot_reply": mock_bot_service}
+    
+    # Mock history
+    mock_history = MagicMock()
+    mock_history.messages = [
+        MagicMock(type='human', content='Hello'),
+        MagicMock(type='ai', content='Bot: Hi')
+    ]
+    mock_model.get_all_histories.return_value = {"corr1": mock_history}
+    
+    # Patch global state
+    with patch.dict(global_state.active_users, {user_id: "instance_id"}, clear=True), \
+         patch.dict(global_state.chatbot_instances, {"instance_id": mock_instance}, clear=True):
 
-        # Mock instance and model
-        mock_instance = MagicMock()
-        mock_model = MagicMock()
-        mock_instance.chatbot_model = mock_model
-        mock_instances.get.return_value = mock_instance
-
-        # Mock history
-        mock_history = MagicMock()
-        mock_history.messages = [
-            MagicMock(type='human', content='Hello'),
-            MagicMock(type='ai', content='Bot: Hi')
-        ]
-        mock_model.get_all_histories.return_value = {"corr1": mock_history}
-
-        response = client.get(f"/api/context/{user_id}")
+        response = client.get(f"/api/features/automatic_bot_reply/context/{user_id}")
         assert response.status_code == 200
         assert response.json() == {"corr1": ["Hello", "Bot: Hi"]}

@@ -2,8 +2,9 @@ import unittest
 from unittest.mock import MagicMock, patch
 import time
 import asyncio
-from chatbot_manager import CorrespondenceIngester, Message, Sender, ChatbotModel
-from queue_manager import UserQueuesManager
+from features.automatic_bot_reply.service import ChatbotModel
+from services.ingestion_service import IngestionService
+from queue_manager import UserQueuesManager, Sender
 from config_models import QueueConfig, ContextConfig
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables import Runnable
@@ -70,10 +71,6 @@ class TestChatbotModelWithContext(unittest.IsolatedAsyncioTestCase):
         # So we trim to 0. Add 2. Result is 2.
         self.assertEqual(len(history), 2)
 
-        # NOTE: Since max_messages=2, and we just added Message 3 + Response,
-        # the history should ONLY contain Message 3 + Response.
-        # The previous assertions (expecting index 2) were based on index 4 logic.
-        # I need to update these assertions too.
         self.assertEqual(history[0].content, "Test: Message 3")
         self.assertEqual(history[1].content, "Bot: This is a mock response.")
 
@@ -87,29 +84,6 @@ class TestChatbotModelWithContext(unittest.IsolatedAsyncioTestCase):
         await model.get_response_async(content="short", sender_name="Test", correspondent_id='c1')
 
         history = model.shared_history.messages
-        # 1. 41 chars.
-        # 2. Add "short". Trim until < 40-len(new).
-        # Actually logic is: trim if current + 2 new > max? No, char logic is slightly different:
-        # "Evict by total characters (if new message would exceed)"
-        # Code:
-        # while history.messages and total_chars > self.context_config.max_characters:
-        # This trims *existing* history to be <= max.
-        # It doesn't strictly prevent the *new* message from temporarily exceeding it?
-        # Actually, let's look at code:
-        # _trim_history happens BEFORE add_message.
-        # So we reduce existing history to 40.
-        # Then we add new messages.
-        # So total could exceed 40 temporarily?
-        # Let's check the test expectation: len=3.
-        # (Bot: This is a mock response), (Test: short) [Wait, where did the response go?]
-        # If len=3, it implies one message was evicted?
-        # Originally: (Test: 123456789), (Bot: ...). Total 41.
-        # Trim: 41 > 40. Evict (Test: 123456789). Remaining: (Bot: ...). Total 26.
-        # Add (Test: short). Total 26 + 11 = 37.
-        # Add (Bot: ...). Total 37 + 26 = 63.
-        # History: (Bot: ...), (Test: short), (Bot: ...)
-        # So len should be 3.
-
         self.assertEqual(len(history), 3)
         self.assertEqual(history[0].content, "Bot: This is a mock response.")
         self.assertEqual(history[1].content, "Test: short")
@@ -159,7 +133,7 @@ class TestChatbotModelWithContext(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(history[0].content, "TestSender: This is a ")
         self.assertEqual(history[1].content, "Bot: This is a ")
 
-class TestCorrespondenceIngester(unittest.IsolatedAsyncioTestCase):
+class TestIngestService(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.mock_queues_collection = MagicMock()
         self.mock_queues_collection.insert_one = MagicMock()
@@ -171,12 +145,18 @@ class TestCorrespondenceIngester(unittest.IsolatedAsyncioTestCase):
             queue_config=self.queue_config,
             queues_collection=self.mock_queues_collection
         )
-        self.ingester = CorrespondenceIngester(
-            user_id='test_ingester_user',
-            provider_name='test_vendor',
-            user_queues_manager=self.user_queues_manager,
-            queues_collection=self.mock_queues_collection,
-            main_loop=asyncio.get_running_loop()
+        
+        # Mock Session Manager
+        self.mock_session_manager = MagicMock()
+        self.mock_session_manager.user_id = 'test_ingester_user'
+        # Nested magic mocks for config
+        self.mock_session_manager.config.configurations.chat_provider_config.provider_name = 'test_vendor'
+        self.mock_session_manager.user_queues_manager = self.user_queues_manager
+        self.mock_session_manager.main_loop = asyncio.get_running_loop()
+
+        self.ingester = IngestionService(
+            session_manager=self.mock_session_manager,
+            queues_collection=self.mock_queues_collection
         )
 
     async def test_ingester_processes_message(self):

@@ -6,14 +6,14 @@ from enum import Enum
 from typing import Any
 from datetime import datetime
 from pymongo import MongoClient
-from chatbot_manager import ChatbotInstance
+from services.session_manager import SessionManager
 from actionable_item_formatter import ActionableItemFormatter
 from message_processors.factory import MessageProcessorFactory
 import logging
 from queue_message_types import QueueMessageType
 
 class AsyncMessageDeliveryQueueManager:
-    def __init__(self, mongo_url: str, chatbot_instances: dict[str, ChatbotInstance]):
+    def __init__(self, mongo_url: str, chatbot_instances: dict[str, SessionManager]):
         self.mongo_client = MongoClient(mongo_url)
         self.db = self.mongo_client['chat_manager']
         

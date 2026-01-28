@@ -41,9 +41,23 @@ async def get_all_tracked_messages(user_id: str):
     """
     _ensure_tracker_db()
     try:
-        # Assuming tracked_group_periods_collection holds the data
+        # Custom Logic: Enrich with Display Name
+        # 1. Fetch Group Metadata
+        groups_cursor = global_state.group_tracker.tracked_groups_collection.find({"user_id": user_id})
+        group_map = {g['group_id']: g.get('display_name', 'Unknown') for g in groups_cursor}
+
+        # 2. Fetch Periods
         cursor = global_state.group_tracker.tracked_group_periods_collection.find({"user_id": user_id}).sort("periodEnd", -1)
-        results = [_serialize_doc(doc) for doc in cursor]
+        
+        results = []
+        for doc in cursor:
+            s_doc = _serialize_doc(doc)
+            # Match identifier
+            gid = s_doc.get('tracked_group_unique_identifier')
+            if gid:
+                s_doc['display_name'] = group_map.get(gid, 'Unknown Group')
+            results.append(s_doc)
+            
         return JSONResponse(content=results)
     except Exception as e:
         logging.error(f"API: Error getting tracked messages for {user_id}: {e}")
@@ -59,7 +73,17 @@ async def get_group_tracked_messages(user_id: str, group_id: str):
         cursor = global_state.group_tracker.tracked_group_periods_collection.find(
             {"user_id": user_id, "group_id": group_id}
         ).sort("periodEnd", -1)
-        results = [_serialize_doc(doc) for doc in cursor]
+        
+        # Fetch display name once
+        group_meta = global_state.group_tracker.tracked_groups_collection.find_one({"user_id": user_id, "group_id": group_id})
+        display_name = group_meta.get('display_name', 'Unknown') if group_meta else 'Unknown'
+
+        results = []
+        for doc in cursor:
+             s_doc = _serialize_doc(doc)
+             s_doc['display_name'] = display_name
+             results.append(s_doc)
+
         return JSONResponse(content=results)
     except Exception as e:
         logging.error(f"API: Error getting tracked messages for {user_id}/{group_id}: {e}")

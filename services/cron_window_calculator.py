@@ -39,68 +39,116 @@ class CronWindowCalculator:
             now_dt = now_dt.astimezone(tz)
             
             # Snap to the scheduled time (removes jitter/execution delay)
-            # This is the "Ideal execution time"
-            iter = croniter(cron_expression, now_dt)
-            current_cron_end_dt = iter.get_prev(datetime)
+            # This is the "Ideal execution time" (End of the window)
+            current_cron_end_dt = self._get_prev_cron_with_wiggle(cron_expression, now_dt)
             
-            # Window Start Logic
-            current_cron_start_dt = None
-            
-            # 1. Try to use persisted state from DB (Most Robust for Continuity)
-            if last_run_ts:
-                # Safety check: If last run was surprisingly recent (< 2 days), trust it.
-                last_run_dt_utc = datetime.fromtimestamp(last_run_ts / 1000, tz=ZoneInfo("UTC"))
-                
-                # Check age against UTC now
-                age_seconds = (datetime.now(ZoneInfo("UTC")) - last_run_dt_utc).total_seconds()
-                
-                if age_seconds < 48 * 3600:
-                    current_cron_start_dt = last_run_dt_utc.astimezone(tz)
-                    logger.info(f"Using persisted last_run_ts as start: {current_cron_start_dt}")
-            
-            # 2. Fallback Calculation (First Run or after Long Downtime)
-            if not current_cron_start_dt:
-                # We need to find the "Previous Valid Occurrence" relative to End.
-                # Standard croniter.get_prev() is known to be buggy around DST Fall Back (skips hour).
-                # We implement "Wiggle Recovery".
-                
-                # A. Try Standard Backward
-                iter_back = croniter(cron_expression, current_cron_end_dt)
-                candidate_prev = iter_back.get_prev(datetime)
-                
-                if croniter.match(cron_expression, candidate_prev):
-                    # Wiggle Check: If skipped due to DST fallback "phantom hour" logic in croniter
-                    iter_fwd_check = croniter(cron_expression, candidate_prev)
-                    intermediate = iter_fwd_check.get_next(datetime)
-                    
-                    if intermediate < current_cron_end_dt and croniter.match(cron_expression, intermediate):
-                         logger.info(f"Wiggle Recovery: Found intermediate valid time {intermediate}")
-                         current_cron_start_dt = intermediate
-                    else:
-                         current_cron_start_dt = candidate_prev
-                         
-                else: 
-                     # Candidate is invalid. Wiggle forward from it.
-                     iter_wiggle = croniter(cron_expression, candidate_prev)
-                     wiggle_candidate = iter_wiggle.get_next(datetime)
-                     
-                     if wiggle_candidate < current_cron_end_dt and croniter.match(cron_expression, wiggle_candidate):
-                         current_cron_start_dt = wiggle_candidate
-                     else:
-                         # Keep going back until valid (Safety loop)
-                         found = False
-                         for _ in range(5):
-                             candidate_prev = iter_back.get_prev(datetime)
-                             if croniter.match(cron_expression, candidate_prev):
-                                 current_cron_start_dt = candidate_prev
-                                 found = True
-                                 break
-                         if not found:
-                             logger.error("Failed to find valid previous cron time.")
-                             return None, None
+            if not current_cron_end_dt:
+                 logger.error("Failed to calculate current cron end time.")
+                 return None, None
 
+            # --- Calculate Ideal Start (Previous Interval) ---
+            # using same robust logic relative to End
+            ideal_start_dt = self._get_prev_cron_with_wiggle(cron_expression, current_cron_end_dt)
+            
+            if not ideal_start_dt:
+                logger.error("Failed to find valid previous cron time (ideal start).")
+                return None, None
+
+            # --- Window Start Logic (Continuity vs Catchup) ---
+            current_cron_start_dt = ideal_start_dt
+            
+            if last_run_ts:
+                try:
+                    last_run_dt_utc = datetime.fromtimestamp(last_run_ts / 1000, tz=ZoneInfo("UTC"))
+                    last_run_dt = last_run_dt_utc.astimezone(tz)
+                    
+                    if last_run_dt < ideal_start_dt:
+                        # Check gap size
+                        gap_seconds = (ideal_start_dt - last_run_dt).total_seconds()
+                        MAX_CATCHUP_SECONDS = 900 # 15 minutes
+                        
+                        if gap_seconds <= MAX_CATCHUP_SECONDS:
+                            current_cron_start_dt = last_run_dt
+                            logger.info(f"Catching up: Using last_run_ts {last_run_dt} (Gap: {gap_seconds}s)")
+                        else:
+                            # Gap too large. Instead of skipping entirely, CAP the window to the limit.
+                            # This ensures we at least process the most recent MAX_CATCHUP_SECONDS of data.
+                            from datetime import timedelta
+                            current_cron_start_dt = current_cron_end_dt - timedelta(seconds=MAX_CATCHUP_SECONDS)
+                            
+                            if current_cron_start_dt < last_run_dt:
+                                current_cron_start_dt = last_run_dt
+
+                            logger.warning(f"Gap too large ({gap_seconds}s > {MAX_CATCHUP_SECONDS}s). Capping catchup window to last {MAX_CATCHUP_SECONDS}s. Start: {current_cron_start_dt}")
+                    else:
+                        # last_run >= ideal_start (e.g. perfect alignment or strange clock skew)
+                        current_cron_start_dt = last_run_dt
+                        logger.info(f"Using persisted last_run_ts as start: {current_cron_start_dt}")
+
+                except Exception as e:
+                    logger.warning(f"Failed to process last_run_ts: {e}. Using ideal start.")
+            
             return current_cron_start_dt, current_cron_end_dt
 
         except Exception as e:
             logger.error(f"Failed to calculate cron window: {e}")
             return None, None
+
+    def _get_prev_cron_with_wiggle(self, cron_expression: str, from_dt: datetime) -> Optional[datetime]:
+        """
+        Calculates the previous cron occurrence relative to from_dt,
+        handling DST fallback 'phantom hours' where croniter might skip an occurrence.
+        """
+        try:
+            # A. Try Standard Backward
+            iter_back = croniter(cron_expression, from_dt)
+            candidate_prev = iter_back.get_prev(datetime)
+            
+            # Safety: Ensure we actually went back in time (DST quirks)
+            while candidate_prev >= from_dt:
+                logger.warning(f"Croniter returned future/present time {candidate_prev}. Retrying.")
+                candidate_prev = iter_back.get_prev(datetime)
+            
+            if croniter.match(cron_expression, candidate_prev):
+                # Wiggle Check: If skipped due to DST fallback "phantom hour" logic in croniter
+                iter_fwd_check = croniter(cron_expression, candidate_prev)
+                intermediate = iter_fwd_check.get_next(datetime)
+                
+                # If intermediate is valid AND effectively 'next' from candidate but 'prev' from from_dt
+                if intermediate < from_dt and croniter.match(cron_expression, intermediate):
+                        # Found a hidden occurrence
+                        return intermediate
+                
+                # Fold Check: Check for ambiguous hour repetition (e.g. 1:00 AM happening twice)
+                # If we have the first occurrence (fold=0), check if the second (fold=1) is valid and earlier than from_dt
+                if candidate_prev.fold == 0:
+                     other_fold = candidate_prev.replace(fold=1)
+                     # Check if it is actually ambiguous (offsets differ)
+                     if other_fold.utcoffset() != candidate_prev.utcoffset():
+                         match = croniter.match(cron_expression, other_fold)
+                         # Explicitly compare timestamps for safety (handle fold comparison quirks)
+                         cond1 = other_fold.timestamp() < from_dt.timestamp()
+                         cond2 = other_fold.timestamp() > candidate_prev.timestamp()
+                         
+                         if match and cond1 and cond2:
+                             return other_fold
+
+                return candidate_prev
+                        
+            else: 
+                    # Candidate is invalid. Wiggle forward from it.
+                    iter_wiggle = croniter(cron_expression, candidate_prev)
+                    wiggle_candidate = iter_wiggle.get_next(datetime)
+                    
+                    if wiggle_candidate < from_dt and croniter.match(cron_expression, wiggle_candidate):
+                        return wiggle_candidate
+                    else:
+                        # Keep going back until valid (Safety loop)
+                        for _ in range(5):
+                            candidate_prev = iter_back.get_prev(datetime)
+                            if croniter.match(cron_expression, candidate_prev):
+                                return candidate_prev
+                        return None
+        except Exception as e:
+            logger.error(f"Error in _get_prev_cron_with_wiggle: {e}")
+            return None

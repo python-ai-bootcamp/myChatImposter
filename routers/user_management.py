@@ -13,7 +13,10 @@ from config_models import (
     ChatProviderConfig, LLMProviderConfig, ChatProviderSettings, LLMProviderSettings,
     UserDetails, QueueConfig, ContextConfig
 )
-from chatbot_manager import ChatbotInstance
+from services.session_manager import SessionManager
+from services.ingestion_service import IngestionService
+from features.automatic_bot_reply.service import AutomaticBotReplyService
+from features.kid_phone_safety_tracking.service import KidPhoneSafetyService
 from dependencies import GlobalStateManager
 
 router = APIRouter(
@@ -357,7 +360,7 @@ async def link_user(user_id: str):
         logging.info(f"API: Starting new instance {instance_id} for {user_id}")
         
         loop = asyncio.get_running_loop()
-        instance = ChatbotInstance(
+        instance = SessionManager(
             config=config, 
             on_session_end=global_state.remove_active_user,
             queues_collection=global_state.queues_collection,
@@ -365,6 +368,23 @@ async def link_user(user_id: str):
             on_status_change=global_state.user_lifecycle_service.create_status_change_callback()
         )
         
+        # 1. Ingestion Service
+        if global_state.queues_collection is not None:
+             ingester = IngestionService(instance, global_state.queues_collection)
+             ingester.start()
+             instance.register_service(ingester)
+
+        # 2. Features Subscription
+        if config.features.automatic_bot_reply.enabled:
+             bot_service = AutomaticBotReplyService(instance)
+             instance.register_message_handler(bot_service.handle_message)
+             instance.register_feature("automatic_bot_reply", bot_service)
+        
+        if config.features.kid_phone_safety_tracking.enabled:
+             kid_service = KidPhoneSafetyService(instance)
+             instance.register_message_handler(kid_service.handle_message)
+             instance.register_feature("kid_phone_safety_tracking", kid_service)
+
         global_state.chatbot_instances[instance_id] = instance
         await instance.start()
         global_state.active_users[user_id] = instance_id
@@ -469,13 +489,30 @@ async def reload_user(user_id: str):
         # We need a reload-specific listener if logic differs, but here it's same: if connected -> active queue
         # Main.py defined 'status_change_listener_reload' but it was identical to 'status_change_listener'
         
-        new_instance = ChatbotInstance(
+        new_instance = SessionManager(
             config=config,
             on_session_end=global_state.remove_active_user,
             queues_collection=global_state.queues_collection,
             main_loop=loop,
             on_status_change=global_state.user_lifecycle_service.create_status_change_callback()
         )
+
+        # 1. Ingestion Service
+        if global_state.queues_collection is not None:
+             ingester = IngestionService(new_instance, global_state.queues_collection)
+             ingester.start()
+             new_instance.register_service(ingester)
+
+        # 2. Features Subscription
+        if config.features.automatic_bot_reply.enabled:
+             bot_service = AutomaticBotReplyService(new_instance)
+             new_instance.register_message_handler(bot_service.handle_message)
+             new_instance.register_feature("automatic_bot_reply", bot_service)
+        
+        if config.features.kid_phone_safety_tracking.enabled:
+             kid_service = KidPhoneSafetyService(new_instance)
+             new_instance.register_message_handler(kid_service.handle_message)
+             new_instance.register_feature("kid_phone_safety_tracking", kid_service)
         
         global_state.chatbot_instances[new_id] = new_instance
         await new_instance.start()

@@ -6,8 +6,8 @@ from pymongo.database import Database
 from pymongo.collection import Collection
 
 if TYPE_CHECKING:
-    from chatbot_manager import ChatbotInstance
-    from group_tracker import GroupTracker
+    from services.session_manager import SessionManager
+    from features.periodic_group_tracking.service import GroupTracker
     from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager
     from services.user_lifecycle_service import UserLifecycleService
 
@@ -23,7 +23,7 @@ class GlobalStateManager:
         self.baileys_sessions_collection: Optional[Collection] = None
 
         # State storage
-        self.chatbot_instances: Dict[str, 'ChatbotInstance'] = {}
+        self.chatbot_instances: Dict[str, 'SessionManager'] = {}
         self.active_users: Dict[str, str] = {}  # Maps user_id to instance_id
         
         # Managers
@@ -57,7 +57,7 @@ class GlobalStateManager:
 
         logging.info("API: Successfully connected to MongoDB.")
 
-    def get_chatbot_instance_by_user(self, user_id: str) -> Optional['ChatbotInstance']:
+    def get_chatbot_instance_by_user(self, user_id: str) -> Optional['SessionManager']:
         if user_id in self.active_users:
             instance_id = self.active_users[user_id]
             return self.chatbot_instances.get(instance_id)

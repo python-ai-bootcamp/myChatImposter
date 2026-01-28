@@ -15,11 +15,8 @@ from zoneinfo import ZoneInfo
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from chatbot_manager import ChatbotInstance
+from services.session_manager import SessionManager
 from config_models import PeriodicGroupTrackingConfig, LLMProviderConfig
-from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider # DEPRECATED: Removed direct usage
-# But wait, we can't remove the line if we modify it, just commenting out or removing completely.
-# Let's remove it completely.
 from llm_providers.base import BaseLlmProvider
 from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager, QueueMessageType
 from services.action_item_extractor import ActionItemExtractor
@@ -30,14 +27,13 @@ from services.cron_window_calculator import CronWindowCalculator
 logger = logging.getLogger(__name__)
 
 class GroupTracker:
-    def __init__(self, mongo_url: str, chatbot_instances: dict[str, ChatbotInstance], async_message_delivery_queue_manager: AsyncMessageDeliveryQueueManager = None):
+    def __init__(self, mongo_url: str, chatbot_instances: dict[str, SessionManager], async_message_delivery_queue_manager: AsyncMessageDeliveryQueueManager = None):
         self.mongo_client = MongoClient(mongo_url)
         self.db = self.mongo_client['chat_manager']
         self.tracked_groups_collection = self.db['tracked_groups']
         self.tracked_group_periods_collection = self.db['tracked_group_periods']
         self.tracking_state_collection = self.db['group_tracking_state']
         self.chatbot_instances = chatbot_instances
-        self.async_message_delivery_queue_manager = async_message_delivery_queue_manager  # Store the queue manager
         self.async_message_delivery_queue_manager = async_message_delivery_queue_manager  # Store the queue manager
         self.scheduler = AsyncIOScheduler()
         self.jobs = {}

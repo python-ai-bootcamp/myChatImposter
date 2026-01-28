@@ -108,11 +108,15 @@ async def get_user_context(user_id: str):
          raise HTTPException(status_code=404, detail="No active session found.")
     
     instance = global_state.get_chatbot_instance_by_user(user_id)
-    if not instance or not instance.chatbot_model:
-         raise HTTPException(status_code=404, detail="Chatbot model not found.")
+    if not instance:
+         raise HTTPException(status_code=404, detail="Instance not found.")
+    
+    bot_service = instance.features.get("automatic_bot_reply")
+    if not bot_service or not bot_service.chatbot_model:
+         raise HTTPException(status_code=404, detail="Chatbot model not available (feature disabled?).")
     
     try:
-        histories = instance.chatbot_model.get_all_histories()
+        histories = bot_service.chatbot_model.get_all_histories()
         formatted_histories = {
             correspondent: [msg.content for msg in history.messages]
             for correspondent, history in histories.items()
