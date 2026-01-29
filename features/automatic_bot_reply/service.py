@@ -16,7 +16,7 @@ from config_models import ContextConfig
 from queue_manager import Message
 from llm_providers.base import BaseLlmProvider
 from services.session_manager import SessionManager
-from services.whitelist_policy import WhitelistPolicy
+from .whitelist import WhitelistPolicy
 
 def _find_provider_class(module, base_class: Type) -> Optional[Type]:
     """

@@ -1,7 +1,7 @@
 import unittest
 from datetime import datetime
 from zoneinfo import ZoneInfo
-from services.cron_window_calculator import CronWindowCalculator
+from features.periodic_group_tracking.cron_window import CronWindowCalculator
 
 class TestCronWindowCalculator(unittest.TestCase):
     def setUp(self):
