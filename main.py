@@ -28,18 +28,19 @@ logging.basicConfig(
 logging.getLogger("uvicorn.access").disabled = True
 logging.getLogger("uvicorn").propagate = False
 logging.getLogger("httpx").setLevel(logging.WARNING)
-logging.getLogger("httpcore").setLevel(logging.WARNING)
 
-app = FastAPI()
+from contextlib import asynccontextmanager
 
 # Global State Access
 global_state = GlobalStateManager.get_instance()
 
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     """
-    Initialize global state, DB, and managers.
+    Lifespan context manager for the FastAPI application.
+    Handles startup configuration and shutdown cleanup.
     """
+    # --- STARTUP LOGIC ---
     mongodb_url = os.environ.get("MONGODB_URL", "mongodb://mongodb:27017/")
     
     # 1. Initialize MongoDB
@@ -65,29 +66,30 @@ async def startup_event():
         logging.error(f"API: Startup initialization failed: {e}")
         # We might want to exit or continue with limited functionality
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    """
-    Gracefully shut down components.
-    """
-    logging.info("API: Server is shutting down. Stopping all chatbot instances...")
-    
-    # Stop Chatbot Instances
-    # iterate list(items) to copy keys
-    for instance_id, instance in list(global_state.chatbot_instances.items()):
-        logging.info(f"API: Stopping instance {instance_id} (No cleanup)...")
-        await instance.stop(cleanup_session=False)
-        # Remove from active maps
-        global_state.remove_active_user(instance.user_id)
+    try:
+        yield
+    finally:
+        # --- SHUTDOWN LOGIC ---
+        logging.info("API: Server is shutting down. Stopping all chatbot instances...")
         
-    global_state.chatbot_instances.clear()
-    
-    # Shutdown GroupTracker
-    global_state.shutdown()
-    
-    # Shutdown Queue Manager (Specific)
-    if global_state.async_message_delivery_queue_manager:
-        await global_state.async_message_delivery_queue_manager.stop_consumer()
+        # Stop Chatbot Instances
+        # iterate list(items) to copy keys
+        for instance_id, instance in list(global_state.chatbot_instances.items()):
+            logging.info(f"API: Stopping instance {instance_id} (No cleanup)...")
+            await instance.stop(cleanup_session=False)
+            # Remove from active maps
+            global_state.remove_active_user(instance.user_id)
+            
+        global_state.chatbot_instances.clear()
+        
+        # Shutdown GroupTracker
+        global_state.shutdown()
+        
+        # Shutdown Queue Manager (Specific)
+        if global_state.async_message_delivery_queue_manager:
+            await global_state.async_message_delivery_queue_manager.stop_consumer()
+
+app = FastAPI(lifespan=lifespan)
 
 # Include Routers
 app.include_router(user_management.router)

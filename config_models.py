@@ -13,11 +13,14 @@ class ChatProviderConfig(BaseModel):
     provider_name: str
     provider_config: ChatProviderSettings
 
-class QueueConfig(BaseModel):
+class BaseLimitConfig(BaseModel):
     max_messages: int = 10
     max_characters: int = 1000
     max_days: int = 1
     max_characters_single_message: int = 300
+
+class QueueConfig(BaseLimitConfig):
+    pass
 
 class LLMProviderSettings(BaseModel):
     api_key_source: Literal["environment", "explicit"] = Field(
@@ -54,11 +57,7 @@ class LLMProviderConfig(BaseModel):
     provider_name: str
     provider_config: LLMProviderSettings
 
-class ContextConfig(BaseModel):
-    max_messages: int = 10
-    max_characters: int = 1000
-    max_days: int = 1
-    max_characters_single_message: int = 300
+class ContextConfig(BaseLimitConfig):
     shared_context: bool = True
 
 class PeriodicGroupTrackingConfig(BaseModel):
