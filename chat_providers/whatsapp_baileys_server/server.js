@@ -94,7 +94,18 @@ const logPersistent405 = (userId, session) => {
 const pushStatusToPython = (userId) => {
     const session = sessions[userId];
     const ws = wsConnections[userId];
-    if (!session || !ws || ws.readyState !== ws.OPEN) return;
+    if (!session) {
+        console.log(`[pushStatus] No session for ${userId}`);
+        return;
+    }
+    if (!ws) {
+        console.log(`[pushStatus] No WS connection for ${userId}`);
+        return;
+    }
+    if (ws.readyState !== ws.OPEN) {
+        console.log(`[pushStatus] WS not OPEN for ${userId} (State: ${ws.readyState})`);
+        return;
+    }
 
     const status = session.connectionStatus === 'open' ? 'connected' :
         session.currentQR ? 'linking' :
@@ -102,6 +113,8 @@ const pushStatusToPython = (userId) => {
 
     // Include user JID when connected so Python can send messages to self
     const userJid = session.sock?.user?.id ? jidNormalizedUser(session.sock.user.id) : null;
+
+    console.log(`[pushStatus] Sending status '${status}' to ${userId}`);
 
     ws.send(JSON.stringify({
         type: 'status_update',
@@ -693,8 +706,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
             console.log(`[${userId}] Old socket connection ended.`);
 
             // Close the WebSocket connection to force the client to reconnect
-            wsConnections[userId]?.close();
-            console.log(`[${userId}] Old WebSocket connection closed.`);
+            // wsConnections[userId]?.close();
+            // console.log(`[${userId}] Old WebSocket connection closed.`);
 
         } catch (e) {
             console.log(`[${userId}] Old socket cleanup failed:`, e);
@@ -902,20 +915,24 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
             const isPermanentDisconnection =
                 statusCode === DisconnectReason.loggedOut ||
-                statusCode === DisconnectReason.connectionReplaced ||
-                statusCode === DisconnectReason.badSession;
+                statusCode === DisconnectReason.connectionReplaced;
+            // statusCode === DisconnectReason.badSession; // Treated as transient initially
 
             const maxRetriesReached = (session.retryCount || 0) >= 3;
+
+            // If badSession (500) persists, treat as permanent
+            const isPersistentBadSession = statusCode === DisconnectReason.badSession && maxRetriesReached;
 
             if (statusCode === DisconnectReason.restartRequired) {
                 console.log(`[${userId}] Connection requires a restart. Reconnecting immediately.`);
                 connectToWhatsApp(userId, vendorConfig);
 
-            } else if (isPermanentDisconnection || shouldForceRelink(statusCode, session)) {
-                if (!isPermanentDisconnection) {
+            } else if (isPermanentDisconnection || isPersistentBadSession || shouldForceRelink(statusCode, session)) {
+                if (!isPermanentDisconnection && !isPersistentBadSession) {
                     logPersistent405(userId, session);
                 }
-                const reason = isPermanentDisconnection ? `permanent disconnect (code: ${statusCode})` : 'persistent 405 errors';
+                const reason = isPermanentDisconnection ? `permanent disconnect (code: ${statusCode})` :
+                    isPersistentBadSession ? `persistent bad session (code: ${statusCode})` : 'persistent 405 errors';
                 console.log(`[${userId}] Connection closed permanently due to ${reason}. Cleaning up and forcing re-link.`);
 
                 wsConnections[userId]?.close();
@@ -1411,21 +1428,36 @@ async function startServer() {
             console.log(`WhatsApp Baileys multi-user server listening on port ${port}`);
         });
 
-        process.on('SIGINT', async () => {
-            console.log('SIGINT received, shutting down all sessions.');
+        const shutdownHandler = async (signal) => {
+            console.log(`${signal} received, shutting down all sessions.`);
             for (const userId in sessions) {
                 const session = sessions[userId];
                 if (session && session.sock) {
                     session.sock.end(new Error('Server shutting down'));
                 }
             }
-            await mongoClient.close();
-            console.log('MongoDB connection closed.');
+            try {
+                await mongoClient.close();
+                console.log('MongoDB connection closed.');
+            } catch (e) {
+                console.error('Error closing MongoDB connection:', e);
+            }
+
+            // Force exit after 3 seconds if server.close hangs
+            const forceExit = setTimeout(() => {
+                console.error('Forcing server shutdown due to timeout.');
+                process.exit(0);
+            }, 3000);
+
             server.close(() => {
+                clearTimeout(forceExit);
                 console.log('Express server closed.');
                 process.exit(0);
             });
-        });
+        };
+
+        process.on('SIGINT', () => shutdownHandler('SIGINT'));
+        process.on('SIGTERM', () => shutdownHandler('SIGTERM'));
 
     } catch (e) {
         console.error("Failed to connect to MongoDB", e);
@@ -1434,3 +1466,18 @@ async function startServer() {
 }
 
 startServer();
+
+// --- Global Error Handlers ---
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('--- UNHANDLED REJECTION ---');
+    console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+    console.error('--- END UNHANDLED REJECTION ---');
+    // Do not exit the process, just log it. 
+    // This prevents a single session error from crashing the whole server.
+});
+
+process.on('uncaughtException', (err) => {
+    console.error('--- UNCAUGHT EXCEPTION ---');
+    console.error('Uncaught Exception:', err);
+    console.error('--- END UNCAUGHT EXCEPTION ---');
+});

@@ -149,22 +149,33 @@ class ChatbotModel:
         # Format the message for the model
         formatted_message = f"{sender_name}: {content}"
 
-        # Manually add the user message to history immediately
-        history.add_message(HumanMessage(content=formatted_message))
+        # Capture current history state *before* adding the new message
+        # This prevents the message from being duplicated in the prompt (once in history, once as 'question')
+        current_history_messages = list(history.messages)
 
         # Invoke the underlying runnable directly
         logging.info(f"INVOKING LANCHAIN CHAIN for session {session_id}")
-        # logging.info(f"--- FULL PROMPT CONTEXT ---\nSystem: {self.system_prompt}\nHistory: {history.messages}\nUser: {formatted_message}\n---------------------------")
         response = await self.runnable.ainvoke(
-            {"question": formatted_message, "history": history.messages},
+            {"question": formatted_message, "history": current_history_messages},
             config={"configurable": {"session_id": session_id}}
         )
         logging.info(f"LANCHAIN CHAIN RETURNED for session {session_id}")
+
+        # Manually add the user message to history *after* generation (or just updates the store)
+        history.add_message(HumanMessage(content=formatted_message))
 
         # Manually add the AI response to history
         history.add_message(AIMessage(content=response))
 
         return response
+
+    def get_all_histories(self) -> Dict[str, TimestampedAndPrefixedChatMessageHistory]:
+        """
+        Returns all active histories.
+        """
+        if self.context_config.shared_context:
+            return {"SHARED_CONTEXT": self.shared_history}
+        return self.histories
 
 
 class AutomaticBotReplyService:

@@ -19,6 +19,7 @@ services:
       context: .
       dockerfile: backend.Dockerfile
     container_name: backend
+    init: true
     ports:
       - "8000:8000"
     volumes:
@@ -50,6 +51,7 @@ services:
       context: .
       dockerfile: whatsapp.Dockerfile
     container_name: whatsapp_baileys_server
+    init: true
     ports:
       - "9000:9000"
     environment:

@@ -43,7 +43,7 @@ class GroupTracker:
         logger.info("GroupTracker scheduler started.")
 
     def shutdown(self):
-        self.scheduler.shutdown()
+        self.scheduler.shutdown(wait=False)
         logger.info("GroupTracker scheduler shutdown.")
 
     def _calculate_max_interval(self, configs: list[PeriodicGroupTrackingConfig]) -> int:

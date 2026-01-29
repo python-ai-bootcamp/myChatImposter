@@ -193,18 +193,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                         logging.error(f"Unhandled exception in WebSocket listener: {e}. Retrying in 10s...")
                     await asyncio.sleep(5)
 
-        logging.info("Listen loop is stopping. Performing cleanup...")
-        try:
-            async with websockets.connect(uri, open_timeout=5) as ws:
-                logging.info(f"Temporary WebSocket connection established for cleanup.")
-                payload = json.dumps({"action": "disconnect", "cleanup_session": self.cleanup_on_stop})
-                await ws.send(payload)
-                await asyncio.sleep(0.5)
-                logging.info(f"Sent final disconnect message (cleanup={self.cleanup_on_stop}).")
-        except Exception as e:
-            logging.error(f"Could not send final disconnect message via WebSocket: {e}")
-            if self.cleanup_on_stop:
-                await self._cleanup_server_session()
+        logging.info("Listen loop is stopping. WebSocket connection closed.")
+        # Cleanup logic moved to stop_listening to prevent race conditions during reload.
 
         logging.info("Listen loop has gracefully exited.")
 
@@ -356,6 +346,10 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             except asyncio.CancelledError:
                 logging.info("Listen task successfully cancelled.")
 
+        # Explicit Synchronous Cleanup (No Race Condition)
+        if cleanup_session:
+             await self._cleanup_server_session()
+
         if self.on_session_end and not self.session_ended:
             self.session_ended = True
             self.on_session_end(self.user_id)
@@ -364,7 +358,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         logging.info("Requesting session cleanup on Node.js server via HTTP DELETE.")
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.delete(f"{self.base_url}/sessions/{self.user_id}")
+                # Add short timeout to prevent hanging if server is unresponsive/zombie
+                response = await client.delete(f"{self.base_url}/sessions/{self.user_id}", timeout=2.0)
                 if response.status_code == 200:
                     logging.info("Successfully requested session cleanup via HTTP.")
         except Exception as e:
@@ -444,14 +439,15 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             raise e
 
     async def get_status(self, heartbeat: bool = False) -> Dict:
-        """Returns cached status. If heartbeat=True, sends heartbeat ping over WebSocket."""
         if heartbeat:
             # Send heartbeat over WebSocket instead of HTTP
             if self._ws_connection:
                 try:
                     await self._ws_connection.send(json.dumps({"action": "heartbeat"}))
                 except Exception as e:
-                    logging.warning(f"Could not send heartbeat: {e}")
+                    # Silence benign errors (closed socket, attribute errors) to prevent log noise and 500s
+                    # logging.debug(f"Heartbeat skipped: {e}")
+                    pass
         
         # Return cached status (no HTTP call needed)
         return self._cached_status.copy()
