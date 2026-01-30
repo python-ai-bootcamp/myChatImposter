@@ -22,7 +22,12 @@ async def proxy_to_backend(path: str, request: Request):
 
     Transformation:
     - /api/external/users/john → /api/internal/users/john
+    - /api/external/users/me/* → /api/internal/users/{actual_user_id}/*
     - /api/external/features/... → /api/internal/features/...
+
+    Special handling for /me:
+    - Gateway replaces /me with actual user_id from session
+    - Backend receives standard user-specific paths
 
     Forwards:
     - Method (GET, POST, PUT, DELETE, PATCH)
@@ -33,6 +38,23 @@ async def proxy_to_backend(path: str, request: Request):
 
     Returns backend response with same status, headers, and content.
     """
+    # Replace /me with actual user_id from session
+    if "/me/" in path or path.endswith("/me"):
+        # Get user_id from session (set by middleware)
+        session = getattr(request.state, "session", None)
+        if session:
+            user_id = session.user_id
+
+            # Special case: /users/me/status → /users/{user_id}/info
+            # This endpoint returns listing format instead of detailed status
+            if path == "users/me/status":
+                path = f"users/{user_id}/info"
+                logging.debug(f"GATEWAY: Translated /users/me/status to /users/{user_id}/info")
+            else:
+                # General case: replace /me with user_id
+                path = path.replace("/me/", f"/{user_id}/").replace("/me", f"/{user_id}")
+                logging.debug(f"GATEWAY: Replaced /me with /{user_id} in path")
+
     # Transform path: /api/external/* → /api/internal/*
     backend_path = f"/api/internal/{path}"
 

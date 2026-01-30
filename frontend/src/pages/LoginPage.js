@@ -105,14 +105,6 @@ const LoginPage = () => {
             {loading ? 'Signing in...' : 'Sign In'}
           </button>
         </form>
-
-        <div className="login-footer">
-          <p>
-            <small>
-              Secure authentication powered by bcrypt
-            </small>
-          </p>
-        </div>
       </div>
     </div>
   );

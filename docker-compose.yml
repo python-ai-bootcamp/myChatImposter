@@ -4,10 +4,7 @@ services:
     image: mongo:latest
     container_name: mongodb
     ports:
-      - "27017:27017"  # For dev only; remove in production
-    environment:
-      - MONGO_INITDB_ROOT_USERNAME=admin
-      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
+      - "27017:27017"
     volumes:
       - mongo-data:/data/db
     command:
@@ -29,7 +26,7 @@ services:
     environment:
       - WHATSAPP_SERVER_URL=http://whatsapp_baileys_server:9000
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - MONGODB_URL=mongodb://admin:${MONGO_PASSWORD}@mongodb:27017
+      - MONGODB_URL=mongodb://mongodb:27017
       - PYTHONUNBUFFERED=1
     depends_on:
       - mongodb
@@ -43,7 +40,7 @@ services:
     ports:
       - "8001:8001"  # Only external port
     environment:
-      - MONGODB_URL=mongodb://admin:${MONGO_PASSWORD}@mongodb:27017
+      - MONGODB_URL=mongodb://mongodb:27017
       - BACKEND_URL=http://backend:8000
       - GATEWAY_PORT=8001
     depends_on:
@@ -72,7 +69,7 @@ services:
     ports:
       - "9000:9000"
     environment:
-      - MONGODB_URL=mongodb://admin:${MONGO_PASSWORD}@mongodb:27017
+      - MONGODB_URL=mongodb://mongodb:27017
     volumes:
       - ./baileys_store:/app/baileys_store
     # The command will be specified in the python code that starts this service.

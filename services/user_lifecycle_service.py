@@ -14,39 +14,52 @@ from config_models import UserConfiguration
 class UserLifecycleService:
     """
     Service that handles user lifecycle events (connection status changes).
-    
+
     Responsibilities:
     - Moving messages between holding/active queues on connect/disconnect
     - Starting/stopping group tracking jobs
     """
-    
+
     def __init__(self, global_state: "GlobalStateManager"):
         self.global_state = global_state
-    
+
     async def on_user_connected(self, user_id: str):
         """
         Handle user connection event.
         - Move queued messages from holding to active
         - Start group tracking jobs if enabled
         """
+        # Guard: Skip if user already has active tracking jobs (avoid duplicate setup during reconnects)
+        if self.global_state.group_tracker:
+            existing_jobs = [
+                job for job in self.global_state.group_tracker.scheduler.get_jobs()
+                if job.id.startswith(f"{user_id}_")
+            ]
+            if existing_jobs:
+                logging.debug(
+                    f"LIFECYCLE: User {user_id} already has {len(existing_jobs)} tracking jobs, "
+                    "skipping duplicate setup."
+                )
+                return
+
         # 1. Move items to Active Queue
         if self.global_state.async_message_delivery_queue_manager:
             self.global_state.async_message_delivery_queue_manager.move_user_to_active(user_id)
             logging.info(f"LIFECYCLE: User {user_id} connected. Moved items to ACTIVE queue.")
-        
+
         # 2. Start Group Tracking (Late Binding)
         if self.global_state.group_tracker:
             try:
                 # Fetch config to know what to track
                 config_dict = await self._get_user_config(user_id)
-                
+
                 if config_dict:
                     config = UserConfiguration.model_validate(config_dict)
-                    
+
                     if config.features.periodic_group_tracking.enabled:
                         self.global_state.group_tracker.update_jobs(
-                            user_id, 
-                            config.features.periodic_group_tracking.tracked_groups, 
+                            user_id,
+                            config.features.periodic_group_tracking.tracked_groups,
                             config.configurations.user_details.timezone
                         )
                     else:

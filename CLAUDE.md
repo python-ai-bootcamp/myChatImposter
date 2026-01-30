@@ -17,7 +17,7 @@ docker-compose up --build
 # - Frontend: http://localhost:3000
 # - Gateway (authenticated API): http://localhost:8001
 # - Backend: Internal only (not exposed, accessible via gateway)
-# - MongoDB: localhost:27017 (requires authentication)
+# - MongoDB: localhost:27017
 
 # First-time setup: Create admin user
 docker exec -it backend python scripts/create_admin_user.py admin
@@ -105,7 +105,6 @@ npm run build      # Production build
 - Handles QR code authentication and message encryption
 
 **5. Database (MongoDB)** - Port 27017
-- **Authentication required**: Username: `admin`, Password: from `MONGO_PASSWORD` env var
 - **configurations**: User configurations
 - **queues**: Persisted message history
 - **baileys_sessions**: WhatsApp authentication credentials
@@ -400,14 +399,11 @@ Admin users can create regular users via the frontend:
 ```bash
 # OpenAI API Key (required for LLM features)
 OPENAI_API_KEY=your_openai_api_key_here
-
-# MongoDB Password (required for authentication)
-MONGO_PASSWORD=your_secure_mongo_password_here
 ```
 
 **Automatically set by docker-compose:**
 ```bash
-MONGODB_URL=mongodb://admin:${MONGO_PASSWORD}@mongodb:27017  # MongoDB with auth
+MONGODB_URL=mongodb://mongodb:27017     # MongoDB connection
 BACKEND_URL=http://backend:8000         # Gateway → Backend URL
 GATEWAY_PORT=8001                       # Gateway port
 WHATSAPP_SERVER_URL=http://whatsapp_baileys_server:9000  # Baileys server
@@ -430,10 +426,10 @@ PYTHONUNBUFFERED=1                      # Python logging
 - `DELETE /api/external/async-message-delivery-queue/{queue_type}/{message_id}` - Delete message
 
 **MongoDB Collections:**
-- Connect with authentication: `mongodb://admin:your_password@localhost:27017`
+- Connect: `mongodb://localhost:27017`
 ```bash
 # Using mongosh
-docker exec -it mongodb mongosh -u admin -p your_password
+docker exec -it mongodb mongosh
 
 use chat_manager
 
@@ -472,8 +468,8 @@ for i in {1..11}; do curl -X POST http://localhost:8001/api/external/auth/login 
   -d '{"user_id":"test","password":"wrong"}'; done
 
 # Check audit logs
-docker exec -it mongodb mongosh -u admin -p your_password \
-  --eval "db.audit_logs.find({event_type: 'login_failed'}).limit(5).pretty()"
+docker exec -it mongodb mongosh \
+  --eval "use chat_manager; db.audit_logs.find({event_type: 'login_failed'}).limit(5).pretty()"
 ```
 
 ## Caveats and Gotchas
@@ -486,18 +482,17 @@ docker exec -it mongodb mongosh -u admin -p your_password \
 5. **Password requirements are strict** - Min 8 chars, uppercase, lowercase, digit, symbol
 6. **User IDs must match `^[a-zA-Z0-9_-]+$`** - Prevents path traversal attacks
 7. **Backend not directly accessible** - All requests must go through gateway (port 8001)
-8. **MongoDB requires authentication** - Use `admin:${MONGO_PASSWORD}` credentials
-9. **Admin bypass** - Admin role bypasses all permission checks (full access)
-10. **Regular users are isolated** - Can only access resources where path contains their user_id
-11. **Frontend proxy points to gateway** - NOT backend (changed from `backend:8000` to `gateway:8001`)
+8. **Admin bypass** - Admin role bypasses all permission checks (full access)
+9. **Regular users are isolated** - Can only access resources where path contains their user_id
+10. **Frontend proxy points to gateway** - NOT backend (changed from `backend:8000` to `gateway:8001`)
 
 ### System Behavior
-12. **User IDs must be unique** - Used as keys in GlobalStateManager's active_users dict
-13. **WebSocket reconnect has max 3 attempts** - After that, session must be manually restarted
-14. **Message deduplication uses 100-item cache** - Very old message IDs may be processed twice
-15. **Timezone-aware scheduling** - All cron schedules use user's configured timezone
-16. **Group tracking windows are strict** - Uses cron-based time windows to prevent duplicate/missed messages
-17. **Pending message TTL is 30s** - Messages in pending cache expire after 30 seconds
-18. **QR code linking requires open modal** - Closing modal kills session within 5s (heartbeat-based)
-19. **Audit logs auto-delete after 30 days** - MongoDB TTL index handles cleanup
-20. **Session cache TTL is 5 minutes** - In-memory cache refreshes from MongoDB after 5min
+11. **User IDs must be unique** - Used as keys in GlobalStateManager's active_users dict
+12. **WebSocket reconnect has max 3 attempts** - After that, session must be manually restarted
+13. **Message deduplication uses 100-item cache** - Very old message IDs may be processed twice
+14. **Timezone-aware scheduling** - All cron schedules use user's configured timezone
+15. **Group tracking windows are strict** - Uses cron-based time windows to prevent duplicate/missed messages
+16. **Pending message TTL is 30s** - Messages in pending cache expire after 30 seconds
+17. **QR code linking requires open modal** - Closing modal kills session within 5s (heartbeat-based)
+18. **Audit logs auto-delete after 30 days** - MongoDB TTL index handles cleanup
+19. **Session cache TTL is 5 minutes** - In-memory cache refreshes from MongoDB after 5min

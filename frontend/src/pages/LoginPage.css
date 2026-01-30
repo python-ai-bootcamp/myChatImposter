@@ -105,14 +105,3 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
-
-.login-footer {
-  margin-top: 20px;
-  text-align: center;
-}
-
-.login-footer p {
-  margin: 0;
-  color: #999;
-  font-size: 12px;
-}

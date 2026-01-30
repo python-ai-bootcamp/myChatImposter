@@ -3,7 +3,7 @@ import asyncio
 import uuid
 import logging
 from typing import Dict, Any, List, Union
-from fastapi import APIRouter, HTTPException, Body, Response
+from fastapi import APIRouter, HTTPException, Body, Response, Request
 from fastapi.responses import JSONResponse
 from fastapi.concurrency import run_in_threadpool
 from pymongo.errors import DuplicateKeyError
@@ -77,10 +77,55 @@ async def list_users():
         logging.error(f"API: Could not list user_ids: {e}")
         raise HTTPException(status_code=500, detail="Could not list user_ids.")
 
+@router.get("/{user_id}/info")
+async def get_user_info(user_id: str):
+    """
+    Get listing-format status for a single user.
+    Returns same format as /status but for one user only.
+    Used by frontend for regular users via /me/info endpoint.
+    """
+    _ensure_db_connected()
+
+    try:
+        # Check if config exists
+        config_data = await _get_user_config(user_id, global_state.configurations_collection)
+        if not config_data:
+            raise HTTPException(status_code=404, detail="Configuration not found")
+
+        # Check Auth
+        is_authenticated = False
+        if global_state.baileys_sessions_collection is not None:
+            auth_doc = await run_in_threadpool(
+                global_state.baileys_sessions_collection.find_one,
+                {"_id": f"{user_id}-creds"}
+            )
+            if auth_doc:
+                is_authenticated = True
+
+        # Check Active Session
+        instance = global_state.get_chatbot_instance_by_user(user_id)
+        status_info = {"status": "disconnected"}
+        if instance:
+            status_info = await instance.get_status()
+
+        # Return in same format as /status endpoint (array with one item)
+        return {
+            "configurations": [{
+                "user_id": user_id,
+                "status": status_info.get('status', 'unknown'),
+                "authenticated": is_authenticated
+            }]
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"API: Error getting info for {user_id}: {e}")
+        raise HTTPException(status_code=500, detail="Could not get user info.")
+
 @router.get("/status")
 async def list_users_status():
     """
-    Returns status for all configurations.
+    Returns status for all configurations (admin-only).
     (Formerly /api/configurations/status)
     """
     _ensure_db_connected()
@@ -96,7 +141,7 @@ async def list_users_status():
                     config_val = config_data
                 else:
                     continue # Skip invalid
-                
+
                 # We do minimal validation to extract ID, not full model validation to avoid crashes on bad data
                 user_id = config_val.get("user_id")
                 if not user_id: continue
@@ -106,13 +151,13 @@ async def list_users_status():
                 if global_state.baileys_sessions_collection is not None:
                      auth_doc = await run_in_threadpool(global_state.baileys_sessions_collection.find_one, {"_id": f"{user_id}-creds"})
                      if auth_doc: is_authenticated = True
-                
+
                 # Check Active Session
                 instance = global_state.get_chatbot_instance_by_user(user_id)
                 status_info = {"status": "disconnected"}
                 if instance:
                      status_info = await instance.get_status()
-                
+
                 statuses.append({
                     "user_id": user_id,
                     "status": status_info.get('status', 'unknown'),
@@ -123,7 +168,7 @@ async def list_users_status():
                 logging.warning(f"API: Error processing status for config: {e}")
                 if user_id:
                      statuses.append({"user_id": user_id, "status": "error", "authenticated": False})
-        
+
         return {"configurations": statuses}
     except Exception as e:
          logging.error(f"API: Error listing statuses: {e}")

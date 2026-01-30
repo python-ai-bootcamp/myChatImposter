@@ -6,9 +6,7 @@ import logging
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
 from starlette.middleware.base import BaseHTTPMiddleware
-from gateway.session_manager import SessionManager
 from gateway.permission_validator import PermissionValidator
-from gateway.audit_logger import AuditLogger
 
 
 class AuthenticationMiddleware(BaseHTTPMiddleware):
@@ -27,6 +25,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
     2. Validate session
     3. Check permissions
     4. Attach session to request.state
+
+    Services are accessed from request.app.state (set during lifespan startup).
     """
 
     # Paths that don't require authentication
@@ -39,24 +39,6 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         "/health",
     ]
 
-    def __init__(
-        self,
-        app,
-        session_manager: SessionManager,
-        audit_logger: AuditLogger,
-    ):
-        """
-        Initialize AuthenticationMiddleware.
-
-        Args:
-            app: FastAPI application
-            session_manager: SessionManager instance
-            audit_logger: AuditLogger instance
-        """
-        super().__init__(app)
-        self.session_manager = session_manager
-        self.audit_logger = audit_logger
-
     async def dispatch(self, request: Request, call_next):
         """Process request through authentication and permission checks."""
         path = request.url.path
@@ -64,6 +46,10 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         # Whitelist check
         if path in self.WHITELIST:
             return await call_next(request)
+
+        # Get services from app.state
+        session_manager = request.app.state.session_manager
+        audit_logger = request.app.state.audit_logger
 
         # Get session cookie
         session_id = request.cookies.get("session_id")
@@ -76,7 +62,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             )
 
         # Validate session
-        session = await self.session_manager.get_session(session_id)
+        session = await session_manager.get_session(session_id)
 
         if not session:
             logging.warning(f"GATEWAY: Invalid/expired session: {session_id}")
@@ -86,7 +72,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             )
 
         # Update last_accessed (heartbeat)
-        await self.session_manager.update_last_accessed(session_id)
+        await session_manager.update_last_accessed(session_id)
 
         # Check permissions
         has_permission, extracted_user_id = PermissionValidator.check_permission(
@@ -97,7 +83,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
 
         if not has_permission:
             # Log permission denied
-            await self.audit_logger.log_permission_denied(
+            await audit_logger.log_permission_denied(
                 user_id=session.user_id,
                 role=session.role,
                 requested_path=path,

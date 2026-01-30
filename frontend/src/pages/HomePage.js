@@ -19,8 +19,21 @@ function HomePage() {
 
   const fetchStatuses = async () => {
     try {
-      const response = await fetch('/api/external/users/status');
+      // Get user role from sessionStorage
+      const role = sessionStorage.getItem('role');
+
+      // Admin sees all users, regular users see only themselves
+      const endpoint = role === 'admin'
+        ? '/api/external/users/status'        // Admin: all users
+        : '/api/external/users/me/status';     // Regular user: only self
+
+      const response = await fetch(endpoint);
       if (!response.ok) {
+        // Handle 401 - redirect to login
+        if (response.status === 401) {
+          navigate('/login');
+          return;
+        }
         // limit error noise if it's just a transient issue, or handle gracefully
         console.error('Failed to fetch configuration statuses.');
         return;

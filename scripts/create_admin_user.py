@@ -1,21 +1,23 @@
 #!/usr/bin/env python3
 """
-Admin User Creation Script.
+User Creation Script.
 
-Creates an admin user with secure password input (not visible in terminal or history).
+Creates a user (admin or regular) with secure password input (not visible in terminal or history).
 Validates password strength before creating credentials.
 
 Usage:
-    python scripts/create_admin_user.py <user_id>
+    python scripts/create_admin_user.py <user_id> --role <admin|user>
 
-Example:
-    python scripts/create_admin_user.py admin
+Examples:
+    python scripts/create_admin_user.py admin --role admin
+    python scripts/create_admin_user.py tal --role user
 """
 
 import sys
 import os
 import getpass
 import asyncio
+import argparse
 
 # Add parent directory to path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
@@ -24,15 +26,16 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from services.user_auth_service import UserAuthService
 
 
-async def create_admin(user_id: str, mongodb_url: str):
+async def create_user(user_id: str, role: str, mongodb_url: str):
     """
-    Create admin user with secure password prompt.
+    Create user with secure password prompt.
 
     Args:
-        user_id: Admin user identifier
+        user_id: User identifier
+        role: User role ("admin" or "user")
         mongodb_url: MongoDB connection string
     """
-    print(f"\n=== Creating Admin User: {user_id} ===\n")
+    print(f"\n=== Creating {role.title()} User: {user_id} ===\n")
 
     # Prompt for password (not visible)
     while True:
@@ -65,17 +68,17 @@ async def create_admin(user_id: str, mongodb_url: str):
         # Initialize auth service
         auth_service = UserAuthService(credentials_collection)
 
-        # Create admin credentials
-        print(f"\nCreating admin user '{user_id}'...")
+        # Create user credentials
+        print(f"\nCreating {role} user '{user_id}'...")
         success, message = await auth_service.create_credentials(
             user_id=user_id,
             password=password,
-            role="admin"
+            role=role
         )
 
         if success:
             print(f"\n✓ {message}")
-            print(f"\nAdmin user '{user_id}' created successfully!")
+            print(f"\n{role.title()} user '{user_id}' created successfully!")
             print("\nYou can now log in to the gateway with these credentials.")
         else:
             print(f"\n✗ Error: {message}")
@@ -92,17 +95,35 @@ async def create_admin(user_id: str, mongodb_url: str):
 
 def main():
     """Main entry point."""
-    # Check arguments
-    if len(sys.argv) != 2:
-        print("Usage: python scripts/create_admin_user.py <user_id>")
-        print("\nExample:")
-        print("  python scripts/create_admin_user.py admin")
-        sys.exit(1)
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser(
+        description="Create a user with specified role (admin or regular user)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Examples:
+  python scripts/create_admin_user.py admin --role admin
+  python scripts/create_admin_user.py tal --role user
+        """
+    )
 
-    user_id = sys.argv[1]
+    parser.add_argument(
+        "user_id",
+        type=str,
+        help="User identifier (alphanumeric, underscore, hyphen only)"
+    )
+
+    parser.add_argument(
+        "--role",
+        type=str,
+        required=True,
+        choices=["admin", "user"],
+        help="User role (required)"
+    )
+
+    args = parser.parse_args()
 
     # Validate user_id
-    if not user_id or not user_id.strip():
+    if not args.user_id or not args.user_id.strip():
         print("Error: user_id cannot be empty")
         sys.exit(1)
 
@@ -110,7 +131,7 @@ def main():
     mongodb_url = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
 
     # Run async function
-    asyncio.run(create_admin(user_id.strip(), mongodb_url))
+    asyncio.run(create_user(args.user_id.strip(), args.role, mongodb_url))
 
 
 if __name__ == "__main__":

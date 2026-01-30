@@ -109,7 +109,8 @@ async def lifespan(app: FastAPI):
     Startup:
     1. Connect to MongoDB
     2. Initialize services
-    3. Start background tasks
+    3. Store in app.state
+    4. Start background tasks
 
     Shutdown:
     1. Stop background tasks
@@ -126,45 +127,37 @@ async def lifespan(app: FastAPI):
     # Initialize MongoDB
     await gateway_state.initialize_mongodb(mongodb_url)
 
-    # Initialize services
-    session_manager = SessionManager(
+    # Initialize services and store in app.state
+    app.state.session_manager = SessionManager(
         sessions_collection=gateway_state.sessions_collection,
         stale_sessions_collection=gateway_state.stale_sessions_collection,
     )
 
-    rate_limiter = RateLimiter(max_attempts=10, window_seconds=60)
+    app.state.rate_limiter = RateLimiter(max_attempts=10, window_seconds=60)
 
-    lockout_manager = AccountLockoutManager(
+    app.state.lockout_manager = AccountLockoutManager(
         account_lockouts_collection=gateway_state.account_lockouts_collection,
         max_attempts=10,
         attempt_window_minutes=10,
         lockout_duration_minutes=5,
     )
 
-    audit_logger = AuditLogger(
+    app.state.audit_logger = AuditLogger(
         audit_logs_collection=gateway_state.audit_logs_collection
     )
 
-    auth_service = UserAuthService(
+    app.state.auth_service = UserAuthService(
         credentials_collection=gateway_state.credentials_collection
     )
 
     # Initialize auth router with services
     auth.initialize_auth_router(
-        sm=session_manager,
-        rl=rate_limiter,
-        lm=lockout_manager,
-        al=audit_logger,
-        aus=auth_service,
+        sm=app.state.session_manager,
+        rl=app.state.rate_limiter,
+        lm=app.state.lockout_manager,
+        al=app.state.audit_logger,
+        aus=app.state.auth_service,
     )
-
-    # Add middleware (order matters - last added runs first)
-    app.add_middleware(
-        AuthenticationMiddleware,
-        session_manager=session_manager,
-        audit_logger=audit_logger,
-    )
-    app.add_middleware(RequestSizeLimitMiddleware)
 
     # Start background tasks
     cleanup_task = asyncio.create_task(cleanup_old_data())
@@ -197,6 +190,11 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
 )
+
+# Add middleware BEFORE lifespan starts (middleware added here will access app.state)
+# Order matters - last added runs first
+app.add_middleware(AuthenticationMiddleware)
+app.add_middleware(RequestSizeLimitMiddleware)
 
 
 # Include routers

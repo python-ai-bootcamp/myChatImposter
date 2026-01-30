@@ -88,6 +88,11 @@ class PermissionValidator:
             - has_permission: True if access allowed
             - extracted_user_id: User ID extracted from path (None if not found)
         """
+        # Special case: /me refers to current user (always allowed)
+        if "/me/" in request_path or request_path.endswith("/me"):
+            logging.debug(f"GATEWAY: /me endpoint accessed by {session_user_id}")
+            return True, session_user_id
+
         # Admin bypass - full access
         if session_role == "admin":
             return True, cls.extract_user_id_from_path(request_path)
