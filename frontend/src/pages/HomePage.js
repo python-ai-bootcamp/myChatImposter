@@ -19,13 +19,14 @@ function HomePage() {
 
   const fetchStatuses = async () => {
     try {
-      // Get user role from sessionStorage
+      // Get user role and ID from sessionStorage
       const role = sessionStorage.getItem('role');
+      const userId = sessionStorage.getItem('user_id');
 
       // Admin sees all users, regular users see only themselves
       const endpoint = role === 'admin'
-        ? '/api/external/users/status'        // Admin: all users
-        : '/api/external/users/me/status';     // Regular user: only self
+        ? '/api/external/users/status'           // Admin: all users
+        : `/api/external/users/${userId}/info`;  // Regular user: only self
 
       const response = await fetch(endpoint);
       if (!response.ok) {

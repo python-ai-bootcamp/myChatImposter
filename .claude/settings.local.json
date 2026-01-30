@@ -12,7 +12,8 @@
       "Bash(docker rm:*)",
       "Bash(docker start:*)",
       "Bash(docker run:*)",
-      "Bash(docker inspect:*)"
+      "Bash(docker inspect:*)",
+      "Bash(docker build:*)"
     ]
   }
 }
