@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from dependencies import GlobalStateManager
 
 router = APIRouter(
-    prefix="/api/async-message-delivery-queue",
+    prefix="/api/internal/async-message-delivery-queue",
     tags=["async_message_delivery_queue"]
 )
 

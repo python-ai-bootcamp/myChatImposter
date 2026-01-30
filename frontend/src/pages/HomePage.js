@@ -19,7 +19,7 @@ function HomePage() {
 
   const fetchStatuses = async () => {
     try {
-      const response = await fetch('/api/users/status');
+      const response = await fetch('/api/external/users/status');
       if (!response.ok) {
         // limit error noise if it's just a transient issue, or handle gracefully
         console.error('Failed to fetch configuration statuses.');
@@ -66,7 +66,7 @@ function HomePage() {
       const pollSpecificStatus = async () => {
         try {
           // Heartbeat is handled by backend logic on this endpoint
-          const response = await fetch(`/api/users/${linkingUser}/status`);
+          const response = await fetch(`/api/external/users/${linkingUser}/status`);
           if (response.ok) {
             const data = await response.json();
             setLinkStatus(data.status);
@@ -113,7 +113,7 @@ function HomePage() {
       const status = selectedConfig?.status || 'disconnected';
 
       if (status === 'disconnected') {
-        const createResponse = await fetch(`/api/users/${userId}/actions/link`, {
+        const createResponse = await fetch(`/api/external/users/${userId}/actions/link`, {
           method: 'POST',
         });
 
@@ -123,7 +123,7 @@ function HomePage() {
         }
       } else {
         // If 'close' or 'error', reload
-        const reloadResponse = await fetch(`/api/users/${userId}/actions/reload`, {
+        const reloadResponse = await fetch(`/api/external/users/${userId}/actions/reload`, {
           method: 'POST',
         });
         if (!reloadResponse.ok) {
@@ -144,7 +144,7 @@ function HomePage() {
   const handleUnlink = async (userId) => {
     if (window.confirm(`Are you sure you want to unlink user "${userId}"?`)) {
       try {
-        const response = await fetch(`/api/users/${userId}/actions/unlink`, {
+        const response = await fetch(`/api/external/users/${userId}/actions/unlink`, {
           method: 'POST',
         });
         if (!response.ok) {
@@ -161,7 +161,7 @@ function HomePage() {
   const handleDelete = async (userId) => {
     if (window.confirm(`Are you sure you want to delete the configuration for "${userId}"?`)) {
       try {
-        const response = await fetch(`/api/users/${userId}`, {
+        const response = await fetch(`/api/external/users/${userId}`, {
           method: 'DELETE',
         });
 

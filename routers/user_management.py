@@ -20,7 +20,7 @@ from features.kid_phone_safety_tracking.service import KidPhoneSafetyService
 from dependencies import GlobalStateManager
 
 router = APIRouter(
-    prefix="/api/users",
+    prefix="/api/internal/users",
     tags=["users"]
 )
 

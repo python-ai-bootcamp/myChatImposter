@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from dependencies import GlobalStateManager
 
 router = APIRouter(
-    prefix="/api/features/automatic_bot_reply",
+    prefix="/api/internal/features/automatic_bot_reply",
     tags=["automatic_bot_reply"]
 )
 

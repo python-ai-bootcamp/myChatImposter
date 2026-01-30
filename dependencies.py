@@ -22,6 +22,13 @@ class GlobalStateManager:
         self.queues_collection: Optional[Collection] = None
         self.baileys_sessions_collection: Optional[Collection] = None
 
+        # Authentication collections
+        self.sessions_collection: Optional[Collection] = None
+        self.stale_sessions_collection: Optional[Collection] = None
+        self.credentials_collection: Optional[Collection] = None
+        self.audit_logs_collection: Optional[Collection] = None
+        self.account_lockouts_collection: Optional[Collection] = None
+
         # State storage
         self.chatbot_instances: Dict[str, 'SessionManager'] = {}
         self.active_users: Dict[str, str] = {}  # Maps user_id to instance_id
@@ -47,13 +54,46 @@ class GlobalStateManager:
         self.configurations_collection = self.db.get_collection("configurations")
         self.queues_collection = self.db.get_collection("queues")
         self.baileys_sessions_collection = self.db.get_collection("baileys_sessions")
-        
+
+        # Authentication collections
+        self.sessions_collection = self.db.get_collection("authenticated_sessions")
+        self.stale_sessions_collection = self.db.get_collection("stale_authenticated_sessions")
+        self.credentials_collection = self.db.get_collection("user_auth_credentials")
+        self.audit_logs_collection = self.db.get_collection("audit_logs")
+        self.account_lockouts_collection = self.db.get_collection("account_lockouts")
+
         # Ensure indexes
         try:
             self.configurations_collection.create_index("config_data.user_id", unique=True)
             logging.info("API: Ensured unique index exists for 'config_data.user_id'.")
         except Exception as e:
             logging.warning(f"API: Could not create unique index: {e}")
+
+        # Authentication indexes
+        try:
+            # Sessions: unique session_id, index on user_id, TTL on expires_at
+            self.sessions_collection.create_index("session_id", unique=True)
+            self.sessions_collection.create_index("user_id")
+            self.sessions_collection.create_index("expires_at", expireAfterSeconds=0)
+            logging.info("API: Created indexes for authenticated_sessions collection.")
+
+            # Credentials: unique user_id
+            self.credentials_collection.create_index("user_id", unique=True)
+            logging.info("API: Created unique index for user_auth_credentials collection.")
+
+            # Audit logs: TTL index (30 days = 2592000 seconds), indexes on user_id and event_type
+            self.audit_logs_collection.create_index("timestamp", expireAfterSeconds=2592000)
+            self.audit_logs_collection.create_index("user_id")
+            self.audit_logs_collection.create_index("event_type")
+            logging.info("API: Created indexes for audit_logs collection with 30-day TTL.")
+
+            # Account lockouts: unique user_id, index on ip_address, TTL on locked_until
+            self.account_lockouts_collection.create_index("user_id", unique=True, sparse=True)
+            self.account_lockouts_collection.create_index("ip_address", sparse=True)
+            self.account_lockouts_collection.create_index("locked_until", expireAfterSeconds=0, sparse=True)
+            logging.info("API: Created indexes for account_lockouts collection.")
+        except Exception as e:
+            logging.warning(f"API: Could not create authentication indexes: {e}")
 
         logging.info("API: Successfully connected to MongoDB.")
 

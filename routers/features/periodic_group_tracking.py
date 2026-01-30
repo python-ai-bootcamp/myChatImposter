@@ -6,7 +6,7 @@ from fastapi.responses import JSONResponse
 from dependencies import GlobalStateManager
 
 router = APIRouter(
-    prefix="/api/features/periodic_group_tracking",
+    prefix="/api/internal/features/periodic_group_tracking",
     tags=["periodic_group_tracking"]
 )
 

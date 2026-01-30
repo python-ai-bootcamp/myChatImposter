@@ -37,7 +37,7 @@ export function TimezoneSelectWidget(props) {
     const containerRef = React.useRef(null);
 
     React.useEffect(() => {
-        fetch('/api/resources/timezones')
+        fetch('/api/external/resources/timezones')
             .then(res => {
                 if (!res.ok) throw new Error('Network response was not ok');
                 return res.json();

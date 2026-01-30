@@ -4,7 +4,10 @@ services:
     image: mongo:latest
     container_name: mongodb
     ports:
-      - "27017:27017"
+      - "27017:27017"  # For dev only; remove in production
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=admin
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_PASSWORD}
     volumes:
       - mongo-data:/data/db
     command:
@@ -20,18 +23,32 @@ services:
       dockerfile: backend.Dockerfile
     container_name: backend
     init: true
-    ports:
-      - "8000:8000"
+    # No ports exposed - only accessible via gateway on Docker network
     volumes:
       - ./log:/app/log
     environment:
       - WHATSAPP_SERVER_URL=http://whatsapp_baileys_server:9000
       - OPENAI_API_KEY=${OPENAI_API_KEY}
-      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_URL=mongodb://admin:${MONGO_PASSWORD}@mongodb:27017
       - PYTHONUNBUFFERED=1
     depends_on:
       - mongodb
       - whatsapp_baileys_server
+
+  gateway:
+    build:
+      context: .
+      dockerfile: gateway.Dockerfile
+    container_name: gateway
+    ports:
+      - "8001:8001"  # Only external port
+    environment:
+      - MONGODB_URL=mongodb://admin:${MONGO_PASSWORD}@mongodb:27017
+      - BACKEND_URL=http://backend:8000
+      - GATEWAY_PORT=8001
+    depends_on:
+      - mongodb
+      - backend
 
   frontend:
     build:
@@ -44,7 +61,7 @@ services:
       - ./frontend:/app
       - /app/node_modules
     depends_on:
-      - backend
+      - gateway
 
   whatsapp_baileys_server:
     build:
@@ -55,7 +72,7 @@ services:
     ports:
       - "9000:9000"
     environment:
-      - MONGODB_URL=mongodb://mongodb:27017
+      - MONGODB_URL=mongodb://admin:${MONGO_PASSWORD}@mongodb:27017
     volumes:
       - ./baileys_store:/app/baileys_store
     # The command will be specified in the python code that starts this service.

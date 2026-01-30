@@ -68,7 +68,7 @@ function EditPage() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const schemaResponse = await fetch('/api/users/schema');
+        const schemaResponse = await fetch('/api/external/users/schema');
         if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
         const schemaData = await schemaResponse.json();
         setSchema(schemaData);
@@ -76,7 +76,7 @@ function EditPage() {
         let initialFormData;
         if (isNew) {
           // Fetch dynamic defaults from backend (Single Source of Truth)
-          const defaultsResponse = await fetch('/api/users/defaults');
+          const defaultsResponse = await fetch('/api/external/users/defaults');
           if (!defaultsResponse.ok) throw new Error('Failed to fetch configuration defaults.');
           initialFormData = await defaultsResponse.json();
 
@@ -89,7 +89,7 @@ function EditPage() {
             initialFormData.configurations.user_details.timezone = localTimezone;
           }
         } else {
-          const dataResponse = await fetch(`/api/users/${userId}`);
+          const dataResponse = await fetch(`/api/external/users/${userId}`);
           if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');
           const data = await dataResponse.json();
           const originalData = Array.isArray(data) ? data[0] : data;
@@ -128,7 +128,7 @@ function EditPage() {
   useEffect(() => {
     const fetchStatusAndGroups = async () => {
       try {
-        const response = await fetch(`/api/users/${userId}/status`);
+        const response = await fetch(`/api/external/users/${userId}/status`);
         if (response.ok) {
           const data = await response.json();
           const status = data.status ? data.status.toLowerCase() : '';
@@ -139,7 +139,7 @@ function EditPage() {
             // Fetch available groups when connected
             try {
               console.log("Fetching groups for connected user...");
-              const groupsRes = await fetch(`/api/users/${userId}/groups`);
+              const groupsRes = await fetch(`/api/external/users/${userId}/groups`);
               if (groupsRes.ok) {
                 const groupsData = await groupsRes.json();
                 console.log("Fetched groups:", groupsData.groups?.length);
@@ -309,7 +309,7 @@ function EditPage() {
 
       // 3. Save Configuration (PUT)
       const finalApiData = { ...currentData, user_id: userId };
-      const saveResponse = await fetch(`/api/users/${userId}`, {
+      const saveResponse = await fetch(`/api/external/users/${userId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(finalApiData),
@@ -325,7 +325,7 @@ function EditPage() {
 
       // 4. Handle Post-Save Actions
       if (mode === 'reload') {
-        const reloadResponse = await fetch(`/api/users/${userId}/actions/reload`, {
+        const reloadResponse = await fetch(`/api/external/users/${userId}/actions/reload`, {
           method: 'POST',
         });
         if (!reloadResponse.ok) {
@@ -334,7 +334,7 @@ function EditPage() {
         }
         navigate('/');
       } else if (mode === 'link') {
-        const createResponse = await fetch(`/api/users/${userId}/actions/link`, {
+        const createResponse = await fetch(`/api/external/users/${userId}/actions/link`, {
           method: 'POST',
         });
         if (!createResponse.ok) {

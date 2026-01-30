@@ -7,7 +7,7 @@ Provides API endpoints for static resources like languages, timezones, etc.
 from fastapi import APIRouter
 from resources import get_all_languages
 
-router = APIRouter(prefix="/api/resources", tags=["Resources"])
+router = APIRouter(prefix="/api/internal/resources", tags=["Resources"])
 
 
 @router.get("/languages")

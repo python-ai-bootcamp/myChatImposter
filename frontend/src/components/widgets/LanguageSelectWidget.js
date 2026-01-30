@@ -10,7 +10,7 @@ export function LanguageSelectWidget(props) {
 
     // Fetch languages from API on mount
     React.useEffect(() => {
-        fetch('/api/resources/languages')
+        fetch('/api/external/resources/languages')
             .then(res => res.json())
             .then(data => {
                 setLanguages(data);
