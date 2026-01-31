@@ -22,11 +22,11 @@ This document represents the definitive list of refactoring opportunities for th
 | # | Title | ROI | Effort | Risk | Importance | Total | Final Status | Worth Implementing? |
 |:--|:------|:----|:-------|:-----|:-----------|:------|:-------------|:-------------------|
 | **001** | Duplicate Exception Block (Bug) | 5 | 5 | 5 | 5 | **20** | **CLOSED** | ✅ **DONE** |
-| **025** | Unified MongoDB Client Strategy | 5 | 2 | 3 | 5 | **19** | **OPEN** | ✅ **YES (Critical)** |
+| **025** | Unified MongoDB Client Strategy | 5 | 2 | 3 | 5 | **19** | **CLOSED** | ✅ **DONE** |
 | **002** | Frontend-Backend Schema Duplication | 5 | 3 | 4 | 5 | **18** | **OPEN** | ✅ **YES** |
 | **003** | Provider Factory DRY | 4 | 4 | 4 | 4 | **18** | **OPEN** | ✅ **YES** |
 | **006** | Dependency Injection (GroupTracking) | 4 | 4 | 4 | 4 | **18** | **OPEN** | ✅ **YES** |
-| **019** | Centralize Infrastructure Mgmt (DRY) | 5 | 3 | 4 | 4 | **17** | **OPEN** | ✅ **YES** |
+| **019** | Centralize Infrastructure Mgmt (DRY) | 5 | 3 | 4 | 4 | **17** | **CLOSED** | ✅ **DONE** |
 | **004** | Session Creation Logic Duplication | 5 | 3 | 3 | 4 | **17** | **OPEN** | ✅ **YES** |
 | **005** | Missing Test Coverage (Critical) | 5 | 3 | 5 | 4 | **17** | **OPEN** | ✅ **YES** |
 | **007** | Mongo Collection Encapsulation | 4 | 4 | 4 | 3 | **17** | **OPEN** | ✅ **YES** |
@@ -146,7 +146,7 @@ This document represents the definitive list of refactoring opportunities for th
 ### 019. Centralize Infrastructure Management (DRY)
 **Description**: Identical MongoDB index creation logic exists in `dependencies.py` and `gateway/dependencies.py`.
 **Reviewer Notes**: High priority to prevent schema drift between microservices.
-**Status**: **OPEN**
+**Status**: **CLOSED (Completed)**
 
 ### 020. Business Logic Leakage in Routers
 **Description**: Routers contain logic for clearing queues and managing state that belongs in Services.
@@ -174,7 +174,7 @@ This document represents the definitive list of refactoring opportunities for th
 ### 025. Unified MongoDB Client Strategy
 **Description**: The application uses both `pymongo` (blocking) and `motor` (async). Using blocking calls in `dependencies.py` blocks the main FastAPI event loop, severely limiting concurrency.
 **Reviewer Notes**: **CRITICAL**. This was upgraded from Medium to High/Critical priority. Migration to `motor` is essential for performance.
-**Status**: **OPEN**
+**Status**: **CLOSED (Completed)**
 
 ### 026. `user_management.py` File Length
 **Description**: File is large, but code internal organization is good.
