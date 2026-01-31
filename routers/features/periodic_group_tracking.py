@@ -16,23 +16,7 @@ def _ensure_tracker_db():
     if not global_state.group_tracker:
         raise HTTPException(status_code=503, detail="Group Tracking not initialized.")
 
-def _serialize_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
-    """Convert MongoDB types to JSON serializable."""
-    if not doc:
-        return doc
-    new_doc = {}
-    for k, v in doc.items():
-        if k == '_id':
-            new_doc[k] = str(v)
-        elif hasattr(v, 'isoformat'):
-             new_doc[k] = v.isoformat()
-        elif isinstance(v, list):
-             new_doc[k] = [_serialize_doc(i) if isinstance(i, dict) else i for i in v]
-        elif isinstance(v, dict):
-             new_doc[k] = _serialize_doc(v)
-        else:
-             new_doc[k] = v
-    return new_doc
+
 
 @router.get("/trackedGroupMessages/{user_id}")
 async def get_all_tracked_messages(user_id: str):
@@ -61,9 +45,7 @@ async def get_group_tracked_messages(user_id: str, group_id: str):
     except Exception as e:
         logging.error(f"API: Error getting tracked messages for {user_id}/{group_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get tracked messages.")
-    except Exception as e:
-        logging.error(f"API: Error getting tracked messages for {user_id}/{group_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to get tracked messages.")
+
 
 @router.delete("/trackedGroupMessages/{user_id}")
 async def delete_all_tracked_messages(user_id: str):

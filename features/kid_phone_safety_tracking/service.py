@@ -14,4 +14,7 @@ class KidPhoneSafetyService:
         """
         Handles kid phone safety tracking.
         """
+        if not self.session_manager.config.features.kid_phone_safety_tracking.enabled:
+            return
+
         logging.info(f"KID_SAFETY ({self.user_id}): Handling live message for safety check.")

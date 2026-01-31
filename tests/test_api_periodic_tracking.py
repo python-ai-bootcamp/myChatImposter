@@ -32,7 +32,7 @@ def test_get_tracked_messages_calls_history_service():
     global_state.group_tracker = mock_tracker
     
     try:
-        response = client.get(f"/api/features/periodic_group_tracking/trackedGroupMessages/{user_id}")
+        response = client.get(f"/api/internal/features/periodic_group_tracking/trackedGroupMessages/{user_id}")
         
         assert response.status_code == 200
         data = response.json()
@@ -66,7 +66,7 @@ def test_get_group_tracked_messages_calls_history_service():
     global_state.group_tracker = mock_tracker
     
     try:
-        response = client.get(f"/api/features/periodic_group_tracking/trackedGroupMessages/{user_id}/{group_id}")
+        response = client.get(f"/api/internal/features/periodic_group_tracking/trackedGroupMessages/{user_id}/{group_id}")
         
         assert response.status_code == 200
         data = response.json()
