@@ -44,19 +44,23 @@ async def lifespan(app: FastAPI):
     mongodb_url = os.environ.get("MONGODB_URL", "mongodb://mongodb:27017/")
     
     # 1. Initialize MongoDB
-    global_state.initialize_mongodb(mongodb_url)
+    await global_state.initialize_mongodb(mongodb_url)
     
     try:
         # 2. Initialize AsyncMessageDeliveryQueueManager
-        global_state.async_message_delivery_queue_manager = AsyncMessageDeliveryQueueManager(mongodb_url, global_state.chatbot_instances)
+        # Now pass shared DB object
+        global_state.async_message_delivery_queue_manager = AsyncMessageDeliveryQueueManager(global_state.db, global_state.chatbot_instances)
+        # Ensure indexes (if manual init is preferred, or rely on shared schema if moved there)
+        # For now, explicit await init
+        await global_state.async_message_delivery_queue_manager.initialize_indexes()
         
         # Lifecycle: Move all items to Holding Queue on Startup
-        global_state.async_message_delivery_queue_manager.move_all_to_holding()
+        await global_state.async_message_delivery_queue_manager.move_all_to_holding()
         
         await global_state.async_message_delivery_queue_manager.start_consumer()
         
         # 3. Initialize GroupTracker
-        global_state.group_tracker = GroupTracker(mongodb_url, global_state.chatbot_instances, global_state.async_message_delivery_queue_manager)
+        global_state.group_tracker = GroupTracker(global_state.db, global_state.chatbot_instances, global_state.async_message_delivery_queue_manager)
         global_state.group_tracker.start()
         
         # 4. Initialize UserLifecycleService

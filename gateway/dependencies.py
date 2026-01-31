@@ -6,6 +6,7 @@ import logging
 import os
 from typing import Optional
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase, AsyncIOMotorCollection
+from infrastructure import db_schema
 
 
 class GatewayStateManager:
@@ -53,48 +54,14 @@ class GatewayStateManager:
         await self.mongo_client.admin.command("ismaster")
 
         self.db = self.mongo_client.get_database("chat_manager")
-        self.sessions_collection = self.db.get_collection("authenticated_sessions")
-        self.stale_sessions_collection = self.db.get_collection(
-            "stale_authenticated_sessions"
-        )
-        self.credentials_collection = self.db.get_collection("user_auth_credentials")
-        self.audit_logs_collection = self.db.get_collection("audit_logs")
-        self.account_lockouts_collection = self.db.get_collection("account_lockouts")
+        self.sessions_collection = self.db.get_collection(db_schema.COLLECTION_SESSIONS)
+        self.stale_sessions_collection = self.db.get_collection(db_schema.COLLECTION_STALE_SESSIONS)
+        self.credentials_collection = self.db.get_collection(db_schema.COLLECTION_CREDENTIALS)
+        self.audit_logs_collection = self.db.get_collection(db_schema.COLLECTION_AUDIT_LOGS)
+        self.account_lockouts_collection = self.db.get_collection(db_schema.COLLECTION_ACCOUNT_LOCKOUTS)
 
-        # Create indexes
-        try:
-            # Sessions: unique session_id, index on user_id, TTL on expires_at
-            await self.sessions_collection.create_index("session_id", unique=True)
-            await self.sessions_collection.create_index("user_id")
-            await self.sessions_collection.create_index(
-                "expires_at", expireAfterSeconds=0
-            )
-            logging.info("GATEWAY: Created indexes for authenticated_sessions.")
-
-            # Credentials: unique user_id
-            await self.credentials_collection.create_index("user_id", unique=True)
-            logging.info("GATEWAY: Created indexes for user_auth_credentials.")
-
-            # Audit logs: TTL (30 days), indexes on user_id and event_type
-            await self.audit_logs_collection.create_index(
-                "timestamp", expireAfterSeconds=2592000
-            )
-            await self.audit_logs_collection.create_index("user_id")
-            await self.audit_logs_collection.create_index("event_type")
-            logging.info("GATEWAY: Created indexes for audit_logs with 30-day TTL.")
-
-            # Account lockouts: unique user_id, index on ip_address, TTL on locked_until
-            await self.account_lockouts_collection.create_index(
-                "user_id", unique=True, sparse=True
-            )
-            await self.account_lockouts_collection.create_index("ip_address", sparse=True)
-            await self.account_lockouts_collection.create_index(
-                "locked_until", expireAfterSeconds=0, sparse=True
-            )
-            logging.info("GATEWAY: Created indexes for account_lockouts.")
-        except Exception as e:
-            logging.warning(f"GATEWAY: Could not create indexes: {e}")
-
+        # Index creation is handled by the Backend (GlobalStateManager)
+        # Gateway assumes schema is already established.
         logging.info("GATEWAY: Successfully connected to MongoDB.")
 
     async def shutdown(self):

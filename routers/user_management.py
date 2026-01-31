@@ -38,7 +38,7 @@ async def _get_user_config(user_id: str, configurations_collection) -> Union[dic
     Expects config_data to be a dict (legacy list format has been migrated).
     """
     try:
-        db_config = await run_in_threadpool(configurations_collection.find_one, {"config_data.user_id": user_id})
+        db_config = await configurations_collection.find_one({"config_data.user_id": user_id})
         
         if not db_config:
             return None
@@ -67,7 +67,7 @@ async def list_users():
     try:
         user_ids = []
         cursor = global_state.configurations_collection.find({}, {"config_data.user_id": 1, "_id": 0})
-        for doc in cursor:
+        async for doc in cursor:
             config_data = doc.get("config_data", {})
             if isinstance(config_data, dict):
                 uid = config_data.get("user_id")
@@ -95,10 +95,7 @@ async def get_user_info(user_id: str):
         # Check Auth
         is_authenticated = False
         if global_state.baileys_sessions_collection is not None:
-            auth_doc = await run_in_threadpool(
-                global_state.baileys_sessions_collection.find_one,
-                {"_id": f"{user_id}-creds"}
-            )
+            auth_doc = await global_state.baileys_sessions_collection.find_one({"_id": f"{user_id}-creds"})
             if auth_doc:
                 is_authenticated = True
 
@@ -131,7 +128,8 @@ async def list_users_status():
     _ensure_db_connected()
     statuses = []
     try:
-        db_configs = list(global_state.configurations_collection.find({}))
+        cursor = global_state.configurations_collection.find({})
+        db_configs = await cursor.to_list(length=None)
         for db_config in db_configs:
             config_data = db_config.get("config_data")
             user_id = None
@@ -149,7 +147,7 @@ async def list_users_status():
                 # Check Auth
                 is_authenticated = False
                 if global_state.baileys_sessions_collection is not None:
-                     auth_doc = await run_in_threadpool(global_state.baileys_sessions_collection.find_one, {"_id": f"{user_id}-creds"})
+                     auth_doc = await global_state.baileys_sessions_collection.find_one({"_id": f"{user_id}-creds"})
                      if auth_doc: is_authenticated = True
 
                 # Check Active Session
@@ -514,7 +512,7 @@ async def reload_user(user_id: str):
         if instance:
             await instance.stop(cleanup_session=False)
             if global_state.async_message_delivery_queue_manager:
-                global_state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
+                await global_state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
         else:
              global_state.remove_active_user(user_id)
              raise HTTPException(status_code=500, detail="Instance missing.")

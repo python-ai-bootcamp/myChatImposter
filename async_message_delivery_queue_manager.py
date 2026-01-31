@@ -12,10 +12,11 @@ from message_processors.factory import MessageProcessorFactory
 import logging
 from queue_message_types import QueueMessageType
 
+from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
+
 class AsyncMessageDeliveryQueueManager:
-    def __init__(self, mongo_url: str, chatbot_instances: dict[str, SessionManager]):
-        self.mongo_client = MongoClient(mongo_url)
-        self.db = self.mongo_client['chat_manager']
+    def __init__(self, db: AsyncIOMotorDatabase, chatbot_instances: dict[str, SessionManager]):
+        self.db = db
         
         # Collections
         self.queue_collection = self.db['async_message_delivery_queue_active']
@@ -26,10 +27,13 @@ class AsyncMessageDeliveryQueueManager:
         self.running = False
         self.consumer_task = None
         
-        # Ensure indexes
-        self.queue_collection.create_index("message_metadata.send_attempts")
-        self.queue_collection.create_index("message_metadata.message_destination.user_id")
-        self.unconnected_collection.create_index("message_metadata.message_destination.user_id")
+        # Indexes should be initialized via initialize_indexes() or centralized schema.
+        # We do not await them here in __init__.
+    
+    async def initialize_indexes(self):
+        await self.queue_collection.create_index("message_metadata.send_attempts")
+        await self.queue_collection.create_index("message_metadata.message_destination.user_id")
+        await self.unconnected_collection.create_index("message_metadata.message_destination.user_id")
 
     async def start_consumer(self):
         if self.running:
@@ -48,7 +52,7 @@ class AsyncMessageDeliveryQueueManager:
                 pass
         logging.info("ACTIONABLE_QUEUE: ActionableItemsDeliveryQueueManager consumer stopped.")
 
-    def add_item(self, content: Any, message_type: QueueMessageType, user_id: str, provider_name: str):
+    async def add_item(self, content: Any, message_type: QueueMessageType, user_id: str, provider_name: str):
         """
         Adds an item to the queue.
         """
@@ -68,63 +72,69 @@ class AsyncMessageDeliveryQueueManager:
         }
         
         try:
-            self.queue_collection.insert_one(doc)
+            await self.queue_collection.insert_one(doc)
             logging.info(f"ACTIONABLE_QUEUE: Added item {message_id} ({message_type.value}) for user {user_id}")
         except Exception as e:
             logging.error(f"ACTIONABLE_QUEUE: Failed to add item to delivery queue: {e}")
 
-    def move_user_to_holding(self, user_id: str):
+    async def move_user_to_holding(self, user_id: str):
         """
         Moves all items for a specific user from the active queue to the unconnected holding queue.
         """
         try:
             # Find items
             query = {"message_metadata.message_destination.user_id": user_id}
-            items = list(self.queue_collection.find(query))
+            # Motor find returns cursor
+            items = []
+            async for doc in self.queue_collection.find(query):
+                items.append(doc)
             
             if items:
                 # Insert to unconnected
-                self.unconnected_collection.insert_many(items)
+                await self.unconnected_collection.insert_many(items)
                 # Delete from active
-                self.queue_collection.delete_many(query)
+                await self.queue_collection.delete_many(query)
                 logging.info(f"ACTIONABLE_QUEUE: Moved {len(items)} items for user {user_id} to UNCONNECTED holding queue.")
             else:
                 pass
-                # logging.debug(f"ACTIONABLE_QUEUE_DEBUG: No items to move to holding for user {user_id}.")
         except Exception as e:
             logging.error(f"ACTIONABLE_QUEUE: Failed to move items to holding for user {user_id}: {e}")
 
-    def move_user_to_active(self, user_id: str):
+    async def move_user_to_active(self, user_id: str):
         """
         Moves all items for a specific user from the unconnected holding queue to the active queue.
         """
         try:
             # Find items
             query = {"message_metadata.message_destination.user_id": user_id}
-            items = list(self.unconnected_collection.find(query))
+            items = []
+            async for doc in self.unconnected_collection.find(query):
+                items.append(doc)
             
             if items:
                 # Insert to active
-                self.queue_collection.insert_many(items)
+                await self.queue_collection.insert_many(items)
                 # Delete from unconnected
-                self.unconnected_collection.delete_many(query)
+                await self.unconnected_collection.delete_many(query)
                 logging.info(f"ACTIONABLE_QUEUE: Moved {len(items)} items for user {user_id} to ACTIVE delivery queue.")
             else:
                 pass
-                # logging.debug(f"ACTIONABLE_QUEUE_DEBUG: No items to move to active for user {user_id}.")
         except Exception as e:
             logging.error(f"ACTIONABLE_QUEUE: Failed to move items to active for user {user_id}: {e}")
 
-    def move_all_to_holding(self):
+    async def move_all_to_holding(self):
         """
         Moves ALL items from the active queue to the unconnected holding queue.
         Used on startup.
         """
         try:
-            items = list(self.queue_collection.find({}))
+            items = []
+            async for doc in self.queue_collection.find({}):
+                items.append(doc)
+
             if items:
-                self.unconnected_collection.insert_many(items)
-                self.queue_collection.delete_many({})
+                await self.unconnected_collection.insert_many(items)
+                await self.queue_collection.delete_many({})
                 logging.info(f"ACTIONABLE_QUEUE: Startup: Moved {len(items)} items to UNCONNECTED holding queue.")
             else:
                 logging.info("ACTIONABLE_QUEUE: Startup: No pending items to move to holding.")
@@ -142,7 +152,9 @@ class AsyncMessageDeliveryQueueManager:
                 # Random Selection Pipeline (Size 1)
                 pipeline = [{"$sample": {"size": 1}}]
                 cursor = self.queue_collection.aggregate(pipeline)
-                candidate_list = list(cursor)
+                candidate_list = []
+                async for c in cursor:
+                    candidate_list.append(c)
                 
                 if not candidate_list:
                     continue 
@@ -156,8 +168,8 @@ class AsyncMessageDeliveryQueueManager:
                 if attempts >= 3:
                     logging.warning(f"ACTIONABLE_QUEUE: Item {message_id} reached max attempts (3). Moving to FAILED queue.")
                     try:
-                        self.failed_collection.insert_one(candidate)
-                        self.queue_collection.delete_one({"_id": candidate["_id"]})
+                        await self.failed_collection.insert_one(candidate)
+                        await self.queue_collection.delete_one({"_id": candidate["_id"]})
                     except Exception as e:
                         logging.error(f"ACTIONABLE_QUEUE: Failed to move item {message_id} to failed queue: {e}")
                     continue
@@ -185,7 +197,7 @@ class AsyncMessageDeliveryQueueManager:
                     continue
 
                 # 3. Increment Attempts (in DB)
-                updated_doc = self.queue_collection.find_one_and_update(
+                updated_doc = await self.queue_collection.find_one_and_update(
                     {"_id": candidate["_id"]},
                     {"$inc": {"message_metadata.send_attempts": 1}},
                     return_document=True
@@ -221,7 +233,7 @@ class AsyncMessageDeliveryQueueManager:
                          pass
 
                     # 4. Success (Atomic) -> Delete
-                    self.queue_collection.delete_one({"_id": candidate["_id"]})
+                    await self.queue_collection.delete_one({"_id": candidate["_id"]})
                     logging.info(f"ACTIONABLE_QUEUE: Sent item {message_id} successfully. Removed from queue.")
                     
                 except Exception as e:
@@ -236,11 +248,16 @@ class AsyncMessageDeliveryQueueManager:
                 logging.error(f"ACTIONABLE_QUEUE: Error in consumer loop: {e}")
                 await asyncio.sleep(5)
 
-    def get_queue_items(self, queue_type: str, user_id: str = None) -> list:
-        """
-        Retrieves items from the specified queue, optionally filtered by user_id.
-        queue_type: 'active', 'failed', 'unconnected'
-        """
+        # Return list of items, converting ObjectId to str for JSON serialization if needed elsewhere
+        items = []
+        # Find requires loop
+        # Wait, if this is called from API (sync or async?)
+        # If Router is async, we can await this.
+        # But this function is sync signature. We must change it to async def.
+        pass # Placeholder trigger for next chunk
+         
+    async def get_queue_items(self, queue_type: str, user_id: str = None) -> list:
+        # Re-implementing as async
         collection = None
         if queue_type == "active":
             collection = self.queue_collection
@@ -255,13 +272,13 @@ class AsyncMessageDeliveryQueueManager:
         if user_id:
             query["message_metadata.message_destination.user_id"] = user_id
 
-        # Return list of items, converting ObjectId to str for JSON serialization if needed elsewhere
-        items = list(collection.find(query))
-        for item in items:
+        items = []
+        async for item in collection.find(query):
             item["_id"] = str(item["_id"])
+            items.append(item)
         return items
 
-    def delete_queue_item(self, queue_type: str, message_id: str) -> bool:
+    async def delete_queue_item(self, queue_type: str, message_id: str) -> bool:
         """
         Deletes a specific item by message_id from the specified queue.
         Returns True if deleted, False if not found.
@@ -276,7 +293,7 @@ class AsyncMessageDeliveryQueueManager:
         else:
             raise ValueError(f"Invalid queue_type: {queue_type}")
 
-        result = collection.delete_one({"message_metadata.message_id": message_id})
+        result = await collection.delete_one({"message_metadata.message_id": message_id})
         if result.deleted_count > 0:
             logging.info(f"ACTIONABLE_QUEUE: Deleted item {message_id} from {queue_type} queue.")
             return True

@@ -2,7 +2,7 @@ import asyncio
 import logging
 from dataclasses import asdict
 from typing import Optional
-from pymongo.collection import Collection
+from motor.motor_asyncio import AsyncIOMotorCollection
 
 from queue_manager import Message
 from services.session_manager import SessionManager
@@ -11,7 +11,7 @@ class IngestionService:
     """
     Background service that archives messages from User Queues to MongoDB.
     """
-    def __init__(self, session_manager: SessionManager, queues_collection: Collection):
+    def __init__(self, session_manager: SessionManager, queues_collection: AsyncIOMotorCollection):
         self.session_manager = session_manager
         self.user_id = session_manager.user_id
         # We need provider name, likely available in session_manager.provider_instance?
@@ -53,7 +53,7 @@ class IngestionService:
                         message_doc['correspondent_id'] = queue.correspondent_id
 
                         # Run the blocking DB call in a separate thread
-                        await asyncio.to_thread(self.queues_collection.insert_one, message_doc)
+                        await self.queues_collection.insert_one(message_doc)
 
                         logging.info(f"INGESTION ({self.user_id}/{queue.correspondent_id}): Persisted message {message.id}.")
                     except Exception as e:

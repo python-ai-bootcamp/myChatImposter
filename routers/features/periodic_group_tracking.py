@@ -26,7 +26,7 @@ async def get_all_tracked_messages(user_id: str):
     _ensure_tracker_db()
     try:
         # Use History Service
-        results = global_state.group_tracker.history.get_tracked_periods(user_id=user_id)
+        results = await global_state.group_tracker.history.get_tracked_periods(user_id=user_id)
         return JSONResponse(content=results)
     except Exception as e:
         logging.error(f"API: Error getting tracked messages for {user_id}: {e}")
@@ -40,7 +40,7 @@ async def get_group_tracked_messages(user_id: str, group_id: str):
     _ensure_tracker_db()
     try:
         # Use History Service
-        results = global_state.group_tracker.history.get_tracked_periods(user_id=user_id, group_id=group_id)
+        results = await global_state.group_tracker.history.get_tracked_periods(user_id=user_id, group_id=group_id)
         return JSONResponse(content=results)
     except Exception as e:
         logging.error(f"API: Error getting tracked messages for {user_id}/{group_id}: {e}")
@@ -54,7 +54,7 @@ async def delete_all_tracked_messages(user_id: str):
     """
     _ensure_tracker_db()
     try:
-        result = global_state.group_tracker.tracked_group_periods_collection.delete_many({"user_id": user_id})
+        result = await global_state.group_tracker.tracked_group_periods_collection.delete_many({"user_id": user_id})
         logging.info(f"API: Deleted {result.deleted_count} tracked periods for {user_id}.")
         return Response(status_code=204)
     except Exception as e:
@@ -68,7 +68,7 @@ async def delete_group_tracked_messages(user_id: str, group_id: str):
     """
     _ensure_tracker_db()
     try:
-        result = global_state.group_tracker.tracked_group_periods_collection.delete_many(
+        result = await global_state.group_tracker.tracked_group_periods_collection.delete_many(
             {"user_id": user_id, "group_id": group_id}
         )
         return Response(status_code=204)

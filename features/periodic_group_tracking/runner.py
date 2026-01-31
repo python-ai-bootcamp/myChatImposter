@@ -61,7 +61,7 @@ class GroupTrackingRunner:
         # Determine time window
         try:
              # Calculate window using separated service
-             last_run_ts = self.history.get_last_run(user_id, config.groupIdentifier)
+             last_run_ts = await self.history.get_last_run(user_id, config.groupIdentifier)
             
              current_cron_start_dt, current_cron_end_dt = self.window_calculator.calculate_window(
                  cron_expression=config.cronTrackingSchedule,
@@ -88,7 +88,7 @@ class GroupTrackingRunner:
         alternate_identifiers_set = set()
         
         # Deduplication: Get recent message IDs from history to prevent overlap if timestamps update
-        seen_message_ids = self.history.get_recent_message_ids(user_id, config.groupIdentifier)
+        seen_message_ids = await self.history.get_recent_message_ids(user_id, config.groupIdentifier)
         logger.info(f"Loaded {len(seen_message_ids)} recent message IDs for deduplication.")
 
         for msg in messages:
@@ -138,7 +138,7 @@ class GroupTrackingRunner:
         transformed_messages.sort(key=lambda x: x['originating_time'])
 
         # Save to History Service
-        self.history.save_tracking_result(
+        await self.history.save_tracking_result(
             user_id=user_id,
             config_group_id=config.groupIdentifier,
             config_display_name=config.displayName,
@@ -190,7 +190,8 @@ class GroupTrackingRunner:
                         item["group_display_name"] = config.displayName
                         
                         # Add to Queue
-                        self.queue_manager.add_item(
+                        # Add to Queue
+                        await self.queue_manager.add_item(
                             content=item,
                             message_type=QueueMessageType.ICS_ACTIONABLE_ITEM,
                             user_id=user_id,

@@ -230,11 +230,11 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             # Handle message arrays (existing behavior)
             if isinstance(data, list):
                 logging.info(f"Fetched {len(data)} new message(s) via WebSocket.")
-                self._process_messages(data)
+                await self._process_messages(data)
         except json.JSONDecodeError:
             logging.error(f"ERROR: Could not decode JSON from WebSocket: {message}")
 
-    def _process_messages(self, messages):
+    async def _process_messages(self, messages):
         queues_manager = self.user_queues.get(self.user_id)
         if not queues_manager:
             logging.error("ERROR: Could not find a queues manager for myself.")
@@ -324,7 +324,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
             originating_time = msg.get('originating_time')
 
-            queues_manager.add_message(
+            await queues_manager.add_message(
                 correspondent_id=correspondent_id,
                 content=msg['message'],
                 sender=sender,

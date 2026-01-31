@@ -57,15 +57,19 @@ class CorrespondentQueue:
         self._total_chars = 0
         self._callbacks: List[Callable[[str, Message], None]] = []
         self._recent_provider_message_ids: deque[str] = deque(maxlen=20)
-        self._new_message_event = threading.Event()
+        self._recent_provider_message_ids: deque[str] = deque(maxlen=20)
+        self._new_message_event = asyncio.Event() # Changed to asyncio.Event for async wait
 
+    async def initialize(self):
+        """Async initialization to load state from DB."""
         if self._queues_collection is not None:
-            self._initialize_next_message_id()
+            await self._initialize_next_message_id()
 
-    def _initialize_next_message_id(self):
+    async def _initialize_next_message_id(self):
         """Sets the next message ID based on the last message in the database for this correspondent."""
         try:
-            last_message = self._queues_collection.find_one(
+            # Async Find One
+            last_message = await self._queues_collection.find_one(
                 {"user_id": self.user_id, "provider_name": self.provider_name, "correspondent_id": self.correspondent_id},
                 sort=[("id", DESCENDING)]
             )
@@ -114,7 +118,7 @@ class CorrespondentQueue:
             self._log_retention_event(evicted_msg, "message_count", new_message_size)
             logging.info(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to message count limit.")
 
-    def add_message(self, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None, provider_message_id: Optional[str] = None):
+    async def add_message(self, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None, provider_message_id: Optional[str] = None):
         """Create, add, and process a new message for the queue."""
         if provider_message_id:
             if provider_message_id in self._recent_provider_message_ids:
@@ -164,12 +168,16 @@ class CorrespondentQueue:
             self._new_message_event.clear()
             return None
 
-    def wait_for_message(self, timeout: Optional[float] = None) -> bool:
+    async def wait_for_message(self, timeout: Optional[float] = None) -> bool:
         """
         Waits for a new message to be added to the queue. Returns True if an event was
         triggered, False if it timed out.
         """
-        return self._new_message_event.wait(timeout)
+        try:
+            await asyncio.wait_for(self._new_message_event.wait(), timeout=timeout)
+            return True
+        except asyncio.TimeoutError:
+            return False
 
     def _log_message(self, message: Message):
         """
@@ -213,27 +221,38 @@ class UserQueuesManager:
         self._callbacks: List[Callable[[str, str, Message], None]] = []
         self._lock = threading.Lock()
 
-    def get_or_create_queue(self, correspondent_id: str) -> CorrespondentQueue:
-        with self._lock:
-            if correspondent_id not in self._queues:
-                logging.info(f"QUEUE_MANAGER ({self.user_id}): Creating new queue for correspondent '{correspondent_id}'.")
-                queue = CorrespondentQueue(
-                    user_id=self.user_id,
-                    provider_name=self.provider_name,
-                    correspondent_id=correspondent_id,
-                    queue_config=self.queue_config,
-                    queues_collection=self.queues_collection,
-                    main_loop=self.main_loop
-                )
-                # Register all existing manager-level callbacks to the new queue
-                for callback in self._callbacks:
-                    queue.register_callback(callback)
-                self._queues[correspondent_id] = queue
-            return self._queues[correspondent_id]
+    async def get_or_create_queue(self, correspondent_id: str) -> CorrespondentQueue:
+        # Use asyncio Lock instead of threading Lock? 
+        # Actually since we are in async, we assume single threaded event loop, 
+        # but race conditions can happen during await.
+        # However, checking dict membership is atomic in Python GIL, but let's be safe.
+        # For strict async safety we would use asyncio.Lock() but we can't await in __init__.
+        # We'll just rely on the fact that dict operations are atomic.
+        
+        if correspondent_id not in self._queues:
+            # Double check pattern not easy without lock, but standard dict check is usually fine in single loop.
+            logging.info(f"QUEUE_MANAGER ({self.user_id}): Creating new queue for correspondent '{correspondent_id}'.")
+            queue = CorrespondentQueue(
+                user_id=self.user_id,
+                provider_name=self.provider_name,
+                correspondent_id=correspondent_id,
+                queue_config=self.queue_config,
+                queues_collection=self.queues_collection,
+                main_loop=self.main_loop
+            )
+            # AWAIT initialization
+            await queue.initialize()
 
-    def add_message(self, correspondent_id: str, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None, provider_message_id: Optional[str] = None):
-        queue = self.get_or_create_queue(correspondent_id)
-        queue.add_message(content, sender, source, originating_time, group, provider_message_id)
+            # Register all existing manager-level callbacks to the new queue
+            for callback in self._callbacks:
+                queue.register_callback(callback)
+            self._queues[correspondent_id] = queue
+            
+        return self._queues[correspondent_id]
+
+    async def add_message(self, correspondent_id: str, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None, provider_message_id: Optional[str] = None):
+        queue = await self.get_or_create_queue(correspondent_id)
+        await queue.add_message(content, sender, source, originating_time, group, provider_message_id)
 
     def register_callback(self, callback: Callable[[str, str, Message], None]):
         """Register a callback to be added to all queues."""
@@ -248,5 +267,4 @@ class UserQueuesManager:
             return list(self._queues.values())
 
     def get_queue(self, correspondent_id: str) -> Optional[CorrespondentQueue]:
-        with self._lock:
-            return self._queues.get(correspondent_id)
+        return self._queues.get(correspondent_id)

@@ -44,7 +44,7 @@ class UserLifecycleService:
 
         # 1. Move items to Active Queue
         if self.global_state.async_message_delivery_queue_manager:
-            self.global_state.async_message_delivery_queue_manager.move_user_to_active(user_id)
+            await self.global_state.async_message_delivery_queue_manager.move_user_to_active(user_id)
             logging.info(f"LIFECYCLE: User {user_id} connected. Moved items to ACTIVE queue.")
 
         # 2. Start Group Tracking (Late Binding)
@@ -78,11 +78,8 @@ class UserLifecycleService:
     
     async def _get_user_config(self, user_id: str) -> Optional[dict]:
         """Helper to retrieve user configuration from DB."""
-        from fastapi.concurrency import run_in_threadpool
-        
         try:
-            db_config = await run_in_threadpool(
-                self.global_state.configurations_collection.find_one, 
+            db_config = await self.global_state.configurations_collection.find_one(
                 {"config_data.user_id": user_id}
             )
             

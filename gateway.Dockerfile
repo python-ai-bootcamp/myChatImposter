@@ -12,6 +12,7 @@ RUN pip install --no-cache-dir -r requirements.txt -r gateway_requirements.txt
 COPY auth_models.py ./
 COPY services/user_auth_service.py ./services/
 COPY gateway/ ./gateway/
+COPY infrastructure/ ./infrastructure/
 
 # Expose gateway port
 EXPOSE 8001

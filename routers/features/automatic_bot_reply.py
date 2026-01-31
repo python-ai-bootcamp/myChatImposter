@@ -31,7 +31,7 @@ async def get_user_queue(user_id: str):
         ).sort("id", 1)
 
         grouped_messages = {}
-        for message in messages_cursor:
+        async for message in messages_cursor:
             correspondent_id = message.pop("correspondent_id", "__missing_correspondent_id__")
             if correspondent_id not in grouped_messages:
                 grouped_messages[correspondent_id] = []
@@ -50,10 +50,11 @@ async def clear_all_user_queues(user_id: str):
     _ensure_db_connected()
     try:
         query = {"user_id": user_id}
-        if global_state.queues_collection.count_documents(query, limit=1) == 0:
+        doc_count = await global_state.queues_collection.count_documents(query, limit=1)
+        if doc_count == 0:
              return JSONResponse(status_code=410, content={"ERROR": True, "ERROR_MSG": f"no queues exist for user {user_id}"})
         
-        result = global_state.queues_collection.delete_many(query)
+        result = await global_state.queues_collection.delete_many(query)
         logging.info(f"API: Deleted {result.deleted_count} messages for {user_id}.")
 
         # Clear In-Memory
@@ -81,10 +82,11 @@ async def clear_correspondent_queue(user_id: str, correspondent_id: str):
         else:
             query = {"user_id": user_id, "correspondent_id": correspondent_id}
         
-        if global_state.queues_collection.count_documents(query, limit=1) == 0:
+        doc_count = await global_state.queues_collection.count_documents(query, limit=1)
+        if doc_count == 0:
              return JSONResponse(status_code=410, content={"ERROR": True, "ERROR_MSG": f"queue {user_id}/{correspondent_id} does not exist"})
 
-        global_state.queues_collection.delete_many(query)
+        await global_state.queues_collection.delete_many(query)
         
         # In-Memory
         instance = global_state.get_chatbot_instance_by_user(user_id)

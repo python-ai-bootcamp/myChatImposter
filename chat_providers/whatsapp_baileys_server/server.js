@@ -701,6 +701,9 @@ async function connectToWhatsApp(userId, vendorConfig) {
     if (sessions[userId] && sessions[userId].sock) {
         console.log(`[${userId}] Session already exists. Re-initializing.`);
         try {
+            // Mark socket as manually closed so the handler ignores the event
+            sessions[userId].sock.isManualClose = true;
+
             // End the old socket connection without logging out
             await sessions[userId].sock.end(undefined);
             console.log(`[${userId}] Old socket connection ended.`);
@@ -834,6 +837,17 @@ async function connectToWhatsApp(userId, vendorConfig) {
         const { connection, lastDisconnect, qr } = update;
         const session = sessions[userId];
         if (!session || session.isUnlinking) return;
+
+        // Ignore events from stale sockets (race condition protection)
+        if (session.sock && session.sock !== sock) {
+            return;
+        }
+
+        // Ignore events from manually closed sockets
+        if (sock.isManualClose) {
+            console.log(`[${userId}] Ignoring event from manually closed socket.`);
+            return;
+        }
 
         session.connectionStatus = connection;
 

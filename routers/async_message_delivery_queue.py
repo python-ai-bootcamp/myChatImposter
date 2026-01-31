@@ -36,7 +36,7 @@ async def get_delivery_queue(queue_type: str, user_id: str):
         # Query based on nested message_metadata.message_destination.user_id
         query = {"message_metadata.message_destination.user_id": user_id}
         cursor = collection.find(query, {"_id": 0})
-        results = list(cursor)
+        results = await cursor.to_list(length=None)
         return JSONResponse(content=results)
     except Exception as e:
         logging.error(f"API: Error getting delivery queue {queue_type} for {user_id}: {e}")
@@ -50,7 +50,7 @@ async def delete_delivery_item(queue_type: str, message_id: str):
     collection = _get_collection(queue_type)
     try:
         query = {"message_metadata.message_id": message_id}
-        result = collection.delete_one(query)
+        result = await collection.delete_one(query)
         if result.deleted_count == 0:
              return JSONResponse(status_code=404, content={"detail": "Message not found."})
         return Response(status_code=204)

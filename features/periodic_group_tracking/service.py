@@ -5,6 +5,7 @@ import random
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Dict
+from motor.motor_asyncio import AsyncIOMotorDatabase
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -20,14 +21,14 @@ from .runner import GroupTrackingRunner
 logger = logging.getLogger(__name__)
 
 class GroupTracker:
-    def __init__(self, mongo_url: str, chatbot_instances: Dict[str, SessionManager], async_message_delivery_queue_manager: AsyncMessageDeliveryQueueManager = None):
+    def __init__(self, db: AsyncIOMotorDatabase, chatbot_instances: Dict[str, SessionManager], async_message_delivery_queue_manager: AsyncMessageDeliveryQueueManager = None):
         
         # Dependencies
         self.chatbot_instances = chatbot_instances
         self.async_message_delivery_queue_manager = async_message_delivery_queue_manager
         
         # Sub-Services
-        self.history = GroupHistoryService(mongo_url)
+        self.history = GroupHistoryService(db)
         self.runner = GroupTrackingRunner(
             chatbot_instances=self.chatbot_instances,
             history_service=self.history,
