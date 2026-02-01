@@ -1,5 +1,5 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useNavigate, useLocation, useSearchParams } from 'react-router-dom';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 
 function HomePage() {
   const [configs, setConfigs] = useState([]);
@@ -13,11 +13,10 @@ function HomePage() {
   const [linkStatus, setLinkStatus] = useState(null);
 
   const navigate = useNavigate();
-  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const pollIntervalRef = useRef(null);
 
-  const fetchStatuses = async () => {
+  const fetchStatuses = useCallback(async () => {
     try {
       // Get user role and ID from sessionStorage
       const role = sessionStorage.getItem('role');
@@ -47,16 +46,14 @@ function HomePage() {
       console.error(err);
       // specific error handling if needed
     }
-  };
+  }, [navigate, error]);
 
   useEffect(() => {
     fetchStatuses();
     const interval = setInterval(fetchStatuses, 3000);
 
-
-
     return () => clearInterval(interval);
-  }, []);
+  }, [fetchStatuses]);
 
   // Dedicated effect for handling auto-link navigation state (via Query Params)
   useEffect(() => {

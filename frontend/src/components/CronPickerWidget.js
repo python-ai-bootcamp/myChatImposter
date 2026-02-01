@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 
 // Styles for the modal and picker
 const styles = {
@@ -136,7 +136,7 @@ const DAYS = [
 ];
 
 const CronPickerWidget = (props) => {
-    const { value, onChange, required } = props;
+    const { value, onChange } = props;
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [activeTab, setActiveTab] = useState('daily'); // daily, weekly, custom
 

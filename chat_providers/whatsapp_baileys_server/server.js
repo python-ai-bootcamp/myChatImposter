@@ -935,18 +935,67 @@ async function connectToWhatsApp(userId, vendorConfig) {
             const maxRetriesReached = (session.retryCount || 0) >= 3;
 
             // If badSession (500) persists, treat as permanent
+            // If badSession (500) persists, treat as permanent
             const isPersistentBadSession = statusCode === DisconnectReason.badSession && maxRetriesReached;
 
-            if (statusCode === DisconnectReason.restartRequired) {
-                console.log(`[${userId}] Connection requires a restart. Reconnecting immediately.`);
-                connectToWhatsApp(userId, vendorConfig);
+            // CRITICAL FIX: Smart Recovery for Crypto/Sync Errors
+            const errorMessage = lastDisconnect?.error?.toString() || '';
+            const isInvalidPatchMac = errorMessage.includes('Invalid patch mac');
+            const isBadDecrypt = errorMessage.includes('bad decrypt');
+            const isCryptoError = isInvalidPatchMac || isBadDecrypt;
 
-            } else if (isPermanentDisconnection || isPersistentBadSession || shouldForceRelink(statusCode, session)) {
-                if (!isPermanentDisconnection && !isPersistentBadSession) {
+            let forceCryptoRelink = false;
+            let performSoftReset = false;
+
+            if (isCryptoError) {
+                if (isInvalidPatchMac) {
+                    // Invalid Patch Mac is a sync error, usually recoverable by clearing app-state-sync keys
+                    console.log(`[${userId}] 'Invalid patch mac' detected. Attempting SOFT RESET (clearing app-state-sync keys) instead of full unlink.`);
+                    performSoftReset = true;
+                } else {
+                    // Bad Decrypt (Noise/Signal) is harder to recover from without relink, use 3-strike rule.
+                    const now = Date.now();
+                    if (!session.cryptoTracker) {
+                        session.cryptoTracker = { count: 1, firstTimestamp: now };
+                    } else {
+                        // Reset if window expired (2 minutes)
+                        if (now - session.cryptoTracker.firstTimestamp > 120000) {
+                            session.cryptoTracker = { count: 1, firstTimestamp: now };
+                        } else {
+                            session.cryptoTracker.count += 1;
+                        }
+                    }
+                    console.log(`[${userId}] Crypto error (${errorMessage}). Count: ${session.cryptoTracker.count}/3 in 2m window.`);
+                    if (session.cryptoTracker.count >= 3) {
+                        forceCryptoRelink = true;
+                    }
+                }
+            }
+
+            if (statusCode === DisconnectReason.restartRequired || performSoftReset) {
+                if (performSoftReset) {
+                    // Soft Reset: Delete app-state-sync keys from DB to force re-sync
+                    baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-app-state-sync-` } })
+                        .then(() => {
+                            console.log(`[${userId}] Soft Reset: Deleted app-state-sync keys.`);
+                            // Also end the socket to force reconnect if not already broken
+                            if (session.sock) session.sock.end(undefined);
+                            // Reconnect immediately
+                            connectToWhatsApp(userId, vendorConfig);
+                        })
+                        .catch(err => console.error(`[${userId}] Soft Reset failed:`, err));
+                } else {
+                    console.log(`[${userId}] Connection requires a restart. Reconnecting immediately.`);
+                    connectToWhatsApp(userId, vendorConfig);
+                }
+
+            } else if (isPermanentDisconnection || isPersistentBadSession || shouldForceRelink(statusCode, session) || forceCryptoRelink) {
+                if (!isPermanentDisconnection && !isPersistentBadSession && !forceCryptoRelink) {
                     logPersistent405(userId, session);
                 }
                 const reason = isPermanentDisconnection ? `permanent disconnect (code: ${statusCode})` :
-                    isPersistentBadSession ? `persistent bad session (code: ${statusCode})` : 'persistent 405 errors';
+                    isPersistentBadSession ? `persistent bad session (code: ${statusCode})` :
+                        forceCryptoRelink ? `persistent crypto errors (${session.cryptoTracker?.count})` : 'persistent 405 errors';
                 console.log(`[${userId}] Connection closed permanently due to ${reason}. Cleaning up and forcing re-link.`);
 
                 wsConnections[userId]?.close();
