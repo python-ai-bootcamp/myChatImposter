@@ -152,29 +152,29 @@ button:disabled {
 }
 
 /* Remove padding from panel-body inside LLM provider config to fix field alignment */
-/* Also set display: table to isolate nested table-cells from parent table */
 .panel-body {
   padding: 0 !important;
   border: none !important;
   box-shadow: none !important;
-  display: table !important;
-  width: 100%;
 }
 
-
-/* Container for API Key Source dropdown - make it flex to put label inline */
+/* API Key Source dropdown - style as table-row to align with other fields */
 .panel-body>.form-group:has(#root_configurations_llm_provider_config_provider_config__oneof_select) {
-  display: flex !important;
-  align-items: center;
-  gap: 0.5rem;
-  text-align: left;
+  display: table-row !important;
 }
 
-/* Add API Key Source label before the dropdown */
 .panel-body>.form-group:has(#root_configurations_llm_provider_config_provider_config__oneof_select)::before {
   content: "API Key Source";
+  display: table-cell;
   white-space: nowrap;
-  min-width: 8.5rem;
+  vertical-align: top;
+  text-align: left;
+  padding-right: 1rem;
+  min-width: 8rem;
+}
+
+.panel-body>.form-group:has(#root_configurations_llm_provider_config_provider_config__oneof_select) select {
+  display: table-cell;
 }
 
 /* Set consistent label width for LLM Provider Config fields */
@@ -194,6 +194,7 @@ select[id^="root_configurations_llm_provider_config"] {
 /* Ensure API Key Source dropdown also follows the same width */
 #root_configurations_llm_provider_config_provider_config__oneof_select {
   max-width: 300px !important;
+  width: 300px !important;
 }
 
 /* Ensure inner Reasoning Effort dropdown also follows the same width */
