@@ -18,14 +18,7 @@ from llm_providers.base import BaseLlmProvider
 from services.session_manager import SessionManager
 from .whitelist import WhitelistPolicy
 
-def _find_provider_class(module, base_class: Type) -> Optional[Type]:
-    """
-    Finds a class in the module that is a subclass of the base_class.
-    """
-    for name, obj in inspect.getmembers(module):
-        if inspect.isclass(obj) and issubclass(obj, base_class) and obj is not base_class:
-            return obj
-    return None
+from utils.provider_utils import find_provider_class
 
 class TimestampedAndPrefixedChatMessageHistory(ChatMessageHistory):
     """
@@ -198,7 +191,7 @@ class AutomaticBotReplyService:
         try:
             llm_provider_name = self.config.configurations.llm_provider_config.provider_name
             llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
-            LlmProviderClass = _find_provider_class(llm_provider_module, BaseLlmProvider)
+            LlmProviderClass = find_provider_class(llm_provider_module, BaseLlmProvider)
             if not LlmProviderClass:
                 raise ImportError(f"Could not find a valid LLM provider class in module 'llm_providers.{llm_provider_name}'")
 

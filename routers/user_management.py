@@ -17,7 +17,9 @@ from services.session_manager import SessionManager
 from services.ingestion_service import IngestionService
 from features.automatic_bot_reply.service import AutomaticBotReplyService
 from features.kid_phone_safety_tracking.service import KidPhoneSafetyService
-from dependencies import GlobalStateManager
+from features.kid_phone_safety_tracking.service import KidPhoneSafetyService
+from dependencies import GlobalStateManager, get_global_state
+from fastapi import Depends
 
 router = APIRouter(
     prefix="/api/internal/users",
@@ -25,7 +27,7 @@ router = APIRouter(
 )
 
 # Access global state
-global_state = GlobalStateManager.get_instance()
+# Access global state (Removed global var)
 
 # --- Helper Functions ---
 
@@ -51,22 +53,22 @@ async def _get_user_config(user_id: str, configurations_collection) -> Union[dic
         logging.error(f"HELPER: Error retrieving config for {user_id}: {e}")
         return None
 
-def _ensure_db_connected():
-    if global_state.configurations_collection is None:
+def ensure_db_connected(state: GlobalStateManager = Depends(get_global_state)) -> GlobalStateManager:
+    if state.configurations_collection is None:
         raise HTTPException(status_code=503, detail="Database connection not available.")
+    return state
 
 # --- Routes ---
 
 @router.get("", response_model=Dict[str, List[str]])
-async def list_users():
+async def list_users(state: GlobalStateManager = Depends(ensure_db_connected)):
     """
     Returns a list of all user_ids that have a configuration.
     (Formerly /api/configurations)
     """
-    _ensure_db_connected()
     try:
         user_ids = []
-        cursor = global_state.configurations_collection.find({}, {"config_data.user_id": 1, "_id": 0})
+        cursor = state.configurations_collection.find({}, {"config_data.user_id": 1, "_id": 0})
         async for doc in cursor:
             config_data = doc.get("config_data", {})
             if isinstance(config_data, dict):
@@ -78,29 +80,27 @@ async def list_users():
         raise HTTPException(status_code=500, detail="Could not list user_ids.")
 
 @router.get("/{user_id}/info")
-async def get_user_info(user_id: str):
+async def get_user_info(user_id: str, state: GlobalStateManager = Depends(ensure_db_connected)):
     """
     Get listing-format status for a single user.
     Returns same format as /status but for one user only.
     Used by frontend for regular users via /me/info endpoint.
     """
-    _ensure_db_connected()
-
     try:
         # Check if config exists
-        config_data = await _get_user_config(user_id, global_state.configurations_collection)
+        config_data = await _get_user_config(user_id, state.configurations_collection)
         if not config_data:
             raise HTTPException(status_code=404, detail="Configuration not found")
 
         # Check Auth
         is_authenticated = False
-        if global_state.baileys_sessions_collection is not None:
-            auth_doc = await global_state.baileys_sessions_collection.find_one({"_id": f"{user_id}-creds"})
+        if state.baileys_sessions_collection is not None:
+            auth_doc = await state.baileys_sessions_collection.find_one({"_id": f"{user_id}-creds"})
             if auth_doc:
                 is_authenticated = True
 
         # Check Active Session
-        instance = global_state.get_chatbot_instance_by_user(user_id)
+        instance = state.get_chatbot_instance_by_user(user_id)
         status_info = {"status": "disconnected"}
         if instance:
             status_info = await instance.get_status()
@@ -120,15 +120,14 @@ async def get_user_info(user_id: str):
         raise HTTPException(status_code=500, detail="Could not get user info.")
 
 @router.get("/status")
-async def list_users_status():
+async def list_users_status(state: GlobalStateManager = Depends(ensure_db_connected)):
     """
     Returns status for all configurations (admin-only).
     (Formerly /api/configurations/status)
     """
-    _ensure_db_connected()
     statuses = []
     try:
-        cursor = global_state.configurations_collection.find({})
+        cursor = state.configurations_collection.find({})
         db_configs = await cursor.to_list(length=None)
         for db_config in db_configs:
             config_data = db_config.get("config_data")
@@ -146,12 +145,12 @@ async def list_users_status():
 
                 # Check Auth
                 is_authenticated = False
-                if global_state.baileys_sessions_collection is not None:
-                     auth_doc = await global_state.baileys_sessions_collection.find_one({"_id": f"{user_id}-creds"})
+                if state.baileys_sessions_collection is not None:
+                     auth_doc = await state.baileys_sessions_collection.find_one({"_id": f"{user_id}-creds"})
                      if auth_doc: is_authenticated = True
 
                 # Check Active Session
-                instance = global_state.get_chatbot_instance_by_user(user_id)
+                instance = state.get_chatbot_instance_by_user(user_id)
                 status_info = {"status": "disconnected"}
                 if instance:
                      status_info = await instance.get_status()
@@ -254,13 +253,12 @@ async def get_user_defaults():
     )
 
 @router.get("/{user_id}")
-async def get_user_configuration(user_id: str):
+async def get_user_configuration(user_id: str, state: GlobalStateManager = Depends(ensure_db_connected)):
     """
     Get user configuration.
     """
-    _ensure_db_connected()
     try:
-        config_data = await _get_user_config(user_id, global_state.configurations_collection)
+        config_data = await _get_user_config(user_id, state.configurations_collection)
         
         if not config_data:
              raise HTTPException(status_code=404, detail="Configuration not found.")
@@ -271,12 +269,11 @@ async def get_user_configuration(user_id: str):
         raise HTTPException(status_code=500, detail="Could not retrieve configuration.")
 
 @router.put("/{user_id}")
-async def save_user_configuration(user_id: str, config: UserConfiguration = Body(...)):
+async def save_user_configuration(user_id: str, config: UserConfiguration = Body(...), state: GlobalStateManager = Depends(ensure_db_connected)):
     """
     Create or update user configuration.
     Only accepts a single UserConfiguration dict (list format is no longer supported).
     """
-    _ensure_db_connected()
     try:
         json_data = config.model_dump(exclude_unset=True)
         check_uid = json_data.get("user_id")
@@ -292,7 +289,7 @@ async def save_user_configuration(user_id: str, config: UserConfiguration = Body
             ]
         }
         
-        global_state.configurations_collection.update_one(query, {"$set": db_document}, upsert=True)
+        await state.configurations_collection.update_one(query, {"$set": db_document}, upsert=True)
         logging.info(f"API: Saved configuration for {user_id}.")
         return {"status": "success", "user_id": user_id}
     except DuplicateKeyError:
@@ -302,30 +299,29 @@ async def save_user_configuration(user_id: str, config: UserConfiguration = Body
         raise HTTPException(status_code=500, detail=f"Could not save configuration: {e}")
 
 @router.delete("/{user_id}")
-async def delete_user(user_id: str):
+async def delete_user(user_id: str, state: GlobalStateManager = Depends(ensure_db_connected)):
     """
     Delete user configuration and stop/unlink session.
     """
-    _ensure_db_connected()
     try:
         # Stop tracking jobs
-        if global_state.group_tracker:
+        if state.group_tracker:
              logging.info(f"API: Stopping tracking jobs for {user_id}")
-             global_state.group_tracker.update_jobs(user_id, [])
+             state.group_tracker.update_jobs(user_id, [])
 
         # Stop instance if active
-        if user_id in global_state.active_users:
-            instance_id = global_state.active_users[user_id]
-            instance = global_state.chatbot_instances.get(instance_id)
+        if user_id in state.active_users:
+            instance_id = state.active_users[user_id]
+            instance = state.chatbot_instances.get(instance_id)
             if instance:
                 logging.info(f"API: Stopping instance for {user_id} before delete.")
                 # We call stop(cleanup_session=True) to fully unlink
                 await instance.stop(cleanup_session=True)
-                global_state.remove_active_user(user_id)
+                state.remove_active_user(user_id)
         
         # Cleanup Lifecycle: Move items to Holding Queue
-        if global_state.async_message_delivery_queue_manager:
-             global_state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
+        if state.async_message_delivery_queue_manager:
+             state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
 
         query = {
             "$or": [
@@ -333,7 +329,7 @@ async def delete_user(user_id: str):
                 {"config_data.0.user_id": user_id}
             ]
         }
-        result = global_state.configurations_collection.delete_one(query)
+        result = await state.configurations_collection.delete_one(query)
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Configuration not found.")
         
@@ -344,20 +340,20 @@ async def delete_user(user_id: str):
         raise HTTPException(status_code=500, detail=f"Could not delete user: {e}")
 
 @router.get("/{user_id}/status")
-async def get_user_status(user_id: str):
+async def get_user_status(user_id: str, state: GlobalStateManager = Depends(ensure_db_connected)):
     """
     Get user status (Polling with Heartbeat).
     (Formerly /chatbot/{user_id}/status)
     """
-    if user_id not in global_state.active_users:
+    if user_id not in state.active_users:
          raise HTTPException(status_code=404, detail="No active session found.")
     
-    instance_id = global_state.active_users[user_id]
-    instance = global_state.chatbot_instances.get(instance_id)
+    instance_id = state.active_users[user_id]
+    instance = state.chatbot_instances.get(instance_id)
     
     if not instance:
         # Inconsistency check
-        global_state.remove_active_user(user_id)
+        state.remove_active_user(user_id)
         raise HTTPException(status_code=500, detail="Instance not found.")
     
     try:
@@ -369,29 +365,28 @@ async def get_user_status(user_id: str):
         raise HTTPException(status_code=500, detail=f"Failed to get status: {e}")
 
 @router.post("/{user_id}/actions/link")
-async def link_user(user_id: str):
+async def link_user(user_id: str, state: GlobalStateManager = Depends(ensure_db_connected)):
     """
     Start user session (Link).
     Loads config from DB and starts ChatbotInstance.
     """
-    _ensure_db_connected()
     
     # Check for existing session
-    if user_id in global_state.active_users:
-        existing_id = global_state.active_users[user_id]
-        existing_inst = global_state.chatbot_instances.get(existing_id)
+    if user_id in state.active_users:
+        existing_id = state.active_users[user_id]
+        existing_inst = state.chatbot_instances.get(existing_id)
         if existing_inst:
             status = await existing_inst.get_status()
             if status.get("status") in ["disconnected", "error"]:
                  logging.info(f"API: Cleaning up dead session for {user_id} before linking.")
                  await existing_inst.stop(cleanup_session=False)
-                 global_state.remove_active_user(user_id)
+                 state.remove_active_user(user_id)
             else:
                  raise HTTPException(status_code=409, detail=f"Active session exists (Status: {status.get('status')})")
 
     # Load Config
     try:
-        config_data = await _get_user_config(user_id, global_state.configurations_collection)
+        config_data = await _get_user_config(user_id, state.configurations_collection)
         
         if not config_data:
             raise HTTPException(status_code=404, detail="Configuration not found")
@@ -405,15 +400,15 @@ async def link_user(user_id: str):
         loop = asyncio.get_running_loop()
         instance = SessionManager(
             config=config, 
-            on_session_end=global_state.remove_active_user,
-            queues_collection=global_state.queues_collection,
+            on_session_end=state.remove_active_user,
+            queues_collection=state.queues_collection,
             main_loop=loop,
-            on_status_change=global_state.user_lifecycle_service.create_status_change_callback()
+            on_status_change=state.user_lifecycle_service.create_status_change_callback()
         )
         
         # 1. Ingestion Service
-        if global_state.queues_collection is not None:
-             ingester = IngestionService(instance, global_state.queues_collection)
+        if state.queues_collection is not None:
+             ingester = IngestionService(instance, state.queues_collection)
              ingester.start()
              instance.register_service(ingester)
 
@@ -428,12 +423,12 @@ async def link_user(user_id: str):
              instance.register_message_handler(kid_service.handle_message)
              instance.register_feature("kid_phone_safety_tracking", kid_service)
 
-        global_state.chatbot_instances[instance_id] = instance
+        state.chatbot_instances[instance_id] = instance
         await instance.start()
-        global_state.active_users[user_id] = instance_id
+        state.active_users[user_id] = instance_id
 
-        if global_state.group_tracker:
-                 global_state.group_tracker.update_jobs(user_id, [])
+        if state.group_tracker:
+                 state.group_tracker.update_jobs(user_id, [])
 
         return {
             "status": "success",
@@ -446,44 +441,44 @@ async def link_user(user_id: str):
     except Exception as e:
         logging.error(f"API: Link failed for {user_id}: {e}")
         # Cleanup if partial failure
-        if user_id in global_state.active_users:
-             global_state.remove_active_user(user_id)
+        if user_id in state.active_users:
+             state.remove_active_user(user_id)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{user_id}/actions/unlink")
-async def unlink_user(user_id: str):
+async def unlink_user(user_id: str, state: GlobalStateManager = Depends(ensure_db_connected)):
     """
     Stop user session (Unlink).
     """
-    if user_id not in global_state.active_users:
+    if user_id not in state.active_users:
          # If not in active_users, we might still want to ensure cleanup of trackers
-         if global_state.group_tracker:
-             global_state.group_tracker.update_jobs(user_id, [])
+         if state.group_tracker:
+             state.group_tracker.update_jobs(user_id, [])
          raise HTTPException(status_code=404, detail="No active session found.")
 
-    instance_id = global_state.active_users[user_id]
-    instance = global_state.chatbot_instances.get(instance_id)
+    instance_id = state.active_users[user_id]
+    instance = state.chatbot_instances.get(instance_id)
 
     if not instance:
-        global_state.remove_active_user(user_id)
-        if global_state.async_message_delivery_queue_manager:
-             global_state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
+        state.remove_active_user(user_id)
+        if state.async_message_delivery_queue_manager:
+             state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
         # Ensure trackers stopped
-        if global_state.group_tracker:
-             global_state.group_tracker.update_jobs(user_id, [])
+        if state.group_tracker:
+             state.group_tracker.update_jobs(user_id, [])
         raise HTTPException(status_code=500, detail="Instance not found.")
 
     try:
         # Stop tracking jobs
         # Stop tracking jobs (Safe Stop)
-        if global_state.group_tracker:
+        if state.group_tracker:
              logging.info(f"API: Stopping tracking jobs for {user_id}")
-             global_state.group_tracker.stop_tracking_jobs(user_id)
+             state.group_tracker.stop_tracking_jobs(user_id)
 
         await instance.stop(cleanup_session=True)
          # Lifecycle: User Unlinked -> Move items to Holding Queue
-        if global_state.async_message_delivery_queue_manager:
-             global_state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
+        if state.async_message_delivery_queue_manager:
+             state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
              
         # remove_active_user is called by callback in instance.stop usually, but calling explicit cleanup doesn't hurt if we want to be sure
         # instance.stop calls on_session_end if it finishes gracefully.
@@ -494,31 +489,31 @@ async def unlink_user(user_id: str):
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/{user_id}/actions/reload")
-async def reload_user(user_id: str):
+async def reload_user(user_id: str, state: GlobalStateManager = Depends(ensure_db_connected)):
     """
     Reload user session.
     Stops current instance (preserves session) and restarts with fresh config.
     """
-    if user_id not in global_state.active_users:
+    if user_id not in state.active_users:
          raise HTTPException(status_code=404, detail="No active session found.")
     
     logging.info(f"API: Reloading user {user_id}")
     
     # 1. Stop Current
-    instance_id = global_state.active_users[user_id]
-    instance = global_state.chatbot_instances.get(instance_id)
+    instance_id = state.active_users[user_id]
+    instance = state.chatbot_instances.get(instance_id)
     
     try:
         if instance:
             await instance.stop(cleanup_session=False)
-            if global_state.async_message_delivery_queue_manager:
-                await global_state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
+            if state.async_message_delivery_queue_manager:
+                await state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
         else:
-             global_state.remove_active_user(user_id)
+             state.remove_active_user(user_id)
              raise HTTPException(status_code=500, detail="Instance missing.")
         
         # 2. Fetch Config
-        config_data = await _get_user_config(user_id, global_state.configurations_collection)
+        config_data = await _get_user_config(user_id, state.configurations_collection)
         
         if not config_data:
              raise HTTPException(status_code=404, detail="Config not found for reload.")
@@ -534,15 +529,15 @@ async def reload_user(user_id: str):
         
         new_instance = SessionManager(
             config=config,
-            on_session_end=global_state.remove_active_user,
-            queues_collection=global_state.queues_collection,
+            on_session_end=state.remove_active_user,
+            queues_collection=state.queues_collection,
             main_loop=loop,
-            on_status_change=global_state.user_lifecycle_service.create_status_change_callback()
+            on_status_change=state.user_lifecycle_service.create_status_change_callback()
         )
 
         # 1. Ingestion Service
-        if global_state.queues_collection is not None:
-             ingester = IngestionService(new_instance, global_state.queues_collection)
+        if state.queues_collection is not None:
+             ingester = IngestionService(new_instance, state.queues_collection)
              ingester.start()
              new_instance.register_service(ingester)
 
@@ -557,30 +552,30 @@ async def reload_user(user_id: str):
              new_instance.register_message_handler(kid_service.handle_message)
              new_instance.register_feature("kid_phone_safety_tracking", kid_service)
         
-        global_state.chatbot_instances[new_id] = new_instance
+        state.chatbot_instances[new_id] = new_instance
         await new_instance.start()
-        global_state.active_users[user_id] = new_id
+        state.active_users[user_id] = new_id
         
-        if global_state.group_tracker:
-                  global_state.group_tracker.stop_tracking_jobs(user_id)
+        if state.group_tracker:
+                  state.group_tracker.stop_tracking_jobs(user_id)
         
         return {"status": "success", "message": "Reloaded"}
 
     except Exception as e:
         logging.error(f"API: Reload failed for {user_id}: {e}")
-        if user_id in global_state.active_users:
-             global_state.remove_active_user(user_id)
+        if user_id in state.active_users:
+             state.remove_active_user(user_id)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{user_id}/groups")
-async def get_user_groups(user_id: str):
+async def get_user_groups(user_id: str, state: GlobalStateManager = Depends(ensure_db_connected)):
     """
     List user groups.
     """
-    if user_id not in global_state.active_users:
+    if user_id not in state.active_users:
          raise HTTPException(status_code=404, detail="No active session found.")
     
-    instance = global_state.chatbot_instances.get(global_state.active_users[user_id])
+    instance = state.chatbot_instances.get(state.active_users[user_id])
     if not instance or not instance.provider_instance:
          raise HTTPException(status_code=500, detail="Instance not ready.")
     

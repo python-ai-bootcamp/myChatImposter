@@ -16,6 +16,8 @@ from config_models import PeriodicGroupTrackingConfig
 from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager
 from .history_service import GroupHistoryService
 from .runner import GroupTrackingRunner
+from .extractor import ActionItemExtractor
+from .cron_window import CronWindowCalculator
 
 # Initialize logger
 logger = logging.getLogger(__name__)
@@ -29,10 +31,17 @@ class GroupTracker:
         
         # Sub-Services
         self.history = GroupHistoryService(db)
+        
+        # Instantiate Runner's dependencies (Composition Root)
+        extractor = ActionItemExtractor()
+        window_calculator = CronWindowCalculator()
+        
         self.runner = GroupTrackingRunner(
             chatbot_instances=self.chatbot_instances,
             history_service=self.history,
-            queue_manager=self.async_message_delivery_queue_manager
+            queue_manager=self.async_message_delivery_queue_manager,
+            extractor=extractor,
+            window_calculator=window_calculator
         )
         
         # Scheduler

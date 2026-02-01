@@ -7,11 +7,11 @@ from pymongo import MongoClient
 import os
 import time
 
-client = TestClient(app)
+# client = TestClient(app) # Removed global client
 mongo_client: MongoClient = None
 
-@pytest.fixture(scope="function", autouse=True)
-def setup_and_teardown_function(monkeypatch):
+@pytest.fixture(scope="function")
+def client(monkeypatch):
     global mongo_client
     monkeypatch.setenv("MONGODB_URL", "mongodb://localhost:27017/")
     mongodb_url = os.environ.get("MONGODB_URL", "mongodb://localhost:27017/")
@@ -26,21 +26,23 @@ def setup_and_teardown_function(monkeypatch):
             time.sleep(3)
     if retries == 0:
         pytest.fail("Could not connect to MongoDB after several retries.")
-    with TestClient(app):
-        yield
+    
+    # Context Manager for Lifecycle
+    with TestClient(app) as tc:
+        yield tc
+        
     if mongo_client:
         db = mongo_client.get_database("chat_manager")
         # Cleanup
         db.get_collection("configurations").delete_many({"config_data.user_id": {"$regex": "^test_user_"}})
         db.get_collection("queues").delete_many({"user_id": {"$regex": "^test_user_"}})
-        # Also clean up the async queue collections used in refactor
         db.get_collection("async_message_delivery_queue_active").delete_many({"message_metadata.message_destination.user_id": {"$regex": "^test_user_"}})
         db.get_collection("async_message_delivery_queue_failed").delete_many({"message_metadata.message_destination.user_id": {"$regex": "^test_user_"}})
         db.get_collection("async_message_delivery_queue_holding").delete_many({"message_metadata.message_destination.user_id": {"$regex": "^test_user_"}})
         mongo_client.close()
 
-@pytest.mark.skip(reason="Flaky: TestClient async lifecycle issues cause teardown failures. See technical debt.")
-def test_group_and_direct_message_queues():
+# @pytest.mark.skip(reason="Flaky: TestClient async lifecycle issues cause teardown failures. See technical debt.")
+def test_group_and_direct_message_queues(client):
     user_id = "test_user_e2e"
     direct_correspondent_id = "direct_user@s.whatsapp.net"
     group_correspondent_id = "group_id@g.us"
@@ -80,12 +82,12 @@ def test_group_and_direct_message_queues():
         }
     }
     
-    # Correct Endpoint: /api/users/{user_id}
-    response_put = client.put(f"/api/users/{user_id}", json=config_data)
+    # Correct Endpoint: /api/internal/users/{user_id}
+    response_put = client.put(f"/api/internal/users/{user_id}", json=config_data)
     assert response_put.status_code == 200, f"Setup failed: {response_put.text}"
 
     # Also Link the user (Start Session)
-    response_link = client.post(f"/api/users/{user_id}/actions/link")
+    response_link = client.post(f"/api/internal/users/{user_id}/actions/link")
     assert response_link.status_code == 200, f"Link failed: {response_link.text}"
 
     # 2. Simulate the chat provider receiving messages
@@ -146,6 +148,6 @@ def test_group_and_direct_message_queues():
     
     # Cleanup: Unlink the user to stop the dummy provider thread
     # This prevents "Event loop is closed" errors during test teardown
-    response_unlink = client.post(f"/api/users/{user_id}/actions/unlink")
+    response_unlink = client.post(f"/api/internal/users/{user_id}/actions/unlink")
     assert response_unlink.status_code == 200, f"Unlink failed: {response_unlink.text}"
 

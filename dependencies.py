@@ -97,3 +97,7 @@ class GlobalStateManager:
 
 # Singleton accessor
 global_state = GlobalStateManager.get_instance()
+
+def get_global_state() -> GlobalStateManager:
+    """FastAPI Dependency to get the global state manager."""
+    return GlobalStateManager.get_instance()

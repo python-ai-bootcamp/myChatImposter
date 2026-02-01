@@ -120,17 +120,26 @@ class DummyProvider(BaseChatProvider):
 
             # CRITICAL: When a message is received, it's added to the user's
             # queue. This is how the provider communicates with the main application.
-            queues_manager = self.user_queues.get(self.user_id)
             if queues_manager:
                 logging.info(f"Received a new message: '{item['message'][:30]}...' for correspondent {item['correspondent_id']}")
-                queues_manager.add_message(
-                    correspondent_id=item["correspondent_id"],
-                    content=item["message"],
-                    sender=item["sender"],
-                    source='user',
-                    originating_time=item["originating_time"],
-                    group=item["group"]
-                )
+                if self.main_loop:
+                    future = asyncio.run_coroutine_threadsafe(
+                        queues_manager.add_message(
+                            correspondent_id=item["correspondent_id"],
+                            content=item["message"],
+                            sender=item["sender"],
+                            source='user',
+                            originating_time=item["originating_time"],
+                            group=item["group"]
+                        ),
+                        self.main_loop
+                    )
+                    try:
+                        future.result(timeout=5)
+                    except Exception as e:
+                        logging.error(f"DummyProvider: Error adding message to queue: {e}")
+                else:
+                    logging.error("DummyProvider: No main_loop available to schedule async message addition.")
             else:
                 logging.error(f"ERROR: Could not find a queues manager for myself.")
 

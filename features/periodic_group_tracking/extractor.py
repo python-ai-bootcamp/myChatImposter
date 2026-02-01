@@ -18,12 +18,8 @@ class ActionItemExtractor:
     def __init__(self):
         pass
 
-    def _find_provider_class(self, module, base_class):
-        """Finds a class in the module that is a subclass of the base_class."""
-        for name, obj in inspect.getmembers(module):
-            if inspect.isclass(obj) and issubclass(obj, base_class) and obj is not base_class:
-                return obj
-        return None
+    def __init__(self):
+        pass
 
     def _build_llm_input_json(self, messages: list, timezone: ZoneInfo) -> str:
         """
@@ -171,7 +167,8 @@ RELEVANT_TASK_MESSAGE format:
             # Dynamically load the LLM provider
             llm_provider_name = llm_config.provider_name
             llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
-            LlmProviderClass = self._find_provider_class(llm_provider_module, BaseLlmProvider)
+            from utils.provider_utils import find_provider_class
+            LlmProviderClass = find_provider_class(llm_provider_module, BaseLlmProvider)
             
             if not LlmProviderClass:
                 logger.error(f"Could not find LLM provider class for {llm_provider_name}")

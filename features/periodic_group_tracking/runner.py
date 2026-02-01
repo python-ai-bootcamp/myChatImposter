@@ -17,12 +17,12 @@ from .history_service import GroupHistoryService
 logger = logging.getLogger(__name__)
 
 class GroupTrackingRunner:
-    def __init__(self, chatbot_instances: Dict[str, SessionManager], history_service: GroupHistoryService, queue_manager: AsyncMessageDeliveryQueueManager):
+    def __init__(self, chatbot_instances: Dict[str, SessionManager], history_service: GroupHistoryService, queue_manager: AsyncMessageDeliveryQueueManager, extractor: ActionItemExtractor, window_calculator: CronWindowCalculator):
         self.chatbot_instances = chatbot_instances
         self.history = history_service
         self.queue_manager = queue_manager
-        self.extractor = ActionItemExtractor()
-        self.window_calculator = CronWindowCalculator()
+        self.extractor = extractor
+        self.window_calculator = window_calculator
 
     async def run_tracking_cycle(self, user_id: str, config: PeriodicGroupTrackingConfig, timezone: str = "UTC"):
         """

@@ -9,12 +9,7 @@ from config_models import UserConfiguration
 from queue_manager import UserQueuesManager, Message
 from chat_providers.base import BaseChatProvider
 
-# Helper to find provider class
-def _find_provider_class(module, base_class: type) -> Optional[type]:
-    for name, obj in inspect.getmembers(module):
-        if inspect.isclass(obj) and issubclass(obj, base_class) and obj is not base_class:
-            return obj
-    return None
+from utils.provider_utils import find_provider_class
 
 class SessionManager:
     """
@@ -82,7 +77,7 @@ class SessionManager:
         # 2. Initialize Chat Provider
         try:
             provider_module = importlib.import_module(f"chat_providers.{provider_name}")
-            ProviderClass = _find_provider_class(provider_module, BaseChatProvider)
+            ProviderClass = find_provider_class(provider_module, BaseChatProvider)
             if not ProviderClass:
                 raise ImportError(f"Could not find a valid chat provider class in module 'chat_providers.{provider_name}'")
             
