@@ -1,0 +1,70 @@
+/* UserTable.module.css */
+.container {
+    overflow-x: auto;
+}
+
+.table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 1.5rem;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.table th {
+    background-color: #f8f9fa;
+    color: #495057;
+    font-weight: 600;
+    padding: 12px 15px;
+    text-align: left;
+    border-bottom: 2px solid #dee2e6;
+}
+
+.table td {
+    padding: 12px 15px;
+    border-bottom: 1px solid #dee2e6;
+    vertical-align: middle;
+    text-align: left;
+}
+
+.table tr {
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.table tr:hover {
+    background-color: #f5f5f5;
+}
+
+.table tr.selected {
+    background-color: #e9ecef;
+}
+
+.emptyRow {
+    text-align: center;
+    color: #6c757d;
+}
+
+.statusDot {
+    height: 10px;
+    width: 10px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.statusDot.connected {
+    background-color: green;
+}
+
+.statusDot.linking,
+.statusDot.connecting,
+.statusDot.initializing,
+.statusDot.waiting {
+    background-color: orange;
+}
+
+.statusDot.disconnected,
+.statusDot.invalid_config {
+    background-color: gray;
+}

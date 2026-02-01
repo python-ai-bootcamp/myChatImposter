@@ -13,6 +13,17 @@ body {
   min-height: 100vh;
 }
 
+/* Reduce vertical padding on form text inputs */
+input[type="text"],
+input[type="number"],
+input[type="password"],
+input[type="email"],
+input.form-control,
+select {
+  padding: 4px 8px !important;
+  line-height: 1.2 !important;
+}
+
 #root {
   width: 100%;
   text-align: center;
