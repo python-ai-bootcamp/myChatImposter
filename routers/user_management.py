@@ -62,7 +62,7 @@ def ensure_db_connected(state: GlobalStateManager = Depends(get_global_state)) -
 async def _setup_session(config: UserConfiguration, state: GlobalStateManager) -> SessionManager:
     """
     Create and configure a SessionManager with all services and features.
-    Used by both link_user and reload_user to avoid duplication.
+    Used by both link_user and reload_user to avoid duplication (Item #004).
     
     Returns a fully configured SessionManager (not yet started).
     """
@@ -358,7 +358,7 @@ async def delete_user(user_id: str, state: GlobalStateManager = Depends(ensure_d
         
         # Cleanup Lifecycle: Move items to Holding Queue
         if state.async_message_delivery_queue_manager:
-             state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
+             await state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
 
         query = {
             "$or": [
@@ -430,7 +430,7 @@ async def link_user(user_id: str, state: GlobalStateManager = Depends(ensure_db_
         
         config = UserConfiguration.model_validate(config_data)
 
-        # Start Instance
+        # Start Instance using shared helper (Item #004)
         instance_id = str(uuid.uuid4())
         logging.info(f"API: Starting new instance {instance_id} for {user_id}")
         
@@ -475,7 +475,7 @@ async def unlink_user(user_id: str, state: GlobalStateManager = Depends(ensure_d
     if not instance:
         state.remove_active_user(user_id)
         if state.async_message_delivery_queue_manager:
-             state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
+             await state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
         # Ensure trackers stopped
         if state.group_tracker:
              state.group_tracker.update_jobs(user_id, [])
@@ -491,7 +491,7 @@ async def unlink_user(user_id: str, state: GlobalStateManager = Depends(ensure_d
         await instance.stop(cleanup_session=True)
          # Lifecycle: User Unlinked -> Move items to Holding Queue
         if state.async_message_delivery_queue_manager:
-             state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
+             await state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
              
         # remove_active_user is called by callback in instance.stop usually, but calling explicit cleanup doesn't hurt if we want to be sure
         # instance.stop calls on_session_end if it finishes gracefully.
@@ -533,7 +533,7 @@ async def reload_user(user_id: str, state: GlobalStateManager = Depends(ensure_d
              
         config = UserConfiguration.model_validate(config_data)
         
-        # 3. Start New
+        # 3. Start New using shared helper (Item #004)
         new_id = str(uuid.uuid4())
         
         new_instance = await _setup_session(config, state)

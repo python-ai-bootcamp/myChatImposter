@@ -93,10 +93,10 @@ class CorrespondentQueue:
             else:
                 logging.error(f"QUEUE: No main event loop provided to run async callback.")
 
-    def _evict_while(self, condition_fn, reason: str, new_message_size: int = 0):
+    def _evict_while(self, condition_fn, reason: str, new_message_size: int):
         """
-        Evict messages from the front of the queue while condition_fn returns True.
-        Reduces duplication across age, count, and size-based eviction.
+        Helper to evict messages while a condition is true (Item #010).
+        Reduces duplication in _enforce_limits.
         """
         while self._messages and condition_fn():
             evicted_msg = self._messages.popleft()

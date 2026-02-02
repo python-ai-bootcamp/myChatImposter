@@ -944,7 +944,6 @@ async function connectToWhatsApp(userId, vendorConfig) {
             const isBadDecrypt = errorMessage.includes('bad decrypt');
             const isCryptoError = isInvalidPatchMac || isBadDecrypt;
 
-            let forceCryptoRelink = false;
             let performSoftReset = false;
 
             if (isCryptoError) {
@@ -953,7 +952,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
                     console.log(`[${userId}] 'Invalid patch mac' detected. Attempting SOFT RESET (clearing app-state-sync keys) instead of full unlink.`);
                     performSoftReset = true;
                 } else {
-                    // Bad Decrypt (Noise/Signal) is harder to recover from without relink, use 3-strike rule.
+                    // Bad Decrypt (Noise/Signal) - track occurrences and do SOFT RESET after threshold
                     const now = Date.now();
                     if (!session.cryptoTracker) {
                         session.cryptoTracker = { count: 1, firstTimestamp: now };
@@ -967,21 +966,37 @@ async function connectToWhatsApp(userId, vendorConfig) {
                     }
                     console.log(`[${userId}] Crypto error (${errorMessage}). Count: ${session.cryptoTracker.count}/3 in 2m window.`);
                     if (session.cryptoTracker.count >= 3) {
-                        forceCryptoRelink = true;
+                        // CRITICAL FIX: Instead of deleting ALL credentials (which requires QR rescan),
+                        // perform a SOFT RESET - clear in-memory state and app-state-sync keys only.
+                        // This preserves the core session credentials (creds/keys) so no QR rescan needed.
+                        console.log(`[${userId}] 'Bad decrypt' threshold reached. Attempting SOFT RESET (preserving credentials) instead of full unlink.`);
+                        performSoftReset = true;
+                        session.cryptoTracker = null; // Reset tracker after attempting recovery
                     }
                 }
             }
 
             if (statusCode === DisconnectReason.restartRequired || performSoftReset) {
                 if (performSoftReset) {
-                    // Soft Reset: Delete app-state-sync keys from DB to force re-sync
-                    baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-app-state-sync-` } })
+                    // Soft Reset: Delete app-state-sync keys and sender keys from DB to force re-sync
+                    // Also clear in-memory auth state to ensure we load fresh from MongoDB
+                    const keysToDelete = [
+                        `^${userId}-app-state-sync-`,  // App state sync keys
+                        `^${userId}-sender-key-memory`  // Sender key caches (can become corrupted)
+                    ];
+                    const deletePattern = keysToDelete.join('|');
+                    baileysSessionsCollection.deleteMany({ _id: { $regex: deletePattern } })
                         .then(() => {
-                            console.log(`[${userId}] Soft Reset: Deleted app-state-sync keys.`);
+                            console.log(`[${userId}] Soft Reset: Deleted app-state-sync and sender-key-memory from DB.`);
+                            // Clear in-memory auth state so we reload fresh from MongoDB
+                            if (session.authState) {
+                                console.log(`[${userId}] Soft Reset: Clearing in-memory auth state.`);
+                                session.authState = null;
+                            }
                             // Also end the socket to force reconnect if not already broken
                             if (session.sock) session.sock.end(undefined);
-                            // Reconnect immediately
-                            connectToWhatsApp(userId, vendorConfig);
+                            // Reconnect after a brief delay to allow cleanup
+                            setTimeout(() => connectToWhatsApp(userId, vendorConfig), 500);
                         })
                         .catch(err => console.error(`[${userId}] Soft Reset failed:`, err));
                 } else {
@@ -989,13 +1004,12 @@ async function connectToWhatsApp(userId, vendorConfig) {
                     connectToWhatsApp(userId, vendorConfig);
                 }
 
-            } else if (isPermanentDisconnection || isPersistentBadSession || shouldForceRelink(statusCode, session) || forceCryptoRelink) {
-                if (!isPermanentDisconnection && !isPersistentBadSession && !forceCryptoRelink) {
+            } else if (isPermanentDisconnection || isPersistentBadSession || shouldForceRelink(statusCode, session)) {
+                if (!isPermanentDisconnection && !isPersistentBadSession) {
                     logPersistent405(userId, session);
                 }
                 const reason = isPermanentDisconnection ? `permanent disconnect (code: ${statusCode})` :
-                    isPersistentBadSession ? `persistent bad session (code: ${statusCode})` :
-                        forceCryptoRelink ? `persistent crypto errors (${session.cryptoTracker?.count})` : 'persistent 405 errors';
+                    isPersistentBadSession ? `persistent bad session (code: ${statusCode})` : 'persistent 405 errors';
                 console.log(`[${userId}] Connection closed permanently due to ${reason}. Cleaning up and forcing re-link.`);
 
                 wsConnections[userId]?.close();
@@ -1302,29 +1316,38 @@ app.delete('/sessions/:userId', async (req, res) => {
 });
 
 // --- Active Heartbeat Monitor ---
+// IMPORTANT: This monitor is designed to detect "stuck QR scanning" scenarios 
+// where a user opened the linking modal but never scanned the QR code.
+// It should NOT apply to existing session reconnections (no QR displayed).
 setInterval(() => {
     const now = Date.now();
-    const HEARTBEAT_TIMEOUT = 5000; // 5 seconds
+    const QR_HEARTBEAT_TIMEOUT = 30000; // 30 seconds for QR scanning timeout
 
     for (const userId in sessions) {
         const session = sessions[userId];
 
-        const timeSince = now - (session.lastHeartbeat || 0);
-
-        if (!session || session.connectionStatus === 'open' || session.connectionStatus === 'connected' || session.connectionStatus === 'disconnected' || session.isZombie) {
-            // Heartbeat only matters during linking (connecting/qr)
-            // If connected or already disconnected, skip
-            // If already zombie, let it die in peace
+        if (!session || session.isZombie) {
+            // No session or already zombie, skip
             continue;
         }
 
-        // We only care if we are in a 'linking' state (connecting, or has QR)
-        // If we are just starting up, give it some grace period? 
-        // Actually, lastHeartbeat is set on creation.
+        // Skip zombie detection unless we have an ACTIVE QR code displayed.
+        // This prevents false positives during existing session reconnections
+        // where no QR is ever shown.
+        if (!session.currentQR) {
+            continue;
+        }
 
+        // Also skip if session has already transitioned to connected states
+        if (session.connectionStatus === 'open' || session.connectionStatus === 'connected' || session.connectionStatus === 'disconnected') {
+            continue;
+        }
+
+        // At this point: we have a QR code but haven't connected yet.
+        // This is a new linking attempt - monitor for stuck QR scanning.
         const timeSinceLastHeartbeat = now - (session.lastHeartbeat || 0);
-        if (timeSinceLastHeartbeat > HEARTBEAT_TIMEOUT) {
-            console.log(`[${userId}] Heartbeat expired (Monitor) (${timeSinceLastHeartbeat}ms > ${HEARTBEAT_TIMEOUT}ms). Force killing zombie session.`);
+        if (timeSinceLastHeartbeat > QR_HEARTBEAT_TIMEOUT) {
+            console.log(`[${userId}] QR Heartbeat expired (Monitor) (${timeSinceLastHeartbeat}ms > ${QR_HEARTBEAT_TIMEOUT}ms). User may have abandoned QR scanning. Force killing zombie session.`);
             session.isZombie = true;
             // Close socket
             if (session.sock) {

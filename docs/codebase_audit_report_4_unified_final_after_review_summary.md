@@ -246,6 +246,8 @@ This section groups the audit items into logical "Work Packages" to maximize eff
 ### Phase 5: Backend Logic Standardization (The "Clean Up")
 *Focus: Code consistency and standard patterns.*
 *   **004** - Session Creation Logic Duplication
+*   **013** - Inconsistent Error Handling (Providers)
+*   **011** - Overly Broad Exception Handling
 *   **010** - Queue Manager Eviction Logic DRY
 *   **020** - Business Logic Leakage in Routers
 *   **007** - MongoDB Collection Access Encapsulation
@@ -259,10 +261,3 @@ This section groups the audit items into logical "Work Packages" to maximize eff
 *   **029** - i18n Preparation (Marginal)
 
 **Testing Strategy**: Verify API responses format, check LLM outputs.
-
-### Phase 7: Fix Inconsistent/Imprecise Errors/Exceptions (The "Safety Audit")
-*Focus: Define and apply consistent error handling strategy.*
-*   **011** - Overly Broad Exception Handling
-*   **013** - Inconsistent Provider Error Handling
-
-**Testing Strategy**: Review error propagation, add integration tests for error paths.

@@ -130,6 +130,11 @@ class GroupHistoryService:
 
     async def delete_all_user_messages(self, user_id: str, last_periods: int = 0, time_from: int = None, time_until: int = None) -> int:
         """Delete all tracked periods for a user."""
+        # Optimization: If no filters, do a bulk delete (Item #007)
+        if last_periods == 0 and time_from is None and time_until is None:
+             result = await self.tracked_group_periods_collection.delete_many({"user_id": user_id})
+             return result.deleted_count
+
         total_deleted = 0
         async for group_meta in self.tracked_groups_collection.find({"user_id": user_id}):
             deleted = await self.delete_group_messages(user_id, group_meta['group_id'], last_periods, time_from, time_until)
