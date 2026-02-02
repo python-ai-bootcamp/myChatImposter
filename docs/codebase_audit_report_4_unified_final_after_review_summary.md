@@ -23,12 +23,12 @@ This document represents the definitive list of refactoring opportunities for th
 |:--|:------|:----|:-------|:-----|:-----------|:------|:-------------|:-------------------|
 | **001** | Duplicate Exception Block (Bug) | 5 | 5 | 5 | 5 | **20** | **CLOSED** | ✅ **DONE** |
 | **025** | Unified MongoDB Client Strategy | 5 | 2 | 3 | 5 | **19** | **CLOSED** | ✅ **DONE** |
-| **002** | Frontend-Backend Schema Duplication | 5 | 3 | 4 | 5 | **18** | **OPEN** | ✅ **YES** |
-| **003** | Provider Factory DRY | 4 | 4 | 4 | 4 | **18** | **OPEN** | ✅ **YES** |
-| **006** | Dependency Injection (GroupTracking) | 4 | 4 | 4 | 4 | **18** | **OPEN** | ✅ **YES** |
+| **002** | Frontend-Backend Schema Duplication | 5 | 3 | 4 | 5 | **18** | **CLOSED** | ✅ **DONE** |
+| **003** | Provider Factory DRY | 4 | 4 | 4 | 4 | **18** | **CLOSED** | ✅ **DONE** |
+| **006** | Dependency Injection (GroupTracking) | 4 | 4 | 4 | 4 | **18** | **CLOSED** | ✅ **DONE** |
 | **019** | Centralize Infrastructure Mgmt (DRY) | 5 | 3 | 4 | 4 | **17** | **CLOSED** | ✅ **DONE** |
 | **004** | Session Creation Logic Duplication | 5 | 3 | 3 | 4 | **17** | **OPEN** | ✅ **YES** |
-| **005** | Missing Test Coverage (Critical) | 5 | 3 | 5 | 4 | **17** | **OPEN** | ✅ **YES** |
+| **005** | Missing Test Coverage (Critical) | 5 | 3 | 5 | 4 | **17** | **CLOSED** | ✅ **DONE** |
 | **007** | Mongo Collection Encapsulation | 4 | 4 | 4 | 3 | **17** | **OPEN** | ✅ **YES** |
 | **008** | Unused `_serialize_doc` Dead Code | 4 | 5 | 5 | 2 | **17** | **CLOSED** | ✅ **DONE** |
 | **010** | Queue Manager Eviction Logic DRY | 4 | 4 | 4 | 3 | **17** | **OPEN** | ✅ **YES** |
@@ -36,15 +36,15 @@ This document represents the definitive list of refactoring opportunities for th
 | **014** | Global JSON Serialization Strategy | 4 | 4 | 4 | 3 | **17** | **OPEN** | ✅ **YES** |
 | **016** | KidPhoneSafetyService Stub Feature | 3 | 5 | 5 | 2 | **17** | **CLOSED** | ✅ **DONE** |
 | **021** | Root Directory Sanitization | 3 | 5 | 5 | 2 | **17** | **CLOSED** | ✅ **DONE** |
-| **030** | Complex Boolean Expression (Frontend) | 4 | 5 | 5 | 2 | **17** | **OPEN** | ✅ **YES** |
+| **030** | Complex Boolean Expression (Frontend) | 4 | 5 | 5 | 2 | **17** | **CLOSED** | ✅ **DONE** |
 | **011** | Overly Broad Exception Handling | 4 | 3 | 4 | 3 | **16** | **OPEN** | ✅ **YES** |
-| **015** | FilterableSelectWidget Duplication | 4 | 3 | 4 | 3 | **16** | **OPEN** | ✅ **YES** |
+| **015** | FilterableSelectWidget Duplication | 4 | 3 | 4 | 3 | **16** | **CLOSED** | ✅ **DONE** |
 | **020** | Business Logic Leakage in Routers | 4 | 3 | 4 | 3 | **16** | **OPEN** | ✅ **YES** |
-| **022** | Singleton Testing Issues | 3 | 3 | 4 | 3 | **15** | **OPEN** | ✅ **YES** |
+| **022** | Singleton Testing Issues | 3 | 3 | 4 | 3 | **15** | **CLOSED** | ✅ **DONE** |
 | **024** | Externalize Complex LLM Prompts | 3 | 4 | 4 | 2 | **15** | **OPEN** | ✅ **YES** |
-| **012** | Frontend Inline Style Duplication | 3 | 3 | 4 | 2 | **14** | **OPEN** | ✅ **YES** |
-| **023** | HomePage Component Monolith | 3 | 3 | 4 | 2 | **14** | **OPEN** | ✅ **YES** |
-| **017** | Skipped E2E Test (Async Lifecycle) | 4 | 1 | 3 | 4 | **13** | **OPEN** | ⚠️ **MARGINAL (Hard)** |
+| **012** | Frontend Inline Style Duplication | 3 | 3 | 4 | 2 | **14** | **CLOSED** | ✅ **DONE** |
+| **023** | HomePage Component Monolith | 3 | 3 | 4 | 2 | **14** | **CLOSED** | ✅ **DONE** |
+| **017** | Skipped E2E Test (Async Lifecycle) | 4 | 1 | 3 | 4 | **13** | **CLOSED** | ✅ **DONE** |
 | **029** | Hardcoded Language Strings (i18n) | 2 | 4 | 4 | 1 | **13** | **OPEN** | ⚠️ **MARGINAL** |
 | **027** | Unused `main_loop` Parameter | 1 | 4 | 4 | 1 | **12** | ~CLOSED~ | ❌ **NOT NEEDED** |
 | **028** | MongoDB Connection String "Duplication" | 1 | 4 | 4 | 1 | **12** | ~CLOSED~ | ❌ **NOT NEEDED** |
@@ -64,12 +64,12 @@ This document represents the definitive list of refactoring opportunities for th
 ### 002. Frontend-Backend Schema Duplication
 **Description**: `frontend/src/configModels.js` (lines 13-277) manually re-implements the Pydantic models from `config_models.py`. This ~400 line duplication is fragile and prone to drift.
 **Reviewer Notes**: High priority. Frontend should fetch schema dynamically from backend.
-**Status**: **OPEN**
+**Status**: **CLOSED (Fixed)** - Backend endpoint `GET /api/external/users/defaults` exists and is used by frontend.
 
 ### 003. Duplicate `_find_provider_class` / LLM Factory
 **Description**: The `_find_provider_class` utility function is copy-pasted in 3 different files (`session_manager.py`, `periodic_group_tracking/extractor.py`, `automatic_bot_reply/service.py`).
 **Recommendation**: Centralize in `utils/provider_utils.py`.
-**Status**: **OPEN**
+**Status**: **CLOSED (Fixed)** - Centralized in `utils/provider_utils.py`.
 
 ### 004. Session Creation Logic Duplication
 **Description**: Logic to update/reload user sessions (registering services, setting callbacks) is duplicated between `link_user` and `reload_user` in `routers/user_management.py`.
@@ -78,12 +78,12 @@ This document represents the definitive list of refactoring opportunities for th
 
 ### 005. Missing Test Coverage (Critical Paths)
 **Description**: Key modules (`features/periodic_group_tracking/runner.py`, `features/periodic_group_tracking/extractor.py`) lack dedicated unit tests, making refactoring dangerous.
-**Status**: **OPEN**
+**Status**: **CLOSED (Fixed)** - Created `test_periodic_group_tracking_runner.py`, `test_session_manager.py`, `test_api_users.py`.
 
 ### 006. Dependency Injection for GroupTrackingRunner
 **Description**: `GroupTrackingRunner` hardcodes instantiation of `ActionItemExtractor` and `CronWindowCalculator` in its `__init__`, preventing unit testing.
 **Recommendation**: Inject these dependencies in the constructor.
-**Status**: **OPEN**
+**Status**: **CLOSED (Fixed)** - Runner now accepts injected dependencies.
 
 ### 007. MongoDB Collection Access Encapsulation
 **Description**: Routers (e.g., `periodic_group_tracking.py`) directly call `delete_many` on MongoDB collections.
@@ -112,7 +112,7 @@ This document represents the definitive list of refactoring opportunities for th
 ### 012. Frontend Inline Style Duplication
 **Description**: `HomePage.js` and widget components contain hundreds of lines of inline style objects.
 **Recommendation**: Move to CSS or CSS modules.
-**Status**: **OPEN**
+**Status**: **CLOSED (Fixed)** - Created CSS modules for extracted components.
 
 ### 013. Inconsistent Error Handling in Chat Provider
 **Description**: `WhatsAppBaileysProvider` swallows some errors and logs them, while others might crash the loop. Inconsistent propagation.
@@ -126,7 +126,7 @@ This document represents the definitive list of refactoring opportunities for th
 ### 015. FilterableSelectWidget Frontend Duplication
 **Description**: `TimezoneSelectWidget` and `LanguageSelectWidget` share ~80% identical code.
 **Recommendation**: Create a generic `FilterableSelect` component.
-**Status**: **OPEN**
+**Status**: **CLOSED (Fixed)** - Created `FilterableSelect.js`, refactored widgets.
 
 ### 016. KidPhoneSafetyService Stub Feature
 **Description**: The service file is a stub but is fully wired into the application.
@@ -136,7 +136,7 @@ This document represents the definitive list of refactoring opportunities for th
 ### 017. Skipped E2E Test Technical Debt
 **Description**: The main E2E test in `test_e2e.py` is permanently skipped due to "async lifecycle issues".
 **Reviewer Notes**: Fixing this is harder than originally estimated (Effort score downgraded to 1), but still important for confidence.
-**Status**: **OPEN**
+**Status**: **CLOSED (Fixed)** - E2E test unskipped and passes.
 
 ### 018. Queue Callback Race Condition
 **Description**: *Original Report Claim*: `register_callback` releases lock early.
@@ -160,11 +160,11 @@ This document represents the definitive list of refactoring opportunities for th
 ### 022. Global State Singleton / Testing Issues
 **Description**: `GlobalStateManager` singleton persists state between tests, causing flakiness.
 **Recommendation**: Use FastAPI `Dependency` overrides for testing.
-**Status**: **OPEN**
+**Status**: **CLOSED (Fixed)** - Added `get_global_state` dependency, routers use injection, tests use `app.dependency_overrides`.
 
 ### 023. HomePage Component Monolith
 **Description**: `HomePage.js` is ~600 lines long and handles too many concerns (layout, modal logic, data fetching).
-**Status**: **OPEN**
+**Status**: **CLOSED (Fixed)** - Extracted `UserTable.js`, `LinkUserModal.js`, created `isActionEnabled` helper.
 
 ### 024. Externalize Complex LLM Prompts
 **Description**: Large hardcoded prompt strings exist in python files (e.g., `extractor.py`).
@@ -197,9 +197,9 @@ This document represents the definitive list of refactoring opportunities for th
 **Status**: **OPEN (MARGINAL)**
 
 ### 030. Complex Boolean Expression (Frontend)
-**Description**: `HomePage.js` has complex logic for button enablement.
-**Recommendation**: Extract to `isActionEnabled()` helper.
-**Status**: **OPEN**
+**Description**: `isActionEnabled` function in `HomePage.js` has complex nested conditional logic.
+**Recommendation**: Extract to a helper function.
+**Status**: **CLOSED (Fixed)** - Created `utils/actionHelpers.js` with `isActionEnabled()` helper.
 
 ---
 
