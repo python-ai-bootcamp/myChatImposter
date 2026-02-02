@@ -33,7 +33,7 @@ This document represents the definitive list of refactoring opportunities for th
 | **008** | Unused `_serialize_doc` Dead Code | 4 | 5 | 5 | 2 | **17** | **CLOSED** | ✅ **DONE** |
 | **010** | Queue Manager Eviction Logic DRY | 4 | 4 | 4 | 3 | **17** | **CLOSED** | ✅ **DONE** |
 | **013** | Inconsistent Provider Error Handling | 4 | 4 | 4 | 3 | **17** | **CLOSED** | ✅ **DONE** |
-| **014** | Global JSON Serialization Strategy | 4 | 4 | 4 | 3 | **17** | **OPEN** | ✅ **YES** |
+| **014** | Global JSON Serialization Strategy | 4 | 4 | 4 | 3 | **17** | **CLOSED** | ✅ **DONE** |
 | **016** | KidPhoneSafetyService Stub Feature | 3 | 5 | 5 | 2 | **17** | **CLOSED** | ✅ **DONE** |
 | **021** | Root Directory Sanitization | 3 | 5 | 5 | 2 | **17** | **CLOSED** | ✅ **DONE** |
 | **030** | Complex Boolean Expression (Frontend) | 4 | 5 | 5 | 2 | **17** | **CLOSED** | ✅ **DONE** |
@@ -41,11 +41,11 @@ This document represents the definitive list of refactoring opportunities for th
 | **015** | FilterableSelectWidget Duplication | 4 | 3 | 4 | 3 | **16** | **CLOSED** | ✅ **DONE** |
 | **020** | Business Logic Leakage in Routers | 4 | 3 | 4 | 3 | **16** | **CLOSED** | ✅ **DONE** |
 | **022** | Singleton Testing Issues | 3 | 3 | 4 | 3 | **15** | **CLOSED** | ✅ **DONE** |
-| **024** | Externalize Complex LLM Prompts | 3 | 4 | 4 | 2 | **15** | **OPEN** | ✅ **YES** |
+| **024** | Externalize Complex LLM Prompts | 3 | 4 | 4 | 2 | **15** | **CLOSED** | ✅ **DONE** |
 | **012** | Frontend Inline Style Duplication | 3 | 3 | 4 | 2 | **14** | **CLOSED** | ✅ **DONE** |
 | **023** | HomePage Component Monolith | 3 | 3 | 4 | 2 | **14** | **CLOSED** | ✅ **DONE** |
 | **017** | Skipped E2E Test (Async Lifecycle) | 4 | 1 | 3 | 4 | **13** | **CLOSED** | ✅ **DONE** |
-| **029** | Hardcoded Language Strings (i18n) | 2 | 4 | 4 | 1 | **13** | **OPEN** | ⚠️ **MARGINAL** |
+| **029** | Hardcoded Language Strings (i18n) | 2 | 4 | 4 | 1 | **13** | **SKIPPED** | ❌ **USER REQ** |
 | **027** | Unused `main_loop` Parameter | 1 | 4 | 4 | 1 | **12** | ~CLOSED~ | ❌ **NOT NEEDED** |
 | **028** | MongoDB Connection String "Duplication" | 1 | 4 | 4 | 1 | **12** | ~CLOSED~ | ❌ **NOT NEEDED** |
 | **018** | Queue Callback Race Condition | 1 | 5 | 5 | 1 | **12** | ~CLOSED~ | ❌ **FALSE POSITIVE** |

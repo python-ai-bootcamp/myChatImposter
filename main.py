@@ -9,6 +9,7 @@ from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManage
 from services.session_manager import SessionManager
 from features.periodic_group_tracking.service import GroupTracker
 from services.user_lifecycle_service import UserLifecycleService
+from utils.json_encoder import CustomJSONResponse
 
 # Import Routers
 from routers import user_management
@@ -93,7 +94,7 @@ async def lifespan(app: FastAPI):
         if global_state.async_message_delivery_queue_manager:
             await global_state.async_message_delivery_queue_manager.stop_consumer()
 
-app = FastAPI(lifespan=lifespan)
+app = FastAPI(lifespan=lifespan, default_response_class=CustomJSONResponse)
 
 # Include Routers
 app.include_router(user_management.router)
