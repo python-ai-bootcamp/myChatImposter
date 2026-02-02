@@ -93,30 +93,38 @@ class CorrespondentQueue:
             else:
                 logging.error(f"QUEUE: No main event loop provided to run async callback.")
 
+    def _evict_while(self, condition_fn, reason: str, new_message_size: int = 0):
+        """
+        Evict messages from the front of the queue while condition_fn returns True.
+        Reduces duplication across age, count, and size-based eviction.
+        """
+        while self._messages and condition_fn():
+            evicted_msg = self._messages.popleft()
+            self._total_chars -= evicted_msg.message_size
+            self._log_retention_event(evicted_msg, reason, new_message_size)
+            logging.info(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to {reason}.")
+
     def _enforce_limits(self, new_message_size: int):
         """Evict old messages until the new message can be added."""
         now = time.time()
 
         # Evict by age first
-        while self._messages and (now - self._messages[0].accepted_time / 1000) > self.max_age_seconds:
-            evicted_msg = self._messages.popleft()
-            self._total_chars -= evicted_msg.message_size
-            self._log_retention_event(evicted_msg, "age", new_message_size)
-            logging.info(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to age.")
+        self._evict_while(
+            lambda: (now - self._messages[0].accepted_time / 1000) > self.max_age_seconds,
+            "age", new_message_size
+        )
 
         # Evict by total characters
-        while self._messages and (self._total_chars + new_message_size) > self.max_characters:
-            evicted_msg = self._messages.popleft()
-            self._total_chars -= evicted_msg.message_size
-            self._log_retention_event(evicted_msg, "total_characters", new_message_size)
-            logging.info(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to total characters limit.")
+        self._evict_while(
+            lambda: (self._total_chars + new_message_size) > self.max_characters,
+            "total_characters", new_message_size
+        )
 
         # Evict by total message count
-        while len(self._messages) >= self.max_messages:
-            evicted_msg = self._messages.popleft()
-            self._total_chars -= evicted_msg.message_size
-            self._log_retention_event(evicted_msg, "message_count", new_message_size)
-            logging.info(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to message count limit.")
+        self._evict_while(
+            lambda: len(self._messages) >= self.max_messages,
+            "message_count", new_message_size
+        )
 
     async def add_message(self, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None, provider_message_id: Optional[str] = None):
         """Create, add, and process a new message for the queue."""

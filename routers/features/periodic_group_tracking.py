@@ -47,8 +47,8 @@ async def delete_all_tracked_messages(user_id: str, state: GlobalStateManager = 
     Delete all tracked messages for a user.
     """
     try:
-        result = await state.group_tracker.tracked_group_periods_collection.delete_many({"user_id": user_id})
-        logging.info(f"API: Deleted {result.deleted_count} tracked periods for {user_id}.")
+        result = await state.group_tracker.history.delete_all_user_messages(user_id)
+        logging.info(f"API: Deleted tracked periods for {user_id}.")
         return Response(status_code=204)
     except Exception as e:
         logging.error(f"API: Error deleting tracked messages for {user_id}: {e}")
@@ -60,9 +60,7 @@ async def delete_group_tracked_messages(user_id: str, group_id: str, state: Glob
     Delete tracked messages for a specific group.
     """
     try:
-        result = await state.group_tracker.tracked_group_periods_collection.delete_many(
-            {"user_id": user_id, "group_id": group_id}
-        )
+        result = await state.group_tracker.history.delete_group_messages(user_id, group_id)
         return Response(status_code=204)
     except Exception as e:
         logging.error(f"API: Error deleting tracked messages for {user_id}/{group_id}: {e}")

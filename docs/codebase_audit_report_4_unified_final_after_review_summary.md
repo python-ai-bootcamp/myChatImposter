@@ -27,11 +27,11 @@ This document represents the definitive list of refactoring opportunities for th
 | **003** | Provider Factory DRY | 4 | 4 | 4 | 4 | **18** | **CLOSED** | ✅ **DONE** |
 | **006** | Dependency Injection (GroupTracking) | 4 | 4 | 4 | 4 | **18** | **CLOSED** | ✅ **DONE** |
 | **019** | Centralize Infrastructure Mgmt (DRY) | 5 | 3 | 4 | 4 | **17** | **CLOSED** | ✅ **DONE** |
-| **004** | Session Creation Logic Duplication | 5 | 3 | 3 | 4 | **17** | **OPEN** | ✅ **YES** |
+| **004** | Session Creation Logic Duplication | 5 | 3 | 3 | 4 | **17** | **CLOSED** | ✅ **DONE** |
 | **005** | Missing Test Coverage (Critical) | 5 | 3 | 5 | 4 | **17** | **CLOSED** | ✅ **DONE** |
-| **007** | Mongo Collection Encapsulation | 4 | 4 | 4 | 3 | **17** | **OPEN** | ✅ **YES** |
+| **007** | Mongo Collection Encapsulation | 4 | 4 | 4 | 3 | **17** | **CLOSED** | ✅ **DONE** |
 | **008** | Unused `_serialize_doc` Dead Code | 4 | 5 | 5 | 2 | **17** | **CLOSED** | ✅ **DONE** |
-| **010** | Queue Manager Eviction Logic DRY | 4 | 4 | 4 | 3 | **17** | **OPEN** | ✅ **YES** |
+| **010** | Queue Manager Eviction Logic DRY | 4 | 4 | 4 | 3 | **17** | **CLOSED** | ✅ **DONE** |
 | **013** | Inconsistent Provider Error Handling | 4 | 4 | 4 | 3 | **17** | **OPEN** | ✅ **YES** |
 | **014** | Global JSON Serialization Strategy | 4 | 4 | 4 | 3 | **17** | **OPEN** | ✅ **YES** |
 | **016** | KidPhoneSafetyService Stub Feature | 3 | 5 | 5 | 2 | **17** | **CLOSED** | ✅ **DONE** |
@@ -39,7 +39,7 @@ This document represents the definitive list of refactoring opportunities for th
 | **030** | Complex Boolean Expression (Frontend) | 4 | 5 | 5 | 2 | **17** | **CLOSED** | ✅ **DONE** |
 | **011** | Overly Broad Exception Handling | 4 | 3 | 4 | 3 | **16** | **OPEN** | ✅ **YES** |
 | **015** | FilterableSelectWidget Duplication | 4 | 3 | 4 | 3 | **16** | **CLOSED** | ✅ **DONE** |
-| **020** | Business Logic Leakage in Routers | 4 | 3 | 4 | 3 | **16** | **OPEN** | ✅ **YES** |
+| **020** | Business Logic Leakage in Routers | 4 | 3 | 4 | 3 | **16** | **CLOSED** | ✅ **DONE** |
 | **022** | Singleton Testing Issues | 3 | 3 | 4 | 3 | **15** | **CLOSED** | ✅ **DONE** |
 | **024** | Externalize Complex LLM Prompts | 3 | 4 | 4 | 2 | **15** | **OPEN** | ✅ **YES** |
 | **012** | Frontend Inline Style Duplication | 3 | 3 | 4 | 2 | **14** | **CLOSED** | ✅ **DONE** |
@@ -246,8 +246,6 @@ This section groups the audit items into logical "Work Packages" to maximize eff
 ### Phase 5: Backend Logic Standardization (The "Clean Up")
 *Focus: Code consistency and standard patterns.*
 *   **004** - Session Creation Logic Duplication
-*   **013** - Inconsistent Error Handling (Providers)
-*   **011** - Overly Broad Exception Handling
 *   **010** - Queue Manager Eviction Logic DRY
 *   **020** - Business Logic Leakage in Routers
 *   **007** - MongoDB Collection Access Encapsulation
@@ -261,3 +259,10 @@ This section groups the audit items into logical "Work Packages" to maximize eff
 *   **029** - i18n Preparation (Marginal)
 
 **Testing Strategy**: Verify API responses format, check LLM outputs.
+
+### Phase 7: Fix Inconsistent/Imprecise Errors/Exceptions (The "Safety Audit")
+*Focus: Define and apply consistent error handling strategy.*
+*   **011** - Overly Broad Exception Handling
+*   **013** - Inconsistent Provider Error Handling
+
+**Testing Strategy**: Review error propagation, add integration tests for error paths.

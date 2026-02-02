@@ -58,6 +58,43 @@ def ensure_db_connected(state: GlobalStateManager = Depends(get_global_state)) -
         raise HTTPException(status_code=503, detail="Database connection not available.")
     return state
 
+
+async def _setup_session(config: UserConfiguration, state: GlobalStateManager) -> SessionManager:
+    """
+    Create and configure a SessionManager with all services and features.
+    Used by both link_user and reload_user to avoid duplication.
+    
+    Returns a fully configured SessionManager (not yet started).
+    """
+    loop = asyncio.get_running_loop()
+    
+    instance = SessionManager(
+        config=config,
+        on_session_end=state.remove_active_user,
+        queues_collection=state.queues_collection,
+        main_loop=loop,
+        on_status_change=state.user_lifecycle_service.create_status_change_callback()
+    )
+    
+    # 1. Ingestion Service
+    if state.queues_collection is not None:
+        ingester = IngestionService(instance, state.queues_collection)
+        ingester.start()
+        instance.register_service(ingester)
+
+    # 2. Features Subscription
+    if config.features.automatic_bot_reply.enabled:
+        bot_service = AutomaticBotReplyService(instance)
+        instance.register_message_handler(bot_service.handle_message)
+        instance.register_feature("automatic_bot_reply", bot_service)
+    
+    if config.features.kid_phone_safety_tracking.enabled:
+        kid_service = KidPhoneSafetyService(instance)
+        instance.register_message_handler(kid_service.handle_message)
+        instance.register_feature("kid_phone_safety_tracking", kid_service)
+    
+    return instance
+
 # --- Routes ---
 
 @router.get("", response_model=Dict[str, List[str]])
@@ -397,31 +434,7 @@ async def link_user(user_id: str, state: GlobalStateManager = Depends(ensure_db_
         instance_id = str(uuid.uuid4())
         logging.info(f"API: Starting new instance {instance_id} for {user_id}")
         
-        loop = asyncio.get_running_loop()
-        instance = SessionManager(
-            config=config, 
-            on_session_end=state.remove_active_user,
-            queues_collection=state.queues_collection,
-            main_loop=loop,
-            on_status_change=state.user_lifecycle_service.create_status_change_callback()
-        )
-        
-        # 1. Ingestion Service
-        if state.queues_collection is not None:
-             ingester = IngestionService(instance, state.queues_collection)
-             ingester.start()
-             instance.register_service(ingester)
-
-        # 2. Features Subscription
-        if config.features.automatic_bot_reply.enabled:
-             bot_service = AutomaticBotReplyService(instance)
-             instance.register_message_handler(bot_service.handle_message)
-             instance.register_feature("automatic_bot_reply", bot_service)
-        
-        if config.features.kid_phone_safety_tracking.enabled:
-             kid_service = KidPhoneSafetyService(instance)
-             instance.register_message_handler(kid_service.handle_message)
-             instance.register_feature("kid_phone_safety_tracking", kid_service)
+        instance = await _setup_session(config, state)
 
         state.chatbot_instances[instance_id] = instance
         await instance.start()
@@ -522,35 +535,8 @@ async def reload_user(user_id: str, state: GlobalStateManager = Depends(ensure_d
         
         # 3. Start New
         new_id = str(uuid.uuid4())
-        loop = asyncio.get_running_loop()
         
-        # We need a reload-specific listener if logic differs, but here it's same: if connected -> active queue
-        # Main.py defined 'status_change_listener_reload' but it was identical to 'status_change_listener'
-        
-        new_instance = SessionManager(
-            config=config,
-            on_session_end=state.remove_active_user,
-            queues_collection=state.queues_collection,
-            main_loop=loop,
-            on_status_change=state.user_lifecycle_service.create_status_change_callback()
-        )
-
-        # 1. Ingestion Service
-        if state.queues_collection is not None:
-             ingester = IngestionService(new_instance, state.queues_collection)
-             ingester.start()
-             new_instance.register_service(ingester)
-
-        # 2. Features Subscription
-        if config.features.automatic_bot_reply.enabled:
-             bot_service = AutomaticBotReplyService(new_instance)
-             new_instance.register_message_handler(bot_service.handle_message)
-             new_instance.register_feature("automatic_bot_reply", bot_service)
-        
-        if config.features.kid_phone_safety_tracking.enabled:
-             kid_service = KidPhoneSafetyService(new_instance)
-             new_instance.register_message_handler(kid_service.handle_message)
-             new_instance.register_feature("kid_phone_safety_tracking", kid_service)
+        new_instance = await _setup_session(config, state)
         
         state.chatbot_instances[new_id] = new_instance
         await new_instance.start()
