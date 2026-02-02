@@ -1,5 +1,6 @@
 
 import asyncio
+# FORCE RELOAD: Verifying await fix propagation
 import uuid
 import logging
 from typing import Dict, Any, List, Union
@@ -12,6 +13,11 @@ from config_models import (
     UserConfiguration, ConfigurationsSettings, FeaturesConfiguration,
     ChatProviderConfig, LLMProviderConfig, ChatProviderSettings, LLMProviderSettings,
     UserDetails, QueueConfig, ContextConfig
+)
+from infrastructure.exceptions import (
+    ProviderConnectionError, 
+    ProviderAuthenticationError, 
+    ProviderError
 )
 from services.session_manager import SessionManager
 from services.ingestion_service import IngestionService
@@ -451,6 +457,14 @@ async def link_user(user_id: str, state: GlobalStateManager = Depends(ensure_db_
 
     except HTTPException:
         raise
+    except ProviderAuthenticationError as e:
+        logging.error(f"API: Auth failed for {user_id}: {e}")
+        if user_id in state.active_users: state.remove_active_user(user_id)
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {e}")
+    except ProviderConnectionError as e:
+        logging.error(f"API: Connection failed for {user_id}: {e}")
+        if user_id in state.active_users: state.remove_active_user(user_id)
+        raise HTTPException(status_code=503, detail=f"Provider unavailable: {e}")
     except Exception as e:
         logging.error(f"API: Link failed for {user_id}: {e}")
         # Cleanup if partial failure
@@ -547,6 +561,14 @@ async def reload_user(user_id: str, state: GlobalStateManager = Depends(ensure_d
         
         return {"status": "success", "message": "Reloaded"}
 
+    except ProviderAuthenticationError as e:
+        logging.error(f"API: Reload auth failed for {user_id}: {e}")
+        if user_id in state.active_users: state.remove_active_user(user_id)
+        raise HTTPException(status_code=401, detail=f"Authentication failed: {e}")
+    except ProviderConnectionError as e:
+        logging.error(f"API: Reload connection failed for {user_id}: {e}")
+        if user_id in state.active_users: state.remove_active_user(user_id)
+        raise HTTPException(status_code=503, detail=f"Provider unavailable: {e}")
     except Exception as e:
         logging.error(f"API: Reload failed for {user_id}: {e}")
         if user_id in state.active_users:

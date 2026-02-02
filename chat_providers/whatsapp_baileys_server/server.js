@@ -40,7 +40,7 @@ const wsConnections = {}; // Holds all active WebSocket connections, keyed by us
 const serverStartTime = Date.now();
 const DEFAULT_BROWSER = ['Ubuntu', 'Chrome', '22.04.4'];
 const MAX_HTTP405_RETRIES = 3;
-const HTTP405_WINDOW_MS = 30 * 1000;
+const HTTP405_WINDOW_MS = 300 * 1000;
 const RETRY_DELAY_MS = 5000;
 let baileysSessionsCollection;
 
@@ -73,7 +73,7 @@ const trackHttp405 = (session, lastDisconnect) => {
 };
 
 const shouldForceRelink = (statusCode, session) => {
-    if (statusCode !== 405) return false;
+    if (statusCode !== 405 && statusCode !== 408) return false;
     const tracker = session.http405Tracker;
     if (!tracker || tracker.count < MAX_HTTP405_RETRIES) {
         return false;
@@ -777,6 +777,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
         browser: DEFAULT_BROWSER,
         syncFullHistory: vendorConfig.sync_full_history === true,
         printQRInTerminal: false, // We handle QR code generation manually
+        connectTimeoutMs: 60000, // Increase timeout to 60s for slow DNS
+        defaultQueryTimeoutMs: 60000, // Increase query timeout to 60s
     });
 
 
@@ -793,7 +795,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
         sessions[userId].lastHeartbeat = Date.now(); // Reset heartbeat to prevent zombie detection during reload
         sessions[userId].isGracefulDisconnect = false; // Reset flags
         sessions[userId].isZombie = false;
-        resetHttp405Tracker(sessions[userId]);
+        // resetHttp405Tracker(sessions[userId]); // REMOVED: Preserve 405 tracker across reconnections so we can detect persistent loops
         // Do not reset store here, preserve what we have?
         // Or reset if it's a new connection?
         // If we restart the connection logic, likely we should keep the store as long as the process lives.
@@ -857,6 +859,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
             session.currentQR = null;
             session.retryCount = 0; // Reset retry count
             resetHttp405Tracker(session);
+            session.softResetCount = 0; // Reset Soft Reset counter on success
             // Log user info to help debug LID issues
             if (session.sock?.user) {
                 console.log(`[${userId}] Session user info: ${JSON.stringify(session.sock.user)}`);
@@ -942,7 +945,8 @@ async function connectToWhatsApp(userId, vendorConfig) {
             const errorMessage = lastDisconnect?.error?.toString() || '';
             const isInvalidPatchMac = errorMessage.includes('Invalid patch mac');
             const isBadDecrypt = errorMessage.includes('bad decrypt');
-            const isCryptoError = isInvalidPatchMac || isBadDecrypt;
+            const isSessionError = errorMessage.includes('SessionError') || errorMessage.includes('No matching sessions found');
+            const isCryptoError = isInvalidPatchMac || isBadDecrypt || isSessionError;
 
             let performSoftReset = false;
 
@@ -972,6 +976,23 @@ async function connectToWhatsApp(userId, vendorConfig) {
                         console.log(`[${userId}] 'Bad decrypt' threshold reached. Attempting SOFT RESET (preserving credentials) instead of full unlink.`);
                         performSoftReset = true;
                         session.cryptoTracker = null; // Reset tracker after attempting recovery
+                    }
+                }
+            }
+
+            // Track 405/408 errors (Method Not Allowed / Timeout) which often indicate sync issues or protocol mismatches
+            if (statusCode === 405 || statusCode === 408) {
+                trackHttp405(session, lastDisconnect);
+                if (session.http405Tracker.count >= MAX_HTTP405_RETRIES) {
+                    const softResetCount = session.softResetCount || 0;
+                    if (softResetCount >= 3) {
+                        console.log(`[${userId}] Soft Reset limit reached (${softResetCount}). Escalating to Hard Reset.`);
+                        performSoftReset = false; // Allow fallthrough to Hard Reset (shouldForceRelink logic)
+                    } else {
+                        session.softResetCount = softResetCount + 1;
+                        console.log(`[${userId}] Persistent 405 errors (Count: ${session.http405Tracker.count}). Attempting SOFT RESET (Attempt ${session.softResetCount}/3).`);
+                        performSoftReset = true;
+                        session.http405Tracker = createHttp405Tracker(); // Reset counter to give Soft Reset a full try cycle
                     }
                 }
             }
@@ -1029,9 +1050,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
             } else { // Handle other transient errors with retry logic
                 session.retryCount = (session.retryCount || 0) + 1;
-                if (statusCode === 405) {
-                    trackHttp405(session, lastDisconnect);
-                }
+                // statusCode === 405 handled above
                 console.log(`[${userId}] Connection closed transiently (code: ${statusCode}). Retry #${session.retryCount}.`);
                 console.log(`[${userId}] Underlying error:`, lastDisconnect.error);
                 console.log(`[${userId}] Attempting to reconnect in 5s...`);

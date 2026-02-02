@@ -16,6 +16,12 @@ import logging
 
 from .base import BaseChatProvider
 from config_models import ChatProviderConfig
+from infrastructure.exceptions import (
+    ProviderConnectionError, 
+    ProviderAuthenticationError, 
+    ProviderMessageError, 
+    ProviderError
+)
 
 
 class WhatsAppBaileysProvider(BaseChatProvider):
@@ -121,13 +127,29 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         try:
             config_data = {"userId": self.user_id, "config": self.config.provider_config.model_dump()}
             async with httpx.AsyncClient() as client:
-                response = await client.post(f"{self.base_url}/initialize", json=config_data, headers={'Content-Type': 'application/json'})
+                try:
+                    response = await client.post(
+                        f"{self.base_url}/initialize", 
+                        json=config_data, 
+                        headers={'Content-Type': 'application/json'},
+                        timeout=10.0
+                    )
+                except httpx.RequestError as e:
+                    raise ProviderConnectionError(f"Failed to connect to WhatsApp Server: {e}") from e
+
                 if response.status_code == 200:
                     logging.info("Successfully sent configuration to Node.js server.")
+                elif response.status_code in (401, 403):
+                    raise ProviderAuthenticationError(f"Authentication rejected by server: {response.text}")
+                elif response.status_code == 503:
+                    raise ProviderConnectionError(f"WhatsApp Server unavailable: {response.text}")
                 else:
-                    logging.warning(f"Failed to send config. Status: {response.status_code}, Body: {response.text}")
+                    raise ProviderError(f"Failed to send config. Status: {response.status_code}, Body: {response.text}")
+        except ProviderError:
+            raise
         except Exception as e:
-            logging.error(f"Exception while sending configuration: {e}")
+            logging.error(f"Unexpected exception while sending configuration: {e}")
+            raise ProviderError(f"Unexpected error initializing: {e}") from e
 
     async def start_listening(self):
         if self.is_listening:
@@ -394,10 +416,16 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 else:
                     error_msg = f"Failed to send message. Status: {response.status_code}, Body: {response.text}"
                     logging.error(f"{error_msg}")
-                    raise Exception(error_msg)
+                    if response.status_code == 404:
+                        raise ProviderConnectionError("Session not found (404) - likely disconnected.")
+                    raise ProviderMessageError(error_msg)
+        except httpx.RequestError as e:
+            raise ProviderConnectionError(f"Network error sending message: {e}") from e
+        except ProviderError:
+            raise
         except Exception as e:
             logging.error(f"Exception while sending message: {e}")
-            raise e
+            raise ProviderMessageError(f"Unexpected error sending message: {e}") from e
 
     async def send_file(self, recipient: str, file_data: bytes, filename: str, mime_type: str, caption: Optional[str] = None):
         """
