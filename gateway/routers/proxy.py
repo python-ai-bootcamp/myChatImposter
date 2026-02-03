@@ -102,6 +102,44 @@ async def list_users_proxy(request: Request):
     )
 
 
+@router.get("/api/external/users/status")
+async def list_users_status_proxy(request: Request):
+    """
+    Interceptor for listing users status.
+    
+    Logic:
+    - User Role: Inject 'user_ids' from session ownership list.
+    - Admin Role: Pass as is.
+    """
+    session = getattr(request.state, "session", None)
+    if not session:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    backend_url = f"{gateway_state.backend_url}/api/internal/users/status"
+    params = dict(request.query_params)
+    headers = dict(request.headers)
+    headers.pop("host", None)
+
+    # Role-based filtering
+    if session.role == "user":
+        owned_ids = getattr(session, "owned_user_configurations", [])
+        
+        # If user owns nothing, short-circuit
+        if not owned_ids:
+            # Return empty structure matching UserStatusList
+            return JSONResponse(content={"configurations": [], "count": 0}, status_code=200)
+            
+        params["user_ids"] = owned_ids
+
+    return await _forward_request(
+        method="GET",
+        url=backend_url,
+        params=params,
+        headers=headers,
+        body=b"",
+    )
+
+
 @router.api_route(
     "/api/external/{path:path}",
     methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
@@ -144,20 +182,36 @@ async def proxy_to_backend(path: str, request: Request):
     )
 
     # Interceptor: PUT Creation (Ownership Claim)
-    # Check if successful PUT to a user resource
+    # Check if successful PUT to a user resource (either legacy or UI)
+    if request.method == "PUT":
+        logging.info(f"GATEWAY_DEBUG: Checking PUT for ownership. Path={path}, Status={response.status_code}")
+        
     if request.method == "PUT" and response.status_code == 200:
-        # Check if path is users/{user_id}
+        target_user_id = None
         parts = path.strip("/").split("/")
+        logging.info(f"GATEWAY_DEBUG: Parts={parts}")
+        
+        # Case 1: Legacy /users/{user_id}
         if len(parts) == 2 and parts[0] == "users":
             target_user_id = parts[1]
+        # Case 2: UI /ui/users/{user_id}
+        elif len(parts) == 3 and parts[0] == "ui" and parts[1] == "users":
+            target_user_id = parts[2]
+            
+        if target_user_id:
             session = getattr(request.state, "session", None)
             
-            if session and session.role == "user":
+            if session:
+                logging.info(f"GATEWAY_DEBUG: Session User={session.user_id}, Role={session.role}, Owned={getattr(session, 'owned_user_configurations', [])}")
+            else:
+                logging.info("GATEWAY_DEBUG: No Session found in request state.")
+
+            if session:
                 # Check if we need to claim it
                 owned_ids = getattr(session, "owned_user_configurations", [])
                 
                 if target_user_id not in owned_ids:
-                    logging.info(f"GATEWAY: Claiming new bot {target_user_id} for user {session.user_id}")
+                    logging.info(f"GATEWAY: Claiming new bot {target_user_id} for user {session.user_id} (Role: {session.role})")
                     try:
                         # Update Persistence
                         await request.app.state.auth_service.add_owned_configuration(

@@ -189,7 +189,10 @@ async def get_user_info(user_id: str, state: GlobalStateManager = Depends(ensure
         raise HTTPException(status_code=500, detail="Could not get user info.")
 
 @router.get("/status")
-async def list_users_status(state: GlobalStateManager = Depends(ensure_db_connected)):
+async def list_users_status(
+    state: GlobalStateManager = Depends(ensure_db_connected),
+    user_ids: List[str] = Query(None)
+):
     """
     Returns status for all configurations (admin-only).
     (Formerly /api/configurations/status)
@@ -209,7 +212,12 @@ async def list_users_status(state: GlobalStateManager = Depends(ensure_db_connec
                  if owner_id not in owner_map:
                       owner_map[owner_id] = owner_id
 
-        cursor = state.configurations_collection.find({})
+        # Build Query
+        query = {}
+        if user_ids:
+            query = {"config_data.user_id": {"$in": user_ids}}
+            
+        cursor = state.configurations_collection.find(query)
         db_configs = await cursor.to_list(length=None)
         for db_config in db_configs:
             config_data = db_config.get("config_data")

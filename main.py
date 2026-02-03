@@ -16,6 +16,8 @@ from routers import user_management
 from routers.features import automatic_bot_reply, periodic_group_tracking
 from routers import async_message_delivery_queue
 from routers import resources
+from routers import user_ui # [NEW]
+
 
 # Logging Setup
 logging.basicConfig(
@@ -102,6 +104,8 @@ app.include_router(automatic_bot_reply.router)
 app.include_router(periodic_group_tracking.router)
 app.include_router(async_message_delivery_queue.router)
 app.include_router(resources.router)
+app.include_router(user_ui.router) # [NEW]
+
 
 @app.middleware("http")
 async def log_requests(request, call_next):

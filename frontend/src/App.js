@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Route, Routes } from 'react-router-dom';
 import HomePage from './pages/HomePage';
 import EditPage from './pages/EditPage';
 import LoginPage from './pages/LoginPage';
+import RestrictedEditPage from './pages/RestrictedEditPage';
 
 
 function App() {
@@ -14,6 +15,7 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/" element={<HomePage />} />
           <Route path="/edit/:userId" element={<EditPage />} />
+          <Route path="/user/edit/:userId" element={<RestrictedEditPage />} />
         </Routes>
       </div>
     </Router>

@@ -20,6 +20,7 @@ class PermissionValidator:
     # Regex patterns for extracting user_id from paths
     USER_ID_PATTERNS = [
         r"/api/external/users/(?P<user_id>[^/]+)",  # /api/external/users/{user_id}
+        r"/api/external/ui/users/(?P<user_id>[\w-]+)", # /api/external/ui/users/{user_id}
         r"/api/external/features/.*/(?P<user_id>[^/]+)",  # /api/external/features/.../.../{user_id}
     ]
 
@@ -61,6 +62,7 @@ class PermissionValidator:
             match = re.search(pattern, path)
             if match:
                 user_id = match.group("user_id")
+                
                 # Validate safety
                 if cls.validate_user_id_safety(user_id):
                     return user_id
@@ -107,6 +109,10 @@ class PermissionValidator:
             if request_path == "/api/external/users" or request_path == "/api/external/users/":
                  return True, None
 
+            # Exception: Resources (Timezones, Languages) are public for authenticated users
+            if request_path.startswith("/api/external/resources/"):
+                 return True, None
+
             # No user_id in path - admin-only endpoint
             logging.warning(
                 f"GATEWAY: User {session_user_id} denied access to admin-only path: {request_path}"
@@ -115,8 +121,35 @@ class PermissionValidator:
 
         # Check if extracted user_id matches session user_id or is in owned list
         if extracted_user_id == session_user_id or extracted_user_id in owned_configurations:
+            
+            # CRITICAL SECURITY: Legacy Endpoint Lockdown
+            # Even if they own the user_id, they CANNOT access the full admin API.
+            # Only Admins can access the ROOT resource /api/external/users/{id}
+            # Sub-resources like /info, /groups, /actions are ALLOWED for owners.
+            
+            # Construct the restricted root path
+            root_resource_path = f"/api/external/users/{extracted_user_id}"
+            
+            # Check if the request is targeting the root resource exactly (ignoring trailing slash)
+            if request_path.rstrip("/") == root_resource_path:
+                 logging.warning(
+                     f"GATEWAY: Regular User {session_user_id} denied access to ADMIN ROOT: {request_path}"
+                 )
+                 return False, extracted_user_id
+            
+            # If it's a sub-resource (e.g. /info), we allow it because they passed the ownership check above.
             return True, extracted_user_id
         
+        # Exception: /schema endpoint
+        # The regex extracts "schema" as user_id. We allow this for everyone.
+        if extracted_user_id == "schema":
+             return True, None # None means no specific user context needed downstream
+
+        # Exception: /status endpoint
+        # The regex extracts "status" as user_id. We allow this for everyone (filtered by gateway).
+        if extracted_user_id == "status":
+             return True, None
+
         # Exception: PUT (Creation/Update)
         # We allow PUT for authenticated users even if they don't own it *yet*.
         # The backend/gateway will handle the "Don't Overwrite Others" check.

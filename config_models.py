@@ -100,6 +100,22 @@ class ConfigurationsSettings(BaseModel):
     context_config: ContextConfig = Field(default_factory=ContextConfig, title="Context Config")
     llm_provider_config: LLMProviderConfig = Field(..., title="LLM Provider Config")
 
+class RegularUserConfigurationsSettings(BaseModel):
+    """
+    Restricted settings for regular users.
+    Excludes system-level configs like queues, LLM keys, etc.
+    """
+    user_details: UserDetails = Field(default_factory=UserDetails, title="User Details")
+
+class RegularUserConfiguration(BaseModel):
+    """
+    Restricted configuration view for regular users.
+    """
+    user_id: str
+    configurations: RegularUserConfigurationsSettings = Field(..., title="General Configurations")
+    features: FeaturesConfiguration = Field(default_factory=FeaturesConfiguration, title="Feature Configurations")
+
+
 class UserConfiguration(BaseModel):
     user_id: str
     configurations: ConfigurationsSettings = Field(..., title="General Configurations")

@@ -23,9 +23,7 @@ function HomePage() {
     try {
       const role = sessionStorage.getItem('role');
       const userId = sessionStorage.getItem('user_id');
-      const endpoint = role === 'admin'
-        ? '/api/external/users/status'
-        : `/api/external/users/${userId}/info`;
+      const endpoint = '/api/external/users/status';
 
       const response = await fetch(endpoint);
       if (!response.ok) {
@@ -170,11 +168,22 @@ function HomePage() {
       alert(`Configuration with user_id "${userId}" already exists.`);
       return;
     }
-    navigate(`/edit/${userId}`, { state: { isNew: true } });
+
+    const role = sessionStorage.getItem('role');
+    if (role === 'admin') {
+      navigate(`/edit/${userId}`, { state: { isNew: true } });
+    } else {
+      navigate(`/user/edit/${userId}`, { state: { isNew: true } });
+    }
   };
 
   const handleEdit = (userId) => {
-    navigate(`/edit/${userId}`);
+    const role = sessionStorage.getItem('role');
+    if (role === 'admin') {
+      navigate(`/edit/${userId}`);
+    } else {
+      navigate(`/user/edit/${userId}`);
+    }
   };
 
   const closeModal = () => {
