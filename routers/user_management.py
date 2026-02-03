@@ -4,7 +4,7 @@ import asyncio
 import uuid
 import logging
 from typing import Dict, Any, List, Union
-from fastapi import APIRouter, HTTPException, Body, Response, Request
+from fastapi import APIRouter, HTTPException, Body, Response, Request, Query
 from fastapi.responses import JSONResponse
 from fastapi.concurrency import run_in_threadpool
 from pymongo.errors import DuplicateKeyError
@@ -104,20 +104,29 @@ async def _setup_session(config: UserConfiguration, state: GlobalStateManager) -
 # --- Routes ---
 
 @router.get("", response_model=Dict[str, List[str]])
-async def list_users(state: GlobalStateManager = Depends(ensure_db_connected)):
+async def list_users(
+    state: GlobalStateManager = Depends(ensure_db_connected),
+    user_ids: List[str] = Query(None)
+):
     """
     Returns a list of all user_ids that have a configuration.
     (Formerly /api/configurations)
     """
     try:
-        user_ids = []
-        cursor = state.configurations_collection.find({}, {"config_data.user_id": 1, "_id": 0})
+        user_ids_list = []
+        
+        # Build query (filter by provided IDs if any)
+        query = {}
+        if user_ids:
+            query = {"config_data.user_id": {"$in": user_ids}}
+            
+        cursor = state.configurations_collection.find(query, {"config_data.user_id": 1, "_id": 0})
         async for doc in cursor:
             config_data = doc.get("config_data", {})
             if isinstance(config_data, dict):
                 uid = config_data.get("user_id")
-                if uid: user_ids.append(uid)
-        return {"user_ids": user_ids}
+                if uid: user_ids_list.append(uid)
+        return {"user_ids": user_ids_list}
     except Exception as e:
         logging.error(f"API: Could not list user_ids: {e}")
         raise HTTPException(status_code=500, detail="Could not list user_ids.")
@@ -148,12 +157,29 @@ async def get_user_info(user_id: str, state: GlobalStateManager = Depends(ensure
         if instance:
             status_info = await instance.get_status()
 
+        # Determine Owner
+        owner = "unknown"
+        if state.credentials_collection is not None:
+            # Find credential that owns this configuration
+            owner_doc = await state.credentials_collection.find_one(
+                {"owned_user_configurations": user_id},
+                {"user_id": 1}
+            )
+            if owner_doc:
+                owner = owner_doc.get("user_id")
+            else:
+                 # Fallback: Check if there is a credential with this ID (Self-owned but legacy/missing list)
+                 self_doc = await state.credentials_collection.find_one({"user_id": user_id}, {"_id": 1})
+                 if self_doc:
+                     owner = user_id
+
         # Return in same format as /status endpoint (array with one item)
         return {
             "configurations": [{
                 "user_id": user_id,
                 "status": status_info.get('status', 'unknown'),
-                "authenticated": is_authenticated
+                "authenticated": is_authenticated,
+                "owner": owner
             }]
         }
     except HTTPException:
@@ -170,6 +196,19 @@ async def list_users_status(state: GlobalStateManager = Depends(ensure_db_connec
     """
     statuses = []
     try:
+        # Pre-fetch ownership map for efficiency
+        owner_map = {}
+        if state.credentials_collection is not None:
+             creds_cursor = state.credentials_collection.find({}, {"user_id": 1, "owned_user_configurations": 1})
+             async for cred in creds_cursor:
+                 owner_id = cred.get("user_id")
+                 owned_configs = cred.get("owned_user_configurations", [])
+                 for bot_id in owned_configs:
+                     owner_map[bot_id] = owner_id
+                 # Ensure self-ownership fallback
+                 if owner_id not in owner_map:
+                      owner_map[owner_id] = owner_id
+
         cursor = state.configurations_collection.find({})
         db_configs = await cursor.to_list(length=None)
         for db_config in db_configs:
@@ -201,7 +240,8 @@ async def list_users_status(state: GlobalStateManager = Depends(ensure_db_connec
                 statuses.append({
                     "user_id": user_id,
                     "status": status_info.get('status', 'unknown'),
-                    "authenticated": is_authenticated
+                    "authenticated": is_authenticated,
+                    "owner": owner_map.get(user_id, "unknown")
                 })
 
             except Exception as e:

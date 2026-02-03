@@ -79,6 +79,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
             session_user_id=session.user_id,
             session_role=session.role,
             request_path=path,
+            owned_configurations=session.owned_user_configurations,
+            method=request.method,
         )
 
         if not has_permission:

@@ -5,7 +5,7 @@ Session management with MongoDB persistence and in-memory caching.
 import uuid
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from motor.motor_asyncio import AsyncIOMotorCollection
 from auth_models import SessionData, StaleSession
 
@@ -45,6 +45,7 @@ class SessionManager:
         self,
         user_id: str,
         role: str,
+        owned_user_configurations: List[str] = [],
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
     ) -> SessionData:
@@ -67,6 +68,7 @@ class SessionManager:
             session_id=session_id,
             user_id=user_id,
             role=role,
+            owned_user_configurations=owned_user_configurations,
             created_at=now,
             last_accessed=now,
             expires_at=now + timedelta(hours=24),  # 24h absolute expiration
@@ -238,7 +240,27 @@ class SessionManager:
 
         return count
 
+    async def add_owned_configuration(self, session_id: str, config_id: str) -> bool:
+        """
+        Update session with new owned configuration (DB + Cache).
+        """
+        # Update DB
+        await self.sessions_collection.update_one(
+            {"session_id": session_id},
+            {"$addToSet": {"owned_user_configurations": config_id}}
+        )
+
+        # Update Cache
+        if session_id in self.cache:
+            session, timestamp = self.cache[session_id]
+            if config_id not in session.owned_user_configurations:
+                session.owned_user_configurations.append(config_id)
+                self.cache[session_id] = (session, timestamp)
+        
+        return True
+
     def clear_cache(self):
         """Clear in-memory cache (useful for testing)."""
         self.cache.clear()
         logging.info("GATEWAY: Session cache cleared")
+

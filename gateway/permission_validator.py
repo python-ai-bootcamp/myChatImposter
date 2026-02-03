@@ -4,7 +4,7 @@ Permission validation and user_id extraction from request paths.
 
 import re
 import logging
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 
 
 class PermissionValidator:
@@ -73,7 +73,12 @@ class PermissionValidator:
 
     @classmethod
     def check_permission(
-        cls, session_user_id: str, session_role: str, request_path: str
+        cls,
+        session_user_id: str,
+        session_role: str,
+        request_path: str,
+        owned_configurations: List[str] = [],
+        method: str = "GET",
     ) -> Tuple[bool, Optional[str]]:
         """
         Check if user has permission to access path.
@@ -82,6 +87,8 @@ class PermissionValidator:
             session_user_id: User ID from session
             session_role: User role from session (admin or user)
             request_path: Request path
+            owned_configurations: List of configs owned by user
+            method: HTTP method (e.g. GET, PUT)
 
         Returns:
             Tuple of (has_permission, extracted_user_id)
@@ -96,15 +103,27 @@ class PermissionValidator:
         extracted_user_id = cls.extract_user_id_from_path(request_path)
 
         if extracted_user_id is None:
+            # Exception: List Users endpoint is now accessible to regular users (filtered by gateway proxy)
+            if request_path == "/api/external/users" or request_path == "/api/external/users/":
+                 return True, None
+
             # No user_id in path - admin-only endpoint
             logging.warning(
                 f"GATEWAY: User {session_user_id} denied access to admin-only path: {request_path}"
             )
             return False, None
 
-        # Check if extracted user_id matches session user_id
-        if extracted_user_id == session_user_id:
+        # Check if extracted user_id matches session user_id or is in owned list
+        if extracted_user_id == session_user_id or extracted_user_id in owned_configurations:
             return True, extracted_user_id
+        
+        # Exception: PUT (Creation/Update)
+        # We allow PUT for authenticated users even if they don't own it *yet*.
+        # The backend/gateway will handle the "Don't Overwrite Others" check.
+        # But we need to allow it to pass this validator.
+        if method == "PUT":
+            return True, extracted_user_id
+
         else:
             logging.warning(
                 f"GATEWAY: User {session_user_id} denied access to {extracted_user_id}'s resources"

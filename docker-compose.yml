@@ -28,6 +28,7 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY}
       - MONGODB_URL=mongodb://mongodb:27017
       - PYTHONUNBUFFERED=1
+      - MONGO_DB_NAME=chat_manager
     depends_on:
       - mongodb
       - whatsapp_baileys_server
@@ -43,6 +44,7 @@ services:
       - MONGODB_URL=mongodb://mongodb:27017
       - BACKEND_URL=http://backend:8000
       - GATEWAY_PORT=8001
+      - MONGO_DB_NAME=chat_manager
     depends_on:
       - mongodb
       - backend

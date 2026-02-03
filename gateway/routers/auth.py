@@ -98,7 +98,7 @@ async def login(login_request: LoginRequest, request: Request, response: Respons
     rate_limiter.record_attempt(ip_address)
 
     # Authenticate
-    success, role = await auth_service.authenticate(
+    success, role, owned_configs = await auth_service.authenticate(
         login_request.user_id, login_request.password
     )
 
@@ -151,6 +151,7 @@ async def login(login_request: LoginRequest, request: Request, response: Respons
     session = await session_manager.create_session(
         user_id=login_request.user_id,
         role=role,
+        owned_user_configurations=owned_configs,
         ip_address=ip_address,
         user_agent=user_agent,
     )

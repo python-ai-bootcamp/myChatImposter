@@ -6,7 +6,7 @@ Handles password hashing, validation, and credential management using bcrypt.
 
 import bcrypt
 import re
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from motor.motor_asyncio import AsyncIOMotorCollection
 from auth_models import UserAuthCredentials
 
@@ -218,7 +218,7 @@ class UserAuthService:
             return True, f"User '{user_id}' deleted successfully"
         return False, f"User '{user_id}' not found"
 
-    async def authenticate(self, user_id: str, password: str) -> Tuple[bool, Optional[str]]:
+    async def authenticate(self, user_id: str, password: str) -> Tuple[bool, Optional[str], List[str]]:
         """
         Authenticate user credentials.
 
@@ -227,15 +227,28 @@ class UserAuthService:
             password: Plain text password
 
         Returns:
-            Tuple of (success, role)
+            Tuple of (success, role, owned_user_configurations)
             - success: True if authentication successful
             - role: User role if successful, None otherwise
+            - owned_user_configurations: List of owned configurations if successful, empty list otherwise
         """
         credentials = await self.get_credentials(user_id)
         if not credentials:
-            return False, None
+            return False, None, []
 
         if self.verify_password(password, credentials.password_hash):
-            return True, credentials.role
+            return True, credentials.role, credentials.owned_user_configurations if hasattr(credentials, 'owned_user_configurations') else []
 
-        return False, None
+        return False, None, []
+
+    async def add_owned_configuration(self, user_id: str, config_id: str) -> bool:
+        """
+        Add a configuration ID to the user's owned list.
+        Atomic update to prevent race conditions.
+        """
+        result = await self.credentials_collection.update_one(
+            {"user_id": user_id},
+            {"$addToSet": {"owned_user_configurations": config_id}}
+        )
+        return result.modified_count > 0 or result.matched_count > 0
+

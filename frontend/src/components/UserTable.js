@@ -52,6 +52,7 @@ function UserTable({ configs, selectedUserId, onSelectUser }) {
                 <thead>
                     <tr>
                         <th style={thStyle}>User Name</th>
+                        <th style={thStyle}>Owner</th>
                         <th style={thStyle}>Authenticated</th>
                         <th style={thStyle}>Linked</th>
                     </tr>
@@ -59,7 +60,7 @@ function UserTable({ configs, selectedUserId, onSelectUser }) {
                 <tbody>
                     {configs.length === 0 ? (
                         <tr>
-                            <td colSpan="3" style={{ ...tdStyle, textAlign: 'center', color: '#6c757d' }}>No configurations found.</td>
+                            <td colSpan="4" style={{ ...tdStyle, textAlign: 'center', color: '#6c757d' }}>No configurations found.</td>
                         </tr>
                     ) : (
                         configs.map(config => (
@@ -72,6 +73,9 @@ function UserTable({ configs, selectedUserId, onSelectUser }) {
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                         {config.user_id}
                                     </div>
+                                </td>
+                                <td style={tdStyle}>
+                                    {config.owner || '-'}
                                 </td>
                                 <td style={tdStyle}>
                                     {config.authenticated ? (
