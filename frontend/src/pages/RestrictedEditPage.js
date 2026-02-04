@@ -15,6 +15,7 @@ import { GroupNameSelectorWidget } from '../components/widgets/GroupNameSelector
 import { ReadOnlyTextWidget } from '../components/widgets/ReadOnlyTextWidget';
 import { validateCronExpression } from '../utils/validation';
 import CronPickerWidget from '../components/CronPickerWidget';
+import { PageContainer, ContentCard, ScrollablePanel, FixedFooter } from '../components/PageLayout';
 
 function RestrictedEditPage() {
     const { userId } = useParams();
@@ -380,70 +381,41 @@ function RestrictedEditPage() {
         }
     };
 
-    const panelStyle = {
-        border: '1px solid #ccc',
-        borderRadius: '4px',
-        padding: '1rem',
-        backgroundColor: '#fff',
-        boxSizing: 'border-box'
-    };
-
-    const innerPanelStyle = {
-        ...panelStyle,
-        backgroundColor: '#f9f9f9',
-    };
-
     return (
         <>
-            <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 180px)', width: '100%', boxSizing: 'border-box' }}>
-                <div style={{ flex: 1, padding: '20px 20px 0 20px', display: 'flex', flexDirection: 'column', overflowY: 'hidden' }}>
-                    <div style={{ maxWidth: '900px', width: '100%', margin: '0 auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
-                        <div style={{ ...panelStyle, flex: 1, display: 'flex', flexDirection: 'column', marginBottom: '0', overflowY: 'hidden' }}>
-                            <h2 style={{ marginTop: 0 }}>{isNew ? 'New Configuration' : `Edit Configuration`}: {userId}</h2>
-                            <div style={{ marginTop: '1rem', flex: 1, overflowY: 'auto' }}>
-                                <div style={{ ...innerPanelStyle, minHeight: 'auto' }}>
-                                    <Form
-                                        ref={formRef}
-                                        schema={schema}
-                                        uiSchema={uiSchema}
-                                        formData={formData}
-                                        validator={validator}
-                                        onSubmit={onFormSubmit}
-                                        onChange={handleFormChange}
-                                        onError={(errors) => {
-                                            console.log('Form errors:', errors);
-                                            setIsSaving(false);
-                                        }}
-                                        disabled={isSaving}
-                                        templates={templates}
-                                        widgets={widgets}
-                                        formContext={{
-                                            availableGroups,
-                                            isLinked: false,
-                                            formData,
-                                            setFormData,
-                                            cronErrors,
-                                            saveAttempt: 0
-                                        }}
-                                    >
-                                        <div />
-                                    </Form>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            <div style={{
-                position: 'fixed',
-                bottom: 0,
-                left: 0,
-                right: 0,
-                padding: '1rem',
-                backgroundColor: '#f0f0f0',
-                borderTop: '1px solid #ccc',
-                textAlign: 'center'
-            }}>
+            <PageContainer>
+                <ContentCard title={isNew ? 'New Configuration: ' + userId : `Edit Configuration: ${userId}`} maxWidth="1000px">
+                    <ScrollablePanel>
+                        <Form
+                            ref={formRef}
+                            schema={schema}
+                            uiSchema={uiSchema}
+                            formData={formData}
+                            validator={validator}
+                            onSubmit={onFormSubmit}
+                            onChange={handleFormChange}
+                            onError={(errors) => {
+                                console.log('Form errors:', errors);
+                                setIsSaving(false);
+                            }}
+                            disabled={isSaving}
+                            templates={templates}
+                            widgets={widgets}
+                            formContext={{
+                                availableGroups,
+                                isLinked: false,
+                                formData,
+                                setFormData,
+                                cronErrors,
+                                saveAttempt: 0
+                            }}
+                        >
+                            <div />
+                        </Form>
+                    </ScrollablePanel>
+                </ContentCard>
+            </PageContainer>
+            <FixedFooter>
                 <div>
                     <button
                         type="button"
@@ -474,7 +446,7 @@ function RestrictedEditPage() {
                         Cancel
                     </button>
                 </div>
-            </div>
+            </FixedFooter>
         </>
     );
 }

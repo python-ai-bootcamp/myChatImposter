@@ -15,6 +15,7 @@ import { GroupNameSelectorWidget } from '../components/widgets/GroupNameSelector
 import { ReadOnlyTextWidget } from '../components/widgets/ReadOnlyTextWidget';
 import { validateCronExpression } from '../utils/validation';
 import CronPickerWidget from '../components/CronPickerWidget';
+import { PageContainer, ContentCard, ScrollablePanel, FixedFooter } from '../components/PageLayout';
 
 
 
@@ -512,76 +513,51 @@ function EditPage() {
     }
   };
 
-  const panelStyle = {
-    border: '1px solid #ccc',
-    borderRadius: '4px',
-    padding: '1rem',
-    backgroundColor: '#fff',
-    boxSizing: 'border-box'
-  };
-
-  const innerPanelStyle = {
-    ...panelStyle,
-    backgroundColor: '#f9f9f9',
-  };
-
   return (
     <>
-      <div style={{ padding: '20px', paddingBottom: '80px' }}>
-        <div style={{ maxWidth: '1800px', margin: '0 auto' }}>
-          <div style={panelStyle}>
-            <h2>{isNew ? 'Add New Configuration' : `Edit Configuration`}: {userId}</h2>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', marginTop: '1rem', minHeight: '75vh' }}>
-              <div style={{ ...innerPanelStyle, overflowY: 'auto' }}>
-                <Form
-                  ref={formRef}
-                  schema={schema}
-                  uiSchema={uiSchema}
-                  formData={formData}
-                  validator={validator}
-                  onSubmit={handleSave}
-                  onChange={handleFormChange}
-                  onError={(errors) => console.log('Form validation errors:', errors)}
-                  disabled={isSaving}
-                  templates={templates}
-                  widgets={widgets}
-                  formContext={{
-                    availableGroups,
-                    isLinked,
-                    formData,
-                    setFormData,
-                    cronErrors,
-                    saveAttempt
-                  }}
-                >
-                  <div />
-                </Form>
-              </div>
+      <PageContainer>
+        <ContentCard title={isNew ? 'Add New Configuration: ' + userId : `Edit Configuration: ${userId}`} maxWidth="1800px">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', height: '100%', overflow: 'hidden' }}>
+            <ScrollablePanel>
+              <Form
+                ref={formRef}
+                schema={schema}
+                uiSchema={uiSchema}
+                formData={formData}
+                validator={validator}
+                onSubmit={handleSave}
+                onChange={handleFormChange}
+                onError={(errors) => console.log('Form validation errors:', errors)}
+                disabled={isSaving}
+                templates={templates}
+                widgets={widgets}
+                formContext={{
+                  availableGroups,
+                  isLinked,
+                  formData,
+                  setFormData,
+                  cronErrors,
+                  saveAttempt
+                }}
+              >
+                <div />
+              </Form>
+            </ScrollablePanel>
 
-              <div style={{ ...innerPanelStyle, display: 'flex', flexDirection: 'column' }}>
-                <h3>Live JSON Editor</h3>
-                <textarea
-                  aria-label="Live JSON Editor"
-                  style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.9rem', border: jsonError ? '1px solid red' : '1px solid #ccc', resize: 'vertical', padding: '0.5rem' }}
-                  value={jsonString}
-                  onChange={handleJsonChange}
-                />
-                {jsonError && <p style={{ color: 'red', margin: '0.5rem 0 0 0', whiteSpace: 'pre-wrap' }}>{jsonError}</p>}
-              </div>
-            </div>
+            <ScrollablePanel style={{ display: 'flex', flexDirection: 'column' }}>
+              <h3 style={{ marginTop: 0 }}>Live JSON Editor</h3>
+              <textarea
+                aria-label="Live JSON Editor"
+                style={{ flex: 1, fontFamily: 'monospace', fontSize: '0.9rem', border: jsonError ? '1px solid red' : '1px solid #ccc', resize: 'vertical', padding: '0.5rem' }}
+                value={jsonString}
+                onChange={handleJsonChange}
+              />
+              {jsonError && <p style={{ color: 'red', margin: '0.5rem 0 0 0', whiteSpace: 'pre-wrap' }}>{jsonError}</p>}
+            </ScrollablePanel>
           </div>
-        </div>
-      </div>
-      <div style={{
-        position: 'fixed',
-        bottom: 0,
-        left: 0,
-        right: 0,
-        padding: '1rem',
-        backgroundColor: '#f0f0f0',
-        borderTop: '1px solid #ccc',
-        textAlign: 'center'
-      }}>
+        </ContentCard>
+      </PageContainer>
+      <FixedFooter>
         {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', marginBottom: '1rem' }}>{error}</p>}
         <div>
           <button type="button" onClick={() => formRef.current.submit()} disabled={isSaving} style={{ marginRight: '10px' }}>
@@ -609,7 +585,7 @@ function EditPage() {
             Cancel
           </button>
         </div>
-      </div>
+      </FixedFooter>
     </>
   );
 }
