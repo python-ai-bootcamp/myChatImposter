@@ -160,6 +160,11 @@ async def proxy_to_backend(path: str, request: Request):
     headers = dict(request.headers)
     headers.pop("host", None)
 
+    # Inject X-User-Id from session if available
+    session = getattr(request.state, "session", None)
+    if session:
+        headers["X-User-Id"] = session.user_id
+
     # Get request body
     try:
         body = await request.body()

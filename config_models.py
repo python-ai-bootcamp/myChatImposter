@@ -1,5 +1,6 @@
 from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Literal
+import os
 
 class ChatProviderSettings(BaseModel):
     allow_group_messages: bool = False
@@ -14,13 +15,16 @@ class ChatProviderConfig(BaseModel):
     provider_config: ChatProviderSettings
 
 class BaseLimitConfig(BaseModel):
-    max_messages: int = 10
-    max_characters: int = 1000
+    max_messages: int = 100
+    max_characters: int = 10000
     max_days: int = 1
-    max_characters_single_message: int = 300
+    max_characters_single_message: int = 350
 
 class QueueConfig(BaseLimitConfig):
-    pass
+    max_messages: int = 200
+    max_characters: int = 20000
+    max_days: int = 2
+    max_characters_single_message: int = 700
 
 class LLMProviderSettings(BaseModel):
     api_key_source: Literal["environment", "explicit"] = Field(
@@ -120,4 +124,13 @@ class UserConfiguration(BaseModel):
     user_id: str
     configurations: ConfigurationsSettings = Field(..., title="General Configurations")
     features: FeaturesConfiguration = Field(default_factory=FeaturesConfiguration, title="Feature Configurations")
+
+
+class DefaultConfigurations:
+    chat_provider_name: str = os.getenv("DEFAULT_CHAT_PROVIDER", "whatsAppBaileys")
+    llm_provider_name: str = os.getenv("DEFAULT_LLM_PROVIDER", "openai")
+    llm_model: str = os.getenv("DEFAULT_LLM_MODEL", "gpt-5-mini")
+    llm_api_key_source: Literal["environment", "explicit"] = os.getenv("DEFAULT_LLM_API_KEY_SOURCE", "environment")
+    llm_temperature: float = float(os.getenv("DEFAULT_LLM_TEMPERATURE", "0.05"))
+    llm_reasoning_effort: str = os.getenv("DEFAULT_LLM_REASONING_EFFORT", "minimal")
 

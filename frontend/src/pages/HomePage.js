@@ -161,7 +161,12 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   const handleDelete = async (userId) => {
     if (window.confirm(`Are you sure you want to delete the configuration for "${userId}"?`)) {
       try {
-        const response = await fetch(`/api/external/users/${userId}`, {
+        const role = sessionStorage.getItem('role');
+        const endpoint = role === 'admin'
+          ? `/api/external/users/${userId}`
+          : `/api/external/ui/users/${userId}`;
+
+        const response = await fetch(endpoint, {
           method: 'DELETE',
         });
         if (!response.ok) {

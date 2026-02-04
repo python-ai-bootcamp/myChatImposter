@@ -89,6 +89,26 @@ function EditPage() {
           if (localTimezone && initialFormData.configurations?.user_details) {
             initialFormData.configurations.user_details.timezone = localTimezone;
           }
+
+          // Use browser's detected language if supported
+          try {
+            const languagesResponse = await fetch('/api/external/resources/languages');
+            if (languagesResponse.ok) {
+              const languages = await languagesResponse.json();
+              // navigator.language usually returns "en-US", "fr-FR", etc.
+              // We want the base code "en", "fr".
+              const browserLang = navigator.language || navigator.userLanguage;
+              if (browserLang) {
+                const baseLang = browserLang.split('-')[0].toLowerCase();
+                const isSupported = languages.some(l => l.code === baseLang);
+                if (isSupported && initialFormData.configurations?.user_details) {
+                  initialFormData.configurations.user_details.language_code = baseLang;
+                }
+              }
+            }
+          } catch (langErr) {
+            console.warn("Failed to auto-detect language:", langErr);
+          }
         } else {
           const dataResponse = await fetch(`/api/external/users/${userId}`);
           if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');

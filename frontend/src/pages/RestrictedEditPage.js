@@ -82,6 +82,24 @@ function RestrictedEditPage() {
                         },
                         features: {}
                     };
+
+                    // Use browser's detected language if supported
+                    try {
+                        const languagesResponse = await fetch('/api/external/resources/languages');
+                        if (languagesResponse.ok) {
+                            const languages = await languagesResponse.json();
+                            const browserLang = navigator.language || navigator.userLanguage;
+                            if (browserLang) {
+                                const baseLang = browserLang.split('-')[0].toLowerCase();
+                                const isSupported = languages.some(l => l.code === baseLang);
+                                if (isSupported) {
+                                    initialFormData.configurations.user_details.language_code = baseLang;
+                                }
+                            }
+                        }
+                    } catch (langErr) {
+                        console.warn("Failed to auto-detect language:", langErr);
+                    }
                 } else {
                     // Fetch User Data from UI API
                     const dataResponse = await fetch(`/api/external/ui/users/${userId}`);

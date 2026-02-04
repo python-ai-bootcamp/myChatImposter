@@ -12,8 +12,12 @@ from pymongo.errors import DuplicateKeyError
 from config_models import (
     UserConfiguration, ConfigurationsSettings, FeaturesConfiguration,
     ChatProviderConfig, LLMProviderConfig, ChatProviderSettings, LLMProviderSettings,
-    UserDetails, QueueConfig, ContextConfig
+    UserDetails, QueueConfig, ContextConfig, DefaultConfigurations
 )
+
+# ... (omitted)
+
+
 from infrastructure.exceptions import (
     ProviderConnectionError, 
     ProviderAuthenticationError, 
@@ -326,15 +330,17 @@ async def get_user_defaults():
         configurations=ConfigurationsSettings(
             user_details=UserDetails(),
             chat_provider_config=ChatProviderConfig(
-                provider_name="whatsAppBaileys",
+                provider_name=DefaultConfigurations.chat_provider_name,
                 provider_config=ChatProviderSettings()
             ),
             # Explicitly include LLM config which was missing in frontend defaults
             llm_provider_config=LLMProviderConfig(
-                provider_name="openai",
+                provider_name=DefaultConfigurations.llm_provider_name,
                 provider_config=LLMProviderSettings(
-                    model="gpt-4",
-                    api_key_source="environment"
+                    model=DefaultConfigurations.llm_model,
+                    api_key_source=DefaultConfigurations.llm_api_key_source,
+                    temperature=DefaultConfigurations.llm_temperature,
+                    reasoning_effort=DefaultConfigurations.llm_reasoning_effort
                 )
             ),
             queue_config=QueueConfig(),

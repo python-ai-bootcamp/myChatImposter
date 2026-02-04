@@ -1,7 +1,7 @@
 
 import logging
 from typing import Dict, Any, List
-from fastapi import APIRouter, HTTPException, Body, Depends
+from fastapi import APIRouter, HTTPException, Body, Depends, Request
 from fastapi.responses import JSONResponse
 from dependencies import GlobalStateManager, get_global_state
 from config_models import (
@@ -11,8 +11,11 @@ from config_models import (
     ChatProviderConfig, 
     ChatProviderSettings, 
     LLMProviderConfig, 
-    LLMProviderSettings
+    LLMProviderSettings,
+    DefaultConfigurations
 )
+
+
 
 router = APIRouter(
     prefix="/api/internal/ui/users",
@@ -87,15 +90,17 @@ async def create_user_ui_configuration(
         # We'll use defaults for sensitive fields (Queue, etc.)
         
         default_chat_config = ChatProviderConfig(
-            provider_name="whatsapp_baileys",
+            provider_name=DefaultConfigurations.chat_provider_name,
             provider_config=ChatProviderSettings()
         )
         
         default_llm_config = LLMProviderConfig(
-            provider_name="openai",
+            provider_name=DefaultConfigurations.llm_provider_name,
             provider_config=LLMProviderSettings(
-                model="gpt-4o",
-                api_key_source="environment" 
+                model=DefaultConfigurations.llm_model,
+                api_key_source=DefaultConfigurations.llm_api_key_source,
+                temperature=DefaultConfigurations.llm_temperature,
+                reasoning_effort=DefaultConfigurations.llm_reasoning_effort
             )
         )
         
@@ -130,6 +135,69 @@ async def create_user_ui_configuration(
     except Exception as e:
         logging.error(f"UI API: Error creating config for {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Could not create configuration: {e}")
+
+@router.delete("/{user_id}")
+async def delete_user_ui(
+    user_id: str, 
+    request: Request,
+    state: GlobalStateManager = Depends(ensure_db_connected)
+):
+    """
+    Delete a user configuration (Restricted).
+    Requires the requester to be the owner of the configuration.
+    """
+    requester_id = request.headers.get("X-User-Id")
+    if not requester_id:
+        raise HTTPException(status_code=400, detail="Missing X-User-Id header.")
+
+    # 1. Verify Ownership
+    # Check if requester IS the user (Self-deletion)
+    is_owner = (requester_id == user_id)
+    
+    if not is_owner and state.credentials_collection is not None:
+        # Check if requester owns this config via credentials
+        cred = await state.credentials_collection.find_one(
+            {"user_id": requester_id, "owned_user_configurations": user_id}
+        )
+        if cred:
+            is_owner = True
+    
+    if not is_owner:
+        raise HTTPException(status_code=403, detail="Permission Denied: You do not own this configuration.")
+
+    # 2. Perform Deletion
+    try:
+        # Stop tracking jobs
+        if state.group_tracker:
+             state.group_tracker.update_jobs(user_id, [])
+
+        # Stop instance if active
+        if user_id in state.active_users:
+            instance_id = state.active_users[user_id]
+            instance = state.chatbot_instances.get(instance_id)
+            if instance:
+                await instance.stop(cleanup_session=True)
+                state.remove_active_user(user_id)
+        
+        # Cleanup Lifecycle
+        if state.async_message_delivery_queue_manager:
+             await state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
+
+        query = {
+            "$or": [
+                {"config_data.user_id": user_id},
+                {"config_data.0.user_id": user_id}
+            ]
+        }
+        result = await state.configurations_collection.delete_one(query)
+        if result.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Configuration not found.")
+        
+        logging.info(f"UI API: Deleted configuration for {user_id} by {requester_id}.")
+        return {"status": "success", "user_id": user_id}
+    except Exception as e:
+        logging.error(f"UI API: Error deleting user {user_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Could not delete user: {e}")
 
 @router.patch("/{user_id}")
 async def update_user_ui_configuration(
