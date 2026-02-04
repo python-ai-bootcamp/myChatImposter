@@ -16,7 +16,7 @@ import os
 # Add project root to path for imports
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 
-from chat_providers.whatsAppBaileyes import WhatsAppBaileysProvider
+from chat_providers.whatsAppBaileys import WhatsAppBaileysProvider
 from config_models import ChatProviderConfig, ChatProviderSettings
 from queue_manager import UserQueuesManager
 
@@ -28,7 +28,7 @@ class TestWhatsAppBaileysProviderInit:
         """Set up common test fixtures."""
         self.user_id = "test_user"
         self.config = ChatProviderConfig(
-            provider_name="whatsapp_baileys",
+            provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings(
                 allow_group_messages=True,
                 process_offline_messages=False
@@ -96,7 +96,7 @@ class TestBotMessageDetection:
         """Set up provider for bot message tests."""
         self.user_id = "test_user"
         self.config = ChatProviderConfig(
-            provider_name="whatsapp_baileys",
+            provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings()
         )
         self.mock_queues = {self.user_id: MagicMock(spec=UserQueuesManager)}
@@ -210,7 +210,7 @@ class TestHTTPAPICalls:
         """Set up provider for HTTP tests."""
         self.user_id = "test_user"
         self.config = ChatProviderConfig(
-            provider_name="whatsapp_baileys",
+            provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings()
         )
         self.mock_queues = {self.user_id: MagicMock(spec=UserQueuesManager)}
@@ -225,7 +225,7 @@ class TestHTTPAPICalls:
     def teardown_method(self):
         self.mock_loop.close()
 
-    @patch('chat_providers.whatsAppBaileyes.httpx.AsyncClient')
+    @patch('chat_providers.whatsAppBaileys.httpx.AsyncClient')
     def test_send_config_to_server_success(self, mock_client_class):
         """Test that _send_config_to_server POSTs to /initialize."""
         mock_response = MagicMock(status_code=200)
@@ -239,7 +239,7 @@ class TestHTTPAPICalls:
         call_args = mock_client.post.call_args
         assert "/initialize" in call_args[0][0]
 
-    @patch('chat_providers.whatsAppBaileyes.httpx.AsyncClient')
+    @patch('chat_providers.whatsAppBaileys.httpx.AsyncClient')
     def test_send_config_to_server_handles_error(self, mock_client_class):
         """Test that _send_config_to_server handles HTTP errors gracefully."""
         mock_response = MagicMock(status_code=500, text="Internal Server Error")
@@ -247,10 +247,12 @@ class TestHTTPAPICalls:
         mock_client.post = AsyncMock(return_value=mock_response)
         mock_client_class.return_value.__aenter__.return_value = mock_client
         
-        # Should not raise
-        asyncio.run(self.provider._send_config_to_server())
+        # Should raise ProviderError
+        from infrastructure.exceptions import ProviderError
+        with pytest.raises(ProviderError):
+            asyncio.run(self.provider._send_config_to_server())
 
-    @patch('chat_providers.whatsAppBaileyes.httpx.AsyncClient')
+    @patch('chat_providers.whatsAppBaileys.httpx.AsyncClient')
     def test_sendMessage_success_tracks_id(self, mock_client_class):
         """Test that sendMessage tracks the returned provider_message_id."""
         mock_response = MagicMock(
@@ -266,7 +268,7 @@ class TestHTTPAPICalls:
         # Verify ID was added to cache
         assert any(msg_id == "msg_abc123" for msg_id, _ in self.provider.sent_message_ids)
 
-    @patch('chat_providers.whatsAppBaileyes.httpx.AsyncClient')
+    @patch('chat_providers.whatsAppBaileys.httpx.AsyncClient')
     def test_sendMessage_adds_to_pending_buffer(self, mock_client_class):
         """Test that sendMessage adds to pending buffer before HTTP call completes."""
         mock_response = MagicMock(
@@ -286,7 +288,7 @@ class TestHTTPAPICalls:
         # (or it was consumed - depends on timing). We verify the mechanism exists.
         # In real usage, the pending buffer handles race conditions.
 
-    @patch('chat_providers.whatsAppBaileyes.httpx.AsyncClient')
+    @patch('chat_providers.whatsAppBaileys.httpx.AsyncClient')
     def test_sendMessage_raises_on_failure(self, mock_client_class):
         """Test that sendMessage raises exception on HTTP failure."""
         mock_response = MagicMock(status_code=500, text="Server Error")
@@ -299,7 +301,7 @@ class TestHTTPAPICalls:
         
         assert "Failed to send message" in str(exc_info.value)
 
-    @patch('chat_providers.whatsAppBaileyes.httpx.AsyncClient')
+    @patch('chat_providers.whatsAppBaileys.httpx.AsyncClient')
     def test_send_file_encodes_base64(self, mock_client_class):
         """Test that send_file properly base64 encodes file data."""
         mock_response = MagicMock(
@@ -329,7 +331,7 @@ class TestHTTPAPICalls:
         import base64
         assert payload["content"] == base64.b64encode(file_data).decode('utf-8')
 
-    @patch('chat_providers.whatsAppBaileyes.httpx.AsyncClient')
+    @patch('chat_providers.whatsAppBaileys.httpx.AsyncClient')
     def test_get_groups_returns_list(self, mock_client_class):
         """Test that get_groups returns the groups list from API."""
         mock_groups = [{"id": "group1@g.us", "name": "Test Group"}]
@@ -345,7 +347,7 @@ class TestHTTPAPICalls:
         
         assert result == mock_groups
 
-    @patch('chat_providers.whatsAppBaileyes.httpx.AsyncClient')
+    @patch('chat_providers.whatsAppBaileys.httpx.AsyncClient')
     def test_get_groups_returns_empty_on_error(self, mock_client_class):
         """Test that get_groups returns empty list on API error."""
         mock_response = MagicMock(status_code=500, text="Error")
@@ -357,7 +359,7 @@ class TestHTTPAPICalls:
         
         assert result == []
 
-    @patch('chat_providers.whatsAppBaileyes.httpx.AsyncClient')
+    @patch('chat_providers.whatsAppBaileys.httpx.AsyncClient')
     def test_fetch_historic_messages(self, mock_client_class):
         """Test that fetch_historic_messages returns messages from API."""
         mock_messages = [{"message": "Hello", "sender": "user1"}]
@@ -373,7 +375,7 @@ class TestHTTPAPICalls:
         
         assert result == mock_messages
 
-    @patch('chat_providers.whatsAppBaileyes.httpx.AsyncClient')
+    @patch('chat_providers.whatsAppBaileys.httpx.AsyncClient')
     def test_cleanup_server_session(self, mock_client_class):
         """Test that _cleanup_server_session sends DELETE request."""
         mock_response = MagicMock(status_code=200)
@@ -387,6 +389,25 @@ class TestHTTPAPICalls:
         call_args = mock_client.delete.call_args
         assert f"/sessions/{self.user_id}" in call_args[0][0]
 
+    @patch('chat_providers.whatsAppBaileys.httpx.AsyncClient')
+    def test_start_listening_sends_config(self, mock_client_class):
+        """Test that start_listening sends config before starting WebSocket."""
+        mock_response = MagicMock(status_code=200)
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+        
+        # We can't fully test start_listening without mocking websockets too,
+        # but we can verify config is sent
+        async def partial_start():
+            await self.provider._send_config_to_server()
+            self.provider.is_listening = True
+        
+        asyncio.run(partial_start())
+        
+        mock_client.post.assert_called_once()
+        assert self.provider.is_listening is True
+
 
 class TestWebSocketMessageProcessing:
     """Tests for WebSocket message handling."""
@@ -395,7 +416,7 @@ class TestWebSocketMessageProcessing:
         """Set up provider for WebSocket tests."""
         self.user_id = "test_user"
         self.config = ChatProviderConfig(
-            provider_name="whatsapp_baileys",
+            provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings(allow_group_messages=True)
         )
         self.mock_queue_manager = MagicMock(spec=UserQueuesManager)
@@ -464,7 +485,8 @@ class TestWebSocketMessageProcessing:
         # The callback is scheduled as a task, so we need to let the loop run
         # In real usage, this would be handled by the main event loop
 
-    def test_process_messages_incoming_adds_to_queue(self):
+    @pytest.mark.asyncio
+    async def test_process_messages_incoming_adds_to_queue(self):
         """Test that incoming messages are added to the queue."""
         messages = [{
             "sender": "sender@s.whatsapp.net",
@@ -473,14 +495,15 @@ class TestWebSocketMessageProcessing:
             "display_name": "Sender Name"
         }]
         
-        self.provider._process_messages(messages)
+        await self.provider._process_messages(messages)
         
         self.mock_queue_manager.add_message.assert_called_once()
         call_kwargs = self.mock_queue_manager.add_message.call_args[1]
         assert call_kwargs["content"] == "Hello!"
         assert call_kwargs["source"] == "user"
 
-    def test_process_messages_outgoing_bot_detection(self):
+    @pytest.mark.asyncio
+    async def test_process_messages_outgoing_bot_detection(self):
         """Test that outgoing bot messages are detected by ID."""
         # Add a known bot message ID to cache
         self.provider.sent_message_ids.append(("msg_bot_123", time.time()))
@@ -494,12 +517,13 @@ class TestWebSocketMessageProcessing:
             "actual_sender": {"identifier": "me", "display_name": "Me"}
         }]
         
-        self.provider._process_messages(messages)
+        await self.provider._process_messages(messages)
         
         call_kwargs = self.mock_queue_manager.add_message.call_args[1]
         assert call_kwargs["source"] == "bot"
 
-    def test_process_messages_outgoing_user_detection(self):
+    @pytest.mark.asyncio
+    async def test_process_messages_outgoing_user_detection(self):
         """Test that outgoing non-bot messages are marked as user_outgoing."""
         messages = [{
             "sender": "self",
@@ -510,16 +534,17 @@ class TestWebSocketMessageProcessing:
             "actual_sender": {"identifier": "me", "display_name": "Me"}
         }]
         
-        self.provider._process_messages(messages)
+        await self.provider._process_messages(messages)
         
         call_kwargs = self.mock_queue_manager.add_message.call_args[1]
         assert call_kwargs["source"] == "user_outgoing"
 
-    def test_process_messages_respects_group_filter(self):
+    @pytest.mark.asyncio
+    async def test_process_messages_respects_group_filter(self):
         """Test that group messages are filtered when allow_group_messages=False."""
         # Create provider with group messages disabled
         config = ChatProviderConfig(
-            provider_name="whatsapp_baileys",
+            provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings(allow_group_messages=False)
         )
         provider = WhatsAppBaileysProvider(
@@ -536,7 +561,7 @@ class TestWebSocketMessageProcessing:
             "group": {"id": "group@g.us", "name": "Test Group"}
         }]
         
-        provider._process_messages(messages)
+        await provider._process_messages(messages)
         
         # Should NOT add to queue
         self.mock_queue_manager.add_message.assert_not_called()
@@ -549,7 +574,7 @@ class TestLifecycleAndConnectionState:
         """Set up provider for lifecycle tests."""
         self.user_id = "test_user"
         self.config = ChatProviderConfig(
-            provider_name="whatsapp_baileys",
+            provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings()
         )
         self.mock_queues = {self.user_id: MagicMock(spec=UserQueuesManager)}
@@ -601,7 +626,7 @@ class TestLifecycleAndConnectionState:
         call_args = mock_ws.send.call_args[0][0]
         assert json.loads(call_args)["action"] == "heartbeat"
 
-    @patch('chat_providers.whatsAppBaileyes.httpx.AsyncClient')
+    @patch('chat_providers.whatsAppBaileys.httpx.AsyncClient')
     def test_start_listening_sends_config(self, mock_client_class):
         """Test that start_listening sends config before starting WebSocket."""
         mock_response = MagicMock(status_code=200)

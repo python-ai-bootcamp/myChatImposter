@@ -195,7 +195,7 @@ class GroupTrackingRunner:
                             content=item,
                             message_type=QueueMessageType.ICS_ACTIONABLE_ITEM,
                             user_id=user_id,
-                            provider_name="whatsapp_baileys" 
+                            provider_name="whatsAppBaileys" 
                         )
                 else:
                     logger.error("AsyncMessageDeliveryQueueManager not initialized! Cannot send items.")

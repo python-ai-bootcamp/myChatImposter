@@ -326,7 +326,7 @@ async def get_user_defaults():
         configurations=ConfigurationsSettings(
             user_details=UserDetails(),
             chat_provider_config=ChatProviderConfig(
-                provider_name="whatsapp_baileys",
+                provider_name="whatsAppBaileys",
                 provider_config=ChatProviderSettings()
             ),
             # Explicitly include LLM config which was missing in frontend defaults

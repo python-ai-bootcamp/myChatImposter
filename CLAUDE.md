@@ -342,7 +342,7 @@ LLM providers use factory pattern for dynamic loading:
 | services/session_manager.py | Per-user session orchestrator | - |
 | queue_manager.py | Message queues and limits | - |
 | async_message_delivery_queue_manager.py | Three-state delivery queue | consumer_loop:100-150 |
-| chat_providers/whatsAppBaileyes.py | WhatsApp WebSocket integration | auto_reconnect:180-220 |
+| chat_providers/whatsAppBaileys.py | WhatsApp WebSocket integration | auto_reconnect:180-220 |
 | features/automatic_bot_reply/service.py | AI auto-reply feature | - |
 | features/periodic_group_tracking/service.py | Cron-based group monitoring | - |
 | llm_providers/openAi.py | OpenAI ChatCompletion integration | - |
