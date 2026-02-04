@@ -29,6 +29,8 @@ function RestrictedEditPage() {
     const [availableGroups, setAvailableGroups] = useState([]);
     const [cronErrors, setCronErrors] = useState([]);
 
+    const [userStatus, setUserStatus] = useState(null);
+
     // isNew determines if we are creating a new user (PUT) or editing (PATCH)
     const isNew = location.state?.isNew;
 
@@ -69,8 +71,6 @@ function RestrictedEditPage() {
 
                 let initialFormData;
                 if (isNew) {
-                    // For new users, we start with a blank slate or minimal defaults
-                    // We can't fetch defaults from admin API.
                     initialFormData = {
                         user_id: userId,
                         configurations: {
@@ -86,6 +86,19 @@ function RestrictedEditPage() {
                     const dataResponse = await fetch(`/api/external/ui/users/${userId}`);
                     if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');
                     initialFormData = await dataResponse.json();
+
+                    // Fetch Status for Button Logic
+                    try {
+                        const statusRes = await fetch(`/api/external/users/${userId}/info`);
+                        if (statusRes.ok) {
+                            const statusData = await statusRes.json();
+                            if (statusData.configurations && statusData.configurations.length > 0) {
+                                setUserStatus(statusData.configurations[0].status);
+                            }
+                        }
+                    } catch (e) {
+                        console.warn("Failed to fetch status:", e);
+                    }
                 }
                 setFormData(initialFormData);
             } catch (err) {
@@ -96,15 +109,10 @@ function RestrictedEditPage() {
         fetchData();
     }, [userId, isNew]);
 
-    // Fetch Groups (Requires owner permissions, verify this endpoint works for owners)
+    // Fetch Groups (Requires owner permissions)
     useEffect(() => {
         const fetchGroups = async () => {
             try {
-                // Groups endpoint is likely still admin-centric or needs verification?
-                // Wait, the new gateway logic allows GET /users/{id}/* if owned.
-                // /api/external/users/{userId}/groups should work if the gateway regex allows it.
-                // Regex: r"/api/external/users/(?P<user_id>[^/]+)" includes /groups!
-                // So this should work for the owner.
                 const groupsRes = await fetch(`/api/external/users/${userId}/groups`);
                 if (groupsRes.ok) {
                     const groupsData = await groupsRes.json();
@@ -138,75 +146,125 @@ function RestrictedEditPage() {
         setFormData(newFormData);
     };
 
-    const handleSave = async ({ formData: submittedData }) => {
+    // Generic Internal Save Function
+    const performSave = async (submittedData) => {
+        // 1. Validate Cron Expressions
+        setCronErrors([]);
+        let hasCronErrors = false;
+        const newCronErrors = [];
+        const tracking = submittedData?.features?.periodic_group_tracking?.tracked_groups;
+
+        if (tracking && Array.isArray(tracking)) {
+            for (let i = 0; i < tracking.length; i++) {
+                const cron = tracking[i].cronTrackingSchedule;
+                const validation = validateCronExpression(cron);
+                if (!validation.valid) {
+                    newCronErrors[i] = validation.error;
+                    hasCronErrors = true;
+                }
+            }
+        }
+
+        if (hasCronErrors) {
+            setCronErrors(newCronErrors);
+            throw new Error("Validation failed");
+        }
+
+        // 2. Validate User ID
+        if (!isNew && submittedData.user_id !== userId) {
+            throw new Error("The user_id cannot be changed.");
+        }
+
+        // 3. Save Configuration
+        const method = isNew ? 'PUT' : 'PATCH';
+        const endpoint = `/api/external/ui/users/${userId}`;
+        const finalApiData = { ...submittedData, user_id: userId };
+
+        const saveResponse = await fetch(endpoint, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(finalApiData),
+        });
+
+        if (!saveResponse.ok) {
+            const errorBody = await saveResponse.json();
+            const detail = typeof errorBody.detail === 'object' && errorBody.detail !== null
+                ? JSON.stringify(errorBody.detail, null, 2)
+                : errorBody.detail;
+            throw new Error(detail || 'Failed to save configuration.');
+        }
+
+        return finalApiData;
+    };
+
+    const handleSaveConfiguration = async () => {
+        if (!formRef.current) return;
         setIsSaving(true);
         setError(null);
         try {
-            const currentData = submittedData;
+            // Trigger RJSF validation by creating a synthetic submit
+            // Accessing internal RJSF state/methods to get current data is tricky without a submit event.
+            // But we can trigger the form submit, and handle the logic in the onSubmit callback.
+            // Problem: We need to distinguish WHICH button halted the submit.
+            // Solution: We'll set a ref or state indicating the intent, then submit.
+            setActionIntent('save');
+            formRef.current.submit();
+        } catch (err) {
+            // Basic errors caught here
+        }
+        // finally block handled in onSubmit
+    };
 
-            // 1. Validate Cron Expressions
-            setCronErrors([]);
-            let hasCronErrors = false;
-            const newCronErrors = [];
-            const tracking = currentData?.features?.periodic_group_tracking?.tracked_groups;
+    const handleSaveAndLoad = async () => {
+        if (!formRef.current) return;
+        setIsSaving(true);
+        setError(null);
+        setActionIntent('load');
+        formRef.current.submit();
+    };
 
-            if (tracking && Array.isArray(tracking)) {
-                for (let i = 0; i < tracking.length; i++) {
-                    const cron = tracking[i].cronTrackingSchedule;
-                    const validation = validateCronExpression(cron);
-                    if (!validation.valid) {
-                        newCronErrors[i] = validation.error;
-                        hasCronErrors = true;
-                    }
+    const [actionIntent, setActionIntent] = useState('save'); // 'save' or 'load'
+
+    const onFormSubmit = async ({ formData: submittedData }) => {
+        try {
+            await performSave(submittedData);
+
+            if (actionIntent === 'load') {
+                // Perform Link or Reload based on status
+                let action = 'link';
+                if (userStatus && userStatus !== 'disconnected' && userStatus !== 'error') {
+                    action = 'reload';
                 }
-            }
 
-            if (hasCronErrors) {
-                setCronErrors(newCronErrors);
-                setIsSaving(false);
-                return;
-            }
+                const actionRes = await fetch(`/api/external/users/${userId}/actions/${action}`, {
+                    method: 'POST'
+                });
 
-            // 2. Validate User ID
-            if (!isNew && currentData.user_id !== userId) {
-                throw new Error("The user_id cannot be changed.");
-            }
-
-            // 3. Save Configuration
-            // PUT for New, PATCH for Existing
-            const method = isNew ? 'PUT' : 'PATCH';
-            const endpoint = `/api/external/ui/users/${userId}`;
-            const finalApiData = { ...currentData, user_id: userId };
-
-            const saveResponse = await fetch(endpoint, {
-                method: method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(finalApiData),
-            });
-
-            if (!saveResponse.ok) {
-                const errorBody = await saveResponse.json();
-                const detail = typeof errorBody.detail === 'object' && errorBody.detail !== null
-                    ? JSON.stringify(errorBody.detail, null, 2)
-                    : errorBody.detail;
-                throw new Error(detail || 'Failed to save configuration.');
+                if (!actionRes.ok) {
+                    // Optimization: If link/reload fails, we warn but don't fail the "Save" part completely?
+                    // User probably wants to know.
+                    const err = await actionRes.json();
+                    throw new Error(`Configuration saved, but failed to ${action}: ${err.detail}`);
+                }
             }
 
             navigate('/');
 
         } catch (err) {
-            setError(`Failed to save: ${err.message}`);
-        } finally {
+            if (err.message !== "Validation failed") {
+                setError(`Error: ${err.message}`);
+            }
             setIsSaving(false);
         }
     };
+
 
     const handleCancel = () => {
         navigate('/');
     };
 
     if (error) {
-        return <div style={{ padding: '20px', color: 'red' }}>Error: {error}</div>;
+        return <div style={{ padding: '20px', color: 'red' }}>{error}</div>;
     }
 
     if (!schema || !formData) {
@@ -234,6 +292,7 @@ function RestrictedEditPage() {
     const uiSchema = {
         "ui:classNames": "form-container",
         "ui:title": " ",
+        "ui:description": " ", // Remove restricted text
         user_id: {
             "ui:FieldTemplate": NullFieldTemplate
         },
@@ -241,9 +300,12 @@ function RestrictedEditPage() {
         configurations: {
             "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
             "ui:title": "User Profile",
+            "ui:description": " ", // Remove restricted text
+            "ui:options": { defaultOpen: true },
             user_details: {
                 "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
                 "ui:title": "Details",
+                "ui:options": { defaultOpen: true },
                 timezone: {
                     "ui:widget": "TimezoneSelectWidget"
                 },
@@ -256,6 +318,7 @@ function RestrictedEditPage() {
         features: {
             "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
             "ui:title": "Features",
+            "ui:options": { defaultOpen: true },
             automatic_bot_reply: {
                 "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
                 "ui:title": "Automatic Bot Reply",
@@ -332,35 +395,40 @@ function RestrictedEditPage() {
 
     return (
         <>
-            <div style={{ padding: '20px', paddingBottom: '80px' }}>
-                <div style={{ maxWidth: '900px', margin: '0 auto' }}>
-                    <div style={panelStyle}>
-                        <h2>{isNew ? 'New Configuration' : `Edit Configuration`}: {userId}</h2>
-                        <div style={{ marginTop: '1rem', minHeight: '60vh' }}>
-                            <div style={{ ...innerPanelStyle }}>
-                                <Form
-                                    ref={formRef}
-                                    schema={schema}
-                                    uiSchema={uiSchema}
-                                    formData={formData}
-                                    validator={validator}
-                                    onSubmit={handleSave}
-                                    onChange={handleFormChange}
-                                    onError={(errors) => console.log('Form errors:', errors)}
-                                    disabled={isSaving}
-                                    templates={templates}
-                                    widgets={widgets}
-                                    formContext={{
-                                        availableGroups,
-                                        isLinked: false, // Simpler page, no linking logic here
-                                        formData,
-                                        setFormData,
-                                        cronErrors,
-                                        saveAttempt: 0
-                                    }}
-                                >
-                                    <div />
-                                </Form>
+            <div style={{ display: 'flex', flexDirection: 'column', height: 'calc(100vh - 180px)', width: '100%', boxSizing: 'border-box' }}>
+                <div style={{ flex: 1, padding: '20px 20px 0 20px', display: 'flex', flexDirection: 'column', overflowY: 'hidden' }}>
+                    <div style={{ maxWidth: '900px', width: '100%', margin: '0 auto', flex: 1, display: 'flex', flexDirection: 'column' }}>
+                        <div style={{ ...panelStyle, flex: 1, display: 'flex', flexDirection: 'column', marginBottom: '0', overflowY: 'hidden' }}>
+                            <h2 style={{ marginTop: 0 }}>{isNew ? 'New Configuration' : `Edit Configuration`}: {userId}</h2>
+                            <div style={{ marginTop: '1rem', flex: 1, overflowY: 'auto' }}>
+                                <div style={{ ...innerPanelStyle, minHeight: 'auto' }}>
+                                    <Form
+                                        ref={formRef}
+                                        schema={schema}
+                                        uiSchema={uiSchema}
+                                        formData={formData}
+                                        validator={validator}
+                                        onSubmit={onFormSubmit}
+                                        onChange={handleFormChange}
+                                        onError={(errors) => {
+                                            console.log('Form errors:', errors);
+                                            setIsSaving(false);
+                                        }}
+                                        disabled={isSaving}
+                                        templates={templates}
+                                        widgets={widgets}
+                                        formContext={{
+                                            availableGroups,
+                                            isLinked: false,
+                                            formData,
+                                            setFormData,
+                                            cronErrors,
+                                            saveAttempt: 0
+                                        }}
+                                    >
+                                        <div />
+                                    </Form>
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -377,10 +445,32 @@ function RestrictedEditPage() {
                 textAlign: 'center'
             }}>
                 <div>
-                    <button type="button" onClick={() => formRef.current.submit()} disabled={isSaving} style={{ marginRight: '10px', padding: '10px 20px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px' }}>
-                        {isSaving ? 'Saving...' : 'Save Configuration'}
+                    <button
+                        type="button"
+                        onClick={handleSaveConfiguration}
+                        disabled={isSaving}
+                        title="saves new configuration without reloading the bot (new changes will take effect next time the bt is reloaded)"
+                        style={{ marginRight: '10px', padding: '10px 20px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                    >
+                        {isSaving && actionIntent === 'save' ? 'Saving...' : 'Save Configuration'}
                     </button>
-                    <button type="button" onClick={handleCancel} style={{ padding: '10px 20px', border: '1px solid #ccc', borderRadius: '4px' }}>
+
+                    <button
+                        type="button"
+                        onClick={handleSaveAndLoad}
+                        disabled={isSaving}
+                        title="reloads the bot with the new configuration saved"
+                        style={{ marginRight: '10px', padding: '10px 20px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                    >
+                        {isSaving && actionIntent === 'load' ? 'Processing...' : 'Save & Load'}
+                    </button>
+
+                    <button
+                        type="button"
+                        onClick={handleCancel}
+                        disabled={isSaving}
+                        style={{ padding: '10px 20px', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
+                    >
                         Cancel
                     </button>
                 </div>

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 export function CollapsibleObjectFieldTemplate(props) {
-    const [isOpen, setIsOpen] = useState(false);
+    const defaultOpen = props.uiSchema?.['ui:options']?.defaultOpen || false;
+    const [isOpen, setIsOpen] = useState(defaultOpen);
     const { cronErrors, saveAttempt } = props.registry?.formContext || props.formContext || {};
     const prevSaveAttempt = useRef(saveAttempt);
 

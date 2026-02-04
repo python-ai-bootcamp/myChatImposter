@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 
 // Nested collapsible object template for sub-sections within main sections
 export function NestedCollapsibleObjectFieldTemplate(props) {
-    const [isOpen, setIsOpen] = useState(false);
+    const defaultOpen = props.uiSchema?.['ui:options']?.defaultOpen || false;
+    const [isOpen, setIsOpen] = useState(defaultOpen);
     const { cronErrors, saveAttempt } = props.registry?.formContext || props.formContext || {};
     const prevSaveAttempt = useRef(saveAttempt);
 
