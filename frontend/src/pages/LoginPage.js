@@ -43,8 +43,12 @@ const LoginPage = () => {
         sessionStorage.setItem('user_id', response.user_id);
         sessionStorage.setItem('role', response.role);
 
-        // Redirect to home page
-        navigate('/');
+        // Redirect to home page based on role
+        if (response.role === 'admin') {
+          navigate('/admin/home');
+        } else {
+          navigate('/user/home');
+        }
       } else {
         setError(response.message || 'Login failed');
       }

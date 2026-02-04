@@ -4,7 +4,7 @@ import UserTable from '../components/UserTable';
 import LinkUserModal from '../components/LinkUserModal';
 import { isActionEnabled } from '../utils/actionHelpers';
 
-function HomePage() {
+const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   const [configs, setConfigs] = useState([]);
   const [selectedUserId, setSelectedUserId] = useState(null);
   const [isLinking, setIsLinking] = useState(false);
@@ -19,10 +19,25 @@ function HomePage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const pollIntervalRef = useRef(null);
 
+  // Handle Root Redirection
+  useEffect(() => {
+    if (window.location.pathname === '/') {
+      const role = sessionStorage.getItem('role');
+      if (role === 'admin') {
+        navigate('/admin/home', { replace: true });
+      } else if (role === 'user') {
+        navigate('/user/home', { replace: true });
+      } else {
+        navigate('/login', { replace: true });
+      }
+    }
+  }, [navigate]);
+
   const fetchStatuses = useCallback(async () => {
     try {
-      const role = sessionStorage.getItem('role');
-      const userId = sessionStorage.getItem('user_id');
+      // If we are at root, don't fetch, let redirect happen
+      if (window.location.pathname === '/') return;
+
       const endpoint = '/api/external/users/status';
 
       const response = await fetch(endpoint);
@@ -171,7 +186,7 @@ function HomePage() {
 
     const role = sessionStorage.getItem('role');
     if (role === 'admin') {
-      navigate(`/edit/${userId}`, { state: { isNew: true } });
+      navigate(`/admin/edit/${userId}`, { state: { isNew: true } });
     } else {
       navigate(`/user/edit/${userId}`, { state: { isNew: true } });
     }
@@ -180,7 +195,7 @@ function HomePage() {
   const handleEdit = (userId) => {
     const role = sessionStorage.getItem('role');
     if (role === 'admin') {
-      navigate(`/edit/${userId}`);
+      navigate(`/admin/edit/${userId}`);
     } else {
       navigate(`/user/edit/${userId}`);
     }
@@ -195,7 +210,7 @@ function HomePage() {
 
   // Styles
   const pageStyle = {
-    maxWidth: '900px',
+    maxWidth: '1200px', // Wider to accommodate filters if needed
     margin: '40px auto',
     padding: '2rem',
     backgroundColor: '#fff',
@@ -207,7 +222,8 @@ function HomePage() {
     gap: '1rem',
     marginTop: '2rem',
     paddingTop: '1rem',
-    borderTop: '1px solid #dee2e6'
+    borderTop: '1px solid #dee2e6',
+    marginBottom: '20px' // Ensure separation from bottom visual edge
   };
 
   const getButtonStyle = (type, disabled) => {
@@ -249,6 +265,8 @@ function HomePage() {
         configs={configs}
         selectedUserId={selectedUserId}
         onSelectUser={setSelectedUserId}
+        enableFiltering={enableFiltering}
+        showOwnerColumn={showOwnerColumn}
       />
 
       <div style={actionButtonsContainerStyle}>
