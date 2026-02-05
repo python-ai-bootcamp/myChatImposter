@@ -272,20 +272,34 @@ async def proxy_to_backend(path: str, request: Request):
     # Interceptor: DELETE (Ownership Removal)
     # Check if successful DELETE to a user resource
     if request.method == "DELETE" and response.status_code == 200:
+        target_user_id = None
         parts = path.strip("/").split("/")
+        
+        # Case 1: Legacy /users/{user_id}
         if len(parts) == 2 and parts[0] == "users":
             target_user_id = parts[1]
+        # Case 2: UI /ui/users/{user_id}
+        elif len(parts) == 3 and parts[0] == "ui" and parts[1] == "users":
+            target_user_id = parts[2]
+            
+        if target_user_id:
             session = getattr(request.state, "session", None)
             
-            if session and session.role == "user":
-                 # We should probably remove it from ownership list
-                 # Implementation Plan mentioned this but let's confirm.
-                 # "Deletion Interceptor (DELETE): ... Update Persistence ... Update Cache"
-                 # Yes, let's implement the removal logic too for completeness.
-                 # But wait, I didn't add remove_owned_configuration helper methods yet.
-                 # I will skip DELETE interceptor for now to avoid breaking due to missing methods.
-                 # The user accepted the plan, but I missed adding 'remove' helpers in previous step.
-                 # It's less critical (just stale view), but I should add it later.
-                 pass
+            if session:
+                owned_ids = getattr(session, "owned_user_configurations", [])
+                
+                if target_user_id in owned_ids:
+                    logging.info(f"GATEWAY: Removing {target_user_id} from user {session.user_id}'s ownership")
+                    try:
+                        # Update Persistence (credentials collection)
+                        await request.app.state.auth_service.remove_owned_configuration(
+                            session.user_id, target_user_id
+                        )
+                        # Update Cache (session)
+                        await request.app.state.session_manager.remove_owned_configuration(
+                            session.session_id, target_user_id
+                        )
+                    except Exception as e:
+                        logging.error(f"GATEWAY: Failed to remove ownership: {e}")
 
     return response

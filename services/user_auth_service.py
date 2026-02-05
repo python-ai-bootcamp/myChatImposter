@@ -260,3 +260,13 @@ class UserAuthService:
         )
         return result.modified_count > 0 or result.matched_count > 0
 
+    async def remove_owned_configuration(self, user_id: str, config_id: str) -> bool:
+        """
+        Remove a configuration ID from the user's owned list.
+        Atomic update to prevent race conditions.
+        """
+        result = await self.credentials_collection.update_one(
+            {"user_id": user_id},
+            {"$pull": {"owned_user_configurations": config_id}}
+        )
+        return result.modified_count > 0 or result.matched_count > 0

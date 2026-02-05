@@ -1,5 +1,6 @@
 
 import logging
+import re
 from typing import Dict, Any, List
 from fastapi import APIRouter, HTTPException, Body, Depends, Request
 from fastapi.responses import JSONResponse
@@ -16,6 +17,7 @@ from config_models import (
 )
 
 
+USER_ID_PATTERN = re.compile(r'^[a-zA-Z0-9_-]{1,30}$')
 
 router = APIRouter(
     prefix="/api/internal/ui/users",
@@ -26,6 +28,52 @@ def ensure_db_connected(state: GlobalStateManager = Depends(get_global_state)) -
     if state.configurations_collection is None:
         raise HTTPException(status_code=503, detail="Database connection not available.")
     return state
+
+@router.get("/validate/{user_id}")
+async def validate_user_id(
+    user_id: str, 
+    request: Request,
+    state: GlobalStateManager = Depends(ensure_db_connected)
+):
+    """
+    Validate a user_id for creation.
+    Checks: format, uniqueness, and owner's limit.
+    Returns { valid: bool, error_code: str|null, error_message: str|null }
+    """
+    # 1. Format Check
+    if not USER_ID_PATTERN.match(user_id):
+        return {
+            "valid": False,
+            "error_code": "invalid_format",
+            "error_message": "User ID must be 1-30 characters, alphanumeric with _ or - only."
+        }
+    
+    # 2. Uniqueness Check
+    existing = await state.configurations_collection.find_one({"config_data.user_id": user_id})
+    if existing:
+        return {
+            "valid": False,
+            "error_code": "already_exists",
+            "error_message": f"User ID '{user_id}' already exists."
+        }
+    
+    # 3. Ownership Limit Check (non-admins only)
+    requester_id = request.headers.get("X-User-Id")
+    if requester_id and state.credentials_collection is not None:
+        cred = await state.credentials_collection.find_one({"user_id": requester_id})
+        if cred:
+            role = cred.get("role", "user")
+            if role != "admin":
+                owned = cred.get("owned_user_configurations", [])
+                limit = cred.get("max_user_configuration_limit", 5)
+                if len(owned) >= limit:
+                    return {
+                        "valid": False,
+                        "error_code": "limit_exceeded",
+                        "error_message": f"You have reached your limit of {limit} configurations."
+                    }
+    
+    return {"valid": True, "error_code": None, "error_message": None}
 
 @router.get("/schema", response_model=Dict[str, Any])
 async def get_user_ui_schema():
@@ -274,6 +322,13 @@ async def delete_user_ui(
         result = await state.configurations_collection.delete_one(query)
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Configuration not found.")
+        
+        # 3. Remove from owner's owned_user_configurations list
+        if state.credentials_collection is not None:
+            await state.credentials_collection.update_one(
+                {"owned_user_configurations": user_id},
+                {"$pull": {"owned_user_configurations": user_id}}
+            )
         
         logging.info(f"UI API: Deleted configuration for {user_id} by {requester_id}.")
         return {"status": "success", "user_id": user_id}

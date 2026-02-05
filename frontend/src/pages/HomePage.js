@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import UserTable from '../components/UserTable';
 import LinkUserModal from '../components/LinkUserModal';
+import CreateUserModal from '../components/CreateUserModal';
 import { isActionEnabled } from '../utils/actionHelpers';
 
 const HomePage = ({ enableFiltering, showOwnerColumn }) => {
@@ -13,6 +14,9 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   // QR Code / Linking Modal State
   const [linkingUser, setLinkingUser] = useState(null);
   const [qrCode, setQrCode] = useState(null);
+
+  // Create User Modal State
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [linkStatus, setLinkStatus] = useState(null);
 
   const navigate = useNavigate();
@@ -182,13 +186,11 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   };
 
   const handleAdd = () => {
-    const userId = prompt('Enter a new unique user_id:');
-    if (!userId) return;
-    if (configs.some(c => c.user_id === userId)) {
-      alert(`Configuration with user_id "${userId}" already exists.`);
-      return;
-    }
+    setIsCreateModalOpen(true);
+  };
 
+  const handleCreateConfirm = (userId) => {
+    setIsCreateModalOpen(false);
     const role = sessionStorage.getItem('role');
     if (role === 'admin') {
       navigate(`/admin/edit/${userId}`, { state: { isNew: true } });
@@ -319,6 +321,12 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
         linkStatus={linkStatus}
         qrCode={qrCode}
         onClose={closeModal}
+      />
+
+      <CreateUserModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onConfirm={handleCreateConfirm}
       />
     </div>
   );

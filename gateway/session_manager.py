@@ -266,6 +266,31 @@ class SessionManager:
         
         return True
 
+    async def remove_owned_configuration(self, session_id: str, config_id: str) -> bool:
+        """
+        Remove owned configuration from session (DB + Cache).
+        """
+        # Update DB
+        await self.sessions_collection.update_one(
+            {"session_id": session_id},
+            {"$pull": {"owned_user_configurations": config_id}}
+        )
+
+        # Update Cache
+        if session_id in self.cache:
+            session, timestamp = self.cache[session_id]
+            if config_id in session.owned_user_configurations:
+                session.owned_user_configurations.remove(config_id)
+                self.cache[session_id] = (session, timestamp)
+                logging.info(f"GATEWAY: Removed {config_id} from session {session_id} cache. New count: {len(session.owned_user_configurations)}")
+            else:
+                 logging.info(f"GATEWAY: {config_id} not in session {session_id} cache.")
+        else:
+             logging.warning(f"GATEWAY: Session {session_id} not in cache during ownership removal!")
+        
+        return True
+
+
     def clear_cache(self):
         """Clear in-memory cache (useful for testing)."""
         self.cache.clear()

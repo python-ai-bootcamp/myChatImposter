@@ -135,3 +135,10 @@ CHECK: calc_bug_user | Target: calc_bug_user_bot_1 | Owned: 0 []
 CHECK: calc_bug_user | Target: calc_bug_user_bot_2 | Owned: 1 ['calc_bug_user_bot_1']
 CHECK: calc_bug_user | Target: calc_bug_user_bot_1 | Owned: 0 []
 CHECK: calc_bug_user | Target: calc_bug_user_bot_2 | Owned: 1 ['calc_bug_user_bot_1']
+CHECK: moshe | Target: menashe | Owned: 5 ['dudu', 'shimon', 'david', 'menashe', 'hertzel']
+CHECK: moshe | Target: menachem | Owned: 5 ['dudu', 'shimon', 'david', 'menashe', 'hertzel']
+BLOCK: moshe reached limit 5.
+CHECK: moshe | Target: menachem | Owned: 5 ['dudu', 'shimon', 'david', 'menashe', 'hertzel']
+BLOCK: moshe reached limit 5.
+CHECK: moshe | Target: menachem | Owned: 3 ['dudu', 'david', 'hertzel']
+CHECK: moshe | Target: menache | Owned: 4 ['dudu', 'david', 'hertzel', 'menachem']

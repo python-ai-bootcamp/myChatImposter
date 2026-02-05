@@ -430,6 +430,13 @@ async def delete_user(user_id: str, state: GlobalStateManager = Depends(ensure_d
         if result.deleted_count == 0:
             raise HTTPException(status_code=404, detail="Configuration not found.")
         
+        # Remove from owner's owned_user_configurations list
+        if state.credentials_collection is not None:
+            await state.credentials_collection.update_one(
+                {"owned_user_configurations": user_id},
+                {"$pull": {"owned_user_configurations": user_id}}
+            )
+        
         logging.info(f"API: Deleted configuration for {user_id}.")
         return {"status": "success", "user_id": user_id}
     except Exception as e:

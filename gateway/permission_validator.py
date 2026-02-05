@@ -150,6 +150,11 @@ class PermissionValidator:
         if extracted_user_id == "status":
              return True, None
 
+        # Exception: /validate/{user_id} endpoint
+        # The regex extracts "validate" first, but we need to allow the full validate path.
+        if "/ui/users/validate/" in request_path:
+             return True, None
+
         # Exception: PUT (Creation/Update)
         # We allow PUT for authenticated users even if they don't own it *yet*.
         # The backend/gateway will handle the "Don't Overwrite Others" check.
