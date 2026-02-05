@@ -218,7 +218,7 @@ class UserAuthService:
             return True, f"User '{user_id}' deleted successfully"
         return False, f"User '{user_id}' not found"
 
-    async def authenticate(self, user_id: str, password: str) -> Tuple[bool, Optional[str], List[str]]:
+    async def authenticate(self, user_id: str, password: str) -> Tuple[bool, Optional[str], List[str], int, int]:
         """
         Authenticate user credentials.
 
@@ -227,19 +227,27 @@ class UserAuthService:
             password: Plain text password
 
         Returns:
-            Tuple of (success, role, owned_user_configurations)
+            Tuple of (success, role, owned_user_configurations, max_user_configuration_limit, max_feature_limit)
             - success: True if authentication successful
             - role: User role if successful, None otherwise
-            - owned_user_configurations: List of owned configurations if successful, empty list otherwise
+            - owned_user_configurations: List of owned configurations
+            - max_user_configuration_limit: Max config limit (default 5)
+            - max_feature_limit: Max feature limit (default 5)
         """
         credentials = await self.get_credentials(user_id)
         if not credentials:
-            return False, None, []
+            return False, None, [], 5, 5
 
         if self.verify_password(password, credentials.password_hash):
-            return True, credentials.role, credentials.owned_user_configurations if hasattr(credentials, 'owned_user_configurations') else []
+            return (
+                True, 
+                credentials.role, 
+                credentials.owned_user_configurations if hasattr(credentials, 'owned_user_configurations') else [],
+                getattr(credentials, 'max_user_configuration_limit', 5),
+                getattr(credentials, 'max_feature_limit', 5)
+            )
 
-        return False, None, []
+        return False, None, [], 5, 5
 
     async def add_owned_configuration(self, user_id: str, config_id: str) -> bool:
         """

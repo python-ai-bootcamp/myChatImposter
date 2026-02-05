@@ -1,0 +1,26 @@
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 1 ['test_user_limit_bot_1']
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 2 ['test_user_limit_bot_1', 'test_user_limit_bot_2']
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 1 ['test_user_limit_bot_1']
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 2 ['test_user_limit_bot_1', 'test_user_limit_bot_2']
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 1 ['test_user_limit_bot_1']
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 2 ['test_user_limit_bot_1', 'test_user_limit_bot_2']
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.

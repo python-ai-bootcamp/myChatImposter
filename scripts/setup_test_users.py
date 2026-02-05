@@ -29,7 +29,9 @@ async def setup_test_users():
         "user_id": user_id,
         "password_hash": hashed,
         "role": "user",
-        "owned_user_configurations": owned_list
+        "owned_user_configurations": owned_list,
+        "max_user_configuration_limit": 5,
+        "max_feature_limit": 5
     }
     
     await credentials_collection.update_one(

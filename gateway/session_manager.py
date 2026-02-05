@@ -46,6 +46,8 @@ class SessionManager:
         user_id: str,
         role: str,
         owned_user_configurations: List[str] = [],
+        max_user_configuration_limit: int = 5,
+        max_feature_limit: int = 5,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
     ) -> SessionData:
@@ -57,9 +59,6 @@ class SessionManager:
             role: User role (admin or user)
             ip_address: Optional client IP
             user_agent: Optional client user agent
-
-        Returns:
-            Created SessionData
         """
         now = datetime.utcnow()
         session_id = str(uuid.uuid4())
@@ -69,6 +68,8 @@ class SessionManager:
             user_id=user_id,
             role=role,
             owned_user_configurations=owned_user_configurations,
+            max_user_configuration_limit=max_user_configuration_limit,
+            max_feature_limit=max_feature_limit,
             created_at=now,
             last_accessed=now,
             expires_at=now + timedelta(hours=24),  # 24h absolute expiration

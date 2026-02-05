@@ -60,35 +60,69 @@ async def get_user_ui_configuration(user_id: str, state: GlobalStateManager = De
         raise HTTPException(status_code=500, detail="Could not retrieve configuration.")
 
 
+
+def count_enabled_features(features_data: Any) -> int:
+    """Helper to count enabled features from Pydantic model or dict."""
+    count = 0
+    data = features_data
+    if hasattr(features_data, "model_dump"):
+        data = features_data.model_dump()
+    
+    if isinstance(data, dict):
+        for key, value in data.items():
+            if isinstance(value, dict) and value.get("enabled") is True:
+                count += 1
+    return count
+
+async def get_user_feature_limit(user_id: str, state: GlobalStateManager) -> int:
+    """Fetch user's max_feature_limit from credentials."""
+    if state.credentials_collection is not None:
+        cred = await state.credentials_collection.find_one({"user_id": user_id})
+        if cred:
+            return cred.get("max_feature_limit", 5)
+    return 5
+
 @router.put("/{user_id}", response_model=RegularUserConfiguration)
 async def create_user_ui_configuration(
     user_id: str,
+    request: Request,
     payload: RegularUserConfiguration = Body(...),
     state: GlobalStateManager = Depends(ensure_db_connected)
 ):
     """
-    Create a new configuration with default values, overridden by the provided restricted configuration.
-    This allows regular users to create new 'bots' (configurations) without access to admin settings.
+    Create a new configuration with restricted view.
+    Enforces max_feature_limit.
     """
     try:
         # 1. Validation
         if payload.user_id != user_id:
              raise HTTPException(status_code=400, detail="User ID mismatch.")
 
-        # 2. Check existence
+        # Check Existience
         existing = await state.configurations_collection.find_one({"config_data.user_id": user_id})
         if existing:
-             # If it exists, we could reject or upsert. 
-             # For safety/clarity, creating a NEW restricted user should probably fail if it already exists?
-             # Or we treat it as an overwrite of the restricted fields?
-             # Let's reject to prevent accidental overwrite of ADMIN configs by a regular user.
-             # Use PATCH to update existing.
              raise HTTPException(status_code=409, detail="Configuration already exists. Use PATCH to update.")
 
-        # 3. Construct Default Full Configuration
-        # We need to construct the full UserConfiguration object.
-        # We'll use defaults for sensitive fields (Queue, etc.)
+        # 2. Check Feature Limit
+        # Use Requester ID (Owner) for limit check
+        owner_id = request.headers.get("X-User-Id")
+        if not owner_id:
+            # Fallback or strict? Strict is safer.
+            # But during local dev without gateway it might fail. 
+            # We default to 5 if missing, assuming admin or system.
+            limit = 5
+        else:
+            limit = await get_user_feature_limit(owner_id, state)
+            
+        new_count = count_enabled_features(payload.features)
         
+        if new_count > limit:
+             raise HTTPException(
+                 status_code=400, 
+                 detail=f"Feature limit exceeded. You have enabled {new_count} features, but your limit is {limit}."
+             )
+
+        # 3. Construct Default Full Configuration
         default_chat_config = ChatProviderConfig(
             provider_name=DefaultConfigurations.chat_provider_name,
             provider_config=ChatProviderSettings()
@@ -104,12 +138,10 @@ async def create_user_ui_configuration(
             )
         )
         
-        # Merge incoming restricted payload
         full_settings = ConfigurationsSettings(
             user_details=payload.configurations.user_details,
             chat_provider_config=default_chat_config,
             llm_provider_config=default_llm_config
-            # queue_config and context_config use defaults from model
         )
         
         full_config = UserConfiguration(
@@ -123,7 +155,6 @@ async def create_user_ui_configuration(
         
         logging.info(f"UI API: Created new configuration for {user_id}")
         
-        # Return the restricted view
         return RegularUserConfiguration(
             user_id=user_id,
             configurations=payload.configurations,
@@ -148,14 +179,12 @@ async def delete_user_ui(
     """
     requester_id = request.headers.get("X-User-Id")
     if not requester_id:
-        raise HTTPException(status_code=400, detail="Missing X-User-Id header.")
+         raise HTTPException(status_code=400, detail="Missing X-User-Id header.")
 
     # 1. Verify Ownership
-    # Check if requester IS the user (Self-deletion)
     is_owner = (requester_id == user_id)
     
     if not is_owner and state.credentials_collection is not None:
-        # Check if requester owns this config via credentials
         cred = await state.credentials_collection.find_one(
             {"user_id": requester_id, "owned_user_configurations": user_id}
         )
@@ -167,11 +196,9 @@ async def delete_user_ui(
 
     # 2. Perform Deletion
     try:
-        # Stop tracking jobs
         if state.group_tracker:
              state.group_tracker.update_jobs(user_id, [])
 
-        # Stop instance if active
         if user_id in state.active_users:
             instance_id = state.active_users[user_id]
             instance = state.chatbot_instances.get(instance_id)
@@ -179,7 +206,6 @@ async def delete_user_ui(
                 await instance.stop(cleanup_session=True)
                 state.remove_active_user(user_id)
         
-        # Cleanup Lifecycle
         if state.async_message_delivery_queue_manager:
              await state.async_message_delivery_queue_manager.move_user_to_holding(user_id)
 
@@ -202,41 +228,63 @@ async def delete_user_ui(
 @router.patch("/{user_id}")
 async def update_user_ui_configuration(
     user_id: str, 
+    request: Request,
     patch_data: RegularUserConfiguration = Body(...), 
     state: GlobalStateManager = Depends(ensure_db_connected)
 ):
     """
     Partially update user configuration (UI).
-    Only updates fields present in RegularUserConfiguration.
+    Enforces max_feature_limit (only if increasing count).
     """
     try:
         # 1. Validation
         if patch_data.user_id != user_id:
             raise HTTPException(status_code=400, detail="User ID mismatch.")
 
-        # 2. Extract ALLOWED fields only
-        # We explicitly dump 'configurations.user_details' and 'features'
-        # Any other field is ignored by definition of the model
+        # 2. Extract allowed fields
         update_payload = patch_data.model_dump(exclude_unset=True)
-        
-        # 3. Build MongoDB $set query
-        # We must be careful not to overwrite the entire 'configurations' object 
-        # because it contains 'queue_config' which is missing here!
-        # We map explicitly to dot-notation for safety.
-        
         mongo_update = {}
         
-        # Features (Safe to replace entire object usually, but let's be granular)
         if "features" in update_payload:
             mongo_update["config_data.features"] = update_payload["features"]
             
-        # User Details (Nested inside configurations)
         if "configurations" in update_payload and "user_details" in update_payload["configurations"]:
              mongo_update["config_data.configurations.user_details"] = update_payload["configurations"]["user_details"]
              
         if not mongo_update:
              return {"status": "ignored", "message": "No valid fields to update"}
 
+        # 3. Check Feature Limit (if features are being updated)
+        if "features" in update_payload:
+            # Fetch existing config
+            current_config = await state.configurations_collection.find_one({"config_data.user_id": user_id})
+            if not current_config:
+                 raise HTTPException(status_code=404, detail="Configuration not found.")
+            
+            # Count Old
+            current_data = current_config.get("config_data", {})
+            current_features = current_data.get("features", {})
+            old_count = count_enabled_features(current_features)
+            
+            # Count New (Merge logic)
+            new_features = update_payload["features"]
+            new_count = count_enabled_features(new_features)
+            
+            # Use Requester ID (Owner) for limit check
+            owner_id = request.headers.get("X-User-Id")
+            if not owner_id:
+                limit = 5
+            else:
+                limit = await get_user_feature_limit(owner_id, state)
+            
+            # Logic: If count increases AND exceeds limit -> Block
+            if new_count > old_count and new_count > limit:
+                 raise HTTPException(
+                     status_code=400, 
+                     detail=f"Feature limit exceeded. You are trying to enable {new_count} features, but your limit is {limit}."
+                 )
+
+        # 4. Perform Update
         result = await state.configurations_collection.update_one(
             {"config_data.user_id": user_id},
             {"$set": mongo_update}
@@ -248,6 +296,8 @@ async def update_user_ui_configuration(
         logging.info(f"UI API: Updated configuration for {user_id}. Fields: {list(mongo_update.keys())}")
         return {"status": "success", "user_id": user_id}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"UI API: Error updating config for {user_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Could not update configuration: {e}")

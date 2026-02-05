@@ -98,7 +98,7 @@ async def login(login_request: LoginRequest, request: Request, response: Respons
     rate_limiter.record_attempt(ip_address)
 
     # Authenticate
-    success, role, owned_configs = await auth_service.authenticate(
+    success, role, owned_configs, max_config_limit, max_feature_limit = await auth_service.authenticate(
         login_request.user_id, login_request.password
     )
 
@@ -152,6 +152,8 @@ async def login(login_request: LoginRequest, request: Request, response: Respons
         user_id=login_request.user_id,
         role=role,
         owned_user_configurations=owned_configs,
+        max_user_configuration_limit=max_config_limit,
+        max_feature_limit=max_feature_limit,
         ip_address=ip_address,
         user_agent=user_agent,
     )

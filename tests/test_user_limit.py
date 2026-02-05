@@ -61,50 +61,115 @@ async def setup_limit_user():
 async def run_test():
     await setup_limit_user()
     
+    # Setup MongoDB client for updating limits
+    mongodb_url = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
+    mongo_client = AsyncIOMotorClient(mongodb_url)
+    db = mongo_client.get_database("chat_manager")
+    credentials_collection = db["user_auth_credentials"]
+
     async with httpx.AsyncClient(timeout=10.0, base_url=GATEWAY_URL) as client:
-        # Login
-        res_login = await client.post("/api/external/auth/login", json={"user_id": TEST_USER, "password": TEST_PASS})
-        if res_login.status_code != 200:
-             logger.error("Login failed")
+        # 3. Authenticate to get session (and ensure limits are loaded)
+        login_url = f"{GATEWAY_URL}/api/external/auth/login"
+        resp = await client.post(login_url, json={"user_id": TEST_USER, "password": TEST_PASS})
+        if resp.status_code != 200:
+             print(f"FAILED: Login failed: {resp.text}")
+             mongo_client.close()
              return
-        cookies = res_login.cookies
+
+        cookies = resp.cookies
+        session_id = str(cookies.get("session_id"))
+        print(f"Logged in. Session ID: {session_id}")
+
+        # UPDATE: Set custom limits in DB for this test user to verify dynamic logic
+        # Limit: 3 bots, 1 feature
+        await credentials_collection.update_one(
+            {"user_id": TEST_USER},
+            {"$set": {"max_user_configuration_limit": 3, "max_feature_limit": 1}}
+        )
+        print("Updated test user limits: max_bots=3, max_features=1")
         
-        # Test Loop: Create 6 users
-        for i in range(1, 7):
+        # We need to re-login to force session refresh with new limits? 
+        # Yes, because session is cached. Or wait 24h. Easiest is to login again or clear cache.
+        # Actually session manager creates new ID on login.
+        
+        resp = await client.post(login_url, json={"user_id": TEST_USER, "password": TEST_PASS})
+        cookies = resp.cookies
+        print("Re-logged in to refresh limits.")
+
+        # 4. Create Bots (Limit 3)
+        # We expect 3 successes, 4th failure
+        for i in range(1, 6):
             bot_id = f"{TEST_USER}_bot_{i}"
-            logger.info(f"Attempting to create bot {i}: {bot_id}")
+            create_url = f"{GATEWAY_URL}/api/external/ui/users/{bot_id}"
             
+            # Request Body
             payload = {
                 "user_id": bot_id,
-                "configurations": {"user_details": {}},
-                "features": {}
+                "configurations": {
+                     "user_details": {}
+                },
+                "features": {
+                     "automatic_bot_reply": {"enabled": False},
+                     "periodic_group_tracking": {"enabled": False},
+                     "kid_phone_safety_tracking": {"enabled": False}
+                }
             }
             
-            # Create (PUT)
-            res = await client.put(f"/api/external/ui/users/{bot_id}", json=payload, cookies=cookies)
+            print(f"Attempting to create bot {i}: {bot_id}")
+            resp = await client.put(create_url, json=payload, cookies=cookies)
             
-            if i <= 5:
-                if res.status_code == 200:
-                    logger.info(f"SUCCESS: Created {bot_id}")
+            if i <= 3:
+                if resp.status_code == 200:
+                    print(f"SUCCESS: Created {bot_id}")
                 else:
-                    logger.error(f"FAILED: Could not create {bot_id}. Status: {res.status_code} - {res.text}")
-                    return
+                    print(f"FAILED: Expected success for {bot_id}, got {resp.status_code} {resp.text}")
             else:
-                # 6th attempt should fail
-                if res.status_code == 403:
-                    logger.info(f"SUCCESS: 6th creation blocked with 403. Message: {res.text}")
+                if resp.status_code == 403:
+                    print(f"SUCCESS: Blocked {bot_id} (Limit reached)")
                 else:
-                    logger.error(f"FAILED: 6th creation NOT blocked! Status: {res.status_code}")
-
-        # Check Updates (PATCH) still work for existing
-        last_success_bot = f"{TEST_USER}_bot_5"
-        logger.info(f"Testing Update on existing {last_success_bot}...")
-        res_update = await client.patch(f"/api/external/ui/users/{last_success_bot}", json={"user_id": last_success_bot, "configurations": {"user_details": {"name": "Updated"}}}, cookies=cookies)
+                    print(f"FAILED: {bot_id} NOT blocked! Status: {resp.status_code}")
+                    
+        # 5. Test Feature Limit (Limit 1)
+        # Use existing bot 1
+        target_bot = f"{TEST_USER}_bot_1"
+        patch_url = f"{GATEWAY_URL}/api/external/ui/users/{target_bot}"
         
-        if res_update.status_code == 200:
-             logger.info("SUCCESS: Update allowed even at limit.")
+        print("\nTesting Feature Limit (Max 1)...")
+        
+        # Test A: Enable 1 feature (Should Pass)
+        payload_1 = {
+             "user_id": target_bot,
+             "configurations": {"user_details": {}},
+             "features": {
+                 "automatic_bot_reply": {"enabled": True}, 
+                 "periodic_group_tracking": {"enabled": False}
+             }
+        }
+        resp = await client.patch(patch_url, json=payload_1, cookies=cookies)
+        if resp.status_code == 200:
+             print("SUCCESS: 1 Feature enabled (Allowed)")
         else:
-             logger.error(f"FAILED: Update blocked! Status: {res_update.status_code}")
+             print(f"FAILED: 1 Feature blocked: {resp.status_code} {resp.text}")
+
+        # Test B: Enable 2 features (Should Fail)
+        payload_2 = {
+             "user_id": target_bot,
+             "configurations": {"user_details": {}},
+             "features": {
+                 "automatic_bot_reply": {"enabled": True}, 
+                 "periodic_group_tracking": {"enabled": True}
+             }
+        }
+        resp = await client.patch(patch_url, json=payload_2, cookies=cookies)
+        if resp.status_code == 400:
+             print("SUCCESS: 2 Features blocked (Limit Reached)")
+        else:
+             print(f"FAILED: 2 Features NOT blocked: {resp.status_code} {resp.text}")
+             
+        # Cleanup handled by next run or teardown if desired
+        print("\nTest Complete.")
+    
+    mongo_client.close() # Close MongoDB client
 
 if __name__ == "__main__":
     if sys.platform == "win32":

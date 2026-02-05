@@ -204,14 +204,15 @@ async def proxy_to_backend(path: str, request: Request):
                   logging.info(f"GATEWAY_LIMIT_CHECK: User={session.user_id}, Target={target_user_id}, Count={len(owned_ids)}")
 
                   # Allow updates to existing owned users, Reject creation if limit reached
-                  if target_user_id not in owned_ids and len(owned_ids) >= 5:
+                  limit = getattr(session, "max_user_configuration_limit", 5)
+                  if target_user_id not in owned_ids and len(owned_ids) >= limit:
                        with open("gateway/gateway_debug.txt", "a") as f:
-                           f.write(f"BLOCK: {session.user_id} reached limit.\n")
+                           f.write(f"BLOCK: {session.user_id} reached limit {limit}.\n")
                            
-                       logging.warning(f"GATEWAY: User {session.user_id} reached limit (5) trying to create {target_user_id}")
+                       logging.warning(f"GATEWAY: User {session.user_id} reached limit ({limit}) trying to create {target_user_id}")
                        return JSONResponse(
                            status_code=403, 
-                           content={"detail": "You have reached your limit of 5 concurrent users."}
+                           content={"detail": f"You have reached your limit of {limit} concurrent users."}
                        )
 
 
