@@ -24,3 +24,114 @@ CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_li
 BLOCK: test_user_limit reached limit 3.
 CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
 BLOCK: test_user_limit reached limit 3.
+CHECK: moshe | Target: dudu | Owned: 0 []
+CHECK: moshe | Target: simcha | Owned: 1 ['dudu']
+CHECK: moshe | Target: shimon | Owned: 1 ['dudu']
+CHECK: moshe | Target: david | Owned: 2 ['dudu', 'shimon']
+CHECK: moshe | Target: menashe | Owned: 3 ['dudu', 'shimon', 'david']
+CHECK: moshe | Target: hertzel | Owned: 4 ['dudu', 'shimon', 'david', 'menashe']
+CHECK: moshe | Target: menachem | Owned: 5 ['dudu', 'shimon', 'david', 'menashe', 'hertzel']
+BLOCK: moshe reached limit 5.
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 1 ['test_user_limit_bot_1']
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 2 ['test_user_limit_bot_1', 'test_user_limit_bot_2']
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 1 ['test_user_limit_bot_1']
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 2 ['test_user_limit_bot_1', 'test_user_limit_bot_2']
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 1 ['test_user_limit_bot_1']
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 2 ['test_user_limit_bot_1', 'test_user_limit_bot_2']
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 1 ['test_user_limit_bot_1']
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 2 ['test_user_limit_bot_1', 'test_user_limit_bot_2']
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 1 ['test_user_limit_bot_1']
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 2 ['test_user_limit_bot_1', 'test_user_limit_bot_2']
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 1 ['test_user_limit_bot_1']
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 2 ['test_user_limit_bot_1', 'test_user_limit_bot_2']
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 1 ['test_user_limit_bot_1']
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 2 ['test_user_limit_bot_1', 'test_user_limit_bot_2']
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 1 ['test_user_limit_bot_1']
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 2 ['test_user_limit_bot_1', 'test_user_limit_bot_2']
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 1 ['test_user_limit_bot_1']
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 2 ['test_user_limit_bot_1', 'test_user_limit_bot_2']
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_1 | Owned: 0 []
+CHECK: test_user_limit | Target: test_user_limit_bot_2 | Owned: 1 ['test_user_limit_bot_1']
+CHECK: test_user_limit | Target: test_user_limit_bot_3 | Owned: 2 ['test_user_limit_bot_1', 'test_user_limit_bot_2']
+CHECK: test_user_limit | Target: test_user_limit_bot_4 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: test_user_limit | Target: test_user_limit_bot_5 | Owned: 3 ['test_user_limit_bot_1', 'test_user_limit_bot_2', 'test_user_limit_bot_3']
+BLOCK: test_user_limit reached limit 3.
+CHECK: moshe | Target: tytyutyutyu | Owned: 5 ['dudu', 'shimon', 'david', 'menashe', 'hertzel']
+BLOCK: moshe reached limit 5.
+CHECK: calc_bug_user | Target: calc_bug_user_bot_1 | Owned: 0 []
+CHECK: calc_bug_user | Target: calc_bug_user_bot_2 | Owned: 0 []
+CHECK: calc_bug_user | Target: calc_bug_user_bot_1 | Owned: 0 []
+CHECK: calc_bug_user | Target: calc_bug_user_bot_2 | Owned: 1 ['calc_bug_user_bot_1']
+CHECK: calc_bug_user | Target: calc_bug_user_bot_1 | Owned: 0 []
+CHECK: calc_bug_user | Target: calc_bug_user_bot_2 | Owned: 1 ['calc_bug_user_bot_1']

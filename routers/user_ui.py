@@ -82,6 +82,48 @@ async def get_user_feature_limit(user_id: str, state: GlobalStateManager) -> int
             return cred.get("max_feature_limit", 5)
     return 5
 
+async def calculate_global_feature_usage(
+    owner_id: str, 
+    state: GlobalStateManager, 
+    exclude_bot_id: str = None
+) -> int:
+    """
+    Sum of enabled features across ALL bots owned by owner_id.
+    Optionally exclude a specific bot_id (useful for updates where we add the new count manually).
+    """
+    total = 0
+    if state.credentials_collection is None:
+         return 0
+         
+    # 1. Get List of Owned Bots
+    cred = await state.credentials_collection.find_one({"user_id": owner_id})
+    if not cred:
+        return 0
+        
+    owned_bots = cred.get("owned_user_configurations", [])
+
+    if not owned_bots:
+         return 0
+    
+    # Filter exclusion
+    if exclude_bot_id:
+         owned_bots = [b for b in owned_bots if b != exclude_bot_id]
+         
+    if not owned_bots:
+         return 0
+
+    # 2. Fetch Configs & Sum
+    cursor = state.configurations_collection.find(
+        {"config_data.user_id": {"$in": owned_bots}}
+    )
+    
+    async for doc in cursor:
+        config_data = doc.get("config_data", {})
+        features = config_data.get("features", {})
+        total += count_enabled_features(features)
+        
+    return total
+
 @router.put("/{user_id}", response_model=RegularUserConfiguration)
 async def create_user_ui_configuration(
     user_id: str,
@@ -111,16 +153,30 @@ async def create_user_ui_configuration(
             # But during local dev without gateway it might fail. 
             # We default to 5 if missing, assuming admin or system.
             limit = 5
+            current_global_usage = 0
+            # For creation without owner_id, we can't check global usage effectively
         else:
-            limit = await get_user_feature_limit(owner_id, state)
-            
-        new_count = count_enabled_features(payload.features)
-        
-        if new_count > limit:
-             raise HTTPException(
-                 status_code=400, 
-                 detail=f"Feature limit exceeded. You have enabled {new_count} features, but your limit is {limit}."
-             )
+            # Check for Admin Override
+            is_admin = False
+            if state.credentials_collection is not None:
+                cred = await state.credentials_collection.find_one({"user_id": owner_id})
+                if cred and cred.get("role") == "admin":
+                    is_admin = True
+
+            if is_admin:
+                 pass
+            else:
+                limit = await get_user_feature_limit(owner_id, state)
+                current_global_usage = await calculate_global_feature_usage(owner_id, state, exclude_bot_id=None)
+                
+                new_count = count_enabled_features(payload.features)
+                total_usage = current_global_usage + new_count
+                
+                if total_usage > limit:
+                     raise HTTPException(
+                         status_code=400, 
+                         detail=f"Global feature limit exceeded. You have used {total_usage} features (New: {new_count}, Others: {current_global_usage}), but your limit is {limit}."
+                     )
 
         # 3. Construct Default Full Configuration
         default_chat_config = ChatProviderConfig(
@@ -272,17 +328,49 @@ async def update_user_ui_configuration(
             
             # Use Requester ID (Owner) for limit check
             owner_id = request.headers.get("X-User-Id")
-            if not owner_id:
+            
+            # Check for Admin Override
+            is_admin = False
+            if owner_id and state.credentials_collection is not None:
+                cred = await state.credentials_collection.find_one({"user_id": owner_id})
+                if cred and cred.get("role") == "admin":
+                    is_admin = True
+            
+            if is_admin:
+                # Admins bypass feature limits
+                pass
+            elif not owner_id:
                 limit = 5
+                current_global_usage_others = 0
+                old_global_total = 0 # Cannot verify delta without owner context
+                
+                # Check Limit for anonymous/system? Default block if over 5
+                new_global_total = new_count
+                if new_global_total > limit:
+                     raise HTTPException(status_code=400, detail="Feature limit exceeded.")
             else:
                 limit = await get_user_feature_limit(owner_id, state)
+                # Exclude THIS bot from the sum, because we are replacing its features
+                current_global_usage_others = await calculate_global_feature_usage(owner_id, state, exclude_bot_id=user_id)
+                
+                # Calculate OLD global total
+                # We need the old count of THIS bot. 
+                # current_config is fetched at step 3.
+                old_config_data = current_config.get("config_data", {})
+                old_features = old_config_data.get("features", {})
+                old_count = count_enabled_features(old_features)
+                
+                old_global_total = current_global_usage_others + old_count
             
-            # Logic: If count increases AND exceeds limit -> Block
-            if new_count > old_count and new_count > limit:
-                 raise HTTPException(
-                     status_code=400, 
-                     detail=f"Feature limit exceeded. You are trying to enable {new_count} features, but your limit is {limit}."
-                 )
+                new_global_total = current_global_usage_others + new_count
+
+                # Logic: If count INCREASES (new > old) AND exceeds limit -> Block
+                # If count stays same or decreases, allow even if > limit (maintenance mode)
+                if new_global_total > old_global_total and new_global_total > limit:
+                     raise HTTPException(
+                         status_code=400, 
+                         detail=f"Global feature limit exceeded. You are trying to use {new_global_total} features (New: {new_count}, Others: {current_global_usage_others}), but your limit is {limit}. (Previous Total: {old_global_total})"
+                     )
 
         # 4. Perform Update
         result = await state.configurations_collection.update_one(

@@ -129,42 +129,129 @@ async def run_test():
                 else:
                     print(f"FAILED: {bot_id} NOT blocked! Status: {resp.status_code}")
                     
-        # 5. Test Feature Limit (Limit 1)
-        # Use existing bot 1
-        target_bot = f"{TEST_USER}_bot_1"
-        patch_url = f"{GATEWAY_URL}/api/external/ui/users/{target_bot}"
+        # 5. Test Global Feature Limit (Limit 1)
+        # We want to test that the limit is SHARED across bots.
+        # User limits: max_bots=3, max_features=1
         
-        print("\nTesting Feature Limit (Max 1)...")
+        # Bot 1: Enable 1 feature (1/1 Used) -> Should Pass
+        target_bot_1 = f"{TEST_USER}_bot_1"
+        print(f"\nTesting Global Feature Limit (Max 1)...")
+        print(f"Enable 1 feature on {target_bot_1}...")
         
-        # Test A: Enable 1 feature (Should Pass)
         payload_1 = {
-             "user_id": target_bot,
+             "user_id": target_bot_1,
              "configurations": {"user_details": {}},
              "features": {
                  "automatic_bot_reply": {"enabled": True}, 
                  "periodic_group_tracking": {"enabled": False}
              }
         }
-        resp = await client.patch(patch_url, json=payload_1, cookies=cookies)
+        resp = await client.patch(f"{GATEWAY_URL}/api/external/ui/users/{target_bot_1}", json=payload_1, cookies=cookies)
         if resp.status_code == 200:
-             print("SUCCESS: 1 Feature enabled (Allowed)")
+             print("SUCCESS: Bot 1 Feature enabled (Allowed)")
         else:
-             print(f"FAILED: 1 Feature blocked: {resp.status_code} {resp.text}")
+             print(f"FAILED: Bot 1 Feature blocked: {resp.status_code} {resp.text}")
 
-        # Test B: Enable 2 features (Should Fail)
+        # Bot 2: Enable 1 feature (Total 2/1 Used) -> Should Fail
+        target_bot_2 = f"{TEST_USER}_bot_2"
+        print(f"Enable 1 feature on {target_bot_2} (should exceed global limit)...")
+        
         payload_2 = {
-             "user_id": target_bot,
+             "user_id": target_bot_2,
+             "configurations": {"user_details": {}},
+             "features": {
+                 "automatic_bot_reply": {"enabled": True}, 
+                 "periodic_group_tracking": {"enabled": False}
+             }
+        }
+        resp = await client.patch(f"{GATEWAY_URL}/api/external/ui/users/{target_bot_2}", json=payload_2, cookies=cookies)
+        
+        if resp.status_code == 400:
+             print("SUCCESS: Bot 2 Feature blocked (Global Limit Reached)")
+        else:
+             print(f"FAILED: Bot 2 Feature NOT blocked! Status: {resp.status_code} (This confirms the bug if 200)")
+             
+        # 6. Test Over-Limit Maintenance (Delta Check)
+        # Scenario: User has 2 bots * 1 feature = 2 total.
+        # We lower limit to 1.
+        # User tries to update Bot 1 (keeping 1 feature).
+        # Should PASS (Count 2 -> 2, not increasing).
+        
+        print("\nTesting Over-Limit Update (Delta Check)...")
+        
+        # A. Set High Limit (10) and ensure Bot 1 & 2 have features enabled
+        await credentials_collection.update_one(
+            {"user_id": TEST_USER}, 
+            {"$set": {"max_feature_limit": 10}}
+        )
+        
+        # Ensure Bot 2 has 1 feature enabled
+        
+        # Ensure Bot 2 has 1 feature enabled
+        payload_enable = {
+             "user_id": target_bot_2,
+             "configurations": {"user_details": {}},
+             "features": {
+                 "automatic_bot_reply": {"enabled": True}, 
+                 "periodic_group_tracking": {"enabled": False}
+             }
+        }
+        res = await client.patch(f"{GATEWAY_URL}/api/external/ui/users/{target_bot_2}", json=payload_enable, cookies=cookies)
+        assert res.status_code == 200, f"Setup Failed: Could not enable feature on Bot 2. {res.text}"
+        
+        # Ensure Bot 1 has 1 feature enabled
+        payload_enable_1 = {
+             "user_id": target_bot_1,
+             "configurations": {"user_details": {}},
+             "features": {
+                 "automatic_bot_reply": {"enabled": True}, 
+                 "periodic_group_tracking": {"enabled": False}
+             }
+        }
+        res = await client.patch(f"{GATEWAY_URL}/api/external/ui/users/{target_bot_1}", json=payload_enable_1, cookies=cookies)
+        assert res.status_code == 200, f"Setup Failed: Could not enable feature on Bot 1. {res.text}"
+        
+        # Now Total Usage = 2.
+        
+        # B. Lower Limit to 1
+        await credentials_collection.update_one(
+            {"user_id": TEST_USER}, 
+            {"$set": {"max_feature_limit": 1}}
+        )
+        
+        # C. Update Bot 1 (Maintain 1 feature)
+        
+        # C. Update Bot 1 (Maintain 1 feature)
+        # We send the SAME payload.
+        # Old Total = 2. New Total = 2. 
+        # Since New Total (2) > Limit (1), current logic blocks.
+        # Correct logic: New (2) is NOT > Old (2), so allow.
+        
+        print(f"Attempting to update {target_bot_1} while over limit (Total 2 > Limit 1, but no increase)...")
+        resp = await client.patch(f"{GATEWAY_URL}/api/external/ui/users/{target_bot_1}", json=payload_enable_1, cookies=cookies)
+        
+        if resp.status_code == 200:
+             print("SUCCESS: Update allowed (Delta check passed)")
+        else:
+             print(f"FAILED: Update blocked even without increase: {resp.status_code} {resp.text}")
+
+        # D. Try to Increase (Should Block)
+        # Enable 2nd feature on Bot 1 -> Total 3
+        print(f"Attempting to INCREASE features on {target_bot_1} (Total 2 -> 3 > Limit 1)...")
+        payload_increase = {
+             "user_id": target_bot_1,
              "configurations": {"user_details": {}},
              "features": {
                  "automatic_bot_reply": {"enabled": True}, 
                  "periodic_group_tracking": {"enabled": True}
              }
         }
-        resp = await client.patch(patch_url, json=payload_2, cookies=cookies)
+        resp = await client.patch(f"{GATEWAY_URL}/api/external/ui/users/{target_bot_1}", json=payload_increase, cookies=cookies)
+        
         if resp.status_code == 400:
-             print("SUCCESS: 2 Features blocked (Limit Reached)")
+             print("SUCCESS: Increase blocked (Correct)")
         else:
-             print(f"FAILED: 2 Features NOT blocked: {resp.status_code} {resp.text}")
+             print(f"FAILED: Increase NOT blocked: {resp.status_code}")
              
         # Cleanup handled by next run or teardown if desired
         print("\nTest Complete.")

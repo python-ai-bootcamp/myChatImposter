@@ -7,7 +7,7 @@ import {
     CustomArrayFieldTemplate, CollapsibleObjectFieldTemplate, InlineObjectFieldTemplate,
     InlineFieldTemplate, NarrowTextWidget, SizedTextWidget,
     NestedCollapsibleObjectFieldTemplate, SystemPromptWidget, InlineCheckboxFieldTemplate,
-    FlatProviderConfigTemplate, TimezoneSelectWidget, LanguageSelectWidget
+    TimezoneSelectWidget, LanguageSelectWidget
 } from '../components/FormTemplates';
 import { GroupTrackingArrayTemplate } from '../components/templates/GroupTrackingArrayTemplate';
 import { NullFieldTemplate } from '../components/templates/NullFieldTemplate';
