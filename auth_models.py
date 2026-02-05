@@ -24,6 +24,8 @@ class UserAuthCredentials(BaseModel):
     password_hash: str = Field(..., description="Bcrypt hashed password")
     role: Literal["admin", "user"] = Field(..., description="User role")
     owned_user_configurations: list[str] = Field(default_factory=list, description="List of user_ids this user owns")
+    max_user_configuration_limit: int = Field(default=5, description="Max number of owned configurations")
+    max_feature_limit: int = Field(default=5, description="Max number of enabled features per configuration")
 
     @field_validator("user_id")
     @classmethod
@@ -49,6 +51,8 @@ class SessionData(BaseModel):
         expires_at: Absolute expiration (24h from creation)
         ip_address: Optional client IP address for audit
         user_agent: Optional client user agent for audit
+        max_user_configuration_limit: Max number of owned configurations
+        max_feature_limit: Max number of enabled features per configuration
     """
     session_id: str = Field(..., description="UUID4 session identifier")
     user_id: str = Field(..., description="Associated user identifier")
@@ -59,6 +63,8 @@ class SessionData(BaseModel):
     expires_at: datetime = Field(..., description="Session expiration (24h absolute)")
     ip_address: Optional[str] = Field(None, description="Client IP address")
     user_agent: Optional[str] = Field(None, description="Client user agent")
+    max_user_configuration_limit: int = Field(default=5, description="Max number of owned configurations")
+    max_feature_limit: int = Field(default=5, description="Max number of enabled features per configuration")
 
 
 class StaleSession(BaseModel):

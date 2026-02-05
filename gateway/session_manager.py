@@ -254,8 +254,14 @@ class SessionManager:
         if session_id in self.cache:
             session, timestamp = self.cache[session_id]
             if config_id not in session.owned_user_configurations:
+                # Ensure we are modifying a list instance
                 session.owned_user_configurations.append(config_id)
                 self.cache[session_id] = (session, timestamp)
+                logging.info(f"GATEWAY: Added {config_id} to session {session_id} cache. New count: {len(session.owned_user_configurations)}")
+            else:
+                 logging.info(f"GATEWAY: {config_id} already in session {session_id} cache.")
+        else:
+             logging.warning(f"GATEWAY: Session {session_id} not in cache during ownership update!")
         
         return True
 

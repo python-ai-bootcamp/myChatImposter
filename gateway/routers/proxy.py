@@ -149,6 +149,10 @@ async def proxy_to_backend(path: str, request: Request):
     Generic proxy for all other requests.
     Includes Interceptor for PUT Creation (Ownership Claim).
     """
+    # FILE LOGGING DEBUG
+    with open("gateway_debug.txt", "a") as f:
+        f.write(f"ENTRY: Path={path} | Method={request.method}\n")
+
     # Transform path: /api/external/* → /api/internal/*
     backend_path = f"/api/internal/{path}"
     backend_url = f"{gateway_state.backend_url}{backend_path}"
@@ -176,6 +180,41 @@ async def proxy_to_backend(path: str, request: Request):
     logging.debug(
         f"GATEWAY: Proxying {request.method} {backend_url} (from {request.url.path})"
     )
+
+    # Interceptor: Pre-check for User Limit (PUT Creation)
+    if request.method == "PUT":
+        target_user_id = None
+        parts = path.strip("/").split("/")
+        # Valid Paths: /users/{id} or /ui/users/{id}
+        if len(parts) == 2 and parts[0] == "users":
+            target_user_id = parts[1]
+        elif len(parts) == 3 and parts[0] == "ui" and parts[1] == "users":
+            target_user_id = parts[2]
+            
+        if target_user_id:
+             session = getattr(request.state, "session", None)
+             if session and session.role == "user":
+                  owned_ids = getattr(session, "owned_user_configurations", [])
+                  
+                  # FILE LOGGING DEBUG (Fixed Path)
+                  with open("gateway/gateway_debug.txt", "a") as f:
+                      f.write(f"CHECK: {session.user_id} | Target: {target_user_id} | Owned: {len(owned_ids)} {owned_ids}\n")
+                  
+                  # Force log to console
+                  logging.info(f"GATEWAY_LIMIT_CHECK: User={session.user_id}, Target={target_user_id}, Count={len(owned_ids)}")
+
+                  # Allow updates to existing owned users, Reject creation if limit reached
+                  if target_user_id not in owned_ids and len(owned_ids) >= 5:
+                       with open("gateway/gateway_debug.txt", "a") as f:
+                           f.write(f"BLOCK: {session.user_id} reached limit.\n")
+                           
+                       logging.warning(f"GATEWAY: User {session.user_id} reached limit (5) trying to create {target_user_id}")
+                       return JSONResponse(
+                           status_code=403, 
+                           content={"detail": "You have reached your limit of 5 concurrent users."}
+                       )
+
+
 
     # Forward request
     response = await _forward_request(
