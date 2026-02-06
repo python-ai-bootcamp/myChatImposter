@@ -3,16 +3,16 @@ import React, { useState, useEffect, useRef } from 'react';
 export function CollapsibleObjectFieldTemplate(props) {
     const defaultOpen = props.uiSchema?.['ui:options']?.defaultOpen || false;
     const [isOpen, setIsOpen] = useState(defaultOpen);
-    const { cronErrors, saveAttempt } = props.registry?.formContext || props.formContext || {};
+    const { cronErrors, saveAttempt, scrollToErrorTrigger } = props.registry?.formContext || props.formContext || {};
     const prevSaveAttempt = useRef(saveAttempt);
+    const prevTrigger = useRef(scrollToErrorTrigger);
 
     // Check if this section contains the periodic_group_tracking field
     const containsTracking = props.properties.some(p => p.name === 'periodic_group_tracking');
 
     useEffect(() => {
-        // Auto-expand only when saveAttempt increments (indicating a new save click)
-        // and there are actual errors.
-        if (saveAttempt !== prevSaveAttempt.current) {
+        // Auto-expand when saveAttempt increments OR trigger changes and there are cron errors
+        if (saveAttempt !== prevSaveAttempt.current || scrollToErrorTrigger !== prevTrigger.current) {
             if (containsTracking && cronErrors && cronErrors.length > 0) {
                 const hasErrors = cronErrors.some(e => e);
                 if (hasErrors) {
@@ -20,8 +20,9 @@ export function CollapsibleObjectFieldTemplate(props) {
                 }
             }
             prevSaveAttempt.current = saveAttempt;
+            prevTrigger.current = scrollToErrorTrigger;
         }
-    }, [saveAttempt, containsTracking, cronErrors]);
+    }, [saveAttempt, scrollToErrorTrigger, containsTracking, cronErrors]);
 
     const containerStyle = {
         border: '1px solid #ccc',

@@ -47,7 +47,7 @@ async def setup_test_users():
             "configurations": {
                 "user_details": {},
                 "chat_provider_config": {"provider_name": "whatsAppBaileys", "provider_config": {}},
-                "llm_provider_config": {"provider_name": "openai", "provider_config": {"api_key": "sk-dummy", "api_key_source": "explicit"}},
+                "llm_provider_config": {"provider_name": "openAi", "provider_config": {"api_key": "sk-dummy", "api_key_source": "explicit"}},
                 "queue_config": {},
                 "context_config": {}
             },

@@ -15,7 +15,7 @@ import { GroupNameSelectorWidget } from '../components/widgets/GroupNameSelector
 import { ReadOnlyTextWidget } from '../components/widgets/ReadOnlyTextWidget';
 import { validateCronExpression } from '../utils/validation';
 import CronPickerWidget from '../components/CronPickerWidget';
-import { PageContainer, ContentCard, ScrollablePanel, FixedFooter } from '../components/PageLayout';
+import { PageContainer, ContentCard, ScrollablePanel, FixedFooter, FloatingErrorBanner } from '../components/PageLayout';
 
 
 
@@ -36,16 +36,18 @@ function EditPage() {
   const [availableGroups, setAvailableGroups] = useState([]);
   const [cronErrors, setCronErrors] = useState([]);
   const [saveAttempt, setSaveAttempt] = useState(0);
+  const [validationError, setValidationError] = useState(null);
+  const [scrollToErrorTrigger, setScrollToErrorTrigger] = useState(0);
 
   const isNew = location.state?.isNew;
 
-  // Scheduled check for cron errors (polling/debounced)
+  // Debounced validation (cron + backend API)
   useEffect(() => {
-    const timer = setTimeout(() => {
+    const timer = setTimeout(async () => {
+      // 1. Cron validation (local)
       const tracking = formData?.features?.periodic_group_tracking?.tracked_groups;
+      let newCronErrors = [];
       if (tracking && Array.isArray(tracking)) {
-        const newCronErrors = [];
-
         for (let i = 0; i < tracking.length; i++) {
           const cron = tracking[i].cronTrackingSchedule;
           const validation = validateCronExpression(cron);
@@ -53,18 +55,35 @@ function EditPage() {
             newCronErrors[i] = validation.error;
           }
         }
-
-        // Compare with current errors to avoid unnecessary re-renders
-        if (JSON.stringify(newCronErrors) !== JSON.stringify(cronErrors)) {
-          setCronErrors(newCronErrors);
-        }
-      } else {
-        if (cronErrors.length > 0) setCronErrors([]);
       }
-    }, 1000);
+      if (JSON.stringify(newCronErrors) !== JSON.stringify(cronErrors)) {
+        setCronErrors(newCronErrors);
+      }
+
+      // 2. Backend feature limit validation
+      if (formData && userId) {
+        try {
+          const response = await fetch(`/api/external/ui/users/${userId}/validate-config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ features: formData.features || {} })
+          });
+          if (response.ok) {
+            const result = await response.json();
+            if (!result.valid) {
+              setValidationError(result.error_message);
+            } else {
+              setValidationError(null);
+            }
+          }
+        } catch (err) {
+          console.warn('Validation API error:', err);
+        }
+      }
+    }, 300);
 
     return () => clearTimeout(timer);
-  }, [formData, cronErrors]);
+  }, [formData, cronErrors, userId]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -188,6 +207,39 @@ function EditPage() {
     };
     fetchStatusAndGroups();
   }, [userId]);
+
+
+  const handleScrollToError = () => {
+    setScrollToErrorTrigger(prev => prev + 1);
+
+    // Robust retry mechanism to find the element after DOM updates (e.g. expansion)
+    let attempts = 0;
+    const maxAttempts = 10;
+    const intervalTime = 100; // Total wait up to 1000ms
+
+    const tryScroll = () => {
+      const firstIndex = cronErrors.findIndex(e => e);
+      if (firstIndex !== -1) {
+        const elementId = `root_features_periodic_group_tracking_tracked_groups_${firstIndex}_cronTrackingSchedule`;
+        const element = document.getElementById(elementId);
+        if (element) {
+          // Found it! Scroll and focus.
+          element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          element.focus();
+          return;
+        }
+      }
+
+      // Not found yet, retry?
+      attempts++;
+      if (attempts < maxAttempts) {
+        setTimeout(tryScroll, intervalTime);
+      }
+    };
+
+    // Start trying
+    setTimeout(tryScroll, 100); // Initial small delay to let React start rendering
+  };
 
   const handleFormChange = (e) => {
     const newFormData = e.formData;
@@ -535,6 +587,21 @@ function EditPage() {
 
   return (
     <>
+      <FloatingErrorBanner isVisible={validationError || cronErrors.some(e => e)}>
+        <strong>⚠️ Cannot Save:</strong>
+        {validationError ? (
+          <span>{validationError}</span>
+        ) : (
+          <span
+            onClick={handleScrollToError}
+            style={{ marginLeft: '5px', textDecoration: 'underline', cursor: 'pointer', fontWeight: 'bold' }}
+            title="Click to locate the error"
+          >
+            Invalid cron expression in tracked groups.
+          </span>
+        )}
+      </FloatingErrorBanner>
+
       <PageContainer>
         <ContentCard title={isNew ? 'Add New Configuration: ' + userId : `Edit Configuration: ${userId}`} maxWidth="1800px">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', height: '100%', overflow: 'hidden' }}>
@@ -557,7 +624,8 @@ function EditPage() {
                   formData,
                   setFormData,
                   cronErrors,
-                  saveAttempt
+                  saveAttempt,
+                  scrollToErrorTrigger
                 }}
               >
                 <div />
@@ -576,28 +644,28 @@ function EditPage() {
             </ScrollablePanel>
           </div>
         </ContentCard>
-      </PageContainer>
+      </PageContainer >
       <FixedFooter>
         {error && <p style={{ color: 'red', whiteSpace: 'pre-wrap', marginBottom: '1rem' }}>{error}</p>}
         <div>
-          <button type="button" onClick={() => formRef.current.submit()} disabled={isSaving} style={{ marginRight: '10px' }}>
+          <button type="button" onClick={() => formRef.current.submit()} disabled={isSaving || cronErrors.some(e => e) || validationError} style={{ marginRight: '10px', opacity: (cronErrors.some(e => e) || validationError) ? 0.5 : 1 }}>
             {isSaving ? 'Saving...' : 'Save'}
           </button>
           <button
             type="button"
             onClick={handleSaveAndReload}
-            disabled={isSaving || !isLinked}
-            style={{ marginRight: '10px', opacity: isLinked ? 1 : 0.5 }}
-            title={isLinked ? 'Save and reload the configuration for the connected user' : 'Only available when user is connected'}
+            disabled={isSaving || !isLinked || cronErrors.some(e => e) || validationError}
+            style={{ marginRight: '10px', opacity: (isLinked && !cronErrors.some(e => e) && !validationError) ? 1 : 0.5 }}
+            title={validationError || (cronErrors.some(e => e) ? 'Fix cron errors first' : (isLinked ? 'Save and reload' : 'Only available when connected'))}
           >
             {isSaving ? 'Saving...' : 'Save & Reload'}
           </button>
           <button
             type="button"
             onClick={handleSaveAndLink}
-            disabled={isSaving || isLinked}
-            style={{ marginRight: '10px', opacity: !isLinked ? 1 : 0.5 }}
-            title={!isLinked ? 'Save and start the linking flow' : 'Only available when user is not connected'}
+            disabled={isSaving || isLinked || cronErrors.some(e => e) || validationError}
+            style={{ marginRight: '10px', opacity: (!isLinked && !cronErrors.some(e => e) && !validationError) ? 1 : 0.5 }}
+            title={validationError || (cronErrors.some(e => e) ? 'Fix cron errors first' : (!isLinked ? 'Save and link' : 'Only available when not connected'))}
           >
             {isSaving ? 'Saving...' : 'Save & Link'}
           </button>

@@ -15,7 +15,7 @@ import { GroupNameSelectorWidget } from '../components/widgets/GroupNameSelector
 import { ReadOnlyTextWidget } from '../components/widgets/ReadOnlyTextWidget';
 import { validateCronExpression } from '../utils/validation';
 import CronPickerWidget from '../components/CronPickerWidget';
-import { PageContainer, ContentCard, ScrollablePanel, FixedFooter } from '../components/PageLayout';
+import { PageContainer, ContentCard, ScrollablePanel, FixedFooter, FloatingErrorBanner } from '../components/PageLayout';
 
 function RestrictedEditPage() {
     const { userId } = useParams();
@@ -29,19 +29,54 @@ function RestrictedEditPage() {
     const [isSaving, setIsSaving] = useState(false);
     const [availableGroups, setAvailableGroups] = useState([]);
     const [cronErrors, setCronErrors] = useState([]);
+    const [validationError, setValidationError] = useState(null);
+    const [scrollToErrorTrigger, setScrollToErrorTrigger] = useState(0);
+
+    const handleScrollToError = () => {
+        setScrollToErrorTrigger(prev => prev + 1);
+
+        // Robust retry mechanism to find the element after DOM updates (e.g. expansion)
+        let attempts = 0;
+        const maxAttempts = 10;
+        const intervalTime = 100; // Total wait up to 1000ms
+
+        const tryScroll = () => {
+            const firstIndex = cronErrors.findIndex(e => e);
+            if (firstIndex !== -1) {
+                const elementId = `root_features_periodic_group_tracking_tracked_groups_${firstIndex}_cronTrackingSchedule`;
+                const element = document.getElementById(elementId);
+                if (element) {
+                    // Found it! Scroll and focus.
+                    element.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    element.focus();
+                    return;
+                }
+            }
+
+            // Not found yet, retry?
+            attempts++;
+            if (attempts < maxAttempts) {
+                setTimeout(tryScroll, intervalTime);
+            }
+        };
+
+        // Start trying
+        setTimeout(tryScroll, 100); // Initial small delay to let React start rendering
+    };
+
 
     const [userStatus, setUserStatus] = useState(null);
 
     // isNew determines if we are creating a new user (PUT) or editing (PATCH)
     const isNew = location.state?.isNew;
 
-    // Scheduled check for cron errors (polling/debounced)
+    // Debounced validation (cron + backend API)
     useEffect(() => {
-        const timer = setTimeout(() => {
+        const timer = setTimeout(async () => {
+            // 1. Cron validation (local)
             const tracking = formData?.features?.periodic_group_tracking?.tracked_groups;
+            let newCronErrors = [];
             if (tracking && Array.isArray(tracking)) {
-                const newCronErrors = [];
-
                 for (let i = 0; i < tracking.length; i++) {
                     const cron = tracking[i].cronTrackingSchedule;
                     const validation = validateCronExpression(cron);
@@ -49,17 +84,35 @@ function RestrictedEditPage() {
                         newCronErrors[i] = validation.error;
                     }
                 }
-
-                if (JSON.stringify(newCronErrors) !== JSON.stringify(cronErrors)) {
-                    setCronErrors(newCronErrors);
-                }
-            } else {
-                if (cronErrors.length > 0) setCronErrors([]);
             }
-        }, 1000);
+            if (JSON.stringify(newCronErrors) !== JSON.stringify(cronErrors)) {
+                setCronErrors(newCronErrors);
+            }
+
+            // 2. Backend feature limit validation (only if no cron errors)
+            if (formData && userId) {
+                try {
+                    const response = await fetch(`/api/external/ui/users/${userId}/validate-config`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ features: formData.features || {} })
+                    });
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (!result.valid) {
+                            setValidationError(result.error_message);
+                        } else {
+                            setValidationError(null);
+                        }
+                    }
+                } catch (err) {
+                    console.warn('Validation API error:', err);
+                }
+            }
+        }, 300);
 
         return () => clearTimeout(timer);
-    }, [formData, cronErrors]);
+    }, [formData, cronErrors, userId]);
 
     useEffect(() => {
         const fetchData = async () => {
@@ -401,6 +454,30 @@ function RestrictedEditPage() {
 
     return (
         <>
+            <FloatingErrorBanner isVisible={validationError || cronErrors.some(e => e)}>
+                <strong>⚠️ Cannot Save:</strong>
+                {validationError ? (
+                    <>
+                        <span style={{ marginLeft: '5px' }}>{validationError}</span>
+                        <button
+                            type="button"
+                            onClick={() => document.getElementById('root_features')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                            style={{ marginLeft: '10px', padding: '4px 8px', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline', background: 'none', border: 'none', color: '#991b1b', fontWeight: 'bold' }}
+                        >
+                            Go to Features
+                        </button>
+                    </>
+                ) : (
+                    <span
+                        onClick={handleScrollToError}
+                        style={{ marginLeft: '5px', textDecoration: 'underline', cursor: 'pointer', fontWeight: 'bold' }}
+                        title="Click to locate the error"
+                    >
+                        Invalid cron expression in tracked groups.
+                    </span>
+                )}
+            </FloatingErrorBanner>
+
             <PageContainer>
                 <ContentCard title={isNew ? 'New Configuration: ' + userId : `Edit Configuration: ${userId}`} maxWidth="1000px">
                     <ScrollablePanel>
@@ -425,22 +502,23 @@ function RestrictedEditPage() {
                                 formData,
                                 setFormData,
                                 cronErrors,
-                                saveAttempt: 0
+                                saveAttempt: 0,
+                                scrollToErrorTrigger
                             }}
                         >
                             <div />
                         </Form>
                     </ScrollablePanel>
                 </ContentCard>
-            </PageContainer>
+            </PageContainer >
             <FixedFooter>
                 <div>
                     <button
                         type="button"
                         onClick={handleSaveConfiguration}
-                        disabled={isSaving}
-                        title="saves new configuration without reloading the bot (new changes will take effect next time the bt is reloaded)"
-                        style={{ marginRight: '10px', padding: '10px 20px', backgroundColor: '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                        disabled={isSaving || cronErrors.some(e => e) || validationError}
+                        title={validationError || (cronErrors.some(e => e) ? 'Fix cron expression errors first' : 'Saves new configuration without reloading the bot')}
+                        style={{ marginRight: '10px', padding: '10px 20px', backgroundColor: (cronErrors.some(e => e) || validationError) ? '#6c757d' : '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: (cronErrors.some(e => e) || validationError) ? 'not-allowed' : 'pointer' }}
                     >
                         {isSaving && actionIntent === 'save' ? 'Saving...' : 'Save Configuration'}
                     </button>
@@ -448,9 +526,9 @@ function RestrictedEditPage() {
                     <button
                         type="button"
                         onClick={handleSaveAndLoad}
-                        disabled={isSaving}
-                        title="reloads the bot with the new configuration saved"
-                        style={{ marginRight: '10px', padding: '10px 20px', backgroundColor: '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: 'pointer' }}
+                        disabled={isSaving || cronErrors.some(e => e) || validationError}
+                        title={validationError || (cronErrors.some(e => e) ? 'Fix cron expression errors first' : 'Reloads the bot with the new configuration saved')}
+                        style={{ marginRight: '10px', padding: '10px 20px', backgroundColor: (cronErrors.some(e => e) || validationError) ? '#6c757d' : '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: (cronErrors.some(e => e) || validationError) ? 'not-allowed' : 'pointer' }}
                     >
                         {isSaving && actionIntent === 'load' ? 'Processing...' : 'Save & Load'}
                     </button>

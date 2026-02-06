@@ -128,7 +128,7 @@ class UserConfiguration(BaseModel):
 
 class DefaultConfigurations:
     chat_provider_name: str = os.getenv("DEFAULT_CHAT_PROVIDER", "whatsAppBaileys")
-    llm_provider_name: str = os.getenv("DEFAULT_LLM_PROVIDER", "openai")
+    llm_provider_name: str = os.getenv("DEFAULT_LLM_PROVIDER", "openAi")
     llm_model: str = os.getenv("DEFAULT_LLM_MODEL", "gpt-5-mini")
     llm_api_key_source: Literal["environment", "explicit"] = os.getenv("DEFAULT_LLM_API_KEY_SOURCE", "environment")
     llm_temperature: float = float(os.getenv("DEFAULT_LLM_TEMPERATURE", "0.05"))

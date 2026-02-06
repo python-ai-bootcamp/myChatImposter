@@ -2,17 +2,22 @@ import React, { useState, useEffect, useRef } from 'react';
 
 // Nested collapsible object template for sub-sections within main sections
 export function NestedCollapsibleObjectFieldTemplate(props) {
-    const defaultOpen = props.uiSchema?.['ui:options']?.defaultOpen || false;
-    const [isOpen, setIsOpen] = useState(defaultOpen);
-    const { cronErrors, saveAttempt } = props.registry?.formContext || props.formContext || {};
+    const { cronErrors, saveAttempt, scrollToErrorTrigger } = props.registry?.formContext || props.formContext || {};
     const prevSaveAttempt = useRef(saveAttempt);
+    const prevTrigger = useRef(scrollToErrorTrigger);
 
     // Check if this section contains tracked_groups field (for periodic_group_tracking feature)
     const containsTrackedGroups = props.properties.some(p => p.name === 'tracked_groups');
 
+    // Force open on mount if we have errors and the trigger was recently fired (simplified: just if we have errors)
+    // We assume if scrollToErrorTrigger > 0, the user wants us to find errors.
+    const defaultOpen = props.uiSchema?.['ui:options']?.defaultOpen || false;
+    const shouldStartOpen = defaultOpen || (containsTrackedGroups && cronErrors && cronErrors.some(e => e) && scrollToErrorTrigger > 0);
+    const [isOpen, setIsOpen] = useState(shouldStartOpen);
+
     useEffect(() => {
-        // Auto-expand when saveAttempt increments and there are cron errors
-        if (saveAttempt !== prevSaveAttempt.current) {
+        // Auto-expand when saveAttempt increments OR trigger changes and there are cron errors
+        if (saveAttempt !== prevSaveAttempt.current || scrollToErrorTrigger !== prevTrigger.current) {
             if (containsTrackedGroups && cronErrors && cronErrors.length > 0) {
                 const hasErrors = cronErrors.some(e => e);
                 if (hasErrors) {
@@ -20,8 +25,9 @@ export function NestedCollapsibleObjectFieldTemplate(props) {
                 }
             }
             prevSaveAttempt.current = saveAttempt;
+            prevTrigger.current = scrollToErrorTrigger;
         }
-    }, [saveAttempt, containsTrackedGroups, cronErrors]);
+    }, [saveAttempt, scrollToErrorTrigger, containsTrackedGroups, cronErrors]);
 
     const containerStyle = {
         border: '1px solid #ddd',

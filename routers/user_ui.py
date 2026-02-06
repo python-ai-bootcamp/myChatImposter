@@ -75,6 +75,51 @@ async def validate_user_id(
     
     return {"valid": True, "error_code": None, "error_message": None}
 
+@router.post("/{user_id}/validate-config")
+async def validate_config(
+    user_id: str, 
+    request: Request,
+    payload: Dict[str, Any] = Body(...),
+    state: GlobalStateManager = Depends(ensure_db_connected)
+):
+    """
+    Validate a configuration before saving.
+    Checks feature limit for user role only.
+    Returns { valid: bool, error_code: str|null, error_message: str|null }
+    """
+    requester_id = request.headers.get("X-User-Id")
+    if not requester_id:
+        return {"valid": True, "error_code": None, "error_message": None}
+    
+    # Check requester role
+    is_admin = False
+    if state.credentials_collection is not None:
+        cred = await state.credentials_collection.find_one({"user_id": requester_id})
+        if cred and cred.get("role") == "admin":
+            is_admin = True
+    
+    # Admins always pass
+    if is_admin:
+        return {"valid": True, "error_code": None, "error_message": None}
+    
+    # User role: Check feature limit
+    features = payload.get("features", {})
+    new_count = count_enabled_features(features)
+    
+    limit = await get_user_feature_limit(requester_id, state)
+    current_global_usage = await calculate_global_feature_usage(requester_id, state, exclude_bot_id=user_id)
+    
+    proposed_total = current_global_usage + new_count
+    
+    if proposed_total > limit:
+        return {
+            "valid": False,
+            "error_code": "feature_limit_exceeded",
+            "error_message": f"This would use {proposed_total} features (Others: {current_global_usage}, This config: {new_count}), but your limit is {limit}."
+        }
+    
+    return {"valid": True, "error_code": None, "error_message": None}
+
 @router.get("/schema", response_model=Dict[str, Any])
 async def get_user_ui_schema():
     """

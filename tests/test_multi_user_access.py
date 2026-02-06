@@ -85,7 +85,7 @@ async def run_verification():
             "configurations": {
                 "user_details": {},
                 "chat_provider_config": {"provider_name": "whatsapp_baileys", "provider_config": {}},
-                 "llm_provider_config": {"provider_name": "openai", "provider_config": {"api_key": "sk-dummy", "api_key_source": "explicit", "model": "gpt-4"}}
+                 "llm_provider_config": {"provider_name": "openAi", "provider_config": {"api_key": "sk-dummy", "api_key_source": "explicit", "model": "gpt-4"}}
             },
             "features": {}
         }

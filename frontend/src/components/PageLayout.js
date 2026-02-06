@@ -98,3 +98,34 @@ export const FixedFooter = ({ children }) => (
         {children}
     </div>
 );
+
+/**
+ * A Fixed Floating Banner for key errors (e.g. Validation/Cron)
+ * positioned at the top of the screen.
+ */
+export const FloatingErrorBanner = ({ children, isVisible }) => {
+    if (!isVisible) return null;
+    return (
+        <div style={{
+            position: 'fixed',
+            top: '20px',
+            left: '50%',
+            transform: 'translateX(-50%)',
+            zIndex: 2000,
+            width: '80%',
+            maxWidth: '600px',
+            backgroundColor: '#fee2e2',
+            border: '1px solid #fca5a5',
+            borderRadius: '6px',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.15)',
+            padding: '12px 16px',
+            color: '#991b1b',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            textAlign: 'center'
+        }}>
+            {children}
+        </div>
+    );
+};

@@ -145,12 +145,47 @@ const CronPickerWidget = (props) => {
     const [selectedDays, setSelectedDays] = useState(['1']); // Default Monday
     const [customCron, setCustomCron] = useState(value || '');
 
+    const generateCron = React.useCallback(() => {
+        if (activeTab === 'custom') {
+            return customCron;
+        }
+
+        const [hour, min] = time.split(':');
+        const loadHour = parseInt(hour, 10);
+        const loadMin = parseInt(min, 10);
+
+        if (activeTab === 'daily') {
+            return `${loadMin} ${loadHour} * * *`;
+        }
+
+        if (activeTab === 'weekly') {
+            const days = selectedDays.length > 0 ? selectedDays.join(',') : '*';
+            return `${loadMin} ${loadHour} * * ${days}`;
+        }
+
+        return customCron;
+    }, [activeTab, customCron, time, selectedDays]);
+
     // Helper to parse existing cron string into state
+    const hasParsedRef = React.useRef(false);
     useEffect(() => {
         if (isModalOpen && value) {
-            parseCron(value);
+            if (!hasParsedRef.current) {
+                parseCron(value);
+                hasParsedRef.current = true;
+            }
+        } else {
+            hasParsedRef.current = false;
         }
     }, [isModalOpen, value]);
+
+    // Keep custom cron updated when other tabs change
+    useEffect(() => {
+        if (activeTab !== 'custom') {
+            const generated = generateCron();
+            setCustomCron(generated);
+        }
+    }, [activeTab, time, selectedDays, generateCron]);
 
     const parseCron = (cronStr) => {
         if (!cronStr) return;
@@ -180,35 +215,55 @@ const CronPickerWidget = (props) => {
         if (dayOfMonth === '*' && month === '*' && dayOfWeek === '*') {
             setActiveTab('daily');
         } else if (dayOfMonth === '*' && month === '*' && dayOfWeek !== '*') {
-            setActiveTab('weekly');
-            // Parse days (handle comma separated)
+            // Strict validation for weekly: ensure all parts are valid digits 0-6
             const days = dayOfWeek.split(',');
-            setSelectedDays(days);
+            const allDaysValid = days.every(d => /^[0-6]$/.test(d));
+
+            if (allDaysValid) {
+                setActiveTab('weekly');
+                setSelectedDays(days);
+            } else {
+                // If corrupted days, fallback to custom
+                setActiveTab('custom');
+                setCustomCron(cronStr);
+            }
         } else {
             setActiveTab('custom');
             setCustomCron(cronStr);
         }
     };
 
-    const generateCron = () => {
-        if (activeTab === 'custom') {
-            return customCron;
+
+
+    const handleCustomChange = (e) => {
+        const newCron = e.target.value;
+        setCustomCron(newCron);
+
+        // Best-effort reverse sync
+        // Only try if it looks like a valid 5-part cron
+        const parts = newCron.trim().split(/\s+/);
+        if (parts.length === 5) {
+            const [min, hour, dayOfMonth, month, dayOfWeek] = parts;
+            const isSimpleTime = /^\d+$/.test(min) && /^\d+$/.test(hour);
+
+            if (isSimpleTime) {
+                // Formatting time for input type="time"
+                const formattedTime = `${hour.padStart(2, '0')}:${min.padStart(2, '0')}`;
+                setTime(formattedTime);
+
+                if (dayOfMonth === '*' && month === '*') {
+                    if (dayOfWeek === '*') {
+                        // Could be daily
+                    } else {
+                        // Could be weekly - parse days
+                        const days = dayOfWeek.split(',');
+                        // Only update if valid days
+                        const allValid = days.every(d => /^[0-6]$/.test(d));
+                        if (allValid) setSelectedDays(days);
+                    }
+                }
+            }
         }
-
-        const [hour, min] = time.split(':');
-        const loadHour = parseInt(hour, 10);
-        const loadMin = parseInt(min, 10);
-
-        if (activeTab === 'daily') {
-            return `${loadMin} ${loadHour} * * *`;
-        }
-
-        if (activeTab === 'weekly') {
-            const days = selectedDays.length > 0 ? selectedDays.join(',') : '*';
-            return `${loadMin} ${loadHour} * * ${days}`;
-        }
-
-        return customCron;
     };
 
     const handleSave = () => {
@@ -249,7 +304,7 @@ const CronPickerWidget = (props) => {
     };
 
     return (
-        <div style={styles.container}>
+        <div style={styles.container} id={props.id} tabIndex="-1">
             <div style={styles.summaryContainer}>
                 <button
                     type="button"
@@ -325,7 +380,7 @@ const CronPickerWidget = (props) => {
                                     <input
                                         type="text"
                                         value={customCron}
-                                        onChange={(e) => setCustomCron(e.target.value)}
+                                        onChange={handleCustomChange}
                                         placeholder="* * * * *"
                                         style={styles.input}
                                     />
