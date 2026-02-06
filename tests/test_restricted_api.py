@@ -33,7 +33,7 @@ async def run_tests():
 
             # 2. Test Legacy Restriction (User accessing Legacy)
             logger.info("\n--- 2. Security Check: Block Legacy Route ---")
-            legacy_url = f"/api/external/users/{TEST_USER}"
+            legacy_url = f"/api/external/bots/{TEST_USER}"
             res = await client.get(legacy_url, cookies=user_cookies)
             if res.status_code == 403:
                 logger.info("SUCCESS: Legacy route blocked for Regular User (403).")
@@ -58,7 +58,7 @@ async def run_tests():
 
             # 4. Test UI Endpoint (User Access)
             logger.info("\n--- 4. UI Access: Restricted GET ---")
-            ui_url = f"/api/external/ui/users/{TEST_USER}"
+            ui_url = f"/api/external/ui/bots/{TEST_USER}"
             res_ui = await client.get(ui_url, cookies=user_cookies)
             
             if res_ui.status_code == 200:
@@ -78,7 +78,7 @@ async def run_tests():
             # 5. Test UI Patch (User Update)
             logger.info("\n--- 5. UI Access: PATCH Update ---")
             patch_data = {
-                "user_id": TEST_USER,
+                "bot_id": TEST_USER,
                 "configurations": {
                     "user_details": {"first_name": "Test", "last_name": "Patched"}
                 },

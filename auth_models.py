@@ -23,7 +23,7 @@ class UserAuthCredentials(BaseModel):
     user_id: str = Field(..., description="Unique user identifier")
     password_hash: str = Field(..., description="Bcrypt hashed password")
     role: Literal["admin", "user"] = Field(..., description="User role")
-    owned_user_configurations: list[str] = Field(default_factory=list, description="List of user_ids this user owns")
+    owned_bots: list[str] = Field(default_factory=list, description="List of bot_ids this user owns")
     max_user_configuration_limit: int = Field(default=5, description="Max number of owned configurations")
     max_feature_limit: int = Field(default=5, description="Max number of enabled features per configuration")
 
@@ -57,7 +57,7 @@ class SessionData(BaseModel):
     session_id: str = Field(..., description="UUID4 session identifier")
     user_id: str = Field(..., description="Associated user identifier")
     role: Literal["admin", "user"] = Field(..., description="User role")
-    owned_user_configurations: list[str] = Field(default_factory=list, description="List of user_ids this user owns")
+    owned_bots: list[str] = Field(default_factory=list, description="List of bot_ids this user owns")
     created_at: datetime = Field(..., description="Session creation timestamp")
     last_accessed: datetime = Field(..., description="Last activity timestamp")
     expires_at: datetime = Field(..., description="Session expiration (24h absolute)")
@@ -75,7 +75,7 @@ class StaleSession(BaseModel):
     session_id: str
     user_id: str
     role: Literal["admin", "user"]
-    owned_user_configurations: list[str] = Field(default_factory=list, description="List of user_ids this user owns")
+    owned_bots: list[str] = Field(default_factory=list, description="List of bot_ids this user owns")
     created_at: datetime
     last_accessed: datetime
     expires_at: datetime

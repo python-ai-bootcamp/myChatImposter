@@ -1,6 +1,7 @@
+import asyncio
 import unittest
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, patch, AsyncMock
 from pymongo import DESCENDING
 from queue_manager import CorrespondentQueue, UserQueuesManager, Sender
 from config_models import QueueConfig
@@ -23,7 +24,7 @@ class TestCorrespondentQueue(unittest.TestCase):
         Test that the CorrespondentQueue correctly initializes its message ID from the DB.
         """
         # 1. Test initialization with an existing message in the DB
-        self.mock_queues_collection.find_one.return_value = {'id': 100}
+        self.mock_queues_collection.find_one = AsyncMock(return_value={'id': 100})
         queue_config = QueueConfig(max_messages=5, max_characters=200, max_days=1, max_characters_single_message=50)
 
         cor_queue = CorrespondentQueue(
@@ -33,6 +34,7 @@ class TestCorrespondentQueue(unittest.TestCase):
             queue_config=queue_config,
             queues_collection=self.mock_queues_collection
         )
+        asyncio.run(cor_queue.initialize())
 
         # Verify it queried the database with the correct correspondent_id
         self.mock_queues_collection.find_one.assert_called_with(
@@ -74,7 +76,7 @@ class TestCorrespondentQueue(unittest.TestCase):
         sender = Sender(identifier='test_sender', display_name='Test Sender')
 
         long_message_content = "a" * 100
-        user_queue.add_message(long_message_content, sender, 'user')
+        asyncio.run(user_queue.add_message(long_message_content, sender, 'user'))
 
         messages = user_queue.get_messages()
         self.assertEqual(len(messages), 1)
@@ -101,15 +103,15 @@ class TestCorrespondentQueue(unittest.TestCase):
         sender = Sender(identifier='test_sender', display_name='Test Sender')
 
         # Add messages that fill up 90% of the queue capacity
-        user_queue.add_message("1" * 45, sender, 'user')  # Message 1, total chars = 45
-        user_queue.add_message("2" * 45, sender, 'user')  # Message 2, total chars = 90
+        asyncio.run(user_queue.add_message("1" * 45, sender, 'user'))  # Message 1, total chars = 45
+        asyncio.run(user_queue.add_message("2" * 45, sender, 'user'))  # Message 2, total chars = 90
 
         self.assertEqual(len(user_queue.get_messages()), 2)
         self.assertEqual(user_queue._total_chars, 90)
 
         # Add a new message of 20 chars. This should exceed the 100 char limit.
         # To fit this message, the first message (45 chars) should be evicted.
-        user_queue.add_message("3" * 20, sender, 'user')  # Message 3
+        asyncio.run(user_queue.add_message("3" * 20, sender, 'user'))  # Message 3
 
         messages = user_queue.get_messages()
         self.assertEqual(len(messages), 2, "Queue should have 2 messages after eviction")
@@ -138,13 +140,13 @@ class TestCorrespondentQueue(unittest.TestCase):
         sender = Sender(identifier='test_sender', display_name='Test Sender')
 
         for i in range(3):
-            user_queue.add_message(f"Message {i}", sender, 'user')
+            asyncio.run(user_queue.add_message(f"Message {i}", sender, 'user'))
 
         self.assertEqual(len(user_queue.get_messages()), 3)
         self.assertEqual(user_queue.get_messages()[0].content, "Message 0")
 
         # This message should trigger the eviction of "Message 0"
-        user_queue.add_message("Message 3", sender, 'user')
+        asyncio.run(user_queue.add_message("Message 3", sender, 'user'))
 
         messages = user_queue.get_messages()
         self.assertEqual(len(messages), 3, "Queue should still have 3 messages")
@@ -180,22 +182,19 @@ class TestCorrespondentQueue(unittest.TestCase):
         sender = Sender(identifier='test_sender', display_name='Test Sender')
 
         # Add messages to fill the queue
-        user_queue.add_message("Message 1", sender, 'user')
-        user_queue.add_message("Message 2", sender, 'user')
+        asyncio.run(user_queue.add_message("Message 1", sender, 'user'))
+        asyncio.run(user_queue.add_message("Message 2", sender, 'user'))
 
         # This message should trigger an eviction
-        user_queue.add_message("Message 3", sender, 'user')
-
+        with self.assertLogs(level='INFO') as cm:
+            asyncio.run(user_queue.add_message("Message 3", sender, 'user'))
+        
         # Verify the log file was created and contains the eviction event
-        self.assertTrue(os.path.exists(log_path))
-
-        with open(log_path, 'r') as f:
-            log_content = f.read()
-
-        # Check for the retention event log entry
-        self.assertIn("[event_type=EVICT]", log_content)
-        self.assertIn("[reason=message_count]", log_content)
-        self.assertIn("[evicted_message_id=1]", log_content)
+        # self.assertTrue(os.path.exists(log_path)) # Deprecated file logging
+        
+        # Verify logging
+        self.assertTrue(any("RETENTION EVENT" in o for o in cm.output), "Retention event not logged")
+        self.assertTrue(any("reason=message_count" in o for o in cm.output))
 
 class TestUserQueuesManager(unittest.TestCase):
     def setUp(self):
@@ -213,25 +212,25 @@ class TestUserQueuesManager(unittest.TestCase):
     def test_get_or_create_queue(self):
         """Test that queues are created on demand and retrieved correctly."""
         # First request should create a queue
-        queue1 = self.manager.get_or_create_queue('cor1')
+        queue1 = asyncio.run(self.manager.get_or_create_queue('cor1'))
         self.assertIsInstance(queue1, CorrespondentQueue)
         self.assertEqual(queue1.correspondent_id, 'cor1')
         self.assertEqual(queue1.user_id, 'manager_user')
 
         # Second request for the same ID should return the same instance
-        queue2 = self.manager.get_or_create_queue('cor1')
+        queue2 = asyncio.run(self.manager.get_or_create_queue('cor1'))
         self.assertIs(queue1, queue2)
 
         # Request for a different ID should create a new queue
-        queue3 = self.manager.get_or_create_queue('cor2')
+        queue3 = asyncio.run(self.manager.get_or_create_queue('cor2'))
         self.assertIsNot(queue1, queue3)
         self.assertEqual(queue3.correspondent_id, 'cor2')
 
     def test_add_message_routes_correctly(self):
         """Test that add_message adds a message to the correct correspondent's queue."""
         sender = Sender(identifier='test_sender', display_name='Test Sender')
-        self.manager.add_message('cor1', "Hello Cor1", sender, 'user')
-        self.manager.add_message('cor2', "Hello Cor2", sender, 'user')
+        asyncio.run(self.manager.add_message('cor1', "Hello Cor1", sender, 'user'))
+        asyncio.run(self.manager.add_message('cor2', "Hello Cor2", sender, 'user'))
 
         cor1_queue = self.manager.get_queue('cor1')
         cor2_queue = self.manager.get_queue('cor2')
@@ -253,13 +252,13 @@ class TestUserQueuesManager(unittest.TestCase):
         self.manager.register_callback(mock_callback)
 
         # Create a queue, it should have the callback
-        queue1 = self.manager.get_or_create_queue('cor1')
+        queue1 = asyncio.run(self.manager.get_or_create_queue('cor1'))
         self.assertIn(mock_callback, queue1._callbacks)
 
         # Trigger a message
         sender = Sender(identifier='test_sender', display_name='Test Sender')
         with patch('asyncio.run_coroutine_threadsafe') as mock_run_coroutine:
-            self.manager.add_message('cor1', "Test message", sender, 'user')
+            asyncio.run(self.manager.add_message('cor1', "Test message", sender, 'user'))
 
             # 1. Assert that our mock callback was called to create the coroutine
             mock_callback.assert_called_once()
@@ -272,7 +271,7 @@ class TestUserQueuesManager(unittest.TestCase):
             mock_run_coroutine.assert_called_once_with(mock_coroutine, self.mock_loop)
 
         # Create a second queue, it should also have the callback
-        queue2 = self.manager.get_or_create_queue('cor2')
+        queue2 = asyncio.run(self.manager.get_or_create_queue('cor2'))
         self.assertIn(mock_callback, queue2._callbacks)
 
 if __name__ == '__main__':

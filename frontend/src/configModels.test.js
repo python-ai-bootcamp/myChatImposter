@@ -4,7 +4,7 @@ import { validateConfiguration } from './configModels';
 describe('validateConfiguration', () => {
 
     const validConfig = {
-        user_id: 'test-user',
+        bot_id: 'test-bot',
         configurations: {
             user_details: {
                 first_name: 'Test',
@@ -60,17 +60,17 @@ describe('validateConfiguration', () => {
     });
 
     test('should validate an array of configuration objects', () => {
-        const result = validateConfiguration([validConfig, { ...validConfig, user_id: 'user2' }]);
+        const result = validateConfiguration([validConfig, { ...validConfig, bot_id: 'bot2' }]);
         expect(result.isValid).toBe(true);
     });
 
     // --- UserConfiguration Level ---
 
-    test('should fail if user_id is missing', () => {
-        const invalid = { ...validConfig, user_id: undefined };
+    test('should fail if bot_id is missing', () => {
+        const invalid = { ...validConfig, bot_id: undefined };
         const result = validateConfiguration(invalid);
         expect(result.isValid).toBe(false);
-        expect(result.errors[0].message).toContain('user_id is required');
+        expect(result.errors[0].message).toContain('bot_id is required');
     });
 
     test('should fail if configurations is missing', () => {

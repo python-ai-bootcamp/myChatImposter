@@ -68,9 +68,9 @@ class TimestampedAndPrefixedChatMessageHistory(ChatMessageHistory):
         self.message_timestamps = []
 
 class ChatbotModel:
-    """A wrapper for the LangChain conversation model for a single user."""
-    def __init__(self, user_id: str, llm: Any, system_prompt: str, context_config: ContextConfig):
-        self.user_id = user_id
+    """A wrapper for the LangChain conversation model for a single bot user (bot_id)."""
+    def __init__(self, bot_id: str, llm: Any, system_prompt: str, context_config: ContextConfig):
+        self.bot_id = bot_id
         self.llm = llm
         self.context_config = context_config
         self.system_prompt = system_prompt
@@ -133,7 +133,7 @@ class ChatbotModel:
         """
         Gets a response from the model, using the context for the given correspondent.
         """
-        session_id = self.user_id if self.context_config.shared_context else correspondent_id
+        session_id = self.bot_id if self.context_config.shared_context else correspondent_id
         history = self._get_session_history(session_id)
 
         # Before getting a response, trim the history
@@ -179,7 +179,7 @@ class AutomaticBotReplyService:
     def __init__(self, session_manager: SessionManager):
         self.session_manager = session_manager
         self.config = session_manager.config
-        self.user_id = self.config.user_id
+        self.bot_id = self.config.bot_id
         
         self.whitelist = self.config.features.automatic_bot_reply.respond_to_whitelist
         self.whitelist_group = self.config.features.automatic_bot_reply.respond_to_whitelist_group
@@ -195,21 +195,21 @@ class AutomaticBotReplyService:
             if not LlmProviderClass:
                 raise ImportError(f"Could not find a valid LLM provider class in module 'llm_providers.{llm_provider_name}'")
 
-            llm_provider = LlmProviderClass(config=self.config.configurations.llm_provider_config, user_id=self.user_id)
+            llm_provider = LlmProviderClass(config=self.config.configurations.llm_provider_config, user_id=self.bot_id)
             llm_instance = llm_provider.get_llm()
             
             # Get system prompt from the automatic_bot_reply feature
-            system_prompt = self.config.features.automatic_bot_reply.chat_system_prompt.format(user_id=self.user_id)
+            system_prompt = self.config.features.automatic_bot_reply.chat_system_prompt.format(user_id=self.bot_id)
             
             self.chatbot_model = ChatbotModel(
-                self.user_id,
+                self.bot_id,
                 llm_instance,
                 system_prompt,
                 self.config.configurations.context_config
             )
-            logging.info(f"AUTO_REPLY ({self.user_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.")
+            logging.info(f"AUTO_REPLY ({self.bot_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.")
         except Exception as e:
-            logging.error(f"AUTO_REPLY ({self.user_id}): Failed to initialize LLM: {e}")
+            logging.error(f"AUTO_REPLY ({self.bot_id}): Failed to initialize LLM: {e}")
             raise
 
     async def handle_message(self, correspondent_id: str, message: Message):
@@ -223,14 +223,14 @@ class AutomaticBotReplyService:
             
             group = message.group
             identifiers = [group.identifier, group.display_name]
-            logging.info(f"AUTO_REPLY ({self.user_id}): Evaluating group '{group.display_name}' against group whitelist. Identifiers: {identifiers}, Whitelist: {self.whitelist_group}")
+            logging.info(f"AUTO_REPLY ({self.bot_id}): Evaluating group '{group.display_name}' against group whitelist. Identifiers: {identifiers}, Whitelist: {self.whitelist_group}")
             
             result = WhitelistPolicy.check(identifiers, self.whitelist_group)
             
             if result.is_allowed:
-                logging.info(f"AUTO_REPLY ({self.user_id}): Group whitelist check passed for group '{group.display_name}'. Identifier '{result.matched_identifier}' matched whitelist entry '{result.matched_whitelist_entry}'.")
+                logging.info(f"AUTO_REPLY ({self.bot_id}): Group whitelist check passed for group '{group.display_name}'. Identifier '{result.matched_identifier}' matched whitelist entry '{result.matched_whitelist_entry}'.")
             else:
-                logging.info(f"AUTO_REPLY ({self.user_id}): Group '{group.display_name}' not in group whitelist. Ignoring.")
+                logging.info(f"AUTO_REPLY ({self.bot_id}): Group '{group.display_name}' not in group whitelist. Ignoring.")
                 return
         else:
             if not self.whitelist:
@@ -239,18 +239,18 @@ class AutomaticBotReplyService:
             
             sender = message.sender
             identifiers = [sender.identifier] + getattr(sender, 'alternate_identifiers', [])
-            logging.info(f"AUTO_REPLY ({self.user_id}): Evaluating sender '{sender.display_name}' against direct message whitelist. Identifiers: {identifiers}, Whitelist: {self.whitelist}")
+            logging.info(f"AUTO_REPLY ({self.bot_id}): Evaluating sender '{sender.display_name}' against direct message whitelist. Identifiers: {identifiers}, Whitelist: {self.whitelist}")
             
             result = WhitelistPolicy.check(identifiers, self.whitelist)
             
             if result.is_allowed:
-                logging.info(f"AUTO_REPLY ({self.user_id}): Whitelist check passed for sender '{sender.display_name}'. Identifier '{result.matched_identifier}' matched whitelist entry '{result.matched_whitelist_entry}'.")
+                logging.info(f"AUTO_REPLY ({self.bot_id}): Whitelist check passed for sender '{sender.display_name}'. Identifier '{result.matched_identifier}' matched whitelist entry '{result.matched_whitelist_entry}'.")
             else:
-                logging.info(f"AUTO_REPLY ({self.user_id}): Sender '{sender.display_name}' not in whitelist. Ignoring.")
+                logging.info(f"AUTO_REPLY ({self.bot_id}): Sender '{sender.display_name}' not in whitelist. Ignoring.")
                 return
 
         if not self.chatbot_model or not self.session_manager.provider_instance:
-            logging.error(f"AUTO_REPLY ({self.user_id}): Chatbot or provider not initialized.")
+            logging.error(f"AUTO_REPLY ({self.bot_id}): Chatbot or provider not initialized.")
             return
 
         try:
@@ -268,4 +268,4 @@ class AutomaticBotReplyService:
             await self.session_manager.provider_instance.sendMessage(recipient, response_text)
 
         except Exception as e:
-            logging.error(f"AUTO_REPLY ({self.user_id}): Error in bot reply handler: {e}")
+            logging.error(f"AUTO_REPLY ({self.bot_id}): Error in bot reply handler: {e}")

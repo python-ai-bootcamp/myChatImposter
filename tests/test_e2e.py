@@ -43,13 +43,13 @@ def client(monkeypatch):
 
 # @pytest.mark.skip(reason="Flaky: TestClient async lifecycle issues cause teardown failures. See technical debt.")
 def test_group_and_direct_message_queues(client):
-    user_id = "test_user_e2e"
+    bot_id = "test_bot_e2e"
     direct_correspondent_id = "direct_user@s.whatsapp.net"
     group_correspondent_id = "group_id@g.us"
 
     # 1. Create a test user and configuration matching UserConfiguration schema
     config_data = {
-        "user_id": user_id,
+        "bot_id": bot_id,
         "configurations": {
             "chat_provider_config": {
                 "provider_name": "dummy",
@@ -82,12 +82,12 @@ def test_group_and_direct_message_queues(client):
         }
     }
     
-    # Correct Endpoint: /api/internal/users/{user_id}
-    response_put = client.put(f"/api/internal/users/{user_id}", json=config_data)
+    # Correct Endpoint: /api/internal/bots/{bot_id}
+    response_put = client.put(f"/api/internal/bots/{bot_id}", json=config_data)
     assert response_put.status_code == 200, f"Setup failed: {response_put.text}"
 
     # Also Link the user (Start Session)
-    response_link = client.post(f"/api/internal/users/{user_id}/actions/link")
+    response_link = client.post(f"/api/internal/bots/{bot_id}/actions/link")
     assert response_link.status_code == 200, f"Link failed: {response_link.text}"
 
     # 2. Simulate the chat provider receiving messages
@@ -112,15 +112,15 @@ def test_group_and_direct_message_queues(client):
     # If we insert raw, it might work if the API reads raw.
     
     mock_messages = [
-        {"id": "msg1", "content": "Direct message", "sender": {"identifier": direct_correspondent_id, "display_name": "Direct User"}, "source": "user", "user_id": user_id, "provider_name": "dummy", "correspondent_id": direct_correspondent_id, "originating_time": 1234567890},
-        {"id": "msg2", "content": "Group message", "sender": {"identifier": "another_user@s.whatsapp.net", "display_name": "Group User"}, "source": "user", "user_id": user_id, "provider_name": "dummy", "correspondent_id": group_correspondent_id, "group": {"identifier": group_correspondent_id, "display_name": "Test Group"}, "originating_time": 1234567891}
+        {"id": "msg1", "content": "Direct message", "sender": {"identifier": direct_correspondent_id, "display_name": "Direct User"}, "source": "user", "user_id": bot_id, "provider_name": "dummy", "correspondent_id": direct_correspondent_id, "originating_time": 1234567890},
+        {"id": "msg2", "content": "Group message", "sender": {"identifier": "another_user@s.whatsapp.net", "display_name": "Group User"}, "source": "user", "user_id": bot_id, "provider_name": "dummy", "correspondent_id": group_correspondent_id, "group": {"identifier": group_correspondent_id, "display_name": "Test Group"}, "originating_time": 1234567891}
     ]
     queues_collection.insert_many(mock_messages)
 
     # 3. Call the /api/queue/{user_id} endpoint
     # We need to verify if this endpoint exists. It's likely `routers/configurations.py` or similar.
     # If it fails with 404, we know.
-    response_get = client.get(f"/api/queue/{user_id}")
+    response_get = client.get(f"/api/queue/{bot_id}")
     
     # If this endpoint was deprecated (it's not checking the async queue), we might fail here.
     # Ideally we should check the Async Queue if that's what we care about now.
@@ -148,6 +148,6 @@ def test_group_and_direct_message_queues(client):
     
     # Cleanup: Unlink the user to stop the dummy provider thread
     # This prevents "Event loop is closed" errors during test teardown
-    response_unlink = client.post(f"/api/internal/users/{user_id}/actions/unlink")
+    response_unlink = client.post(f"/api/internal/bots/{bot_id}/actions/unlink")
     assert response_unlink.status_code == 200, f"Unlink failed: {response_unlink.text}"
 

@@ -67,13 +67,13 @@ const buttonStyle = {
 };
 
 function CreateUserModal({ isOpen, onClose, onConfirm }) {
-    const [userId, setUserId] = useState('');
+    const [botId, setBotId] = useState('');
     const [validationResult, setValidationResult] = useState(null);
     const [isValidating, setIsValidating] = useState(false);
     const debounceRef = useRef(null);
 
     // Debounced validation
-    const validateUserId = useCallback(async (value) => {
+    const validateBotId = useCallback(async (value) => {
         if (!value || value.trim() === '') {
             setValidationResult(null);
             return;
@@ -81,7 +81,7 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
 
         setIsValidating(true);
         try {
-            const response = await fetch(`/api/external/ui/users/validate/${encodeURIComponent(value)}`);
+            const response = await fetch(`/api/external/ui/bots/validate/${encodeURIComponent(value)}`);
             if (response.ok) {
                 const data = await response.json();
                 setValidationResult(data);
@@ -105,7 +105,7 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
 
     const handleInputChange = (e) => {
         const value = e.target.value;
-        setUserId(value);
+        setBotId(value);
         setValidationResult(null);
 
         // Clear previous debounce
@@ -115,13 +115,13 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
 
         // Set new debounce (300ms)
         debounceRef.current = setTimeout(() => {
-            validateUserId(value);
+            validateBotId(value);
         }, 300);
     };
 
     const handleCreate = () => {
-        if (validationResult?.valid && userId.trim()) {
-            onConfirm(userId.trim());
+        if (validationResult?.valid && botId.trim()) {
+            onConfirm(botId.trim());
         }
     };
 
@@ -137,7 +137,7 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
     // Reset state when modal opens/closes
     useEffect(() => {
         if (!isOpen) {
-            setUserId('');
+            setBotId('');
             setValidationResult(null);
             setIsValidating(false);
             if (debounceRef.current) {
@@ -160,14 +160,14 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
                 </h2>
 
                 <label style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: '8px', display: 'block' }}>
-                    User ID
+                    Bot ID
                 </label>
                 <input
                     type="text"
-                    value={userId}
+                    value={botId}
                     onChange={handleInputChange}
                     onKeyDown={handleKeyDown}
-                    placeholder="Enter unique user ID"
+                    placeholder="Enter unique bot ID"
                     style={{
                         ...inputStyle,
                         borderColor: hasError ? '#f87171' : isValid ? '#4ade80' : '#444'
@@ -178,7 +178,7 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
                 <div style={hasError ? errorStyle : isValid ? successStyle : { minHeight: '20px', marginBottom: '16px' }}>
                     {isValidating && <span style={{ color: '#888' }}>Checking...</span>}
                     {hasError && validationResult.error_message}
-                    {isValid && '✓ User ID is available'}
+                    {isValid && '✓ Bot ID is available'}
                 </div>
 
                 <div style={buttonRowStyle}>

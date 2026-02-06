@@ -4,16 +4,16 @@ from unittest.mock import MagicMock, AsyncMock, patch
 import asyncio
 
 from services.session_manager import SessionManager
-from config_models import UserConfiguration
+from config_models import BotConfiguration
 from chat_providers.base import BaseChatProvider
 
 class TestSessionManager(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
-        self.user_id = "test_user"
+        self.bot_id = "test_bot"
         
         # Mock Config
         self.mock_config = MagicMock()
-        self.mock_config.user_id = self.user_id
+        self.mock_config.bot_id = self.bot_id
         # Need correct structure
         self.mock_config.configurations.chat_provider_config.provider_name = "mock_provider"
         self.mock_config.features.automatic_bot_reply.enabled = False
@@ -51,7 +51,7 @@ class TestSessionManager(unittest.IsolatedAsyncioTestCase):
             
             # Verify queue manager initialized
             self.assertIsNotNone(manager.user_queues_manager)
-            self.assertEqual(manager.user_queues_manager.user_id, self.user_id)
+            self.assertEqual(manager.user_queues_manager.user_id, self.bot_id)
 
     async def test_initialization_failure_no_provider(self):
         """Test that SessionManager raises ImportError if provider class not found."""

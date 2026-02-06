@@ -25,9 +25,9 @@ afterEach(() => {
 });
 
 const mockStatuses = [
-  { user_id: 'user1', status: 'disconnected' },
-  { user_id: 'user2', status: 'linking' },
-  { user_id: 'user3', status: 'connected' },
+  { bot_id: 'user1', status: 'disconnected' },
+  { bot_id: 'user2', status: 'linking' },
+  { bot_id: 'user3', status: 'connected' },
 ];
 
 test('renders files with correct status dots and handles button states', async () => {
@@ -80,9 +80,9 @@ test('Unlink button successfully unlinks a user', async () => {
     ok: true,
     json: async () => ({
       configurations: [
-        { user_id: 'user1', status: 'disconnected' },
-        { user_id: 'user2', status: 'linking' },
-        { user_id: 'user3', status: 'disconnected' }, // Status changed
+        { bot_id: 'user1', status: 'disconnected' },
+        { bot_id: 'user2', status: 'linking' },
+        { bot_id: 'user3', status: 'disconnected' }, // Status changed
       ]
     }),
   });
@@ -100,7 +100,7 @@ test('Unlink button successfully unlinks a user', async () => {
 
   // Check that the DELETE API was called
   await waitFor(() => {
-    expect(fetch).toHaveBeenCalledWith('/api/users/user3/actions/unlink', { method: 'POST' });
+    expect(fetch).toHaveBeenCalledWith('/api/external/bots/user3/actions/unlink', { method: 'POST' });
   });
 
   // Check that the status dot has changed to gray after the refresh

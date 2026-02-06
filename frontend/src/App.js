@@ -15,8 +15,8 @@ function App() {
           <Route path="/login" element={<LoginPage />} />
           <Route path="/admin/home" element={<HomePage enableFiltering={true} showOwnerColumn={true} />} />
           <Route path="/user/home" element={<HomePage enableFiltering={false} showOwnerColumn={false} />} />
-          <Route path="/admin/edit/:userId" element={<EditPage />} />
-          <Route path="/user/edit/:userId" element={<RestrictedEditPage />} />
+          <Route path="/admin/edit/:botId" element={<EditPage />} />
+          <Route path="/user/edit/:botId" element={<RestrictedEditPage />} />
           {/* Default Route - Redirect logic will be handled in HomePage or a root component, but for now we map root to HomePage to handle redirection logic there */}
           <Route path="/" element={<HomePage />} />
         </Routes>

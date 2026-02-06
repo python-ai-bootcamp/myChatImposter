@@ -25,9 +25,9 @@ from infrastructure.exceptions import (
 
 
 class WhatsAppBaileysProvider(BaseChatProvider):
-    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, on_status_change: Optional[Callable[[str, str], None]] = None, main_loop=None, **kwargs):
+    def __init__(self, bot_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, on_status_change: Optional[Callable[[str, str], None]] = None, main_loop=None, **kwargs):
         # Pass unknown kwargs up to ensure compatibility
-        super().__init__(user_id, config, user_queues, on_session_end, on_status_change, main_loop=main_loop, **kwargs)
+        super().__init__(bot_id, config, user_queues, on_session_end, on_status_change, main_loop=main_loop, **kwargs)
 
         self.user_jid = None
         self.sock = None
@@ -125,7 +125,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
     async def _send_config_to_server(self):
         logging.info(f"Connecting to Node.js server at {self.base_url}")
         try:
-            config_data = {"userId": self.user_id, "config": self.config.provider_config.model_dump()}
+            # Map bot_id to userId for Node.js server compatibility
+            config_data = {"userId": self.bot_id, "config": self.config.provider_config.model_dump()}
             async with httpx.AsyncClient() as client:
                 try:
                     response = await client.post(
@@ -161,7 +162,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         logging.info("Started WebSocket listener for messages.")
 
     async def _listen(self):
-        uri = f"{self.ws_url}/{self.user_id}"
+        uri = f"{self.ws_url}/{self.bot_id}"
         max_retries = 3
         retry_delay = 2  # seconds
 
@@ -238,9 +239,9 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                          # But since it might do DB ops, better to ensure we don't block heavily.
                          # Assuming the listener handles its own concurrency or is fast.
                          if asyncio.iscoroutinefunction(self.on_status_change):
-                            asyncio.create_task(self.on_status_change(self.user_id, self._cached_status['status']))
+                            asyncio.create_task(self.on_status_change(self.bot_id, self._cached_status['status']))
                          else:
-                            self.on_status_change(self.user_id, self._cached_status['status'])
+                            self.on_status_change(self.bot_id, self._cached_status['status'])
                      except Exception as e:
                          logging.error(f"ERROR: Failed to invoke on_status_change callback: {e}")
 
@@ -257,7 +258,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             logging.error(f"ERROR: Could not decode JSON from WebSocket: {message}")
 
     async def _process_messages(self, messages):
-        queues_manager = self.user_queues.get(self.user_id)
+        queues_manager = self.user_queues.get(self.bot_id)
         if not queues_manager:
             logging.error("ERROR: Could not find a queues manager for myself.")
             return
@@ -305,8 +306,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                         alternate_identifiers = actual_sender_data.get('alternate_identifiers', [])
 
                     sender = Sender(
-                        identifier=f"bot_{self.user_id}",
-                        display_name=f"Bot ({self.user_id})",
+                        identifier=f"bot_{self.bot_id}",
+                        display_name=f"Bot ({self.bot_id})",
                         alternate_identifiers=alternate_identifiers
                     )
                     # Do not remove from cache here
@@ -321,7 +322,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                         )
                     else:
                         # Fallback for safety, though actual_sender should always be present for outgoing
-                        sender = Sender(identifier=f"user_{self.user_id}", display_name=f"User ({self.user_id})")
+                        sender = Sender(identifier=f"user_{self.bot_id}", display_name=f"User ({self.bot_id})")
             else:  # incoming
                 correspondent_id = group.identifier if group else msg['sender']
                 primary_identifier = msg['sender']
@@ -374,14 +375,14 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
         if self.on_session_end and not self.session_ended:
             self.session_ended = True
-            self.on_session_end(self.user_id)
+            self.on_session_end(self.bot_id)
 
     async def _cleanup_server_session(self):
         logging.info("Requesting session cleanup on Node.js server via HTTP DELETE.")
         try:
             async with httpx.AsyncClient() as client:
                 # Add short timeout to prevent hanging if server is unresponsive/zombie
-                response = await client.delete(f"{self.base_url}/sessions/{self.user_id}", timeout=2.0)
+                response = await client.delete(f"{self.base_url}/sessions/{self.bot_id}", timeout=2.0)
                 if response.status_code == 200:
                     logging.info("Successfully requested session cleanup via HTTP.")
         except Exception as e:
@@ -397,7 +398,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         try:
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{self.base_url}/sessions/{self.user_id}/send",
+                    f"{self.base_url}/sessions/{self.bot_id}/send",
                     json={"recipient": recipient, "message": message},
                     headers={'Content-Type': 'application/json'},
                     timeout=30
@@ -435,7 +436,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             logging.error("send_file called with empty recipient.")
             return
 
-        url = f"{self.base_url}/sessions/{self.user_id}/send"
+        url = f"{self.base_url}/sessions/{self.bot_id}/send"
         
         # Convert bytes to base64 string
         content_b64 = base64.b64encode(file_data).decode('utf-8')
@@ -485,7 +486,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
     async def get_groups(self):
         try:
             async with httpx.AsyncClient() as client:
-                response = await client.post(f"{self.base_url}/sessions/{self.user_id}/groups", timeout=10)
+                response = await client.post(f"{self.base_url}/sessions/{self.bot_id}/groups", timeout=10)
                 if response.status_code == 200:
                     return response.json().get('groups', [])
                 logging.warning(f"Failed to fetch active groups: {response.text}")
@@ -499,7 +500,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             payload = {"groupId": group_id, "limit": limit}
             async with httpx.AsyncClient() as client:
                 response = await client.post(
-                    f"{self.base_url}/sessions/{self.user_id}/fetch-messages",
+                    f"{self.base_url}/sessions/{self.bot_id}/fetch-messages",
                     json=payload,
                     timeout=60
                 )

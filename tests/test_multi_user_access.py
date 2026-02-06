@@ -33,9 +33,9 @@ async def run_verification():
 
         # 2. List Users (Should show only own)
         print("\n--- Step 2: List Users (Expect Filtering) ---")
-        list_res = await client.get("/api/external/users")
+        list_res = await client.get("/api/external/bots")
         print(f"Status: {list_res.status_code}")
-        users = list_res.json().get("user_ids", [])
+        users = list_res.json().get("bot_ids", [])
         print(f"Users found: {users}")
         
         if TEST_USER in users and ADMIN_USER not in users:
@@ -46,7 +46,7 @@ async def run_verification():
         # 3. Access Own Resource
         print(f"\n--- Step 3: Access Own Resource ({TEST_USER}) ---")
         # NOTE: Frontend uses /info suffix for structure. We should verify THAT endpoint for Owner field.
-        own_res = await client.get(f"/api/external/users/{TEST_USER}/info")
+        own_res = await client.get(f"/api/external/bots/{TEST_USER}/info")
         if own_res.status_code in [200, 404]: # 404 is fine if config doesn't exist yet, but permission granted to check
             print(f"SUCCESS: Access granted (Status {own_res.status_code})")
             if own_res.status_code == 200:
@@ -67,7 +67,7 @@ async def run_verification():
 
         # 4. Access Admin Resource (Forbidden)
         print(f"\n--- Step 4: Access Admin Resource ({ADMIN_USER}) ---")
-        other_res = await client.get(f"/api/external/users/{ADMIN_USER}")
+        other_res = await client.get(f"/api/external/bots/{ADMIN_USER}")
         if other_res.status_code == 403: # Should be 403 Forbidden? 
              # Wait, PermissionValidator returns "False" for unowned.
              # Middleware returns 403 if check_permission returns False.
@@ -81,7 +81,7 @@ async def run_verification():
         
         # We need a valid body for PUT
         config_body = {
-            "user_id": new_bot_id,
+            "bot_id": new_bot_id,
             "configurations": {
                 "user_details": {},
                 "chat_provider_config": {"provider_name": "whatsapp_baileys", "provider_config": {}},
@@ -90,7 +90,7 @@ async def run_verification():
             "features": {}
         }
         
-        put_res = await client.put(f"/api/external/users/{new_bot_id}", json=config_body)
+        put_res = await client.put(f"/api/external/bots/{new_bot_id}", json=config_body)
         print(f"PUT Status: {put_res.status_code}")
         
         if put_res.status_code == 200:
@@ -102,8 +102,8 @@ async def run_verification():
 
         # 6. Verify Ownership Claimed (List again)
         print("\n--- Step 6: Verify Ownership Claimed (List Users) ---")
-        list_res_2 = await client.get("/api/external/users")
-        users_2 = list_res_2.json().get("user_ids", [])
+        list_res_2 = await client.get("/api/external/bots")
+        users_2 = list_res_2.json().get("bot_ids", [])
         print(f"Users found: {users_2}")
         
         if new_bot_id in users_2:

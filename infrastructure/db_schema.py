@@ -4,6 +4,7 @@ from pymongo import ASCENDING, DESCENDING
 
 # --- Collection Constants ---
 COLLECTION_CONFIGURATIONS = "configurations"
+COLLECTION_BOT_CONFIGURATIONS = "bot_configurations" # New collection name
 COLLECTION_QUEUES = "queues"
 COLLECTION_BAILEYS_SESSIONS = "baileys_sessions"
 COLLECTION_TRACKED_GROUPS = "tracked_groups"

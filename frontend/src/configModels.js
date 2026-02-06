@@ -252,15 +252,15 @@ class ConfigurationsSettings {
 }
 
 class UserConfiguration {
-  constructor({ user_id, configurations, features }) {
-    this.user_id = user_id;
+  constructor({ bot_id, configurations, features }) {
+    this.bot_id = bot_id;
     this.configurations = new ConfigurationsSettings(configurations || {});
     this.features = new FeaturesConfiguration(features || {});
   }
 
   static validate(data) {
-    if (!data.user_id || typeof data.user_id !== 'string') {
-      throw new ValidationError('user_id is required and must be a string.', 'user_id');
+    if (!data.bot_id || typeof data.bot_id !== 'string') {
+      throw new ValidationError('bot_id is required and must be a string.', 'bot_id');
     }
 
     if (!data.configurations || typeof data.configurations !== 'object') {

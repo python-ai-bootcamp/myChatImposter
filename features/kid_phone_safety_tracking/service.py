@@ -8,7 +8,7 @@ class KidPhoneSafetyService:
     """
     def __init__(self, session_manager: SessionManager):
         self.session_manager = session_manager
-        self.user_id = session_manager.config.user_id
+        self.bot_id = session_manager.config.bot_id
 
     async def handle_message(self, correspondent_id: str, message: Message):
         """
@@ -17,4 +17,4 @@ class KidPhoneSafetyService:
         if not self.session_manager.config.features.kid_phone_safety_tracking.enabled:
             return
 
-        logging.info(f"KID_SAFETY ({self.user_id}): Handling live message for safety check.")
+        logging.info(f"KID_SAFETY ({self.bot_id}): Handling live message for safety check.")

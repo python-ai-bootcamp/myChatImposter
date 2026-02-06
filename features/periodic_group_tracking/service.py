@@ -137,7 +137,7 @@ class GroupTracker:
         max_interval = self._calculate_max_interval(tracking_configs)
         target_instance = None
         for instance in self.chatbot_instances.values():
-            if instance.user_id == user_id:
+            if instance.bot_id == user_id:
                 target_instance = instance
                 break
 

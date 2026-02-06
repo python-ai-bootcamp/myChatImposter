@@ -166,7 +166,7 @@ class TestIngestService(unittest.IsolatedAsyncioTestCase):
         # Add a message to a correspondent's queue
         correspondent_id = 'cor1'
         sender = Sender(identifier='test_sender', display_name='Test Sender')
-        self.user_queues_manager.add_message(correspondent_id, "Test message", sender, 'user')
+        await self.user_queues_manager.add_message(correspondent_id, "Test message", sender, 'user')
 
         # Start the ingester
         self.ingester.start()

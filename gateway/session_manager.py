@@ -45,7 +45,7 @@ class SessionManager:
         self,
         user_id: str,
         role: str,
-        owned_user_configurations: List[str] = [],
+        owned_bots: List[str] = [],
         max_user_configuration_limit: int = 5,
         max_feature_limit: int = 5,
         ip_address: Optional[str] = None,
@@ -67,7 +67,7 @@ class SessionManager:
             session_id=session_id,
             user_id=user_id,
             role=role,
-            owned_user_configurations=owned_user_configurations,
+            owned_bots=owned_bots,
             max_user_configuration_limit=max_user_configuration_limit,
             max_feature_limit=max_feature_limit,
             created_at=now,
@@ -175,6 +175,7 @@ class SessionManager:
             session_id=session.session_id,
             user_id=session.user_id,
             role=session.role,
+            owned_bots=session.owned_bots,
             created_at=session.created_at,
             last_accessed=session.last_accessed,
             expires_at=session.expires_at,
@@ -248,17 +249,17 @@ class SessionManager:
         # Update DB
         await self.sessions_collection.update_one(
             {"session_id": session_id},
-            {"$addToSet": {"owned_user_configurations": config_id}}
+            {"$addToSet": {"owned_bots": config_id}}
         )
 
         # Update Cache
         if session_id in self.cache:
             session, timestamp = self.cache[session_id]
-            if config_id not in session.owned_user_configurations:
+            if config_id not in session.owned_bots:
                 # Ensure we are modifying a list instance
-                session.owned_user_configurations.append(config_id)
+                session.owned_bots.append(config_id)
                 self.cache[session_id] = (session, timestamp)
-                logging.info(f"GATEWAY: Added {config_id} to session {session_id} cache. New count: {len(session.owned_user_configurations)}")
+                logging.info(f"GATEWAY: Added {config_id} to session {session_id} cache. New count: {len(session.owned_bots)}")
             else:
                  logging.info(f"GATEWAY: {config_id} already in session {session_id} cache.")
         else:
@@ -273,16 +274,16 @@ class SessionManager:
         # Update DB
         await self.sessions_collection.update_one(
             {"session_id": session_id},
-            {"$pull": {"owned_user_configurations": config_id}}
+            {"$pull": {"owned_bots": config_id}}
         )
 
         # Update Cache
         if session_id in self.cache:
             session, timestamp = self.cache[session_id]
-            if config_id in session.owned_user_configurations:
-                session.owned_user_configurations.remove(config_id)
+            if config_id in session.owned_bots:
+                session.owned_bots.remove(config_id)
                 self.cache[session_id] = (session, timestamp)
-                logging.info(f"GATEWAY: Removed {config_id} from session {session_id} cache. New count: {len(session.owned_user_configurations)}")
+                logging.info(f"GATEWAY: Removed {config_id} from session {session_id} cache. New count: {len(session.owned_bots)}")
             else:
                  logging.info(f"GATEWAY: {config_id} not in session {session_id} cache.")
         else:

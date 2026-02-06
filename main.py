@@ -8,15 +8,16 @@ from dependencies import GlobalStateManager
 from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager
 from services.session_manager import SessionManager
 from features.periodic_group_tracking.service import GroupTracker
-from services.user_lifecycle_service import UserLifecycleService
+from services.bot_lifecycle_service import BotLifecycleService
 from utils.json_encoder import CustomJSONResponse
 
 # Import Routers
-from routers import user_management
+# Import Routers
+from routers import bot_management
 from routers.features import automatic_bot_reply, periodic_group_tracking
 from routers import async_message_delivery_queue
 from routers import resources
-from routers import user_ui # [NEW]
+from routers import bot_ui # [NEW]
 
 
 # Logging Setup
@@ -66,8 +67,8 @@ async def lifespan(app: FastAPI):
         global_state.group_tracker = GroupTracker(global_state.db, global_state.chatbot_instances, global_state.async_message_delivery_queue_manager)
         global_state.group_tracker.start()
         
-        # 4. Initialize UserLifecycleService
-        global_state.user_lifecycle_service = UserLifecycleService(global_state)
+        # 4. Initialize BotLifecycleService
+        global_state.bot_lifecycle_service = BotLifecycleService(global_state)
         
     except Exception as e:
         logging.error(f"API: Startup initialization failed: {e}")
@@ -85,7 +86,7 @@ async def lifespan(app: FastAPI):
             logging.info(f"API: Stopping instance {instance_id} (No cleanup)...")
             await instance.stop(cleanup_session=False)
             # Remove from active maps
-            global_state.remove_active_user(instance.user_id)
+            global_state.remove_active_bot(instance.bot_id)
             
         global_state.chatbot_instances.clear()
         
@@ -99,12 +100,12 @@ async def lifespan(app: FastAPI):
 app = FastAPI(lifespan=lifespan, default_response_class=CustomJSONResponse)
 
 # Include Routers
-app.include_router(user_management.router)
+app.include_router(bot_management.router)
 app.include_router(automatic_bot_reply.router)
 app.include_router(periodic_group_tracking.router)
 app.include_router(async_message_delivery_queue.router)
 app.include_router(resources.router)
-app.include_router(user_ui.router) # [NEW]
+app.include_router(bot_ui.router) # [NEW]
 
 
 @app.middleware("http")

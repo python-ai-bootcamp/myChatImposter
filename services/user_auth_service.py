@@ -227,10 +227,10 @@ class UserAuthService:
             password: Plain text password
 
         Returns:
-            Tuple of (success, role, owned_user_configurations, max_user_configuration_limit, max_feature_limit)
+            Tuple of (success, role, owned_bots, max_user_configuration_limit, max_feature_limit)
             - success: True if authentication successful
             - role: User role if successful, None otherwise
-            - owned_user_configurations: List of owned configurations
+            - owned_bots: List of owned configurations
             - max_user_configuration_limit: Max config limit (default 5)
             - max_feature_limit: Max feature limit (default 5)
         """
@@ -242,7 +242,7 @@ class UserAuthService:
             return (
                 True, 
                 credentials.role, 
-                credentials.owned_user_configurations if hasattr(credentials, 'owned_user_configurations') else [],
+                credentials.owned_bots if hasattr(credentials, 'owned_bots') else [],
                 getattr(credentials, 'max_user_configuration_limit', 5),
                 getattr(credentials, 'max_feature_limit', 5)
             )
@@ -256,7 +256,7 @@ class UserAuthService:
         """
         result = await self.credentials_collection.update_one(
             {"user_id": user_id},
-            {"$addToSet": {"owned_user_configurations": config_id}}
+            {"$addToSet": {"owned_bots": config_id}}
         )
         return result.modified_count > 0 or result.matched_count > 0
 
@@ -267,6 +267,6 @@ class UserAuthService:
         """
         result = await self.credentials_collection.update_one(
             {"user_id": user_id},
-            {"$pull": {"owned_user_configurations": config_id}}
+            {"$pull": {"owned_bots": config_id}}
         )
         return result.modified_count > 0 or result.matched_count > 0

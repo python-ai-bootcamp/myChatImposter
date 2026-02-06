@@ -58,13 +58,13 @@ async def _forward_request(
             )
 
 
-@router.get("/api/external/users")
-async def list_users_proxy(request: Request):
+@router.get("/api/external/bots")
+async def list_bots_proxy(request: Request):
     """
-    Interceptor for listing users.
+    Interceptor for listing bots.
     
     Logic:
-    - User Role: Inject 'user_ids' from session ownership list.
+    - User Role: Inject 'bot_ids' from session ownership list.
     - Admin Role: Pass as is.
     """
     session = getattr(request.state, "session", None)
@@ -72,26 +72,21 @@ async def list_users_proxy(request: Request):
         # Should be caught by middleware, but safe fallback
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    backend_url = f"{gateway_state.backend_url}/api/internal/users"
+    backend_url = f"{gateway_state.backend_url}/api/internal/bots"
     params = dict(request.query_params)
     headers = dict(request.headers)
     headers.pop("host", None)
 
     # Role-based filtering
     if session.role == "user":
-        owned_ids = getattr(session, "owned_user_configurations", [])
+        owned_ids = getattr(session, "owned_bots", [])
         
         # If user owns nothing, short-circuit
         if not owned_ids:
             return JSONResponse(content=[], status_code=200)
             
-        # Inject user_ids list
-        # We must handle the fact that httpx expects 'key': 'val' or 'key': ['val1', 'val2']
-        # Request.query_params might have multiple values for same key, dict() flattens it if not careful?
-        # dict(request.query_params) returns last value if duplicate keys?
-        # request.query_params.multi_items() is safer but lets simplify.
-        # We are overwriting user_ids anyway.
-        params["user_ids"] = owned_ids
+        # Inject bot_ids list
+        params["bot_ids"] = owned_ids
 
     return await _forward_request(
         method="GET",
@@ -102,34 +97,34 @@ async def list_users_proxy(request: Request):
     )
 
 
-@router.get("/api/external/users/status")
-async def list_users_status_proxy(request: Request):
+@router.get("/api/external/bots/status")
+async def list_bots_status_proxy(request: Request):
     """
-    Interceptor for listing users status.
+    Interceptor for listing bots status.
     
     Logic:
-    - User Role: Inject 'user_ids' from session ownership list.
+    - User Role: Inject 'bot_ids' from session ownership list.
     - Admin Role: Pass as is.
     """
     session = getattr(request.state, "session", None)
     if not session:
         raise HTTPException(status_code=401, detail="Authentication required")
 
-    backend_url = f"{gateway_state.backend_url}/api/internal/users/status"
+    backend_url = f"{gateway_state.backend_url}/api/internal/bots/status"
     params = dict(request.query_params)
     headers = dict(request.headers)
     headers.pop("host", None)
 
     # Role-based filtering
     if session.role == "user":
-        owned_ids = getattr(session, "owned_user_configurations", [])
+        owned_ids = getattr(session, "owned_bots", [])
         
         # If user owns nothing, short-circuit
         if not owned_ids:
-            # Return empty structure matching UserStatusList
+            # Return empty structure matching BotStatusList
             return JSONResponse(content={"configurations": [], "count": 0}, status_code=200)
             
-        params["user_ids"] = owned_ids
+        params["bot_ids"] = owned_ids
 
     return await _forward_request(
         method="GET",
@@ -149,10 +144,6 @@ async def proxy_to_backend(path: str, request: Request):
     Generic proxy for all other requests.
     Includes Interceptor for PUT Creation (Ownership Claim).
     """
-    # FILE LOGGING DEBUG
-    with open("gateway_debug.txt", "a") as f:
-        f.write(f"ENTRY: Path={path} | Method={request.method}\n")
-
     # Transform path: /api/external/* → /api/internal/*
     backend_path = f"/api/internal/{path}"
     backend_url = f"{gateway_state.backend_url}{backend_path}"
@@ -181,41 +172,29 @@ async def proxy_to_backend(path: str, request: Request):
         f"GATEWAY: Proxying {request.method} {backend_url} (from {request.url.path})"
     )
 
-    # Interceptor: Pre-check for User Limit (PUT Creation)
+    # Interceptor: Pre-check for Bot Limit (PUT Creation)
     if request.method == "PUT":
-        target_user_id = None
+        target_bot_id = None
         parts = path.strip("/").split("/")
-        # Valid Paths: /users/{id} or /ui/users/{id}
-        if len(parts) == 2 and parts[0] == "users":
-            target_user_id = parts[1]
-        elif len(parts) == 3 and parts[0] == "ui" and parts[1] == "users":
-            target_user_id = parts[2]
+        # Valid Paths: /bots/{id} or /ui/bots/{id}
+        if len(parts) == 2 and parts[0] == "bots":
+            target_bot_id = parts[1]
+        elif len(parts) == 3 and parts[0] == "ui" and parts[1] == "bots":
+            target_bot_id = parts[2]
             
-        if target_user_id:
+        if target_bot_id:
              session = getattr(request.state, "session", None)
              if session and session.role == "user":
-                  owned_ids = getattr(session, "owned_user_configurations", [])
+                  owned_ids = getattr(session, "owned_bots", [])
                   
-                  # FILE LOGGING DEBUG (Fixed Path)
-                  with open("gateway/gateway_debug.txt", "a") as f:
-                      f.write(f"CHECK: {session.user_id} | Target: {target_user_id} | Owned: {len(owned_ids)} {owned_ids}\n")
-                  
-                  # Force log to console
-                  logging.info(f"GATEWAY_LIMIT_CHECK: User={session.user_id}, Target={target_user_id}, Count={len(owned_ids)}")
-
-                  # Allow updates to existing owned users, Reject creation if limit reached
+                  # Allow updates to existing owned bots, Reject creation if limit reached
                   limit = getattr(session, "max_user_configuration_limit", 5)
-                  if target_user_id not in owned_ids and len(owned_ids) >= limit:
-                       with open("gateway/gateway_debug.txt", "a") as f:
-                           f.write(f"BLOCK: {session.user_id} reached limit {limit}.\n")
-                           
-                       logging.warning(f"GATEWAY: User {session.user_id} reached limit ({limit}) trying to create {target_user_id}")
+                  if target_bot_id not in owned_ids and len(owned_ids) >= limit:
+                       logging.warning(f"GATEWAY: User {session.user_id} reached limit ({limit}) trying to create {target_bot_id}")
                        return JSONResponse(
                            status_code=403, 
-                           content={"detail": f"You have reached your limit of {limit} concurrent users."}
+                           content={"detail": f"You have reached your limit of {limit} concurrent bots."}
                        )
-
-
 
     # Forward request
     response = await _forward_request(
@@ -227,77 +206,68 @@ async def proxy_to_backend(path: str, request: Request):
     )
 
     # Interceptor: PUT Creation (Ownership Claim)
-    # Check if successful PUT to a user resource (either legacy or UI)
-    if request.method == "PUT":
-        logging.info(f"GATEWAY_DEBUG: Checking PUT for ownership. Path={path}, Status={response.status_code}")
-        
+    # Check if successful PUT to a bot resource
     if request.method == "PUT" and response.status_code == 200:
-        target_user_id = None
+        target_bot_id = None
         parts = path.strip("/").split("/")
-        logging.info(f"GATEWAY_DEBUG: Parts={parts}")
         
-        # Case 1: Legacy /users/{user_id}
-        if len(parts) == 2 and parts[0] == "users":
-            target_user_id = parts[1]
-        # Case 2: UI /ui/users/{user_id}
-        elif len(parts) == 3 and parts[0] == "ui" and parts[1] == "users":
-            target_user_id = parts[2]
+        # Case 1: Legacy /bots/{bot_id}
+        if len(parts) == 2 and parts[0] == "bots":
+            target_bot_id = parts[1]
+        # Case 2: UI /ui/bots/{bot_id}
+        elif len(parts) == 3 and parts[0] == "ui" and parts[1] == "bots":
+            target_bot_id = parts[2]
             
-        if target_user_id:
+        if target_bot_id:
             session = getattr(request.state, "session", None)
             
             if session:
-                logging.info(f"GATEWAY_DEBUG: Session User={session.user_id}, Role={session.role}, Owned={getattr(session, 'owned_user_configurations', [])}")
-            else:
-                logging.info("GATEWAY_DEBUG: No Session found in request state.")
-
-            if session:
                 # Check if we need to claim it
-                owned_ids = getattr(session, "owned_user_configurations", [])
+                owned_ids = getattr(session, "owned_bots", [])
                 
-                if target_user_id not in owned_ids:
-                    logging.info(f"GATEWAY: Claiming new bot {target_user_id} for user {session.user_id} (Role: {session.role})")
+                if target_bot_id not in owned_ids:
+                    logging.info(f"GATEWAY: Claiming new bot {target_bot_id} for user {session.user_id} (Role: {session.role})")
                     try:
                         # Update Persistence
                         await request.app.state.auth_service.add_owned_configuration(
-                            session.user_id, target_user_id
+                            session.user_id, target_bot_id
                         )
                         # Update Cache
                         await request.app.state.session_manager.add_owned_configuration(
-                            session.session_id, target_user_id
+                            session.session_id, target_bot_id
                         )
                     except Exception as e:
                         logging.error(f"GATEWAY: Failed to claim ownership: {e}")
 
     # Interceptor: DELETE (Ownership Removal)
-    # Check if successful DELETE to a user resource
+    # Check if successful DELETE to a bot resource
     if request.method == "DELETE" and response.status_code == 200:
-        target_user_id = None
+        target_bot_id = None
         parts = path.strip("/").split("/")
         
-        # Case 1: Legacy /users/{user_id}
-        if len(parts) == 2 and parts[0] == "users":
-            target_user_id = parts[1]
-        # Case 2: UI /ui/users/{user_id}
-        elif len(parts) == 3 and parts[0] == "ui" and parts[1] == "users":
-            target_user_id = parts[2]
+        # Case 1: Legacy /bots/{bot_id}
+        if len(parts) == 2 and parts[0] == "bots":
+            target_bot_id = parts[1]
+        # Case 2: UI /ui/bots/{bot_id}
+        elif len(parts) == 3 and parts[0] == "ui" and parts[1] == "bots":
+            target_bot_id = parts[2]
             
-        if target_user_id:
+        if target_bot_id:
             session = getattr(request.state, "session", None)
             
             if session:
-                owned_ids = getattr(session, "owned_user_configurations", [])
+                owned_ids = getattr(session, "owned_bots", [])
                 
-                if target_user_id in owned_ids:
-                    logging.info(f"GATEWAY: Removing {target_user_id} from user {session.user_id}'s ownership")
+                if target_bot_id in owned_ids:
+                    logging.info(f"GATEWAY: Removing {target_bot_id} from user {session.user_id}'s ownership")
                     try:
                         # Update Persistence (credentials collection)
                         await request.app.state.auth_service.remove_owned_configuration(
-                            session.user_id, target_user_id
+                            session.user_id, target_bot_id
                         )
                         # Update Cache (session)
                         await request.app.state.session_manager.remove_owned_configuration(
-                            session.session_id, target_user_id
+                            session.session_id, target_bot_id
                         )
                     except Exception as e:
                         logging.error(f"GATEWAY: Failed to remove ownership: {e}")

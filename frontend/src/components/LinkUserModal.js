@@ -61,8 +61,8 @@ const homeIndicatorStyle = {
     borderRadius: '3px'
 };
 
-function LinkUserModal({ linkingUser, linkStatus, qrCode, onClose }) {
-    if (!linkingUser) {
+function LinkUserModal({ linkingBotId, linkStatus, qrCode, onClose }) {
+    if (!linkingBotId) {
         return null;
     }
 
@@ -99,7 +99,7 @@ function LinkUserModal({ linkingUser, linkStatus, qrCode, onClose }) {
                     {/* Content */}
                     <div style={{ marginTop: '30px', color: '#fff' }}>
                         <h3 style={{ margin: '0 0 10px 0', color: '#fff', fontSize: '1.1rem' }}>
-                            {linkingUser}
+                            {linkingBotId}
                         </h3>
                         <p style={{ margin: '0 0 20px 0', color: '#888', fontSize: '0.85rem' }}>
                             {linkStatus || 'Initializing...'}

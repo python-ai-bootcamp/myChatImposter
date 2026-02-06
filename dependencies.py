@@ -8,7 +8,7 @@ if TYPE_CHECKING:
     from services.session_manager import SessionManager
     from features.periodic_group_tracking.service import GroupTracker
     from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager
-    from services.user_lifecycle_service import UserLifecycleService
+    from services.bot_lifecycle_service import BotLifecycleService
 
 class GlobalStateManager:
     _instance = None
@@ -30,12 +30,12 @@ class GlobalStateManager:
 
         # State storage
         self.chatbot_instances: Dict[str, 'SessionManager'] = {}
-        self.active_users: Dict[str, str] = {}  # Maps user_id to instance_id
+        self.active_bots: Dict[str, str] = {}  # Maps bot_id to instance_id
         
         # Managers
         self.group_tracker: Optional['GroupTracker'] = None
         self.async_message_delivery_queue_manager: Optional['AsyncMessageDeliveryQueueManager'] = None
-        self.user_lifecycle_service: Optional['UserLifecycleService'] = None
+        self.bot_lifecycle_service: Optional['BotLifecycleService'] = None
 
     @classmethod
     def get_instance(cls):
@@ -50,7 +50,7 @@ class GlobalStateManager:
         await self.mongo_client.admin.command('ismaster')
         
         self.db = self.mongo_client.get_database("chat_manager")
-        self.configurations_collection = self.db.get_collection(db_schema.COLLECTION_CONFIGURATIONS)
+        self.configurations_collection = self.db.get_collection(db_schema.COLLECTION_BOT_CONFIGURATIONS)
         self.queues_collection = self.db.get_collection(db_schema.COLLECTION_QUEUES)
         self.baileys_sessions_collection = self.db.get_collection(db_schema.COLLECTION_BAILEYS_SESSIONS)
 
@@ -66,22 +66,22 @@ class GlobalStateManager:
 
         logging.info("API: Successfully connected to MongoDB.")
 
-    def get_chatbot_instance_by_user(self, user_id: str) -> Optional['SessionManager']:
-        if user_id in self.active_users:
-            instance_id = self.active_users[user_id]
+    def get_chatbot_instance_by_bot(self, bot_id: str) -> Optional['SessionManager']:
+        if bot_id in self.active_bots:
+            instance_id = self.active_bots[bot_id]
             return self.chatbot_instances.get(instance_id)
         return None
 
-    def remove_active_user(self, user_id: str):
-        """Callback to remove a user from the active list and clean up instance."""
-        if user_id in self.active_users:
-            instance_id = self.active_users[user_id]
-            logging.info(f"API: Session ended for user '{user_id}'. Removing from active list.")
-            del self.active_users[user_id]
+    def remove_active_bot(self, bot_id: str):
+        """Callback to remove a bot from the active list and clean up instance."""
+        if bot_id in self.active_bots:
+            instance_id = self.active_bots[bot_id]
+            logging.info(f"API: Session ended for bot '{bot_id}'. Removing from active list.")
+            del self.active_bots[bot_id]
             if instance_id in self.chatbot_instances:
                 del self.chatbot_instances[instance_id]
         else:
-            logging.warning(f"API: Tried to remove non-existent user '{user_id}' from active list.")
+            logging.warning(f"API: Tried to remove non-existent bot '{bot_id}' from active list.")
 
     def shutdown(self):
         """Cleanup resources on shutdown."""

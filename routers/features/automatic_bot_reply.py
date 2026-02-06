@@ -58,7 +58,7 @@ async def clear_all_user_queues(user_id: str):
         logging.info(f"API: Deleted {result.deleted_count} messages for {user_id}.")
 
         # Clear In-Memory
-        instance = global_state.get_chatbot_instance_by_user(user_id)
+        instance = global_state.get_chatbot_instance_by_bot(user_id)
         if instance and instance.user_queues_manager:
             all_queues = instance.user_queues_manager.get_all_queues()
             for queue in all_queues:
@@ -89,7 +89,7 @@ async def clear_correspondent_queue(user_id: str, correspondent_id: str):
         await global_state.queues_collection.delete_many(query)
         
         # In-Memory
-        instance = global_state.get_chatbot_instance_by_user(user_id)
+        instance = global_state.get_chatbot_instance_by_bot(user_id)
         if instance and instance.user_queues_manager:
             queue = instance.user_queues_manager.get_queue(correspondent_id)
             if queue: queue.clear()
@@ -106,10 +106,10 @@ async def get_user_context(user_id: str):
     """
     Get LLM-ready context.
     """
-    if user_id not in global_state.active_users:
+    if user_id not in global_state.active_bots:
          raise HTTPException(status_code=404, detail="No active session found.")
     
-    instance = global_state.get_chatbot_instance_by_user(user_id)
+    instance = global_state.get_chatbot_instance_by_bot(user_id)
     if not instance:
          raise HTTPException(status_code=404, detail="Instance not found.")
     

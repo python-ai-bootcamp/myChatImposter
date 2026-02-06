@@ -5,7 +5,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from features.periodic_group_tracking.runner import GroupTrackingRunner
-from config_models import PeriodicGroupTrackingConfig, UserConfiguration
+from config_models import PeriodicGroupTrackingConfig, BotConfiguration
 from services.session_manager import SessionManager
 
 class TestGroupTrackingRunner(unittest.IsolatedAsyncioTestCase):

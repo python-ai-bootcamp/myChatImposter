@@ -18,7 +18,7 @@ import CronPickerWidget from '../components/CronPickerWidget';
 import { PageContainer, ContentCard, ScrollablePanel, FixedFooter, FloatingErrorBanner } from '../components/PageLayout';
 
 function RestrictedEditPage() {
-    const { userId } = useParams();
+    const { botId } = useParams();
     const navigate = useNavigate();
     const location = useLocation();
     const formRef = useRef(null);
@@ -90,9 +90,9 @@ function RestrictedEditPage() {
             }
 
             // 2. Backend feature limit validation (only if no cron errors)
-            if (formData && userId) {
+            if (formData && botId) {
                 try {
-                    const response = await fetch(`/api/external/ui/users/${userId}/validate-config`, {
+                    const response = await fetch(`/api/external/ui/bots/${botId}/validate-config`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ features: formData.features || {} })
@@ -112,13 +112,13 @@ function RestrictedEditPage() {
         }, 300);
 
         return () => clearTimeout(timer);
-    }, [formData, cronErrors, userId]);
+    }, [formData, cronErrors, botId]);
 
     useEffect(() => {
         const fetchData = async () => {
             try {
                 // Fetch Schema from UI API
-                const schemaResponse = await fetch('/api/external/ui/users/schema');
+                const schemaResponse = await fetch('/api/external/ui/bots/schema');
                 if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
                 const schemaData = await schemaResponse.json();
                 setSchema(schemaData);
@@ -126,7 +126,7 @@ function RestrictedEditPage() {
                 let initialFormData;
                 if (isNew) {
                     initialFormData = {
-                        user_id: userId,
+                        bot_id: botId,
                         configurations: {
                             user_details: {
                                 timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
@@ -155,13 +155,13 @@ function RestrictedEditPage() {
                     }
                 } else {
                     // Fetch User Data from UI API
-                    const dataResponse = await fetch(`/api/external/ui/users/${userId}`);
+                    const dataResponse = await fetch(`/api/external/ui/bots/${botId}`);
                     if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');
                     initialFormData = await dataResponse.json();
 
                     // Fetch Status for Button Logic
                     try {
-                        const statusRes = await fetch(`/api/external/users/${userId}/info`);
+                        const statusRes = await fetch(`/api/external/bots/${botId}/info`);
                         if (statusRes.ok) {
                             const statusData = await statusRes.json();
                             if (statusData.configurations && statusData.configurations.length > 0) {
@@ -179,13 +179,13 @@ function RestrictedEditPage() {
         };
 
         fetchData();
-    }, [userId, isNew]);
+    }, [botId, isNew]);
 
     // Fetch Groups (Requires owner permissions)
     useEffect(() => {
         const fetchGroups = async () => {
             try {
-                const groupsRes = await fetch(`/api/external/users/${userId}/groups`);
+                const groupsRes = await fetch(`/api/external/bots/${botId}/groups`);
                 if (groupsRes.ok) {
                     const groupsData = await groupsRes.json();
                     setAvailableGroups(groupsData.groups || []);
@@ -197,7 +197,7 @@ function RestrictedEditPage() {
         if (!isNew) {
             fetchGroups();
         }
-    }, [userId, isNew]);
+    }, [botId, isNew]);
 
 
     const handleFormChange = (e) => {
@@ -242,15 +242,15 @@ function RestrictedEditPage() {
             throw new Error("Validation failed");
         }
 
-        // 2. Validate User ID
-        if (!isNew && submittedData.user_id !== userId) {
-            throw new Error("The user_id cannot be changed.");
+        // 2. Validate Bot ID
+        if (!isNew && submittedData.bot_id !== botId) {
+            throw new Error("The bot_id cannot be changed.");
         }
 
         // 3. Save Configuration
         const method = isNew ? 'PUT' : 'PATCH';
-        const endpoint = `/api/external/ui/users/${userId}`;
-        const finalApiData = { ...submittedData, user_id: userId };
+        const endpoint = `/api/external/ui/bots/${botId}`;
+        const finalApiData = { ...submittedData, bot_id: botId };
 
         const saveResponse = await fetch(endpoint, {
             method: method,
@@ -308,7 +308,7 @@ function RestrictedEditPage() {
                     action = 'reload';
                 }
 
-                const actionRes = await fetch(`/api/external/users/${userId}/actions/${action}`, {
+                const actionRes = await fetch(`/api/external/bots/${botId}/actions/${action}`, {
                     method: 'POST'
                 });
 
@@ -365,7 +365,7 @@ function RestrictedEditPage() {
         "ui:classNames": "form-container",
         "ui:title": " ",
         "ui:description": " ", // Remove restricted text
-        user_id: {
+        bot_id: {
             "ui:FieldTemplate": NullFieldTemplate
         },
         // General Configurations section
@@ -479,7 +479,7 @@ function RestrictedEditPage() {
             </FloatingErrorBanner>
 
             <PageContainer>
-                <ContentCard title={isNew ? 'New Configuration: ' + userId : `Edit Configuration: ${userId}`} maxWidth="1000px">
+                <ContentCard title={isNew ? 'New Configuration: ' + botId : `Edit Configuration: ${botId}`} maxWidth="1000px">
                     <ScrollablePanel>
                         <Form
                             ref={formRef}

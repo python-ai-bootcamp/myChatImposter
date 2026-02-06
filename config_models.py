@@ -97,32 +97,32 @@ class FeaturesConfiguration(BaseModel):
     periodic_group_tracking: PeriodicGroupTrackingFeature = Field(default_factory=PeriodicGroupTrackingFeature, title="Periodic Group Tracking")
     kid_phone_safety_tracking: KidPhoneSafetyTrackingFeature = Field(default_factory=KidPhoneSafetyTrackingFeature, title="Kid Phone Safety Tracking")
 
-class ConfigurationsSettings(BaseModel):
+class BotGeneralSettings(BaseModel):
     user_details: UserDetails = Field(default_factory=UserDetails, title="User Details")
     chat_provider_config: ChatProviderConfig = Field(..., title="Chat Provider Config")
     queue_config: QueueConfig = Field(default_factory=QueueConfig, title="Queue Config")
     context_config: ContextConfig = Field(default_factory=ContextConfig, title="Context Config")
     llm_provider_config: LLMProviderConfig = Field(..., title="LLM Provider Config")
 
-class RegularUserConfigurationsSettings(BaseModel):
+class RegularBotGeneralSettings(BaseModel):
     """
-    Restricted settings for regular users.
+    Restricted settings for regular bots.
     Excludes system-level configs like queues, LLM keys, etc.
     """
     user_details: UserDetails = Field(default_factory=UserDetails, title="User Details")
 
-class RegularUserConfiguration(BaseModel):
+class RegularBotConfiguration(BaseModel):
     """
-    Restricted configuration view for regular users.
+    Restricted configuration view for regular bots.
     """
-    user_id: str
-    configurations: RegularUserConfigurationsSettings = Field(..., title="General Configurations")
+    bot_id: str
+    configurations: RegularBotGeneralSettings = Field(..., title="General Configurations")
     features: FeaturesConfiguration = Field(default_factory=FeaturesConfiguration, title="Feature Configurations")
 
 
-class UserConfiguration(BaseModel):
-    user_id: str
-    configurations: ConfigurationsSettings = Field(..., title="General Configurations")
+class BotConfiguration(BaseModel):
+    bot_id: str
+    configurations: BotGeneralSettings = Field(..., title="General Configurations")
     features: FeaturesConfiguration = Field(default_factory=FeaturesConfiguration, title="Feature Configurations")
 
 

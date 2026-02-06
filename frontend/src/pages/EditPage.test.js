@@ -16,7 +16,7 @@ const mockSchema = {
   title: 'User Configuration',
   type: 'object',
   properties: {
-    user_id: { type: 'string', title: 'User ID' },
+    bot_id: { type: 'string', title: 'Bot ID' },
     configurations: {
       type: 'object',
       title: 'General Configurations',
@@ -76,7 +76,7 @@ const mockSchema = {
 };
 
 let mockInitialData = {
-  user_id: 'test-user',
+  bot_id: 'test-bot',
   configurations: {
     queue_config: {
       max_messages: 10
@@ -111,28 +111,28 @@ beforeEach(() => {
 
 const renderComponent = () => {
   fetch.mockImplementation((url) => {
-    if (url.includes('/api/users/schema')) {
+    if (url.includes('/api/external/bots/schema')) {
       return Promise.resolve({
         ok: true,
         json: () => Promise.resolve(mockSchema),
       });
     }
     // New defaults endpoint
-    if (url.includes('/api/users/defaults')) {
+    if (url.includes('/api/external/bots/defaults')) {
       return Promise.resolve({
         ok: true,
         json: () => Promise.resolve(mockInitialData),
       });
     }
-    // GET /api/users/{userId}
-    if (url.includes('/api/users/test-user')) {
+    // GET /api/external/bots/{botId}
+    if (url.includes('/api/external/bots/test-bot')) {
       return Promise.resolve({
         ok: true,
         json: () => Promise.resolve(mockInitialData), // Return object, not array [mockInitialData] (FastAPI returns Pydantic model)
       });
     }
-    // PUT /api/users/{userId}
-    if (url.includes('/api/users/')) {
+    // PUT /api/external/bots/{botId}
+    if (url.includes('/api/external/bots/')) {
       // Start/Link/Reload actions
       if (url.includes('/actions/')) {
         return Promise.resolve({ ok: true, json: () => ({ status: 'success' }) });
@@ -143,10 +143,10 @@ const renderComponent = () => {
       });
     }
     // Resources
-    if (url.includes('/api/resources/timezones')) {
+    if (url.includes('/api/external/resources/timezones')) {
       return Promise.resolve({ ok: true, json: () => Promise.resolve(['UTC', 'Europe/London']) });
     }
-    if (url.includes('/api/resources/languages')) {
+    if (url.includes('/api/external/resources/languages')) {
       return Promise.resolve({ ok: true, json: () => Promise.resolve([{ code: 'en', name: 'English', native_name: 'English' }]) });
     }
     // Chatbot status
@@ -161,9 +161,9 @@ const renderComponent = () => {
 
 
   render(
-    <MemoryRouter initialEntries={['/edit/test-user']}>
+    <MemoryRouter initialEntries={['/edit/test-bot']}>
       <Routes>
-        <Route path="/edit/:userId" element={<EditPage />} />
+        <Route path="/edit/:botId" element={<EditPage />} />
       </Routes>
     </MemoryRouter>
   );
@@ -205,7 +205,7 @@ test('renders the form and saves updated data with new structure', async () => {
   await waitFor(() => {
     const putCall = fetch.mock.calls.find(call => call[1] && call[1].method === 'PUT');
     expect(putCall).toBeDefined();
-    expect(putCall[0]).toBe('/api/users/test-user');
+    expect(putCall[0]).toBe('/api/external/bots/test-bot');
 
     const savedData = JSON.parse(putCall[1].body);
     expect(savedData.configurations.queue_config.max_messages).toBe(50);
@@ -235,7 +235,7 @@ test('renders Feature Configurations with all three features', async () => {
 test('renders complex nested data correctly with new structure', async () => {
   // Set up mock data that includes multiple fields
   mockInitialData = {
-    user_id: 'test-user',
+    bot_id: 'test-bot',
     configurations: {
       queue_config: {
         max_messages: 25,

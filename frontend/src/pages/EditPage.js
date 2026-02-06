@@ -21,7 +21,7 @@ import { PageContainer, ContentCard, ScrollablePanel, FixedFooter, FloatingError
 
 
 function EditPage() {
-  const { userId } = useParams();
+  const { botId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const formRef = useRef(null);
@@ -61,9 +61,9 @@ function EditPage() {
       }
 
       // 2. Backend feature limit validation
-      if (formData && userId) {
+      if (formData && botId) {
         try {
-          const response = await fetch(`/api/external/ui/users/${userId}/validate-config`, {
+          const response = await fetch(`/api/external/ui/bots/${botId}/validate-config`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ features: formData.features || {} })
@@ -83,12 +83,12 @@ function EditPage() {
     }, 300);
 
     return () => clearTimeout(timer);
-  }, [formData, cronErrors, userId]);
+  }, [formData, cronErrors, botId]);
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const schemaResponse = await fetch('/api/external/users/schema');
+        const schemaResponse = await fetch('/api/external/bots/schema');
         if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
         const schemaData = await schemaResponse.json();
         setSchema(schemaData);
@@ -96,12 +96,12 @@ function EditPage() {
         let initialFormData;
         if (isNew) {
           // Fetch dynamic defaults from backend (Single Source of Truth)
-          const defaultsResponse = await fetch('/api/external/users/defaults');
+          const defaultsResponse = await fetch('/api/external/bots/defaults');
           if (!defaultsResponse.ok) throw new Error('Failed to fetch configuration defaults.');
           initialFormData = await defaultsResponse.json();
 
           // Override with current context
-          initialFormData.user_id = userId;
+          initialFormData.bot_id = botId;
 
           // Use browser's detected timezone instead of backend default (usually UTC)
           const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
@@ -129,7 +129,7 @@ function EditPage() {
             console.warn("Failed to auto-detect language:", langErr);
           }
         } else {
-          const dataResponse = await fetch(`/api/external/users/${userId}`);
+          const dataResponse = await fetch(`/api/external/bots/${botId}`);
           if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');
           const data = await dataResponse.json();
           const originalData = Array.isArray(data) ? data[0] : data;
@@ -157,7 +157,7 @@ function EditPage() {
     };
 
     fetchData();
-  }, [userId, isNew]);
+  }, [botId, isNew]);
 
   useEffect(() => {
     if (formData) {
@@ -168,7 +168,7 @@ function EditPage() {
   useEffect(() => {
     const fetchStatusAndGroups = async () => {
       try {
-        const response = await fetch(`/api/external/users/${userId}/status`);
+        const response = await fetch(`/api/external/bots/${botId}/status`);
         if (response.ok) {
           const data = await response.json();
           const status = data.status ? data.status.toLowerCase() : '';
@@ -179,7 +179,7 @@ function EditPage() {
             // Fetch available groups when connected
             try {
               console.log("Fetching groups for connected user...");
-              const groupsRes = await fetch(`/api/external/users/${userId}/groups`);
+              const groupsRes = await fetch(`/api/external/bots/${botId}/groups`);
               if (groupsRes.ok) {
                 const groupsData = await groupsRes.json();
                 console.log("Fetched groups:", groupsData.groups?.length);
@@ -206,7 +206,7 @@ function EditPage() {
       }
     };
     fetchStatusAndGroups();
-  }, [userId]);
+  }, [botId]);
 
 
   const handleScrollToError = () => {
@@ -375,14 +375,14 @@ function EditPage() {
         return;
       }
 
-      // 2. Validate User ID
-      if (!isNew && currentData.user_id !== userId) {
-        throw new Error("The user_id of an existing configuration cannot be changed. Please revert the user_id in the JSON editor to match the one in the URL.");
+      // 2. Validate Bot ID
+      if (!isNew && currentData.bot_id !== botId) {
+        throw new Error("The bot_id of an existing configuration cannot be changed. Please revert the bot_id in the JSON editor to match the one in the URL.");
       }
 
       // 3. Save Configuration (PUT)
-      const finalApiData = { ...currentData, user_id: userId };
-      const saveResponse = await fetch(`/api/external/users/${userId}`, {
+      const finalApiData = { ...currentData, bot_id: botId };
+      const saveResponse = await fetch(`/api/external/bots/${botId}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(finalApiData),
@@ -398,7 +398,7 @@ function EditPage() {
 
       // 4. Handle Post-Save Actions
       if (mode === 'reload') {
-        const reloadResponse = await fetch(`/api/external/users/${userId}/actions/reload`, {
+        const reloadResponse = await fetch(`/api/external/bots/${botId}/actions/reload`, {
           method: 'POST',
         });
         if (!reloadResponse.ok) {
@@ -407,14 +407,14 @@ function EditPage() {
         }
         navigate('/');
       } else if (mode === 'link') {
-        const createResponse = await fetch(`/api/external/users/${userId}/actions/link`, {
+        const createResponse = await fetch(`/api/external/bots/${botId}/actions/link`, {
           method: 'POST',
         });
         if (!createResponse.ok) {
           const errorBody = await createResponse.json();
           throw new Error(errorBody.detail || `Failed to start session (HTTP ${createResponse.status})`);
         }
-        navigate(`/?auto_link=${userId}`);
+        navigate(`/?auto_link=${botId}`);
       } else {
         // mode === 'save'
         navigate('/');
@@ -467,7 +467,7 @@ function EditPage() {
   const uiSchema = {
     "ui:classNames": "form-container",
     "ui:title": " ",
-    user_id: {
+    bot_id: {
       "ui:FieldTemplate": NullFieldTemplate
     },
     // General Configurations section
@@ -603,7 +603,7 @@ function EditPage() {
       </FloatingErrorBanner>
 
       <PageContainer>
-        <ContentCard title={isNew ? 'Add New Configuration: ' + userId : `Edit Configuration: ${userId}`} maxWidth="1800px">
+        <ContentCard title={isNew ? 'Add New Configuration: ' + botId : `Edit Configuration: ${botId}`} maxWidth="1800px">
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', height: '100%', overflow: 'hidden' }}>
             <ScrollablePanel>
               <Form

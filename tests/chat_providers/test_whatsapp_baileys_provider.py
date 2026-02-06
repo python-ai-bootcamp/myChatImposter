@@ -26,7 +26,7 @@ class TestWhatsAppBaileysProviderInit:
 
     def setup_method(self):
         """Set up common test fixtures."""
-        self.user_id = "test_user"
+        self.bot_id = "test_bot"
         self.config = ChatProviderConfig(
             provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings(
@@ -34,7 +34,7 @@ class TestWhatsAppBaileysProviderInit:
                 process_offline_messages=False
             )
         )
-        self.mock_queues = {self.user_id: MagicMock(spec=UserQueuesManager)}
+        self.mock_queues = {self.bot_id: MagicMock(spec=UserQueuesManager)}
         self.mock_loop = asyncio.new_event_loop()
 
     def teardown_method(self):
@@ -44,13 +44,13 @@ class TestWhatsAppBaileysProviderInit:
     def test_init_sets_default_state(self):
         """Test that __init__ sets all default instance variables correctly."""
         provider = WhatsAppBaileysProvider(
-            user_id=self.user_id,
+            bot_id=self.bot_id,
             config=self.config,
             user_queues=self.mock_queues,
             main_loop=self.mock_loop
         )
         
-        assert provider.user_id == self.user_id
+        assert provider.bot_id == self.bot_id
         assert provider.user_jid is None
         assert provider.sock is None
         assert provider._connected is False
@@ -66,7 +66,7 @@ class TestWhatsAppBaileysProviderInit:
         monkeypatch.setenv("WHATSAPP_SERVER_URL", "http://custom-server:9000")
         
         provider = WhatsAppBaileysProvider(
-            user_id=self.user_id,
+            bot_id=self.bot_id,
             config=self.config,
             user_queues=self.mock_queues,
             main_loop=self.mock_loop
@@ -78,7 +78,7 @@ class TestWhatsAppBaileysProviderInit:
     def test_update_cache_policy(self):
         """Test that update_cache_policy updates the max_cache_interval."""
         provider = WhatsAppBaileysProvider(
-            user_id=self.user_id,
+            bot_id=self.bot_id,
             config=self.config,
             user_queues=self.mock_queues,
             main_loop=self.mock_loop
@@ -94,15 +94,15 @@ class TestBotMessageDetection:
 
     def setup_method(self):
         """Set up provider for bot message tests."""
-        self.user_id = "test_user"
+        self.bot_id = "test_bot"
         self.config = ChatProviderConfig(
             provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings()
         )
-        self.mock_queues = {self.user_id: MagicMock(spec=UserQueuesManager)}
+        self.mock_queues = {self.bot_id: MagicMock(spec=UserQueuesManager)}
         self.mock_loop = asyncio.new_event_loop()
         self.provider = WhatsAppBaileysProvider(
-            user_id=self.user_id,
+            bot_id=self.bot_id,
             config=self.config,
             user_queues=self.mock_queues,
             main_loop=self.mock_loop
@@ -208,15 +208,15 @@ class TestHTTPAPICalls:
 
     def setup_method(self):
         """Set up provider for HTTP tests."""
-        self.user_id = "test_user"
+        self.bot_id = "test_bot"
         self.config = ChatProviderConfig(
             provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings()
         )
-        self.mock_queues = {self.user_id: MagicMock(spec=UserQueuesManager)}
+        self.mock_queues = {self.bot_id: MagicMock(spec=UserQueuesManager)}
         self.mock_loop = asyncio.new_event_loop()
         self.provider = WhatsAppBaileysProvider(
-            user_id=self.user_id,
+            bot_id=self.bot_id,
             config=self.config,
             user_queues=self.mock_queues,
             main_loop=self.mock_loop
@@ -387,7 +387,7 @@ class TestHTTPAPICalls:
         
         mock_client.delete.assert_called_once()
         call_args = mock_client.delete.call_args
-        assert f"/sessions/{self.user_id}" in call_args[0][0]
+        assert f"/sessions/{self.bot_id}" in call_args[0][0]
 
     @patch('chat_providers.whatsAppBaileys.httpx.AsyncClient')
     def test_start_listening_sends_config(self, mock_client_class):
@@ -414,16 +414,16 @@ class TestWebSocketMessageProcessing:
 
     def setup_method(self):
         """Set up provider for WebSocket tests."""
-        self.user_id = "test_user"
+        self.bot_id = "test_bot"
         self.config = ChatProviderConfig(
             provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings(allow_group_messages=True)
         )
         self.mock_queue_manager = MagicMock(spec=UserQueuesManager)
-        self.mock_queues = {self.user_id: self.mock_queue_manager}
+        self.mock_queues = {self.bot_id: self.mock_queue_manager}
         self.mock_loop = asyncio.new_event_loop()
         self.provider = WhatsAppBaileysProvider(
-            user_id=self.user_id,
+            bot_id=self.bot_id,
             config=self.config,
             user_queues=self.mock_queues,
             main_loop=self.mock_loop
@@ -468,7 +468,7 @@ class TestWebSocketMessageProcessing:
         
         asyncio.run(self.provider._process_ws_message(message))
         
-        mock_callback.assert_called_once_with(self.user_id, "connected")
+        mock_callback.assert_called_once_with(self.bot_id, "connected")
 
     def test_process_ws_message_invokes_async_callback(self):
         """Test that async on_status_change callback is handled correctly."""
@@ -548,7 +548,7 @@ class TestWebSocketMessageProcessing:
             provider_config=ChatProviderSettings(allow_group_messages=False)
         )
         provider = WhatsAppBaileysProvider(
-            user_id=self.user_id,
+            bot_id=self.bot_id,
             config=config,
             user_queues=self.mock_queues,
             main_loop=self.mock_loop
@@ -572,15 +572,15 @@ class TestLifecycleAndConnectionState:
 
     def setup_method(self):
         """Set up provider for lifecycle tests."""
-        self.user_id = "test_user"
+        self.bot_id = "test_bot"
         self.config = ChatProviderConfig(
             provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings()
         )
-        self.mock_queues = {self.user_id: MagicMock(spec=UserQueuesManager)}
+        self.mock_queues = {self.bot_id: MagicMock(spec=UserQueuesManager)}
         self.mock_loop = asyncio.new_event_loop()
         self.provider = WhatsAppBaileysProvider(
-            user_id=self.user_id,
+            bot_id=self.bot_id,
             config=self.config,
             user_queues=self.mock_queues,
             main_loop=self.mock_loop
@@ -663,7 +663,7 @@ class TestLifecycleAndConnectionState:
         
         asyncio.run(self.provider.stop_listening(cleanup_session=False))
         
-        mock_callback.assert_called_once_with(self.user_id)
+        mock_callback.assert_called_once_with(self.bot_id)
 
     def test_stop_listening_only_calls_session_end_once(self):
         """Test that on_session_end is only called once even if stop_listening is called twice."""

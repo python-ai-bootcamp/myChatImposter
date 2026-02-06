@@ -51,7 +51,7 @@ const filterInputStyle = {
     boxSizing: 'border-box'
 };
 
-function UserTable({ configs, selectedUserId, onSelectUser, enableFiltering = false, showOwnerColumn = true }) {
+function UserTable({ configs, selectedBotId, onSelectBot, enableFiltering = false, showOwnerColumn = true }) {
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
     const [filters, setFilters] = useState({});
 
@@ -120,8 +120,8 @@ function UserTable({ configs, selectedUserId, onSelectUser, enableFiltering = fa
     }, [configs, sortConfig, filters, enableFiltering]);
 
 
-    const getTrStyle = (userId) => ({
-        backgroundColor: selectedUserId === userId ? '#e9ecef' : '#fff',
+    const getTrStyle = (botId) => ({
+        backgroundColor: selectedBotId === botId ? '#e9ecef' : '#fff',
         cursor: 'pointer',
         transition: 'background-color 0.2s'
     });
@@ -183,17 +183,17 @@ function UserTable({ configs, selectedUserId, onSelectUser, enableFiltering = fa
             <table style={{ ...tableStyle, marginTop: 0, boxShadow: 'none', borderRadius: 0 }}>
                 <thead style={{ position: 'sticky', top: 0, zIndex: 1, backgroundColor: '#f8f9fa' }}>
                     <tr>
-                        <th style={thStyle} onClick={() => requestSort('user_id')}>
+                        <th style={thStyle} onClick={() => requestSort('bot_id')}>
                             <div style={{ display: 'flex', alignItems: 'center' }}>
-                                User Name {renderSortArrow('user_id')}
+                                Bot ID {renderSortArrow('bot_id')}
                             </div>
                             {enableFiltering && (
                                 <input
                                     type="text"
                                     style={filterInputStyle}
                                     placeholder="Filter..."
-                                    value={filters.user_id || ''}
-                                    onChange={(e) => handleFilterChange('user_id', e.target.value)}
+                                    value={filters.bot_id || ''}
+                                    onChange={(e) => handleFilterChange('bot_id', e.target.value)}
                                     onClick={(e) => e.stopPropagation()} // Prevent sort trigger
                                 />
                             )}
@@ -257,13 +257,13 @@ function UserTable({ configs, selectedUserId, onSelectUser, enableFiltering = fa
                     ) : (
                         processedConfigs.map(config => (
                             <tr
-                                key={config.user_id}
-                                style={getTrStyle(config.user_id)}
-                                onClick={() => onSelectUser(config.user_id)}
+                                key={config.bot_id}
+                                style={getTrStyle(config.bot_id)}
+                                onClick={() => onSelectBot(config.bot_id)}
                             >
                                 <td style={tdStyle}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                        {config.user_id}
+                                        {config.bot_id}
                                     </div>
                                 </td>
                                 {showOwnerColumn && (

@@ -75,11 +75,11 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         await session_manager.update_last_accessed(session_id)
 
         # Check permissions
-        has_permission, extracted_user_id = PermissionValidator.check_permission(
+        has_permission, extracted_bot_id = PermissionValidator.check_permission(
             session_user_id=session.user_id,
             session_role=session.role,
             request_path=path,
-            owned_configurations=session.owned_user_configurations,
+            owned_bots=session.owned_bots,
             method=request.method,
         )
 
@@ -89,7 +89,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 user_id=session.user_id,
                 role=session.role,
                 requested_path=path,
-                extracted_user_id=extracted_user_id,
+                extracted_user_id=extracted_bot_id,
                 ip_address=request.client.host if request.client else None,
                 user_agent=request.headers.get("user-agent"),
             )

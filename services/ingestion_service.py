@@ -13,7 +13,7 @@ class IngestionService:
     """
     def __init__(self, session_manager: SessionManager, queues_collection: AsyncIOMotorCollection):
         self.session_manager = session_manager
-        self.user_id = session_manager.user_id
+        self.bot_id = session_manager.bot_id
         # We need provider name, likely available in session_manager.provider_instance?
         # Or from config. 
         # Using config is safer as provider instance might be re-initialized? 
@@ -27,7 +27,7 @@ class IngestionService:
 
     async def _run(self):
         """The main async loop for the ingester."""
-        logging.info(f"INGESTION ({self.user_id}): Starting up.")
+        logging.info(f"INGESTION ({self.bot_id}): Starting up.")
         while not self._stop_event.is_set():
             any_message_processed = False
             
@@ -48,16 +48,16 @@ class IngestionService:
                     any_message_processed = True
                     try:
                         message_doc = asdict(message)
-                        message_doc['user_id'] = self.user_id
+                        message_doc['bot_id'] = self.bot_id
                         message_doc['provider_name'] = self.provider_name
                         message_doc['correspondent_id'] = queue.correspondent_id
 
                         # Run the blocking DB call in a separate thread
                         await self.queues_collection.insert_one(message_doc)
 
-                        logging.info(f"INGESTION ({self.user_id}/{queue.correspondent_id}): Persisted message {message.id}.")
+                        logging.info(f"INGESTION ({self.bot_id}/{queue.correspondent_id}): Persisted message {message.id}.")
                     except Exception as e:
-                        logging.error(f"INGESTION ({self.user_id}/{queue.correspondent_id}): Failed to save message {message.id}: {e}")
+                        logging.error(f"INGESTION ({self.bot_id}/{queue.correspondent_id}): Failed to save message {message.id}: {e}")
 
             if not any_message_processed:
                 try:
@@ -65,7 +65,7 @@ class IngestionService:
                 except asyncio.TimeoutError:
                     pass
 
-        logging.info(f"INGESTION ({self.user_id}): Shutting down.")
+        logging.info(f"INGESTION ({self.bot_id}): Shutting down.")
 
     def start(self):
         """Starts the ingester task."""
