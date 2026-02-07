@@ -26,7 +26,6 @@ function RestrictedEditPage() {
     const [schema, setSchema] = useState(null);
     const [formData, setFormData] = useState(null);
     const [error, setError] = useState(null);
-    const [isSaving, setIsSaving] = useState(false);
     const [availableGroups, setAvailableGroups] = useState([]);
     const [cronErrors, setCronErrors] = useState([]);
     const [validationError, setValidationError] = useState(null);
@@ -69,6 +68,7 @@ function RestrictedEditPage() {
 
     // isNew determines if we are creating a new user (PUT) or editing (PATCH)
     const isNew = location.state?.isNew;
+    const isLinked = userStatus === 'connected';
 
     // Debounced validation (cron + backend API)
     useEffect(() => {
@@ -269,39 +269,35 @@ function RestrictedEditPage() {
         return finalApiData;
     };
 
+    const [savingStatus, setSavingStatus] = useState('idle'); // 'idle', 'saving', 'loading'
+
     const handleSaveConfiguration = async () => {
         if (!formRef.current) return;
-        setIsSaving(true);
+        setSavingStatus('saving');
         setError(null);
         try {
-            // Trigger RJSF validation by creating a synthetic submit
-            // Accessing internal RJSF state/methods to get current data is tricky without a submit event.
-            // But we can trigger the form submit, and handle the logic in the onSubmit callback.
-            // Problem: We need to distinguish WHICH button halted the submit.
-            // Solution: We'll set a ref or state indicating the intent, then submit.
-            setActionIntent('save');
+            actionIntentRef.current = 'save';
             formRef.current.submit();
         } catch (err) {
-            // Basic errors caught here
+            setSavingStatus('idle');
         }
-        // finally block handled in onSubmit
     };
 
     const handleSaveAndLoad = async () => {
         if (!formRef.current) return;
-        setIsSaving(true);
+        setSavingStatus('loading');
         setError(null);
-        setActionIntent('load');
+        actionIntentRef.current = 'load';
         formRef.current.submit();
     };
 
-    const [actionIntent, setActionIntent] = useState('save'); // 'save' or 'load'
+    const actionIntentRef = useRef('save'); // 'save' or 'load'
 
     const onFormSubmit = async ({ formData: submittedData }) => {
         try {
             await performSave(submittedData);
 
-            if (actionIntent === 'load') {
+            if (actionIntentRef.current === 'load') {
                 // Perform Link or Reload based on status
                 let action = 'link';
                 if (userStatus && userStatus !== 'disconnected' && userStatus !== 'error') {
@@ -326,7 +322,7 @@ function RestrictedEditPage() {
             if (err.message !== "Validation failed") {
                 setError(`Error: ${err.message}`);
             }
-            setIsSaving(false);
+            setSavingStatus('idle');
         }
     };
 
@@ -491,14 +487,14 @@ function RestrictedEditPage() {
                             onChange={handleFormChange}
                             onError={(errors) => {
                                 console.log('Form errors:', errors);
-                                setIsSaving(false);
+                                setSavingStatus('idle');
                             }}
-                            disabled={isSaving}
+                            disabled={savingStatus !== 'idle'}
                             templates={templates}
                             widgets={widgets}
                             formContext={{
                                 availableGroups,
-                                isLinked: false,
+                                isLinked: isLinked,
                                 formData,
                                 setFormData,
                                 cronErrors,
@@ -516,27 +512,27 @@ function RestrictedEditPage() {
                     <button
                         type="button"
                         onClick={handleSaveConfiguration}
-                        disabled={isSaving || cronErrors.some(e => e) || validationError}
+                        disabled={savingStatus !== 'idle' || cronErrors.some(e => e) || validationError}
                         title={validationError || (cronErrors.some(e => e) ? 'Fix cron expression errors first' : 'Saves new configuration without reloading the bot')}
                         style={{ marginRight: '10px', padding: '10px 20px', backgroundColor: (cronErrors.some(e => e) || validationError) ? '#6c757d' : '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: (cronErrors.some(e => e) || validationError) ? 'not-allowed' : 'pointer' }}
                     >
-                        {isSaving && actionIntent === 'save' ? 'Saving...' : 'Save Configuration'}
+                        {savingStatus === 'saving' ? 'Saving...' : 'Save Configuration'}
                     </button>
 
                     <button
                         type="button"
                         onClick={handleSaveAndLoad}
-                        disabled={isSaving || cronErrors.some(e => e) || validationError}
+                        disabled={savingStatus !== 'idle' || cronErrors.some(e => e) || validationError}
                         title={validationError || (cronErrors.some(e => e) ? 'Fix cron expression errors first' : 'Reloads the bot with the new configuration saved')}
                         style={{ marginRight: '10px', padding: '10px 20px', backgroundColor: (cronErrors.some(e => e) || validationError) ? '#6c757d' : '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: (cronErrors.some(e => e) || validationError) ? 'not-allowed' : 'pointer' }}
                     >
-                        {isSaving && actionIntent === 'load' ? 'Processing...' : 'Save & Load'}
+                        {savingStatus === 'loading' ? 'Processing...' : 'Save & Load'}
                     </button>
 
                     <button
                         type="button"
                         onClick={handleCancel}
-                        disabled={isSaving}
+                        disabled={savingStatus !== 'idle'}
                         style={{ padding: '10px 20px', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
                     >
                         Cancel
