@@ -694,6 +694,39 @@ const saveLidMapping = async (userId, lid, pn) => {
     }
 };
 
+const performSoftResetAction = async (userId, session) => {
+    console.log(`[${userId}] EXECUTING SOFT RESET ACTION.`);
+    try {
+        const keysToDelete = [
+            `^${userId}-app-state-sync-`,
+            `^${userId}-sender-key-memory`
+        ];
+        const deletePattern = keysToDelete.join('|');
+        await baileysSessionsCollection.deleteMany({ _id: { $regex: deletePattern } });
+        console.log(`[${userId}] Soft Reset: Deleted app-state-sync and sender-key-memory from DB.`);
+
+        if (session.authState) {
+            console.log(`[${userId}] Soft Reset: Clearing in-memory auth state.`);
+            session.authState = null;
+        }
+
+        if (session.sock) {
+            session.sock.end(undefined);
+        }
+
+        // Reconnect is usually handled by `connection.update` 'close' event,
+        // but if we just closed it manually, we might need to rely on the handler 
+        // seeing a 'close' event. 
+        // However, we just called `sock.end()`, which should trigger `connection.update` with `close`.
+        // To be safe and avoid loops, we rely on the existing handler detecting the close.
+        // BUT, our handler ignores `isManualClose`? 
+        // Let's NOT set `isManualClose` here.
+
+    } catch (err) {
+        console.error(`[${userId}] Soft Reset Action failed:`, err);
+    }
+};
+
 async function connectToWhatsApp(userId, vendorConfig) {
     const waVersion = await getLatestWaVersion();
 
@@ -761,7 +794,98 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
     const { state, saveCreds } = authState;
 
-    const logger = pino({ level: 'info' });
+    // Custom logger to intercept decryption errors
+    const logger = pino({
+        level: 'info',
+        transport: {
+            target: 'pino-pretty',
+            options: {
+                colorize: true
+            }
+        },
+        // We can't easily hook pino instances directly in v7+ without a stream, 
+        // but we can wrap the generic logger or use a mixin.
+        // However, Baileys uses the logger highly specifically.
+        // Easiest is to wrap the object we pass to Baileys.
+    });
+
+    const errorInterceptor = new Proxy(logger, {
+        get(target, prop) {
+            if (prop === 'error') {
+                return (...args) => {
+                    // Log originally
+                    target.error(...args);
+
+                    // Check for crypto errors
+                    // Args can be [obj, msg] or [msg] or [obj]
+                    const arg0 = args[0];
+                    const arg1 = args[1];
+
+                    let isCryptoError = false;
+                    let errorMessage = '';
+
+                    if (arg0 && typeof arg0 === 'object') {
+                        errorMessage = arg0.message || arg0.err?.message || '';
+                        if (errorMessage.includes('Bad MAC') || errorMessage.includes('SessionError') || errorMessage.includes('bad decrypt')) {
+                            isCryptoError = true;
+                        }
+                        // check child err property
+                        if (arg0.err && (arg0.err.message?.includes('Bad MAC') || arg0.err.message?.includes('SessionError'))) {
+                            isCryptoError = true;
+                        }
+                    } else if (typeof arg0 === 'string') {
+                        if (arg0.includes('Bad MAC') || arg0.includes('SessionError')) isCryptoError = true;
+                    }
+
+                    if (arg1 && typeof arg1 === 'string') {
+                        if (arg1.includes('Bad MAC') || arg1.includes('SessionError') || arg1.includes('failed to decrypt')) isCryptoError = true;
+                    }
+
+                    if (isCryptoError) {
+                        console.log(`[${userId}] Intercepted Crypto Error via Logger: ${errorMessage}`);
+                        handleCryptoError(userId, sessions[userId]);
+                    }
+                };
+            }
+            return target[prop];
+        }
+    });
+
+    // Helper to handle crypto error logic (debounced)
+    const handleCryptoError = (uId, sess) => {
+        if (!sess) return;
+        const now = Date.now();
+        if (!sess.cryptoTracker) {
+            sess.cryptoTracker = { count: 1, firstTimestamp: now };
+        } else {
+            if (now - sess.cryptoTracker.firstTimestamp > 120000) {
+                sess.cryptoTracker = { count: 1, firstTimestamp: now };
+            } else {
+                sess.cryptoTracker.count += 1;
+            }
+        }
+
+        console.log(`[${uId}] Crypto error count: ${sess.cryptoTracker.count}/3`);
+
+        if (sess.cryptoTracker.count >= 3) {
+            console.log(`[${uId}] threshold reached. Triggering SOFT RESET.`);
+            sess.cryptoTracker = null; // Reset
+
+            // Trigger Soft Reset Logic
+            // We reuse the logic from connection.update, but we need to force it.
+            // We can emit a fake connection update or just run the logic directly.
+            // Best is to Close the socket with a specific reason that our handler recognizes,
+            // OR run the cleanup directly.
+
+            performSoftResetAction(uId, sess);
+        }
+    };
+
+    // Define cleanup function if not exists (we'll need to move this scope or duplicate logic)
+    // Actually, let's just define a helper function outside `connectToWhatsApp` to do the reset 
+    // and call it here. But `baileysSessionsCollection` needs to be in scope.
+    // We can define `performSoftResetAction` inside `connectToWhatsApp` or pass dependencies.
+
 
     // DEBUG: Check Auth State 'me'
     if (state && state.creds && state.creds.me) {
@@ -772,7 +896,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
     const sock = makeWASocket({
         auth: state,
-        logger: logger,
+        logger: errorInterceptor,
         version: waVersion,
         browser: DEFAULT_BROWSER,
         syncFullHistory: vendorConfig.sync_full_history === true,
@@ -835,7 +959,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
     // Register credentials update listener to persist session state
     sock.ev.on('creds.update', saveCreds);
 
-    sock.ev.on('connection.update', (update) => {
+    sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
         const session = sessions[userId];
         if (!session || session.isUnlinking) return;
@@ -845,9 +969,16 @@ async function connectToWhatsApp(userId, vendorConfig) {
             return;
         }
 
-        // Ignore events from manually closed sockets
-        if (sock.isManualClose) {
+        // Ignore events from manually closed sockets, UNLESS it's a soft reset trigger
+        // We can check a flag on the session
+        if (sock.isManualClose && !session.isPerformingSoftReset) {
             console.log(`[${userId}] Ignoring event from manually closed socket.`);
+            return;
+        }
+        if (session.isPerformingSoftReset) {
+            session.isPerformingSoftReset = false; // Reset flag after handling
+            console.log(`[${userId}] Soft Reset triggered close event handled.`);
+            setTimeout(() => connectToWhatsApp(userId, vendorConfig), 500);
             return;
         }
 
@@ -999,27 +1130,9 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
             if (statusCode === DisconnectReason.restartRequired || performSoftReset) {
                 if (performSoftReset) {
-                    // Soft Reset: Delete app-state-sync keys and sender keys from DB to force re-sync
-                    // Also clear in-memory auth state to ensure we load fresh from MongoDB
-                    const keysToDelete = [
-                        `^${userId}-app-state-sync-`,  // App state sync keys
-                        `^${userId}-sender-key-memory`  // Sender key caches (can become corrupted)
-                    ];
-                    const deletePattern = keysToDelete.join('|');
-                    baileysSessionsCollection.deleteMany({ _id: { $regex: deletePattern } })
-                        .then(() => {
-                            console.log(`[${userId}] Soft Reset: Deleted app-state-sync and sender-key-memory from DB.`);
-                            // Clear in-memory auth state so we reload fresh from MongoDB
-                            if (session.authState) {
-                                console.log(`[${userId}] Soft Reset: Clearing in-memory auth state.`);
-                                session.authState = null;
-                            }
-                            // Also end the socket to force reconnect if not already broken
-                            if (session.sock) session.sock.end(undefined);
-                            // Reconnect after a brief delay to allow cleanup
-                            setTimeout(() => connectToWhatsApp(userId, vendorConfig), 500);
-                        })
-                        .catch(err => console.error(`[${userId}] Soft Reset failed:`, err));
+                    await performSoftResetAction(userId, session);
+                    // Reconnect after a brief delay to allow cleanup
+                    setTimeout(() => connectToWhatsApp(userId, vendorConfig), 500);
                 } else {
                     console.log(`[${userId}] Connection requires a restart. Reconnecting immediately.`);
                     connectToWhatsApp(userId, vendorConfig);
@@ -1455,6 +1568,33 @@ app.post('/sessions/:userId/fetch-messages', async (req, res) => {
     } catch (e) {
         console.error(`[${userId}] Error fetching historic messages:`, e);
         res.status(500).json({ error: e.message || 'Failed to fetch historic messages.' });
+    }
+});
+
+app.post('/debug/simulate-error/:userId', async (req, res) => {
+    const { userId } = req.params;
+    const session = sessions[userId];
+    if (!session || !session.sock) {
+        return res.status(404).json({ error: 'Session not found.' });
+    }
+    // Simulate Bad MAC error via logger
+    // We need to access the logger we created. Session.sock.ev... 
+    // Actually, we wrapped the logger passed to makeWASocket. 
+    // But we didn't save the intercepted logger on the session object?
+    // We passed it to `makeWASocket`. 
+    // `session.sock` has a logger property? Yes, typically.
+    if (session.handleCryptoError) {
+        session.handleCryptoError(userId, session);
+        console.log(`[${userId}] Simulated Crypto Error (direct call).`);
+        res.json({ status: 'Simulated error handled' });
+    } else {
+        // Fallback to logger if available, or error
+        if (session.sock && session.sock.logger) {
+            session.sock.logger.error(new Error('Simulated Bad MAC via logger'), 'Decryption failed');
+            res.json({ status: 'Simulated via logger' });
+        } else {
+            res.status(500).json({ error: 'handleCryptoError not exposed and logger not found.' });
+        }
     }
 });
 
