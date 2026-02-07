@@ -17,7 +17,8 @@ from routers import bot_management
 from routers.features import automatic_bot_reply, periodic_group_tracking
 from routers import async_message_delivery_queue
 from routers import resources
-from routers import bot_ui # [NEW]
+from routers import bot_ui
+from routers import user_management # [NEW]
 
 
 # Logging Setup
@@ -67,6 +68,10 @@ async def lifespan(app: FastAPI):
         global_state.group_tracker = GroupTracker(global_state.db, global_state.chatbot_instances, global_state.async_message_delivery_queue_manager)
         global_state.group_tracker.start()
         
+        # 4a. Initialize UserAuthService (Needed by User Management)
+        from services.user_auth_service import UserAuthService
+        global_state.auth_service = UserAuthService(global_state.credentials_collection)
+
         # 4. Initialize BotLifecycleService
         global_state.bot_lifecycle_service = BotLifecycleService(global_state)
         
@@ -105,7 +110,8 @@ app.include_router(automatic_bot_reply.router)
 app.include_router(periodic_group_tracking.router)
 app.include_router(async_message_delivery_queue.router)
 app.include_router(resources.router)
-app.include_router(bot_ui.router) # [NEW]
+app.include_router(bot_ui.router)
+app.include_router(user_management.router) # [NEW]
 
 
 @app.middleware("http")

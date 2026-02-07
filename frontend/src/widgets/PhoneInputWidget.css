@@ -1,0 +1,25 @@
+/* Overlay standard styles to match bootstrapish look */
+.PhoneInput {
+    display: flex;
+    align-items: center;
+}
+
+.PhoneInputInput {
+    flex: 1;
+    min-width: 0;
+    padding: 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 1rem;
+    outline: none;
+    margin-left: 10px;
+}
+
+.PhoneInputInput:focus {
+    border-color: #80bdff;
+    box-shadow: 0 0 0 0.2rem rgba(0, 123, 255, 0.25);
+}
+
+.PhoneInputCountry {
+    margin-right: 0.5em;
+}

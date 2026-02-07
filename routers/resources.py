@@ -32,3 +32,14 @@ async def list_timezones():
     """
     from resources import get_all_timezones
     return get_all_timezones()
+
+@router.get("/countries")
+async def list_countries():
+    """
+    Get list of countries (ISO 3166-1 alpha-2).
+    
+    Returns:
+        List of dicts: {name, code, flag}
+    """
+    from services.resource_service import ResourceService
+    return ResourceService.get_countries()

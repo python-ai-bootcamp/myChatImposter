@@ -9,34 +9,31 @@ from motor.motor_asyncio import AsyncIOMotorClient
 async def reset_password(user_id, new_password):
     # Connect
     mongo_url = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
-    db_name = os.getenv("MONGO_DB_NAME", "chat_manager")
     
-    print(f"Connecting to MongoDB: {mongo_url} (DB: {db_name})")
+    print(f"Connecting to MongoDB: {mongo_url}")
     
     client = AsyncIOMotorClient(mongo_url)
-    db = client[db_name]
+    db = client["chat_manager"]
     collection = db["user_auth_credentials"]
     
-    # Check user
-    user = await collection.find_one({"user_id": user_id})
-    if not user:
-        print(f"Error: User '{user_id}' not found in database '{db_name}'.")
-        client.close()
-        return
-
-    # Hash
-    hashed = bcrypt.hashpw(new_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    # Initialize Service
+    # Note: UserAuthService expects collection
+    from services.user_auth_service import UserAuthService
+    auth_service = UserAuthService(collection)
     
     # Update
-    result = await collection.update_one(
-        {"user_id": user_id},
-        {"$set": {"password_hash": hashed}}
-    )
-    
-    if result.modified_count > 0:
-        print(f"Success: Password for '{user_id}' has been reset.")
-    else:
-        print(f"Warning: Password for '{user_id}' was not changed (maybe it was the same?).")
+    try:
+        success, message = await auth_service.update_password(user_id, new_password)
+        
+        if success:
+            print(f"Success: {message}")
+        else:
+            print(f"Error: {message}")
+            if "not found" in message:
+                 print(f"User '{user_id}' does not exist.")
+                 
+    except Exception as e:
+        print(f"Error during update: {e}")
 
     client.close()
 

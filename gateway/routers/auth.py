@@ -179,12 +179,21 @@ async def login(login_request: LoginRequest, request: Request, response: Respons
 
     logging.info(f"GATEWAY: User {login_request.user_id} logged in successfully")
 
+    # Fetch full user details for response
+    user_creds = await auth_service.get_credentials(login_request.user_id)
+    first_name = user_creds.first_name if user_creds else None
+    last_name = user_creds.last_name if user_creds else None
+    language_code = user_creds.language if user_creds else "en"
+
     return LoginResponse(
         success=True,
         message="Login successful",
         user_id=session.user_id,
         role=session.role,
         session_id=session.session_id,
+        first_name=first_name,
+        last_name=last_name,
+        language_code=language_code
     )
 
 
@@ -218,3 +227,37 @@ async def logout(request: Request, response: Response):
     response.delete_cookie(key="session_id")
 
     return {"success": True, "message": "Logout successful"}
+
+
+@router.get("/me", response_model=LoginResponse)
+async def get_current_user_info(request: Request):
+    """
+    Get current logged-in user info.
+    """
+    session_id = request.cookies.get("session_id")
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    session = await session_manager.get_session(session_id)
+    if not session:
+        raise HTTPException(status_code=401, detail="Session expired or invalid")
+
+    # Fetch full details
+    # We need to access auth_service. It's available globally in this module via initialize_auth_router
+    # but also via app.state if we wanted. Using the global var set in initialize.
+    
+    user_creds = await auth_service.get_credentials(session.user_id)
+    first_name = user_creds.first_name if user_creds else None
+    last_name = user_creds.last_name if user_creds else None
+    language_code = user_creds.language if user_creds else "en"
+
+    return LoginResponse(
+        success=True,
+        message="Session valid",
+        user_id=session.user_id,
+        role=session.role,
+        session_id=session.session_id,
+        first_name=first_name,
+        last_name=last_name,
+        language_code=language_code
+    )

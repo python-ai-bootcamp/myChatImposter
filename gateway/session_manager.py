@@ -222,7 +222,7 @@ class SessionManager:
 
         return sessions
 
-    async def invalidate_all_user_sessions(self, user_id: str, reason: str = "logout_all") -> int:
+    async def invalidate_all_sessions(self, user_id: str, reason: str = "logout_all") -> int:
         """
         Invalidate all sessions for a user.
 

@@ -26,6 +26,15 @@ class UserAuthCredentials(BaseModel):
     owned_bots: list[str] = Field(default_factory=list, description="List of bot_ids this user owns")
     max_user_configuration_limit: int = Field(default=5, description="Max number of owned configurations")
     max_feature_limit: int = Field(default=5, description="Max number of enabled features per configuration")
+    
+    # New Fields
+    first_name: str = Field(default="Unknown", description="User first name")
+    last_name: str = Field(default="User", description="User last name")
+    phone_number: str = Field(default="", description="User phone number (E.164)")
+    email: str = Field(default="", description="User email address")
+    gov_id: str = Field(default="", description="Government ID")
+    country_value: str = Field(default="US", description="Country code (ISO 3166-1 alpha-2)")
+    language: str = Field(default="en", description="Language code (ISO 639-1)")
 
     @field_validator("user_id")
     @classmethod
@@ -37,6 +46,23 @@ class UserAuthCredentials(BaseModel):
             )
         return v
 
+class UserResponse(BaseModel):
+    """
+    User details returned to API clients (excludes password_hash).
+    """
+    user_id: str = Field(..., description="Unique user identifier")
+    role: Literal["admin", "user"] = Field(..., description="User role")
+    owned_bots: list[str] = Field(default_factory=list, description="List of bot_ids this user owns")
+    max_user_configuration_limit: int = Field(default=5, description="Max number of owned configurations")
+    max_feature_limit: int = Field(default=5, description="Max number of enabled features per configuration")
+    
+    first_name: str = Field(default="Unknown", description="User first name")
+    last_name: str = Field(default="User", description="User last name")
+    phone_number: str = Field(default="", description="User phone number (E.164)")
+    email: str = Field(default="", description="User email address")
+    gov_id: str = Field(default="", description="Government ID")
+    country_value: str = Field(default="US", description="Country code (ISO 3166-1 alpha-2)")
+    language: str = Field(default="en", description="Language code (ISO 639-1)")
 
 class SessionData(BaseModel):
     """
@@ -107,12 +133,18 @@ class LoginResponse(BaseModel):
         user_id: User identifier (only on success)
         role: User role (only on success)
         session_id: Session identifier (only on success, for debugging)
+        first_name: User first name
+        last_name: User last name
+        language_code: User language code
     """
     success: bool = Field(..., description="Login success status")
     message: str = Field(..., description="Response message")
     user_id: Optional[str] = Field(None, description="User identifier")
     role: Optional[Literal["admin", "user"]] = Field(None, description="User role")
     session_id: Optional[str] = Field(None, description="Session identifier")
+    first_name: Optional[str] = Field(None, description="User first name")
+    last_name: Optional[str] = Field(None, description="User last name")
+    language_code: Optional[str] = Field(None, description="User language code")
 
 
 class AuditLog(BaseModel):
@@ -134,7 +166,11 @@ class AuditLog(BaseModel):
         "permission_denied",
         "logout",
         "account_locked",
-        "account_unlocked"
+        "account_unlocked",
+        "user_created",
+        "user_updated",
+        "user_deleted",
+        "password_reset"
     ] = Field(..., description="Security event type")
     user_id: Optional[str] = Field(None, description="Associated user identifier")
     ip_address: Optional[str] = Field(None, description="Client IP address")

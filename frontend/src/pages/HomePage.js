@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import UserTable from '../components/UserTable';
+import GenericTable from '../components/GenericTable';
 import LinkUserModal from '../components/LinkUserModal';
 import CreateUserModal from '../components/CreateUserModal';
 import { isActionEnabled } from '../utils/actionHelpers';
@@ -20,6 +20,54 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   const [linkStatus, setLinkStatus] = useState(null);
 
   const navigate = useNavigate();
+  // ... (keep existing state/effects) ...
+
+  // Helper for status color
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'connected': return 'green';
+      case 'linking':
+      case 'connecting':
+      case 'initializing':
+      case 'got qr code':
+      case 'waiting': return 'orange';
+      case 'disconnected':
+      case 'invalid_config': return 'gray';
+      default: return 'gray';
+    }
+  };
+
+  const columns = [
+    { key: 'bot_id', label: 'Bot ID', sortable: true, filterable: true },
+    ...(showOwnerColumn ? [{ key: 'owner', label: 'Owner', sortable: true, filterable: true }] : []),
+    {
+      key: 'authenticated',
+      label: 'Authenticated',
+      sortable: true,
+      filterable: true,
+      render: (item) => item.authenticated ? <span style={{ color: 'green', fontWeight: 'bold' }}>Yes</span> : <span style={{ color: '#6c757d' }}>No</span>
+    },
+    {
+      key: 'status',
+      label: 'Status',
+      sortable: true,
+      filterable: true,
+      render: (item) => (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span style={{
+            height: '10px',
+            width: '10px',
+            backgroundColor: getStatusColor(item.status),
+            borderRadius: '50%',
+            display: 'inline-block'
+          }}></span>
+          {item.status}
+        </div>
+      )
+    }
+  ];
+
+  // ... (keep hooks) ...
   const [searchParams, setSearchParams] = useSearchParams();
   const pollIntervalRef = useRef(null);
 
@@ -30,7 +78,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
       if (role === 'admin') {
         navigate('/admin/home', { replace: true });
       } else if (role === 'user') {
-        navigate('/user/home', { replace: true });
+        navigate('/operator/dashboard', { replace: true });
       } else {
         navigate('/login', { replace: true });
       }
@@ -44,7 +92,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
 
       const endpoint = '/api/external/bots/status';
 
-      const response = await fetch(endpoint);
+      const response = await fetch(endpoint, { credentials: 'include' });
       if (!response.ok) {
         if (response.status === 401) {
           navigate('/login');
@@ -83,7 +131,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
     if (linkingBotId) {
       const pollSpecificStatus = async () => {
         try {
-          const response = await fetch(`/api/external/bots/${linkingBotId}/status`);
+          const response = await fetch(`/api/external/bots/${linkingBotId}/status`, { credentials: 'include' });
           if (response.ok) {
             const data = await response.json();
             setLinkStatus(data.status);
@@ -195,7 +243,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
     if (role === 'admin') {
       navigate(`/admin/edit/${botId}`, { state: { isNew: true } });
     } else {
-      navigate(`/user/edit/${botId}`, { state: { isNew: true } });
+      navigate(`/operator/bot/${botId}`, { state: { isNew: true } });
     }
   };
 
@@ -204,7 +252,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
     if (role === 'admin') {
       navigate(`/admin/edit/${botId}`);
     } else {
-      navigate(`/user/edit/${botId}`);
+      navigate(`/operator/bot/${botId}`);
     }
   };
 
@@ -268,12 +316,13 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
 
       {error && <div style={{ color: 'red', marginTop: '1rem', padding: '10px', backgroundColor: '#fff5f5', borderRadius: '4px' }}>Error: {error}</div>}
 
-      <UserTable
-        configs={configs}
-        selectedBotId={selectedBotId}
-        onSelectBot={setSelectedBotId}
+      <GenericTable
+        data={configs}
+        columns={columns}
+        idField="bot_id"
+        selectedId={selectedBotId}
+        onSelect={setSelectedBotId}
         enableFiltering={enableFiltering}
-        showOwnerColumn={showOwnerColumn}
       />
 
       <div style={actionButtonsContainerStyle}>

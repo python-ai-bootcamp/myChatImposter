@@ -105,3 +105,48 @@ class BotLifecycleService:
             elif status == 'disconnected':
                 await self.on_bot_disconnected(uid)
         return callback
+
+    async def delete_bot_data(self, bot_id: str) -> bool:
+        """
+        Delete all data associated with a bot configuration.
+        - Stops active instance
+        - Clears queues
+        - Stops tracking jobs
+        - Deletes configuration from DB
+
+        Returns:
+            True if deletion was successful (or config not found), False on error.
+        """
+        try:
+            # 1. Stop Tracking Jobs
+            if self.global_state.group_tracker:
+                 logging.info(f"LIFECYCLE: Stopping tracking jobs for {bot_id}")
+                 self.global_state.group_tracker.update_jobs(bot_id, [])
+
+            # 2. Stop Active Instance
+            if bot_id in self.global_state.active_bots:
+                instance_id = self.global_state.active_bots[bot_id]
+                instance = self.global_state.chatbot_instances.get(instance_id)
+                if instance:
+                    logging.info(f"LIFECYCLE: Stopping instance for {bot_id} before delete.")
+                    await instance.stop(cleanup_session=True)
+                    self.global_state.remove_active_bot(bot_id)
+            
+            # 3. Cleanup Queues (Move to Holding)
+            if self.global_state.async_message_delivery_queue_manager:
+                 await self.global_state.async_message_delivery_queue_manager.move_user_to_holding(bot_id)
+
+            # 4. Delete Configuration DO NOT DELETE CREDENTIALS HERE
+            query = {"config_data.bot_id": bot_id}
+            result = await self.global_state.configurations_collection.delete_one(query)
+            
+            if result.deleted_count > 0:
+                logging.info(f"LIFECYCLE: Deleted configuration for {bot_id}.")
+                return True
+            else:
+                logging.warning(f"LIFECYCLE: Configuration for {bot_id} not found during delete.")
+                return False
+
+        except Exception as e:
+            logging.error(f"LIFECYCLE: Error deleting bot data for {bot_id}: {e}")
+            raise e

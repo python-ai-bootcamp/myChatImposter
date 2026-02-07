@@ -145,8 +145,20 @@ async def proxy_to_backend(path: str, request: Request):
     Includes Interceptor for PUT Creation (Ownership Claim).
     """
     # Transform path: /api/external/* → /api/internal/*
-    backend_path = f"/api/internal/{path}"
-    backend_url = f"{gateway_state.backend_url}{backend_path}"
+    
+    # Determine target URL based on path prefix
+    # Determine target URL based on path prefix
+    if (path == "resources" or path.startswith("resources/") or 
+        path == "users" or path.startswith("users/") or 
+        path == "bots" or path.startswith("bots/")):
+        # Map /api/external/resources[/...] -> /api/internal/resources[/...]
+        # Map /api/external/users[/...] -> /api/internal/users[/...]
+        # Map /api/external/bots[/...] -> /api/internal/bots[/...]
+        backend_url = f"{gateway_state.backend_url}/api/internal/{path}"
+    else:
+        # Default to bots for backward compatibility (naked bot IDs)
+        # Map /api/external/{bot_id}/... -> /api/internal/bots/{bot_id}/...
+        backend_url = f"{gateway_state.backend_url}/api/internal/bots/{path}"
 
     # Get query parameters
     query_params = dict(request.query_params)
@@ -155,10 +167,11 @@ async def proxy_to_backend(path: str, request: Request):
     headers = dict(request.headers)
     headers.pop("host", None)
 
-    # Inject X-User-Id from session if available
+    # Inject X-User-Id and X-User-Role from session if available
     session = getattr(request.state, "session", None)
     if session:
         headers["X-User-Id"] = session.user_id
+        headers["X-User-Role"] = session.role
 
     # Get request body
     try:
@@ -172,29 +185,46 @@ async def proxy_to_backend(path: str, request: Request):
         f"GATEWAY: Proxying {request.method} {backend_url} (from {request.url.path})"
     )
 
-    # Interceptor: Pre-check for Bot Limit (PUT Creation)
-    if request.method == "PUT":
-        target_bot_id = None
-        parts = path.strip("/").split("/")
-        # Valid Paths: /bots/{id} or /ui/bots/{id}
-        if len(parts) == 2 and parts[0] == "bots":
-            target_bot_id = parts[1]
-        elif len(parts) == 3 and parts[0] == "ui" and parts[1] == "bots":
-            target_bot_id = parts[2]
-            
-        if target_bot_id:
-             session = getattr(request.state, "session", None)
-             if session and session.role == "user":
-                  owned_ids = getattr(session, "owned_bots", [])
-                  
-                  # Allow updates to existing owned bots, Reject creation if limit reached
-                  limit = getattr(session, "max_user_configuration_limit", 5)
-                  if target_bot_id not in owned_ids and len(owned_ids) >= limit:
-                       logging.warning(f"GATEWAY: User {session.user_id} reached limit ({limit}) trying to create {target_bot_id}")
-                       return JSONResponse(
-                           status_code=403, 
-                           content={"detail": f"You have reached your limit of {limit} concurrent bots."}
-                       )
+    # Interceptor: Security Check (IDOR Prevention)
+    # Ensure users can only access their own bots
+    target_bot_id = None
+    parts = path.strip("/").split("/")
+    
+    # Identify bot_id from path
+    if len(parts) >= 2 and parts[0] == "bots":
+        target_bot_id = parts[1]
+    elif len(parts) >= 3 and parts[0] == "ui" and parts[1] == "bots":
+        target_bot_id = parts[2]
+
+    # Perform Check
+    if target_bot_id:
+        # Whitelist public resources that might look like bot IDs
+        if target_bot_id in ["schema", "defaults"]:
+            pass
+        else:
+            session = getattr(request.state, "session", None)
+            if session and session.role == "user":
+                owned_ids = getattr(session, "owned_bots", [])
+                
+                # 1. Block access to unowned bots (unless it's a creation request)
+                if request.method != "PUT" and request.method != "POST" and target_bot_id not in owned_ids:
+                    logging.warning(f"GATEWAY: IDOR attempt by {session.user_id} on {target_bot_id}")
+                    return JSONResponse(status_code=403, content={"detail": "Access denied."})
+                
+                # Special Case for POST/PUT (Linking/Actions on unowned bots)
+                if request.method == "POST" and target_bot_id not in owned_ids:
+                     logging.warning(f"GATEWAY: Unauthorized action attempt by {session.user_id} on {target_bot_id}")
+                     return JSONResponse(status_code=403, content={"detail": "Access denied."})
+
+                # 2. Bot Limit Check (for PUT creation)
+                if request.method == "PUT" and target_bot_id not in owned_ids:
+                       limit = getattr(session, "max_user_configuration_limit", 5)
+                       if len(owned_ids) >= limit:
+                            logging.warning(f"GATEWAY: User {session.user_id} reached limit ({limit}) trying to create {target_bot_id}")
+                            return JSONResponse(
+                                status_code=403, 
+                                content={"detail": f"You have reached your limit of {limit} concurrent bots."}
+                            )
 
     # Forward request
     response = await _forward_request(

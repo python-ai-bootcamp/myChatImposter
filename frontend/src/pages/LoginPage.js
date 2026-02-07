@@ -45,9 +45,9 @@ const LoginPage = () => {
 
         // Redirect to home page based on role
         if (response.role === 'admin') {
-          navigate('/admin/home');
+          navigate('/admin/dashboard');
         } else {
-          navigate('/user/home');
+          navigate('/operator/dashboard');
         }
       } else {
         setError(response.message || 'Login failed');

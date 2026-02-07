@@ -2,15 +2,15 @@
 """
 User Creation Script.
 
-Creates a user (admin or regular) with secure password input (not visible in terminal or history).
-Validates password strength before creating credentials.
+Creates a user (admin or regular) with secure password input.
+Supports extended profile fields (Name, Email, Phone, etc.).
 
 Usage:
-    python scripts/create_admin_user.py <user_id> --role <admin|user>
+    python scripts/create_user.py <user_id> --role <admin|user> [options]
 
 Examples:
-    python scripts/create_admin_user.py admin --role admin
-    python scripts/create_admin_user.py tal --role user
+    python scripts/create_user.py admin --role admin --email admin@example.com
+    python scripts/create_user.py john --role user --first-name John --last-name Doe
 """
 
 import sys
@@ -26,15 +26,13 @@ from motor.motor_asyncio import AsyncIOMotorClient
 from services.user_auth_service import UserAuthService
 
 
-async def create_user(user_id: str, role: str, mongodb_url: str):
+async def create_user(args, mongodb_url: str):
     """
     Create user with secure password prompt.
-
-    Args:
-        user_id: User identifier
-        role: User role ("admin" or "user")
-        mongodb_url: MongoDB connection string
     """
+    user_id = args.user_id
+    role = args.role
+    
     print(f"\n=== Creating {role.title()} User: {user_id} ===\n")
 
     # Prompt for password (not visible)
@@ -73,12 +71,20 @@ async def create_user(user_id: str, role: str, mongodb_url: str):
         success, message = await auth_service.create_credentials(
             user_id=user_id,
             password=password,
-            role=role
+            role=role,
+            first_name=args.first_name,
+            last_name=args.last_name,
+            email=args.email,
+            phone_number=args.phone_number,
+            gov_id=args.gov_id,
+            country_value=args.country,
+            language=args.language
         )
 
         if success:
             print(f"\n✓ {message}")
             print(f"\n{role.title()} user '{user_id}' created successfully!")
+            print(f"Details: {args.first_name} {args.last_name} ({args.email})")
             print("\nYou can now log in to the gateway with these credentials.")
         else:
             print(f"\n✗ Error: {message}")
@@ -97,28 +103,21 @@ def main():
     """Main entry point."""
     # Parse command-line arguments
     parser = argparse.ArgumentParser(
-        description="Create a user with specified role (admin or regular user)",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-        epilog="""
-Examples:
-  python scripts/create_admin_user.py admin --role admin
-  python scripts/create_admin_user.py tal --role user
-        """
+        description="Create a user with specified role and profile details.",
+        formatter_class=argparse.RawDescriptionHelpFormatter
     )
 
-    parser.add_argument(
-        "user_id",
-        type=str,
-        help="User identifier (alphanumeric, underscore, hyphen only)"
-    )
-
-    parser.add_argument(
-        "--role",
-        type=str,
-        required=True,
-        choices=["admin", "user"],
-        help="User role (required)"
-    )
+    parser.add_argument("user_id", help="User identifier (alphanumeric, underscore, hyphen only)")
+    parser.add_argument("--role", required=True, choices=["admin", "user"], help="User role")
+    
+    # Profile fields
+    parser.add_argument("--first-name", default="Unknown", help="First Name")
+    parser.add_argument("--last-name", default="User", help="Last Name")
+    parser.add_argument("--email", default="", help="Email Address")
+    parser.add_argument("--phone-number", default="", help="Phone Number (E.164)")
+    parser.add_argument("--gov-id", default="", help="Government ID")
+    parser.add_argument("--country", default="US", help="Country Code (ISO 3166-1 alpha-2)")
+    parser.add_argument("--language", default="en", help="Language Code (ISO 639-1)")
 
     args = parser.parse_args()
 
@@ -131,7 +130,13 @@ Examples:
     mongodb_url = os.getenv("MONGODB_URL", "mongodb://localhost:27017")
 
     # Run async function
-    asyncio.run(create_user(args.user_id.strip(), args.role, mongodb_url))
+    if sys.platform == "win32":
+        try:
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+        except AttributeError:
+            pass
+
+    asyncio.run(create_user(args, mongodb_url))
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ import asyncio
 import uuid
 import logging
 from typing import Dict, Any, List, Union
-from fastapi import APIRouter, HTTPException, Body, Response, Request, Query
+from fastapi import APIRouter, HTTPException, Body, Response, Request, Query, Header
 from fastapi.responses import JSONResponse
 from fastapi.concurrency import run_in_threadpool
 from pymongo.errors import DuplicateKeyError
@@ -11,7 +11,8 @@ from pymongo.errors import DuplicateKeyError
 from config_models import (
     BotConfiguration, BotGeneralSettings, FeaturesConfiguration,
     ChatProviderConfig, LLMProviderConfig, ChatProviderSettings, LLMProviderSettings,
-    UserDetails, QueueConfig, ContextConfig, DefaultConfigurations
+    UserDetails, QueueConfig, ContextConfig, DefaultConfigurations,
+    RegularBotConfiguration, RegularBotGeneralSettings
 )
 
 from infrastructure.exceptions import (
@@ -240,10 +241,16 @@ async def list_bots_status(
          raise HTTPException(status_code=500, detail="Could not get statuses.")
 
 @router.get("/schema", response_model=Dict[str, Any])
-async def get_configuration_schema():
+async def get_configuration_schema(
+    x_user_role: str = Header(default="user", alias="X-User-Role")
+):
     """
     Returns the JSON Schema for BotConfiguration.
+    Filtered by role: Users get RegularBotConfiguration schema.
     """
+    if x_user_role == "user":
+        return RegularBotConfiguration.model_json_schema()
+
     schema = BotConfiguration.model_json_schema()
     defs_key = '$defs' if '$defs' in schema else 'definitions'
 
@@ -292,12 +299,15 @@ async def get_configuration_schema():
 
     return schema
 
-@router.get("/defaults", response_model=BotConfiguration)
-async def get_bot_defaults():
+@router.get("/defaults", response_model=Union[BotConfiguration, RegularBotConfiguration])
+async def get_bot_defaults(
+    x_user_role: str = Header(default="user", alias="X-User-Role")
+):
     """
     Get default bot configuration template.
+    Filtered based on user role using 'RegularBotConfiguration'.
     """
-    return BotConfiguration(
+    full_defaults = BotConfiguration(
         bot_id="default_template",
         configurations=BotGeneralSettings(
             user_details=UserDetails(),
@@ -320,10 +330,28 @@ async def get_bot_defaults():
         features=FeaturesConfiguration()
     )
 
+    if x_user_role == "user":
+        # Use the restricted model
+        user_defaults = RegularBotConfiguration(
+            bot_id=full_defaults.bot_id,
+            configurations=RegularBotGeneralSettings(
+                user_details=full_defaults.configurations.user_details
+            ),
+            features=full_defaults.features
+        )
+        return user_defaults
+
+    return full_defaults
+
 @router.get("/{bot_id}")
-async def get_bot_configuration(bot_id: str, state: GlobalStateManager = Depends(ensure_db_connected)):
+async def get_bot_configuration(
+    bot_id: str, 
+    state: GlobalStateManager = Depends(ensure_db_connected),
+    x_user_role: str = Header(default="user", alias="X-User-Role")
+):
     """
     Get bot configuration.
+    Filtered based on user role.
     """
     try:
         config_data = await _get_bot_config(bot_id, state.configurations_collection)
@@ -331,7 +359,29 @@ async def get_bot_configuration(bot_id: str, state: GlobalStateManager = Depends
         if not config_data:
              raise HTTPException(status_code=404, detail="Configuration not found.")
         
+        # Role-based filtering
+        if x_user_role == "user":
+            try:
+                # Validate into full model first to ensure structure
+                full_config = BotConfiguration.model_validate(config_data)
+                
+                # Downcast to RegularBotConfiguration
+                user_config = RegularBotConfiguration(
+                    bot_id=full_config.bot_id,
+                    configurations=RegularBotGeneralSettings(
+                        user_details=full_config.configurations.user_details
+                    ),
+                    features=full_config.features
+                )
+                
+                return JSONResponse(content=user_config.model_dump())
+            except Exception as e:
+                 logging.error(f"API: Error transforming config for user view: {e}")
+                 raise HTTPException(status_code=500, detail="Error preparing user configuration.")
+        
         return JSONResponse(content=config_data)
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"API: Error getting config for {bot_id}: {e}")
         raise HTTPException(status_code=500, detail="Could not retrieve configuration.")
@@ -366,31 +416,16 @@ async def delete_bot(bot_id: str, state: GlobalStateManager = Depends(ensure_db_
     Delete bot configuration and stop/unlink session.
     """
     try:
-        # Stop tracking jobs
-        if state.group_tracker:
-             logging.info(f"API: Stopping tracking jobs for {bot_id}")
-             state.group_tracker.update_jobs(bot_id, [])
+        if not state.bot_lifecycle_service:
+            raise HTTPException(status_code=500, detail="Bot Lifecycle Service not initialized.")
 
-        # Stop instance if active
-        if bot_id in state.active_bots:
-            instance_id = state.active_bots[bot_id]
-            instance = state.chatbot_instances.get(instance_id)
-            if instance:
-                logging.info(f"API: Stopping instance for {bot_id} before delete.")
-                await instance.stop(cleanup_session=True)
-                state.remove_active_bot(bot_id)
+        # 1. Clean up bot data (Instance, Queues, Config, Tracking)
+        success = await state.bot_lifecycle_service.delete_bot_data(bot_id)
         
-        # Cleanup Lifecycle: Move items to Holding Queue
-        if state.async_message_delivery_queue_manager:
-             await state.async_message_delivery_queue_manager.move_user_to_holding(bot_id)
-
-        query = {"config_data.bot_id": bot_id}
-        
-        result = await state.configurations_collection.delete_one(query)
-        if result.deleted_count == 0:
+        if not success:
             raise HTTPException(status_code=404, detail="Configuration not found.")
         
-        # Remove from owner's owned_bots list
+        # 2. Remove from owner's owned_bots list (Credentials)
         if state.credentials_collection is not None:
             await state.credentials_collection.update_one(
                 {"owned_bots": bot_id},
@@ -399,6 +434,8 @@ async def delete_bot(bot_id: str, state: GlobalStateManager = Depends(ensure_db_
         
         logging.info(f"API: Deleted configuration for {bot_id}.")
         return {"status": "success", "bot_id": bot_id}
+    except HTTPException:
+        raise
     except Exception as e:
         logging.error(f"API: Error deleting bot {bot_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Could not delete bot: {e}")
@@ -600,3 +637,18 @@ async def get_bot_groups(bot_id: str, state: GlobalStateManager = Depends(ensure
     except Exception as e:
         logging.error(f"API: Error getting groups for {bot_id}: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/{bot_id}/validate-config")
+async def validate_bot_config(
+    bot_id: str,
+    body: Dict[str, Any] = Body(...),
+    state: GlobalStateManager = Depends(ensure_db_connected)
+):
+    """
+    Validate bot configuration features against user limits.
+    Intended for UI pre-save validation.
+    """
+    # Note: In a real implementation, this would check against the user's
+    # actual limits from their subscription/account.
+    # For now, it's a stub that returns valid=True to prevent 404s.
+    return {"valid": True, "error_message": None}

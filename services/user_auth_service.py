@@ -115,7 +115,17 @@ class UserAuthService:
         return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
 
     async def create_credentials(
-        self, user_id: str, password: str, role: str
+        self, 
+        user_id: str, 
+        password: str, 
+        role: str,
+        first_name: str = "Unknown",
+        last_name: str = "User",
+        phone_number: str = "",
+        email: str = "",
+        gov_id: str = "",
+        country_value: str = "US",
+        language: str = "en"
     ) -> Tuple[bool, str]:
         """
         Create new user credentials after validation.
@@ -124,6 +134,13 @@ class UserAuthService:
             user_id: User identifier
             password: Plain text password
             role: User role ("admin" or "user")
+            first_name: User first name
+            last_name: User last name
+            phone_number: User phone (E.164)
+            email: User email
+            gov_id: Government ID
+            country_value: Country code
+            language: Language code
 
         Returns:
             Tuple of (success, message)
@@ -142,11 +159,26 @@ class UserAuthService:
         existing = await self.credentials_collection.find_one({"user_id": user_id})
         if existing:
             return False, f"User '{user_id}' already exists"
+            
+        # Check if email is unique (if provided)
+        if email:
+             existing_email = await self.credentials_collection.find_one({"email": email})
+             if existing_email:
+                 return False, f"Email '{email}' is already in use."
 
         # Hash password and create credentials
         password_hash = self.hash_password(password)
         credentials = UserAuthCredentials(
-            user_id=user_id, password_hash=password_hash, role=role
+            user_id=user_id, 
+            password_hash=password_hash, 
+            role=role,
+            first_name=first_name,
+            last_name=last_name,
+            phone_number=phone_number,
+            email=email,
+            gov_id=gov_id,
+            country_value=country_value,
+            language=language
         )
 
         # Insert into MongoDB

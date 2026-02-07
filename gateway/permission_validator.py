@@ -113,6 +113,15 @@ class PermissionValidator:
             if request_path.startswith("/api/external/resources/"):
                  return True, None
 
+            # Exception: /auth/me endpoint (Public for authenticated users)
+            if request_path == "/api/external/auth/me":
+                 return True, None
+            
+            # Exception: User Self-Edit (Allow access to own user resource)
+            # /api/external/users/{session_user_id}
+            if request_path == f"/api/external/users/{session_user_id}" or request_path.startswith(f"/api/external/users/{session_user_id}/"):
+                 return True, None
+
             # No bot_id in path - admin-only endpoint
             logging.warning(
                 f"GATEWAY: Owner {session_user_id} denied access to admin-only path: {request_path}"
@@ -142,6 +151,10 @@ class PermissionValidator:
              
         # Exception: /validate/{bot_id} endpoint
         if "/ui/bots/validate/" in request_path:
+             return True, None
+
+        # Exception: /auth/me endpoint (Public for authenticated users)
+        if request_path == "/api/external/auth/me":
              return True, None
 
         # Exception: PUT (Creation/Update)
