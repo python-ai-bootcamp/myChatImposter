@@ -19,8 +19,7 @@ const tableStyle = {
     borderCollapse: 'collapse',
     marginTop: '1.5rem',
     boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-    borderRadius: '8px',
-    overflow: 'hidden'
+    borderRadius: '8px'
 };
 
 const thStyle = {
@@ -31,7 +30,10 @@ const thStyle = {
     textAlign: 'left',
     borderBottom: '2px solid #dee2e6',
     cursor: 'pointer', // Make headers clickable
-    userSelect: 'none'
+    userSelect: 'none',
+    position: 'sticky',
+    top: 0,
+    zIndex: 1
 };
 
 const tdStyle = {
@@ -181,7 +183,7 @@ function UserTable({ configs, selectedBotId, onSelectBot, enableFiltering = fals
             backgroundColor: '#fff' // Ensure background is white
         }}>
             <table style={{ ...tableStyle, marginTop: 0, boxShadow: 'none', borderRadius: 0 }}>
-                <thead style={{ position: 'sticky', top: 0, zIndex: 1, backgroundColor: '#f8f9fa' }}>
+                <thead style={{ backgroundColor: '#f8f9fa' }}>
                     <tr>
                         <th style={thStyle} onClick={() => requestSort('bot_id')}>
                             <div style={{ display: 'flex', alignItems: 'center' }}>
