@@ -130,12 +130,14 @@ const UserListPage = ({ enableFiltering = true }) => {
     };
 
     const columns = [
-        { key: 'user_id', label: 'User ID', sortable: true, filterable: true },
+        { key: 'user_id', label: 'User ID', sortable: true, filterable: true, width: '15%' },
         {
             key: 'name',
             label: 'Name',
             sortable: true,
             filterable: true,
+            width: '25%',
+            getValue: (user) => `${user.first_name} ${user.last_name}`,
             render: (user) => `${user.first_name} ${user.last_name}`
         },
         {
@@ -143,6 +145,7 @@ const UserListPage = ({ enableFiltering = true }) => {
             label: 'Role',
             sortable: true,
             filterable: true,
+            width: '15%',
             render: (user) => (
                 <span style={{
                     padding: '4px 8px',
@@ -155,8 +158,8 @@ const UserListPage = ({ enableFiltering = true }) => {
                 </span>
             )
         },
-        { key: 'email', label: 'Email', sortable: true, filterable: true },
-        { key: 'country_value', label: 'Country', sortable: true, filterable: true },
+        { key: 'email', label: 'Email', sortable: true, filterable: true, width: '25%' },
+        { key: 'country_value', label: 'Country', sortable: true, filterable: true, width: '20%' },
     ];
 
     if (loading) return <div style={pageStyle}>Loading users...</div>;

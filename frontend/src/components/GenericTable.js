@@ -5,7 +5,8 @@ const tableStyle = {
     borderCollapse: 'collapse',
     marginTop: '1.5rem',
     boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
-    borderRadius: '8px'
+    borderRadius: '8px',
+    tableLayout: 'fixed' // Prevent jitter
 };
 
 const thStyle = {
@@ -26,7 +27,10 @@ const tdStyle = {
     padding: '12px 15px',
     borderBottom: '1px solid #dee2e6',
     verticalAlign: 'middle',
-    textAlign: 'left'
+    textAlign: 'left',
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
 };
 
 const filterInputStyle = {
@@ -93,13 +97,17 @@ function GenericTable({
                         const column = columns.find(c => c.key === key);
                         if (!column || !column.filterable) continue;
 
-                        let itemValue = item[key];
-                        // If render function exists, we might need to filter on raw value or rendered?
-                        // For simplicity, filter on raw value string properties
+                        let itemValue = column.getValue ? column.getValue(item) : item[key];
 
                         const stringValue = String(itemValue || '').toLowerCase();
                         const filterValue = filters[key].toLowerCase();
-                        if (!stringValue.includes(filterValue)) return false;
+
+                        // Check filter type
+                        if (column.filterType === 'startsWith') {
+                            if (!stringValue.startsWith(filterValue)) return false;
+                        } else {
+                            if (!stringValue.includes(filterValue)) return false;
+                        }
                     }
                 }
                 return true;
@@ -108,9 +116,10 @@ function GenericTable({
 
         // 2. Sorting
         if (sortConfig.key) {
+            const column = columns.find(c => c.key === sortConfig.key);
             items.sort((a, b) => {
-                let aValue = a[sortConfig.key] || '';
-                let bValue = b[sortConfig.key] || '';
+                let aValue = column && column.getValue ? column.getValue(a) : (a[sortConfig.key] || '');
+                let bValue = column && column.getValue ? column.getValue(b) : (b[sortConfig.key] || '');
 
                 if (aValue < bValue) {
                     return sortConfig.direction === 'ascending' ? -1 : 1;
@@ -138,8 +147,11 @@ function GenericTable({
     React.useEffect(() => {
         const updateHeight = () => {
             const viewportHeight = window.innerHeight;
-            const maxAllowed = Math.max(200, viewportHeight - 340);
-            const contentHeight = (data.length * ROW_HEIGHT) + HEADER_HEIGHT;
+            // Adjust maxAllowed slightly since header is now outside this calculation
+            // Was (viewport - 340), now maybe (viewport - 340 - HEADER_HEIGHT)?
+            // Actually, keep it simple. Body max height.
+            const maxAllowed = Math.max(200, viewportHeight - 400);
+            const contentHeight = (data.length * ROW_HEIGHT);
             const target = Math.min(contentHeight, maxAllowed);
             setContainerHeight(`${target}px`);
         };
@@ -166,65 +178,96 @@ function GenericTable({
         );
     };
 
+    const renderColGroup = () => (
+        <colgroup>
+            {columns.map(col => (
+                <col key={col.key} style={{ width: col.width }} />
+            ))}
+        </colgroup>
+    );
+
     return (
         <div style={{
-            overflowX: 'auto',
-            height: containerHeight,
-            overflowY: 'auto',
             border: '1px solid #dee2e6',
             borderRadius: '8px',
-            backgroundColor: '#fff'
+            backgroundColor: '#fff',
+            marginTop: '1.5rem',
+            boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+            display: 'flex',
+            flexDirection: 'column',
+            overflow: 'hidden'
         }}>
-            <table style={{ ...tableStyle, marginTop: 0, boxShadow: 'none', borderRadius: 0 }}>
-                <thead style={{ backgroundColor: '#f8f9fa' }}>
-                    <tr>
-                        {columns.map(col => (
-                            <th
-                                key={col.key}
-                                style={thStyle}
-                                onClick={() => col.sortable && requestSort(col.key)}
-                            >
-                                <div style={{ display: 'flex', alignItems: 'center' }}>
-                                    {col.label} {col.sortable && renderSortArrow(col.key)}
-                                </div>
-                                {enableFiltering && col.filterable && (
-                                    <input
-                                        type="text"
-                                        style={filterInputStyle}
-                                        placeholder={`Filter ${col.label}...`}
-                                        value={filters[col.key] || ''}
-                                        onChange={(e) => handleFilterChange(col.key, e.target.value)}
-                                        onClick={(e) => e.stopPropagation()}
-                                    />
-                                )}
-                            </th>
-                        ))}
-                    </tr>
-                </thead>
-                <tbody>
-                    {processedData.length === 0 ? (
+            {/* Header Section */}
+            <div style={{
+                overflow: 'hidden',
+                scrollbarGutter: 'stable',
+                backgroundColor: '#f8f9fa',
+                borderBottom: '1px solid #dee2e6'
+            }}>
+                <table style={{ ...tableStyle, marginTop: 0, marginBottom: 0, boxShadow: 'none', borderRadius: 0 }}>
+                    {renderColGroup()}
+                    <thead style={{ backgroundColor: '#f8f9fa' }}>
                         <tr>
-                            <td colSpan={columns.length} style={{ ...tdStyle, textAlign: 'center', color: '#6c757d' }}>
-                                No items found.
-                            </td>
+                            {columns.map(col => (
+                                <th
+                                    key={col.key}
+                                    style={{ ...thStyle }} // Removed direct width, rely on colgroup
+                                    onClick={() => col.sortable && requestSort(col.key)}
+                                >
+                                    <div style={{ display: 'flex', alignItems: 'center' }}>
+                                        {col.label} {col.sortable && renderSortArrow(col.key)}
+                                    </div>
+                                    {enableFiltering && col.filterable && (
+                                        <input
+                                            type="text"
+                                            style={filterInputStyle}
+                                            placeholder={`Filter ${col.label}...`}
+                                            value={filters[col.key] || ''}
+                                            onChange={(e) => handleFilterChange(col.key, e.target.value)}
+                                            onClick={(e) => e.stopPropagation()}
+                                        />
+                                    )}
+                                </th>
+                            ))}
                         </tr>
-                    ) : (
-                        processedData.map(item => (
-                            <tr
-                                key={item[idField]}
-                                style={getTrStyle(item[idField])}
-                                onClick={() => onSelect(item[idField])}
-                            >
-                                {columns.map(col => (
-                                    <td key={`${item[idField]}-${col.key}`} style={tdStyle}>
-                                        {col.render ? col.render(item) : (item[col.key] || '-')}
-                                    </td>
-                                ))}
+                    </thead>
+                </table>
+            </div>
+
+            {/* Body Section */}
+            <div style={{
+                overflowX: 'auto',
+                overflowY: 'auto',
+                scrollbarGutter: 'stable',
+                height: containerHeight,
+            }}>
+                <table style={{ ...tableStyle, marginTop: 0, boxShadow: 'none', borderRadius: 0, borderTop: 'none' }}>
+                    {renderColGroup()}
+                    <tbody>
+                        {processedData.length === 0 ? (
+                            <tr>
+                                <td colSpan={columns.length} style={{ ...tdStyle, textAlign: 'center', color: '#6c757d' }}>
+                                    No items found.
+                                </td>
                             </tr>
-                        ))
-                    )}
-                </tbody>
-            </table>
+                        ) : (
+                            processedData.map(item => (
+                                <tr
+                                    key={item[idField]}
+                                    style={getTrStyle(item[idField])}
+                                    onClick={() => onSelect(item[idField])}
+                                >
+                                    {columns.map(col => (
+                                        <td key={`${item[idField]}-${col.key}`} style={tdStyle}>
+                                            {col.render ? col.render(item) : (item[col.key] || '-')}
+                                        </td>
+                                    ))}
+                                </tr>
+                            ))
+                        )}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 }

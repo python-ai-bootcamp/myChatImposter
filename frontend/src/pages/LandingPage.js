@@ -152,7 +152,7 @@ const LandingPage = () => {
                 </div>
 
                 <div className="feature-card">
-                    <div className="feature-icon">�</div>
+                    <div className="feature-icon">🕵️</div>
                     <h3 className="feature-title">Group Tracking</h3>
                     <p className="feature-desc">
                         Tired of managing million+1 WA groups only to discover you missed your child's art presentation in class? Create a bot to track it for you and generate calendar meetings so you won't miss a bit.

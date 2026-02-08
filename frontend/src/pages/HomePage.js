@@ -38,13 +38,15 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   };
 
   const columns = [
-    { key: 'bot_id', label: 'Bot ID', sortable: true, filterable: true },
-    ...(showOwnerColumn ? [{ key: 'owner', label: 'Owner', sortable: true, filterable: true }] : []),
+    { key: 'bot_id', label: 'Bot ID', sortable: true, filterable: true, width: showOwnerColumn ? '25%' : '35%' },
+    ...(showOwnerColumn ? [{ key: 'owner', label: 'Owner', sortable: true, filterable: true, width: '25%' }] : []),
     {
       key: 'authenticated',
       label: 'Authenticated',
       sortable: true,
       filterable: true,
+      width: '15%',
+      getValue: (item) => item.authenticated ? 'Yes True' : 'No False',
       render: (item) => item.authenticated ? <span style={{ color: 'green', fontWeight: 'bold' }}>Yes</span> : <span style={{ color: '#6c757d' }}>No</span>
     },
     {
@@ -52,6 +54,9 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
       label: 'Status',
       sortable: true,
       filterable: true,
+      width: showOwnerColumn ? '35%' : '50%',
+      getValue: (item) => String(item.status || ''),
+      filterType: 'startsWith',
       render: (item) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span style={{
