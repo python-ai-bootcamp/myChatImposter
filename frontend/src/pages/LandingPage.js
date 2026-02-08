@@ -5,29 +5,37 @@ const LandingPage = () => {
         <div className="landing-page">
             <style>{`
                 .landing-page {
-                    min-height: 100vh;
+                    position: fixed;
+                    top: 60px;
+                    bottom: 0;
+                    left: 0;
                     width: 100%;
                     background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
                     color: #e2e8f0;
                     font-family: 'Inter', sans-serif;
-                    overflow-x: hidden;
+                    overflow: hidden;
                     display: flex;
                     flex-direction: column;
                     align-items: center;
+                    justify-content: center;
+                    gap: 4vh;
+                    box-sizing: border-box;
+                    z-index: 0;
                 }
 
                 .hero-section {
                     text-align: center;
-                    padding: 8rem 2rem 4rem;
                     max-width: 1000px;
                     animation: fadeIn 1s ease-out;
+                    z-index: 1; /* Ensure text is above shapes */
                 }
 
                 .hero-title {
                     font-size: 4rem;
                     font-weight: 800;
                     margin-bottom: 1.5rem;
-                    line-height: 1.1;
+                    line-height: 1.3;
+                    padding-bottom: 10px;
                     background: linear-gradient(to right, #c084fc, #6366f1, #3b82f6);
                     -webkit-background-clip: text;
                     -webkit-text-fill-color: transparent;
@@ -37,7 +45,7 @@ const LandingPage = () => {
                 .hero-subtitle {
                     font-size: 1.5rem;
                     color: #94a3b8;
-                    margin-bottom: 3rem;
+                    margin-bottom: 0;
                     line-height: 1.6;
                     max-width: 700px;
                     margin-left: auto;
@@ -46,13 +54,13 @@ const LandingPage = () => {
 
                 .features-grid {
                     display: grid;
-                    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+                    grid-template-columns: repeat(3, 1fr); /* Force 3 columns for the 3 items */
                     gap: 2rem;
-                    padding: 2rem;
+                    padding: 0 2rem;
                     max-width: 1200px;
                     width: 100%;
                     box-sizing: border-box;
-                    margin-bottom: 5rem;
+                    z-index: 1;
                 }
 
                 .feature-card {
@@ -127,49 +135,35 @@ const LandingPage = () => {
 
             <div className="hero-section">
                 <h1 className="hero-title">
-                    Master Your <br />
-                    Digital Presence
+                    My WhatsApp Bot Assistant
                 </h1>
                 <p className="hero-subtitle">
-                    Create intelligent, personality-driven AI imposters for WhatsApp.
-                    Manage your bot farm with military-grade precision and effortless style.
+                    Create helpful intelligent AI driven bots to manage your WhatsApp clutter.
                 </p>
             </div>
 
             <div className="features-grid">
                 <div className="feature-card">
                     <div className="feature-icon">🤖</div>
-                    <h3 className="feature-title">AI Personalities</h3>
+                    <h3 className="feature-title">AI Chat Advisor</h3>
                     <p className="feature-desc">
-                        Forge unique identities. From helpful assistants to chaotic neutral agents,
-                        control the narrative with advanced prompt engineering.
+                        Forge unique identities. Create helpful assistants to give you professional advise on how to respond to your chats when you need to, or respond when you don't want to.
                     </p>
                 </div>
 
                 <div className="feature-card">
-                    <div className="feature-icon">⚡</div>
-                    <h3 className="feature-title">Instant Deployment</h3>
+                    <div className="feature-icon">�</div>
+                    <h3 className="feature-title">Group Tracking</h3>
                     <p className="feature-desc">
-                        Link devices via QR code in seconds. Our optimised infrastructure
-                        handles the heavy lifting so you don't have to.
+                        Tired of managing million+1 WA groups only to discover you missed your child's art presentation in class? Create a bot to track it for you and generate calendar meetings so you won't miss a bit.
                     </p>
                 </div>
 
                 <div className="feature-card">
                     <div className="feature-icon">🛡️</div>
-                    <h3 className="feature-title">Role-Based Control</h3>
+                    <h3 className="feature-title">Kid Safety</h3>
                     <p className="feature-desc">
-                        Granular permissions for Admins and Operators.
-                        Give users exactly the access they need, and nothing they don't.
-                    </p>
-                </div>
-
-                <div className="feature-card">
-                    <div className="feature-icon">📊</div>
-                    <h3 className="feature-title">Live Monitoring</h3>
-                    <p className="feature-desc">
-                        Track active sessions, visualize message metrics, and manage
-                        your fleet's health from a centralized command center.
+                        Command bots to scan your beloved child correspondence for negative WhatsApp interactions.
                     </p>
                 </div>
             </div>
