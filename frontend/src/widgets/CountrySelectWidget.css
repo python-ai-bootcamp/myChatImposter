@@ -1,0 +1,247 @@
+/* ========================================
+   CUSTOM COUNTRY SELECT WIDGET
+   Native HTML implementation - no react-select
+   ======================================== */
+
+.country-select-container {
+    position: relative;
+    width: 100%;
+    font-family: inherit;
+}
+
+/* Control (the clickable input area) */
+.country-select-control {
+    display: flex;
+    align-items: center;
+    min-height: 48px;
+    padding: 0 12px 0 16px;
+    background: #fff;
+    border: 1px solid #ced4da;
+    border-radius: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    gap: 8px;
+}
+
+.country-select-control:hover {
+    border-color: #adb5bd;
+}
+
+.country-select-container.open .country-select-control {
+    border-color: #818cf8;
+    box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+}
+
+/* Value container */
+.country-select-value {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.country-select-display {
+    display: block;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: #333;
+    font-size: 1rem;
+}
+
+.country-select-input {
+    width: 100%;
+    border: none;
+    background: transparent;
+    font-size: 1rem;
+    color: #333;
+    outline: none;
+    padding: 0;
+    margin: 0;
+}
+
+.country-select-input::placeholder {
+    color: #6c757d;
+}
+
+/* Clear button */
+.country-select-clear {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    background: none;
+    border: none;
+    color: #6c757d;
+    font-size: 18px;
+    cursor: pointer;
+    line-height: 1;
+    transition: color 0.2s;
+}
+
+.country-select-clear:hover {
+    color: #dc3545;
+}
+
+/* Dropdown arrow */
+.country-select-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #6c757d;
+    transition: transform 0.2s, color 0.2s;
+}
+
+.country-select-container.open .country-select-arrow {
+    transform: rotate(180deg);
+    color: #818cf8;
+}
+
+/* Dropdown menu */
+.country-select-menu {
+    position: absolute;
+    top: calc(100% + 8px);
+    left: 0;
+    right: 0;
+    max-height: 300px;
+    overflow-y: auto;
+    background: #fff;
+    border: 1px solid #ced4da;
+    border-radius: 0.75rem;
+    box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.3);
+    z-index: 9999;
+    padding: 8px;
+}
+
+.country-select-option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 0.5rem;
+    cursor: pointer;
+    transition: background-color 0.15s;
+}
+
+.country-select-option:hover {
+    background-color: #f8f9fa;
+}
+
+.country-select-option.selected {
+    background-color: #e8e8ff;
+}
+
+.country-select-no-options {
+    padding: 12px;
+    text-align: center;
+    color: #6c757d;
+}
+
+.country-flag {
+    font-size: 1.25rem;
+}
+
+.country-name {
+    flex: 1;
+    color: #333;
+}
+
+/* ========================================
+   DARK MODE STYLES
+   ======================================== */
+
+.country-select-container.dark .country-select-control {
+    background: rgba(15, 23, 42, 0.6);
+    border-color: rgba(255, 255, 255, 0.1);
+}
+
+.country-select-container.dark .country-select-control:hover {
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.country-select-container.dark.open .country-select-control {
+    border-color: #818cf8;
+    background: rgba(15, 23, 42, 0.8);
+}
+
+.country-select-container.dark .country-select-display {
+    color: #f8fafc;
+}
+
+.country-select-container.dark .country-select-display:empty::before,
+.country-select-container.dark .country-select-control:not(:has(.country-select-display:not(:empty))) .country-select-display {
+    color: rgba(148, 163, 184, 0.8);
+}
+
+.country-select-container.dark .country-select-input {
+    color: #f8fafc;
+    caret-color: #818cf8;
+}
+
+.country-select-container.dark .country-select-input::placeholder {
+    color: rgba(148, 163, 184, 0.8);
+}
+
+.country-select-container.dark .country-select-clear {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.country-select-container.dark .country-select-clear:hover {
+    color: #f87171;
+}
+
+.country-select-container.dark .country-select-arrow {
+    color: rgba(255, 255, 255, 0.4);
+}
+
+.country-select-container.dark.open .country-select-arrow {
+    color: #818cf8;
+}
+
+/* Dark mode dropdown menu */
+.country-select-container.dark .country-select-menu {
+    background: #0f172a;
+    border-color: rgba(129, 140, 248, 0.2);
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+.country-select-container.dark .country-select-option {
+    color: #cbd5e1;
+}
+
+.country-select-container.dark .country-select-option:hover {
+    background-color: rgba(99, 102, 241, 0.2);
+    color: #f8fafc;
+}
+
+.country-select-container.dark .country-select-option.selected {
+    background-color: rgba(99, 102, 241, 0.3);
+    color: #f8fafc;
+}
+
+.country-select-container.dark .country-name {
+    color: inherit;
+}
+
+.country-select-container.dark .country-select-no-options {
+    color: #94a3b8;
+}
+
+/* Scrollbar styling for dark mode */
+.country-select-container.dark .country-select-menu::-webkit-scrollbar {
+    width: 6px;
+}
+
+.country-select-container.dark .country-select-menu::-webkit-scrollbar-track {
+    background: transparent;
+}
+
+.country-select-container.dark .country-select-menu::-webkit-scrollbar-thumb {
+    background: rgba(99, 102, 241, 0.5);
+    border-radius: 3px;
+}
+
+.country-select-container.dark .country-select-menu::-webkit-scrollbar-thumb:hover {
+    background: #6366f1;
+}

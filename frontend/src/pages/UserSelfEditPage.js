@@ -74,91 +74,215 @@ const UserSelfEditPage = () => {
         }
     };
 
-    if (loading) return <div>Loading profile...</div>;
-    if (!formData) return <div>Failed to load profile.</div>;
+    if (loading) return <div style={{ color: '#e2e8f0', textAlign: 'center', marginTop: '50px' }}>Loading profile...</div>;
+    if (!formData) return <div style={{ color: '#e2e8f0', textAlign: 'center', marginTop: '50px' }}>Failed to load profile.</div>;
 
     return (
-        <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto', textAlign: 'left' }}>
-            <h1>My Profile</h1>
+        <div className="profile-page">
+            <style>{`
+                .profile-page {
+                    min-height: calc(100vh - 60px); /* Adjust for header if needed */
+                    width: 100%;
+                    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+                    color: #e2e8f0;
+                    font-family: 'Inter', sans-serif;
+                    display: flex;
+                    justify-content: center;
+                    align-items: flex-start;
+                    padding-top: 4rem;
+                    position: relative;
+                    overflow: hidden;
+                }
 
-            <form onSubmit={handleSubmit} style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)' }}>
+                .profile-container {
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.05);
+                    backdrop-filter: blur(20px);
+                    padding: 3rem;
+                    border-radius: 1.5rem;
+                    width: 100%;
+                    max-width: 800px;
+                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                    z-index: 10;
+                    animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+                }
 
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>User ID</label>
-                    <input
-                        type="text"
-                        value={formData.user_id}
-                        disabled
-                        style={{ width: '100%', padding: '8px', backgroundColor: '#e9ecef', cursor: 'not-allowed' }}
-                    />
+                .profile-header {
+                    margin-bottom: 2rem;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                    padding-bottom: 1rem;
+                }
+
+                .profile-header h1 {
+                    font-size: 2rem;
+                    font-weight: 800;
+                    margin-bottom: 0.5rem;
+                    background: linear-gradient(to right, #c084fc, #6366f1);
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                }
+
+                .form-group {
+                    margin-bottom: 1.5rem;
+                }
+
+                .form-group label {
+                    display: block;
+                    margin-bottom: 0.5rem;
+                    color: #cbd5e1;
+                    font-size: 0.9rem;
+                    font-weight: 500;
+                }
+
+                .form-group input {
+                    width: 100%;
+                    padding: 0.75rem 1rem;
+                    background: rgba(15, 23, 42, 0.6);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 0.75rem;
+                    color: #f8fafc;
+                    font-size: 1rem;
+                    transition: all 0.2s;
+                    box-sizing: border-box;
+                }
+
+                .form-group input:focus {
+                    outline: none;
+                    border-color: #818cf8;
+                    box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+                    background: rgba(15, 23, 42, 0.8);
+                }
+
+                .form-group input:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                    background: rgba(15, 23, 42, 0.4);
+                }
+
+                .save-button {
+                    width: 100%;
+                    padding: 0.75rem;
+                    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+                    border: none;
+                    border-radius: 0.75rem;
+                    color: white;
+                    font-weight: 600;
+                    font-size: 1rem;
+                    cursor: pointer;
+                    transition: transform 0.2s, box-shadow 0.2s;
+                    margin-top: 1rem;
+                }
+
+                .save-button:hover:not(:disabled) {
+                    transform: translateY(-2px);
+                    box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.3);
+                }
+
+                .save-button:disabled {
+                    opacity: 0.7;
+                    cursor: not-allowed;
+                }
+
+                /* Background shapes */
+                .shape {
+                    position: absolute;
+                    filter: blur(100px);
+                    z-index: 0;
+                    opacity: 0.4;
+                    pointer-events: none;
+                }
+                .shape-1 {
+                    top: -20%;
+                    left: -20%;
+                    width: 60vw;
+                    height: 60vw;
+                    background: radial-gradient(circle, #4f46e5 0%, transparent 70%);
+                }
+                .shape-2 {
+                    bottom: -20%;
+                    right: -20%;
+                    width: 50vw;
+                    height: 50vw;
+                    background: radial-gradient(circle, #ec4899 0%, transparent 70%);
+                }
+            `}</style>
+
+            <div className="shape shape-1" />
+            <div className="shape shape-2" />
+
+            <div className="profile-container">
+                <div className="profile-header">
+                    <h1>My Profile</h1>
+                    <p style={{ color: '#94a3b8' }}>Manage your personal details and settings</p>
                 </div>
 
-                <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
-                    <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>First Name</label>
+                <form onSubmit={handleSubmit}>
+                    <div className="form-group">
+                        <label>User ID</label>
                         <input
                             type="text"
-                            name="first_name"
-                            value={formData.first_name}
-                            onChange={handleChange}
-                            style={{ width: '100%', padding: '8px' }}
+                            value={formData.user_id}
+                            disabled
                         />
                     </div>
-                    <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Last Name</label>
+
+                    <div style={{ display: 'flex', gap: '20px' }}>
+                        <div className="form-group" style={{ flex: 1 }}>
+                            <label>First Name</label>
+                            <input
+                                type="text"
+                                name="first_name"
+                                value={formData.first_name || ''}
+                                onChange={handleChange}
+                            />
+                        </div>
+                        <div className="form-group" style={{ flex: 1 }}>
+                            <label>Last Name</label>
+                            <input
+                                type="text"
+                                name="last_name"
+                                value={formData.last_name || ''}
+                                onChange={handleChange}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="form-group">
+                        <label>Email Address</label>
                         <input
-                            type="text"
-                            name="last_name"
-                            value={formData.last_name}
+                            type="email"
+                            name="email"
+                            value={formData.email || ''}
                             onChange={handleChange}
-                            style={{ width: '100%', padding: '8px' }}
                         />
                     </div>
-                </div>
 
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Email Address</label>
-                    <input
-                        type="email"
-                        name="email"
-                        value={formData.email}
-                        onChange={handleChange}
-                        style={{ width: '100%', padding: '8px' }}
-                    />
-                </div>
+                    <div className="form-group">
+                        <label>Phone Number</label>
+                        <PhoneInputWidget
+                            value={formData.phone_number}
+                            onChange={(val) => setFormData(prev => ({ ...prev, phone_number: val }))}
+                        />
+                    </div>
 
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Phone Number</label>
-                    <PhoneInputWidget
-                        value={formData.phone_number}
-                        onChange={(val) => setFormData(prev => ({ ...prev, phone_number: val }))}
-                    />
-                </div>
+                    <div className="form-group">
+                        <label>Country</label>
+                        <CountrySelectWidget
+                            value={formData.country_value}
+                            onChange={handleCountryChange}
+                            darkMode={true}
+                        />
+                    </div>
 
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Country</label>
-                    <CountrySelectWidget
-                        value={formData.country_value}
-                        onChange={handleCountryChange}
-                    />
-                </div>
-
-                <button
-                    type="submit"
-                    disabled={saving}
-                    style={{
-                        backgroundColor: '#007bff',
-                        color: 'white',
-                        padding: '10px 20px',
-                        border: 'none',
-                        borderRadius: '5px',
-                        cursor: saving ? 'not-allowed' : 'pointer',
-                        fontSize: '1rem'
-                    }}
-                >
-                    {saving ? 'Saving...' : 'Save Profile'}
-                </button>
-            </form>
+                    <button
+                        type="submit"
+                        className="save-button"
+                        disabled={saving}
+                    >
+                        {saving ? 'Saving...' : 'Save Profile'}
+                    </button>
+                </form>
+            </div>
         </div>
     );
 };
