@@ -66,7 +66,8 @@ function GenericTable({
     idField = 'id',
     selectedId,
     onSelect,
-    enableFiltering = false
+    enableFiltering = false,
+    darkMode = false
 }) {
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
     const [filters, setFilters] = useState({});
@@ -134,8 +135,36 @@ function GenericTable({
     }, [data, sortConfig, filters, enableFiltering, columns]);
 
 
+    // Dynamic styles based on darkMode
+    const dynamicTableStyle = {
+        ...tableStyle,
+        boxShadow: darkMode ? '0 4px 12px rgba(0,0,0,0.3)' : '0 4px 6px rgba(0,0,0,0.1)',
+    };
+
+    const dynamicThStyle = {
+        ...thStyle,
+        backgroundColor: darkMode ? 'rgba(30, 41, 59, 0.9)' : '#f8f9fa',
+        color: darkMode ? '#e2e8f0' : '#495057',
+        borderBottom: darkMode ? '2px solid rgba(129, 140, 248, 0.3)' : '2px solid #dee2e6',
+    };
+
+    const dynamicTdStyle = {
+        ...tdStyle,
+        borderBottom: darkMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #dee2e6',
+        color: darkMode ? '#e2e8f0' : 'inherit',
+    };
+
+    const dynamicFilterInputStyle = {
+        ...filterInputStyle,
+        backgroundColor: darkMode ? 'rgba(15, 23, 42, 0.6)' : '#fff',
+        border: darkMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #ced4da',
+        color: darkMode ? '#f8fafc' : 'inherit',
+    };
+
     const getTrStyle = (itemId) => ({
-        backgroundColor: selectedId === itemId ? '#e9ecef' : '#fff',
+        backgroundColor: selectedId === itemId
+            ? (darkMode ? 'rgba(99, 102, 241, 0.3)' : '#e9ecef')
+            : (darkMode ? 'transparent' : '#fff'),
         cursor: 'pointer',
         transition: 'background-color 0.2s'
     });
@@ -188,11 +217,11 @@ function GenericTable({
 
     return (
         <div style={{
-            border: '1px solid #dee2e6',
+            border: darkMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #dee2e6',
             borderRadius: '8px',
-            backgroundColor: '#fff',
+            backgroundColor: darkMode ? 'rgba(15, 23, 42, 0.4)' : '#fff',
             marginTop: '1.5rem',
-            boxShadow: '0 4px 6px rgba(0,0,0,0.1)',
+            boxShadow: darkMode ? '0 4px 12px rgba(0,0,0,0.3)' : '0 4px 6px rgba(0,0,0,0.1)',
             display: 'flex',
             flexDirection: 'column',
             overflow: 'hidden'
@@ -201,17 +230,17 @@ function GenericTable({
             <div style={{
                 overflow: 'hidden',
                 scrollbarGutter: 'stable',
-                backgroundColor: '#f8f9fa',
-                borderBottom: '1px solid #dee2e6'
+                backgroundColor: darkMode ? 'rgba(30, 41, 59, 0.9)' : '#f8f9fa',
+                borderBottom: darkMode ? '1px solid rgba(129, 140, 248, 0.3)' : '1px solid #dee2e6'
             }}>
-                <table style={{ ...tableStyle, marginTop: 0, marginBottom: 0, boxShadow: 'none', borderRadius: 0 }}>
+                <table style={{ ...dynamicTableStyle, marginTop: 0, marginBottom: 0, boxShadow: 'none', borderRadius: 0 }}>
                     {renderColGroup()}
-                    <thead style={{ backgroundColor: '#f8f9fa' }}>
+                    <thead style={{ backgroundColor: darkMode ? 'rgba(30, 41, 59, 0.9)' : '#f8f9fa' }}>
                         <tr>
                             {columns.map(col => (
                                 <th
                                     key={col.key}
-                                    style={{ ...thStyle }} // Removed direct width, rely on colgroup
+                                    style={{ ...dynamicThStyle }}
                                     onClick={() => col.sortable && requestSort(col.key)}
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -220,7 +249,7 @@ function GenericTable({
                                     {enableFiltering && col.filterable && (
                                         <input
                                             type="text"
-                                            style={filterInputStyle}
+                                            style={dynamicFilterInputStyle}
                                             placeholder={`Filter ${col.label}...`}
                                             value={filters[col.key] || ''}
                                             onChange={(e) => handleFilterChange(col.key, e.target.value)}
@@ -241,12 +270,12 @@ function GenericTable({
                 scrollbarGutter: 'stable',
                 height: containerHeight,
             }}>
-                <table style={{ ...tableStyle, marginTop: 0, boxShadow: 'none', borderRadius: 0, borderTop: 'none' }}>
+                <table style={{ ...dynamicTableStyle, marginTop: 0, boxShadow: 'none', borderRadius: 0, borderTop: 'none' }}>
                     {renderColGroup()}
                     <tbody>
                         {processedData.length === 0 ? (
                             <tr>
-                                <td colSpan={columns.length} style={{ ...tdStyle, textAlign: 'center', color: '#6c757d' }}>
+                                <td colSpan={columns.length} style={{ ...dynamicTdStyle, textAlign: 'center', color: darkMode ? '#94a3b8' : '#6c757d' }}>
                                     No items found.
                                 </td>
                             </tr>
@@ -258,7 +287,7 @@ function GenericTable({
                                     onClick={() => onSelect(item[idField])}
                                 >
                                     {columns.map(col => (
-                                        <td key={`${item[idField]}-${col.key}`} style={tdStyle}>
+                                        <td key={`${item[idField]}-${col.key}`} style={dynamicTdStyle}>
                                             {col.render ? col.render(item) : (item[col.key] || '-')}
                                         </td>
                                     ))}

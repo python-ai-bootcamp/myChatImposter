@@ -267,120 +267,157 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   const selectedConfig = configs.find(c => c.bot_id === selectedBotId);
   const status = selectedConfig?.status || 'disconnected';
 
-  // Styles
+  // Dark glassmorphism styles matching Profile page
   const pageStyle = {
-    maxWidth: '1200px', // Wider to accommodate filters if needed
-    margin: '40px auto',
+    minHeight: '100vh',
+    fontFamily: "'Inter', 'system-ui', sans-serif",
+    display: 'flex',
+    alignItems: 'flex-start',
+    justifyContent: 'center',
+    padding: '40px 20px',
+    background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
+    position: 'relative',
+    overflow: 'hidden',
+  };
+
+  const containerStyle = {
+    background: 'rgba(30, 41, 59, 0.5)',
+    border: '1px solid rgba(255, 255, 255, 0.1)',
+    backdropFilter: 'blur(20px)',
     padding: '2rem',
-    backgroundColor: '#fff',
-    fontFamily: "'Inter', sans-serif",
+    borderRadius: '1.5rem',
+    width: '100%',
+    maxWidth: '1200px',
+    boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+    zIndex: 10,
+  };
+
+  const headerStyle = {
+    fontSize: '2rem',
+    fontWeight: 800,
+    marginBottom: '1.5rem',
+    background: 'linear-gradient(to right, #c084fc, #6366f1)',
+    WebkitBackgroundClip: 'text',
+    WebkitTextFillColor: 'transparent',
   };
 
   const actionButtonsContainerStyle = {
     display: 'flex',
     gap: '1rem',
     marginTop: '2rem',
-    paddingTop: '1rem',
-    borderTop: '1px solid #dee2e6',
-    marginBottom: '20px' // Ensure separation from bottom visual edge
+    paddingTop: '1.5rem',
+    borderTop: '1px solid rgba(255, 255, 255, 0.1)',
   };
 
   const getButtonStyle = (type, disabled) => {
     const base = {
-      padding: '8px 16px',
-      cursor: disabled ? 'not-allowed' : 'pointer',
-      borderRadius: '4px',
+      padding: '10px 20px',
       fontSize: '0.9rem',
-      transition: 'all 0.2s',
-      opacity: disabled ? 0.6 : 1,
-      backgroundColor: disabled ? '#e9ecef' : '#f8f9fa',
-      color: disabled ? '#6c757d' : '#212529',
-      border: disabled ? '1px solid #ced4da' : '1px solid #ccc'
+      fontWeight: 600,
+      border: 'none',
+      borderRadius: '0.75rem',
+      cursor: disabled ? 'not-allowed' : 'pointer',
+      opacity: disabled ? 0.5 : 1,
+      transition: 'all 0.2s ease',
+      boxShadow: disabled ? 'none' : '0 4px 12px rgba(0, 0, 0, 0.3)',
     };
 
-    if (disabled) return base;
+    const styles = {
+      primary: {
+        ...base,
+        background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+        color: 'white',
+      },
+      success: {
+        ...base,
+        background: 'linear-gradient(135deg, #22c55e, #16a34a)',
+        color: 'white',
+      },
+      warning: {
+        ...base,
+        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
+        color: 'white',
+      },
+      danger: {
+        ...base,
+        background: 'linear-gradient(135deg, #ef4444, #dc2626)',
+        color: 'white',
+      },
+    };
 
-    switch (type) {
-      case 'primary':
-        return { ...base, backgroundColor: '#007bff', color: 'white', border: 'none' };
-      case 'danger':
-        return { ...base, backgroundColor: '#dc3545', color: 'white', border: 'none' };
-      case 'success':
-        return { ...base, backgroundColor: '#28a745', color: 'white', border: 'none' };
-      case 'warning':
-        return { ...base, backgroundColor: '#ffc107', color: '#212529', border: 'none' };
-      default:
-        return base;
-    }
+    return styles[type] || base;
   };
 
   return (
     <div style={pageStyle}>
-      <h2 style={{ margin: 0, marginBottom: '1rem' }}>Bot Configurations</h2>
+      <div style={containerStyle}>
+        <h2 style={headerStyle}>Bot Configurations</h2>
 
-      {error && <div style={{ color: 'red', marginTop: '1rem', padding: '10px', backgroundColor: '#fff5f5', borderRadius: '4px' }}>Error: {error}</div>}
+        {error && <div style={{ color: '#fca5a5', marginBottom: '1rem', padding: '12px', backgroundColor: 'rgba(239, 68, 68, 0.2)', borderRadius: '0.5rem', border: '1px solid rgba(239, 68, 68, 0.3)' }}>Error: {error}</div>}
 
-      <GenericTable
-        data={configs}
-        columns={columns}
-        idField="bot_id"
-        selectedId={selectedBotId}
-        onSelect={setSelectedBotId}
-        enableFiltering={enableFiltering}
-      />
+        <GenericTable
+          data={configs}
+          columns={columns}
+          idField="bot_id"
+          selectedId={selectedBotId}
+          onSelect={setSelectedBotId}
+          enableFiltering={enableFiltering}
+          darkMode={true}
+        />
 
-      <div style={actionButtonsContainerStyle}>
-        <button onClick={handleAdd} style={getButtonStyle('primary', false)}>
-          Add
-        </button>
-
-        {status === 'connected' ? (
-          <button
-            onClick={() => handleUnlink(selectedBotId)}
-            disabled={!isActionEnabled('unlink', status, selectedBotId)}
-            style={getButtonStyle('warning', !isActionEnabled('unlink', status, selectedBotId))}
-          >
-            Unlink
+        <div style={actionButtonsContainerStyle}>
+          <button onClick={handleAdd} style={getButtonStyle('primary', false)}>
+            Add
           </button>
-        ) : (
+
+          {status === 'connected' ? (
+            <button
+              onClick={() => handleUnlink(selectedBotId)}
+              disabled={!isActionEnabled('unlink', status, selectedBotId)}
+              style={getButtonStyle('warning', !isActionEnabled('unlink', status, selectedBotId))}
+            >
+              Unlink
+            </button>
+          ) : (
+            <button
+              onClick={() => handleLink(selectedBotId)}
+              disabled={!isActionEnabled('link', status, selectedBotId) || isLinking}
+              style={getButtonStyle('success', !isActionEnabled('link', status, selectedBotId) || isLinking)}
+            >
+              {isLinking && linkingBotId === selectedBotId ? 'Linking...' : 'Link'}
+            </button>
+          )}
+
           <button
-            onClick={() => handleLink(selectedBotId)}
-            disabled={!isActionEnabled('link', status, selectedBotId) || isLinking}
-            style={getButtonStyle('success', !isActionEnabled('link', status, selectedBotId) || isLinking)}
+            onClick={() => handleEdit(selectedBotId)}
+            disabled={!isActionEnabled('edit', status, selectedBotId)}
+            style={getButtonStyle('primary', !isActionEnabled('edit', status, selectedBotId))}
           >
-            {isLinking && linkingBotId === selectedBotId ? 'Linking...' : 'Link'}
+            Edit
           </button>
-        )}
 
-        <button
-          onClick={() => handleEdit(selectedBotId)}
-          disabled={!isActionEnabled('edit', status, selectedBotId)}
-          style={getButtonStyle('primary', !isActionEnabled('edit', status, selectedBotId))}
-        >
-          Edit
-        </button>
+          <button
+            onClick={() => handleDelete(selectedBotId)}
+            disabled={!isActionEnabled('delete', status, selectedBotId)}
+            style={getButtonStyle('danger', !isActionEnabled('delete', status, selectedBotId))}
+          >
+            Delete
+          </button>
+        </div>
 
-        <button
-          onClick={() => handleDelete(selectedBotId)}
-          disabled={!isActionEnabled('delete', status, selectedBotId)}
-          style={getButtonStyle('danger', !isActionEnabled('delete', status, selectedBotId))}
-        >
-          Delete
-        </button>
+        <LinkUserModal
+          linkingBotId={linkingBotId}
+          linkStatus={linkStatus}
+          qrCode={qrCode}
+          onClose={closeModal}
+        />
+
+        <CreateUserModal
+          isOpen={isCreateModalOpen}
+          onClose={() => setIsCreateModalOpen(false)}
+          onConfirm={handleCreateConfirm}
+        />
       </div>
-
-      <LinkUserModal
-        linkingBotId={linkingBotId}
-        linkStatus={linkStatus}
-        qrCode={qrCode}
-        onClose={closeModal}
-      />
-
-      <CreateUserModal
-        isOpen={isCreateModalOpen}
-        onClose={() => setIsCreateModalOpen(false)}
-        onConfirm={handleCreateConfirm}
-      />
     </div>
   );
 }
