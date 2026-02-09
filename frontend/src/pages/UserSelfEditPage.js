@@ -37,6 +37,13 @@ const UserSelfEditPage = () => {
         setFormData(prev => ({ ...prev, [name]: value }));
     };
 
+    // Prevent Enter key from submitting the form in text inputs
+    const handleInputKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+        }
+    };
+
     const handleCountryChange = (value) => {
         setFormData(prev => ({ ...prev, country_value: value }));
     };
@@ -234,6 +241,7 @@ const UserSelfEditPage = () => {
                                 name="first_name"
                                 value={formData.first_name || ''}
                                 onChange={handleChange}
+                                onKeyDown={handleInputKeyDown}
                             />
                         </div>
                         <div className="form-group" style={{ flex: 1 }}>
@@ -243,6 +251,7 @@ const UserSelfEditPage = () => {
                                 name="last_name"
                                 value={formData.last_name || ''}
                                 onChange={handleChange}
+                                onKeyDown={handleInputKeyDown}
                             />
                         </div>
                     </div>
@@ -254,6 +263,7 @@ const UserSelfEditPage = () => {
                             name="email"
                             value={formData.email || ''}
                             onChange={handleChange}
+                            onKeyDown={handleInputKeyDown}
                         />
                     </div>
 
