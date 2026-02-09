@@ -6,15 +6,17 @@ export function CustomObjectFieldTemplate(props) {
     const isLlmProviderSettings = props.uiSchema['ui:options']?.box === 'LlmProviderSettings';
     const shouldHaveBorder = isChatProviderSettings; // LlmProviderSettings is now handled by the wrapper
 
+    // Dark glassmorphism fieldset style
     const fieldsetStyle = {
-        border: shouldHaveBorder ? '1px solid #ccc' : 'none',
-        borderRadius: '4px',
+        border: shouldHaveBorder ? '1px solid rgba(255, 255, 255, 0.1)' : 'none',
+        borderRadius: '0.5rem',
         padding: shouldHaveBorder ? '1rem' : '0',
         margin: 0,
         width: '100%',
         marginTop: shouldHaveBorder ? '0.5rem' : '0',
         display: 'table',
-        borderCollapse: 'collapse'
+        borderCollapse: 'collapse',
+        background: shouldHaveBorder ? 'rgba(15, 23, 42, 0.3)' : 'transparent',
     };
 
     // Determine the correct title to display.
@@ -38,7 +40,16 @@ export function CustomObjectFieldTemplate(props) {
     return (
         <fieldset style={fieldsetStyle}>
             {shouldShowTitle && (
-                <h3 style={{ margin: 0, padding: 0, borderBottom: '1px solid #eee', paddingBottom: '0.5rem', marginBottom: '1rem', textAlign: 'left' }}>
+                <h3 style={{
+                    margin: 0,
+                    padding: 0,
+                    borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                    paddingBottom: '0.5rem',
+                    marginBottom: '1rem',
+                    textAlign: 'left',
+                    color: '#a5b4fc',
+                    fontWeight: 600,
+                }}>
                     {title}
                 </h3>
             )}

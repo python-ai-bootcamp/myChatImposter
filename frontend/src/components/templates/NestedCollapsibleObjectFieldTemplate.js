@@ -29,12 +29,13 @@ export function NestedCollapsibleObjectFieldTemplate(props) {
         }
     }, [saveAttempt, scrollToErrorTrigger, containsTrackedGroups, cronErrors]);
 
+    // Dark glassmorphism nested container style
     const containerStyle = {
-        border: '1px solid #ddd',
-        borderRadius: '4px',
+        border: '1px solid rgba(255, 255, 255, 0.08)',
+        borderRadius: '0.5rem',
         padding: '0.75rem',
         margin: '0.5rem 0',
-        backgroundColor: '#fafafa',
+        background: 'rgba(15, 23, 42, 0.5)',
     };
 
     const titleStyle = {
@@ -44,6 +45,7 @@ export function NestedCollapsibleObjectFieldTemplate(props) {
         textAlign: 'left',
         fontSize: '0.95rem',
         fontWeight: 600,
+        color: '#a5b4fc',
     };
 
     return (
@@ -52,7 +54,7 @@ export function NestedCollapsibleObjectFieldTemplate(props) {
                 {props.title} {isOpen ? '[-]' : '[+]'}
             </h4>
             {isOpen && (
-                <div style={{ marginTop: '0.75rem' }}>
+                <div style={{ marginTop: '0.75rem', color: '#e2e8f0' }}>
                     {props.description}
                     {props.properties.map(element => (
                         <React.Fragment key={element.content.key}>

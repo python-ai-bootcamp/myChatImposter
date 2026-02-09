@@ -1,0 +1,149 @@
+/* Dark Mode Form Styles for RJSF Forms */
+
+/* All text inputs */
+.dark-form input[type="text"],
+.dark-form input[type="email"],
+.dark-form input[type="number"],
+.dark-form input[type="password"],
+.dark-form input[type="url"],
+.dark-form input:not([type]) {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.5rem;
+    color: #f8fafc;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.dark-form input[type="text"]:focus,
+.dark-form input[type="email"]:focus,
+.dark-form input[type="number"]:focus,
+.dark-form input[type="password"]:focus,
+.dark-form input[type="url"]:focus,
+.dark-form input:not([type]):focus {
+    outline: none;
+    border-color: #818cf8;
+    box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+    background: rgba(15, 23, 42, 0.8);
+}
+
+/* Textareas */
+.dark-form textarea {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.5rem;
+    color: #f8fafc;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    width: 100%;
+    box-sizing: border-box;
+    resize: vertical;
+}
+
+.dark-form textarea:focus {
+    outline: none;
+    border-color: #818cf8;
+    box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+    background: rgba(15, 23, 42, 0.8);
+}
+
+/* Select dropdowns */
+.dark-form select {
+    background: rgba(15, 23, 42, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 0.5rem;
+    color: #f8fafc;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.9rem;
+    transition: all 0.2s;
+    cursor: pointer;
+}
+
+.dark-form select:focus {
+    outline: none;
+    border-color: #818cf8;
+    box-shadow: 0 0 0 2px rgba(129, 140, 248, 0.2);
+    background: rgba(15, 23, 42, 0.8);
+}
+
+.dark-form select option {
+    background: #1e293b;
+    color: #f8fafc;
+}
+
+/* Labels */
+.dark-form label {
+    color: #cbd5e1;
+    font-weight: 500;
+}
+
+/* Checkboxes */
+.dark-form input[type="checkbox"] {
+    accent-color: #818cf8;
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+/* Array add/remove buttons */
+.dark-form .array-item-add button,
+.dark-form button.btn-add {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+    color: white;
+    border: none;
+    border-radius: 0.5rem;
+    padding: 0.4rem 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
+.dark-form button.btn-danger,
+.dark-form .array-item-remove button {
+    background: linear-gradient(135deg, #ef4444, #dc2626);
+    color: white;
+    border: none;
+    border-radius: 0.5rem;
+    padding: 0.3rem 0.6rem;
+    cursor: pointer;
+}
+
+/* Error messages */
+.dark-form .error-detail,
+.dark-form .text-danger,
+.dark-form ul li.text-danger {
+    color: #fca5a5;
+}
+
+/* Panel headers inside form */
+.dark-form h3,
+.dark-form h4 {
+    color: #a5b4fc;
+}
+
+/* General text */
+.dark-form {
+    color: #e2e8f0;
+}
+
+/* Field descriptions */
+.dark-form .field-description {
+    color: #94a3b8;
+    font-size: 0.85rem;
+    margin-top: 0.25rem;
+}
+
+/* Help text */
+.dark-form .help-block {
+    color: #94a3b8;
+    font-size: 0.85rem;
+}
+
+/* Nested inner boxes */
+.dark-form fieldset {
+    border-color: rgba(255, 255, 255, 0.1);
+}

@@ -24,12 +24,14 @@ export function CollapsibleObjectFieldTemplate(props) {
         }
     }, [saveAttempt, scrollToErrorTrigger, containsTracking, cronErrors]);
 
+    // Dark glassmorphism container style
     const containerStyle = {
-        border: '1px solid #ccc',
-        borderRadius: '4px',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        borderRadius: '0.75rem',
         padding: '1rem',
         margin: '1rem 0',
-        backgroundColor: '#fff',
+        background: 'rgba(30, 41, 59, 0.6)',
+        backdropFilter: 'blur(10px)',
     };
 
     const titleStyle = {
@@ -37,6 +39,8 @@ export function CollapsibleObjectFieldTemplate(props) {
         padding: 0,
         cursor: 'pointer',
         textAlign: 'left',
+        color: '#c084fc',
+        fontWeight: 600,
     };
 
     return (
@@ -45,7 +49,7 @@ export function CollapsibleObjectFieldTemplate(props) {
                 {props.title} {isOpen ? '[-]' : '[+]'}
             </h3>
             {isOpen && (
-                <div style={{ marginTop: '1rem' }}>
+                <div style={{ marginTop: '1rem', color: '#e2e8f0' }}>
                     {props.description}
                     {props.properties.map(element => (
                         <React.Fragment key={element.content.key}>

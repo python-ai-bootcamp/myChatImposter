@@ -16,6 +16,7 @@ import { ReadOnlyTextWidget } from '../components/widgets/ReadOnlyTextWidget';
 import { validateCronExpression } from '../utils/validation';
 import CronPickerWidget from '../components/CronPickerWidget';
 import { PageContainer, ContentCard, ScrollablePanel, FixedFooter, FloatingErrorBanner } from '../components/PageLayout';
+import '../styles/DarkFormStyles.css';
 
 function RestrictedEditPage() {
     const { botId } = useParams();
@@ -460,7 +461,7 @@ function RestrictedEditPage() {
 
     return (
         <>
-            <FloatingErrorBanner isVisible={validationError || cronErrors.some(e => e)}>
+            <FloatingErrorBanner isVisible={validationError || cronErrors.some(e => e)} darkMode={true}>
                 <strong>⚠️ Cannot Save:</strong>
                 {validationError ? (
                     <>
@@ -484,10 +485,11 @@ function RestrictedEditPage() {
                 )}
             </FloatingErrorBanner>
 
-            <PageContainer>
-                <ContentCard title={isNew ? 'New Configuration: ' + botId : `Edit Configuration: ${botId}`} maxWidth="1000px">
-                    <ScrollablePanel>
+            <PageContainer darkMode={true}>
+                <ContentCard title={isNew ? 'New Configuration: ' + botId : `Edit Configuration: ${botId}`} maxWidth="1000px" darkMode={true}>
+                    <ScrollablePanel darkMode={true}>
                         <Form
+                            className="dark-form"
                             ref={formRef}
                             schema={schema}
                             uiSchema={uiSchema}
@@ -517,14 +519,25 @@ function RestrictedEditPage() {
                     </ScrollablePanel>
                 </ContentCard>
             </PageContainer >
-            <FixedFooter>
+            <FixedFooter darkMode={true}>
                 <div>
                     <button
                         type="button"
                         onClick={handleSaveConfiguration}
                         disabled={savingStatus !== 'idle' || cronErrors.some(e => e) || validationError}
                         title={validationError || (cronErrors.some(e => e) ? 'Fix cron expression errors first' : 'Saves new configuration without reloading the bot')}
-                        style={{ marginRight: '10px', padding: '10px 20px', backgroundColor: (cronErrors.some(e => e) || validationError) ? '#6c757d' : '#007bff', color: 'white', border: 'none', borderRadius: '4px', cursor: (cronErrors.some(e => e) || validationError) ? 'not-allowed' : 'pointer' }}
+                        style={{
+                            marginRight: '10px',
+                            padding: '10px 20px',
+                            background: (cronErrors.some(e => e) || validationError) ? '#4b5563' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '0.75rem',
+                            cursor: (cronErrors.some(e => e) || validationError) ? 'not-allowed' : 'pointer',
+                            fontWeight: 600,
+                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                            opacity: (cronErrors.some(e => e) || validationError) ? 0.5 : 1
+                        }}
                     >
                         {savingStatus === 'saving' ? 'Saving...' : 'Save Configuration'}
                     </button>
@@ -534,7 +547,18 @@ function RestrictedEditPage() {
                         onClick={handleSaveAndLoad}
                         disabled={savingStatus !== 'idle' || cronErrors.some(e => e) || validationError}
                         title={validationError || (cronErrors.some(e => e) ? 'Fix cron expression errors first' : 'Reloads the bot with the new configuration saved')}
-                        style={{ marginRight: '10px', padding: '10px 20px', backgroundColor: (cronErrors.some(e => e) || validationError) ? '#6c757d' : '#28a745', color: 'white', border: 'none', borderRadius: '4px', cursor: (cronErrors.some(e => e) || validationError) ? 'not-allowed' : 'pointer' }}
+                        style={{
+                            marginRight: '10px',
+                            padding: '10px 20px',
+                            background: (cronErrors.some(e => e) || validationError) ? '#4b5563' : 'linear-gradient(135deg, #22c55e, #16a34a)',
+                            color: 'white',
+                            border: 'none',
+                            borderRadius: '0.75rem',
+                            cursor: (cronErrors.some(e => e) || validationError) ? 'not-allowed' : 'pointer',
+                            fontWeight: 600,
+                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
+                            opacity: (cronErrors.some(e => e) || validationError) ? 0.5 : 1
+                        }}
                     >
                         {savingStatus === 'loading' ? 'Processing...' : 'Save & Load'}
                     </button>
@@ -543,7 +567,15 @@ function RestrictedEditPage() {
                         type="button"
                         onClick={handleCancel}
                         disabled={savingStatus !== 'idle'}
-                        style={{ padding: '10px 20px', border: '1px solid #ccc', borderRadius: '4px', cursor: 'pointer' }}
+                        style={{
+                            padding: '10px 20px',
+                            border: '1px solid rgba(255, 255, 255, 0.2)',
+                            borderRadius: '0.75rem',
+                            cursor: 'pointer',
+                            background: 'rgba(30, 41, 59, 0.8)',
+                            color: '#e2e8f0',
+                            fontWeight: 600
+                        }}
                     >
                         Cancel
                     </button>
