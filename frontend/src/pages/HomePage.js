@@ -46,7 +46,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
       sortable: true,
       filterable: true,
       width: '15%',
-      getValue: (item) => item.authenticated ? 'Yes True' : 'No False',
+      getValue: (item) => item.authenticated ? 'Yes' : 'No',
       render: (item) => item.authenticated ? <span style={{ color: 'green', fontWeight: 'bold' }}>Yes</span> : <span style={{ color: '#6c757d' }}>No</span>
     },
     {
@@ -56,7 +56,6 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
       filterable: true,
       width: showOwnerColumn ? '35%' : '50%',
       getValue: (item) => String(item.status || ''),
-      filterType: 'startsWith',
       render: (item) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span style={{
