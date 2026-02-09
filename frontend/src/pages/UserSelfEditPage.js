@@ -130,15 +130,19 @@ const UserSelfEditPage = () => {
                 }
 
                 .form-group {
-                    margin-bottom: 1.5rem;
+                    display: grid;
+                    grid-template-columns: 140px 1fr;
+                    align-items: center;
+                    gap: 1rem;
+                    margin-bottom: 1rem;
                 }
 
                 .form-group label {
-                    display: block;
-                    margin-bottom: 0.5rem;
                     color: #cbd5e1;
                     font-size: 0.9rem;
                     font-weight: 500;
+                    text-align: right;
+                    white-space: nowrap;
                 }
 
                 .form-group input {
@@ -151,6 +155,7 @@ const UserSelfEditPage = () => {
                     font-size: 1rem;
                     transition: all 0.2s;
                     box-sizing: border-box;
+                    height: 48px;
                 }
 
                 .form-group input:focus {
@@ -164,6 +169,43 @@ const UserSelfEditPage = () => {
                     opacity: 0.6;
                     cursor: not-allowed;
                     background: rgba(15, 23, 42, 0.4);
+                }
+
+                /* Two-column row for first/last name */
+                .form-row-split {
+                    display: grid;
+                    grid-template-columns: 140px 1fr 1fr;
+                    align-items: center;
+                    gap: 1rem;
+                    margin-bottom: 1rem;
+                }
+
+                .form-row-split label {
+                    color: #cbd5e1;
+                    font-size: 0.9rem;
+                    font-weight: 500;
+                    text-align: right;
+                    white-space: nowrap;
+                }
+
+                .form-row-split input {
+                    width: 100%;
+                    padding: 0.75rem 1rem;
+                    background: rgba(15, 23, 42, 0.6);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 0.75rem;
+                    color: #f8fafc;
+                    font-size: 1rem;
+                    transition: all 0.2s;
+                    box-sizing: border-box;
+                    height: 48px;
+                }
+
+                .form-row-split input:focus {
+                    outline: none;
+                    border-color: #818cf8;
+                    box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+                    background: rgba(15, 23, 42, 0.8);
                 }
 
                 .save-button {
@@ -233,27 +275,26 @@ const UserSelfEditPage = () => {
                         />
                     </div>
 
-                    <div style={{ display: 'flex', gap: '20px' }}>
-                        <div className="form-group" style={{ flex: 1 }}>
-                            <label>First Name</label>
-                            <input
-                                type="text"
-                                name="first_name"
-                                value={formData.first_name || ''}
-                                onChange={handleChange}
-                                onKeyDown={handleInputKeyDown}
-                            />
-                        </div>
-                        <div className="form-group" style={{ flex: 1 }}>
-                            <label>Last Name</label>
-                            <input
-                                type="text"
-                                name="last_name"
-                                value={formData.last_name || ''}
-                                onChange={handleChange}
-                                onKeyDown={handleInputKeyDown}
-                            />
-                        </div>
+                    <div className="form-group">
+                        <label>First Name</label>
+                        <input
+                            type="text"
+                            name="first_name"
+                            value={formData.first_name || ''}
+                            onChange={handleChange}
+                            onKeyDown={handleInputKeyDown}
+                        />
+                    </div>
+
+                    <div className="form-group">
+                        <label>Last Name</label>
+                        <input
+                            type="text"
+                            name="last_name"
+                            value={formData.last_name || ''}
+                            onChange={handleChange}
+                            onKeyDown={handleInputKeyDown}
+                        />
                     </div>
 
                     <div className="form-group">
