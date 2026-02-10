@@ -38,16 +38,23 @@ const GlobalHeader = () => {
         navigate('/login');
     };
 
+    // Helper to determine if a path is active
+    const isActive = (path) => {
+        if (path === '/' && location.pathname === '/') return true;
+        if (path !== '/' && location.pathname.startsWith(path)) return true;
+        return false;
+    };
+
     return (
         <header className="global-header">
             <div className="header-left">
-                <Link to="/" className="brand-link">
+                <Link to="/" className={`brand-link ${isActive('/') ? 'active' : ''}`}>
                     Home
                 </Link>
                 {user && (
                     <Link
                         to={user.role === 'admin' ? "/admin/dashboard" : "/operator/dashboard"}
-                        className="nav-link"
+                        className={`nav-link ${isActive(user.role === 'admin' ? "/admin/dashboard" : "/operator/dashboard") ? 'active' : ''}`}
                         style={{ marginLeft: '20px' }}
                     >
                         Manage Bot Farm
@@ -58,13 +65,16 @@ const GlobalHeader = () => {
                 {user ? (
                     <>
                         {user.role === 'admin' && (
-                            <Link to="/admin/users" className="nav-link">
+                            <Link to="/admin/users" className={`nav-link ${isActive('/admin/users') ? 'active' : ''}`}>
                                 Manage Users
                             </Link>
                         )}
 
                         <div className="user-profile">
-                            <Link to={user.role === 'admin' ? `/admin/users/edit/${user.user_id}` : `/operator/profile`} className="profile-link">
+                            <Link
+                                to={user.role === 'admin' ? `/admin/users/edit/${user.user_id}` : `/operator/profile`}
+                                className={`profile-link ${isActive(user.role === 'admin' ? `/admin/users/edit/${user.user_id}` : `/operator/profile`) ? 'active' : ''}`}
+                            >
                                 <div className="avatar">
                                     {user.first_name ? user.first_name.charAt(0).toUpperCase() : 'U'}
                                 </div>
