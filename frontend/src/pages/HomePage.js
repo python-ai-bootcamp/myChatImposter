@@ -281,45 +281,71 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
     position: 'relative',
     overflow: 'hidden',
     boxSizing: 'border-box',
+    flexDirection: 'column', // Stack vertically
   };
 
-  const containerStyle = {
+  // Base glass style shared by both panels
+  const glassBase = {
     background: 'rgba(30, 41, 59, 0.5)',
     border: '1px solid rgba(255, 255, 255, 0.1)',
     backdropFilter: 'blur(20px)',
-    padding: '1rem', // Reduced from 2rem
-    borderRadius: '1.5rem',
     width: '100%',
     maxWidth: '1200px',
-    // height: '100%', // Removed to allow shrinking
-    maxHeight: 'calc(100vh - 10rem)', // Reduced max height to ensure spacing (Header 60px + 3rem top + 3rem bottom approx)
     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
-    zIndex: 10,
-    display: 'flex',
-    flexDirection: 'column',
     boxSizing: 'border-box',
   };
 
+  const headerPanelStyle = {
+    ...glassBase,
+    padding: '1.5rem',
+    borderRadius: '1.5rem',
+    borderBottomLeftRadius: '0.5rem',
+    borderBottomRightRadius: '0.5rem',
+    marginBottom: '4px', // The transparent spacing line
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexShrink: 0,
+    zIndex: 20,
+  };
+
+  const bodyPanelStyle = {
+    ...glassBase,
+    padding: '1rem',
+    borderRadius: '1.5rem',
+    borderTopLeftRadius: '0.5rem',
+    borderTopRightRadius: '0.5rem',
+    maxHeight: 'calc(100vh - 16rem)', // Adjusted for header height + gap
+    display: 'flex',
+    flexDirection: 'column',
+    overflow: 'hidden',
+    zIndex: 10,
+  };
+
   const headerStyle = {
-    fontSize: '2rem',
+    fontSize: '2.5rem',
     fontWeight: 800,
-    marginBottom: '0.25rem', // Drastically reduced from 1.5rem
-    marginTop: '0.25rem', // Minimal top margin
+    margin: 0,
     background: 'linear-gradient(to right, #c084fc, #6366f1)',
     WebkitBackgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
-    textAlign: 'center', // Ensure text centering
+    textShadow: '0 10px 20px rgba(0,0,0,0.2)',
   };
 
   const actionButtonsContainerStyle = {
     display: 'flex',
     gap: '1rem',
-    marginTop: '2rem',
-    paddingTop: '1.5rem',
+    marginTop: '1rem',
+    paddingTop: '1rem',
     borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+    flexShrink: 0,
   };
 
+  // ... button styles ...
+
   const getButtonStyle = (type, disabled) => {
+    // ... existing ... 
     const base = {
       padding: '10px 20px',
       fontSize: '0.9rem',
@@ -331,38 +357,24 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
       transition: 'all 0.2s ease',
       boxShadow: disabled ? 'none' : '0 4px 12px rgba(0, 0, 0, 0.3)',
     };
-
     const styles = {
-      primary: {
-        ...base,
-        background: 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-        color: 'white',
-      },
-      success: {
-        ...base,
-        background: 'linear-gradient(135deg, #22c55e, #16a34a)',
-        color: 'white',
-      },
-      warning: {
-        ...base,
-        background: 'linear-gradient(135deg, #f59e0b, #d97706)',
-        color: 'white',
-      },
-      danger: {
-        ...base,
-        background: 'linear-gradient(135deg, #ef4444, #dc2626)',
-        color: 'white',
-      },
+      primary: { ...base, background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white' },
+      success: { ...base, background: 'linear-gradient(135deg, #22c55e, #16a34a)', color: 'white' },
+      warning: { ...base, background: 'linear-gradient(135deg, #f59e0b, #d97706)', color: 'white' },
+      danger: { ...base, background: 'linear-gradient(135deg, #ef4444, #dc2626)', color: 'white' },
     };
-
     return styles[type] || base;
   };
 
   return (
     <div style={pageStyle}>
-      <div style={containerStyle}>
+      {/* Detached Header Panel */}
+      <div style={headerPanelStyle}>
         <h2 style={headerStyle}>Bot Configurations</h2>
+      </div>
 
+      {/* Body Panel */}
+      <div style={bodyPanelStyle}>
         {error && <div style={{ color: '#fca5a5', marginBottom: '1rem', padding: '12px', backgroundColor: 'rgba(239, 68, 68, 0.2)', borderRadius: '0.5rem', border: '1px solid rgba(239, 68, 68, 0.3)' }}>Error: {error}</div>}
 
         <GenericTable
@@ -373,7 +385,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
           onSelect={setSelectedBotId}
           enableFiltering={enableFiltering}
           darkMode={true}
-          style={{ marginTop: '0.5rem' }}
+          style={{ marginTop: '0', flex: 1, minHeight: '300px' }}
         />
 
         <div style={actionButtonsContainerStyle}>
