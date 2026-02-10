@@ -94,7 +94,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
         return (
           <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }} title={features.join(', ')}>
             {features.map((f, idx) => {
-              const commonProps = { key: idx, width: "20px", height: "20px", style: { cursor: 'help' } };
+              const commonProps = { width: "20px", height: "20px", style: { cursor: 'help' } };
               if (f === 'Auto Reply') return <div key={idx} title={f}><RobotIcon {...commonProps} /></div>;
               if (f === 'Group Tracking') return <div key={idx} title={f}><GroupIcon {...commonProps} /></div>;
               if (f === 'Kid Safety') return <div key={idx} title={f}><ShieldIcon {...commonProps} /></div>;
