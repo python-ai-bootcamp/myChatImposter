@@ -67,7 +67,8 @@ function GenericTable({
     selectedId,
     onSelect,
     enableFiltering = false,
-    darkMode = false
+    darkMode = false,
+    style = {}
 }) {
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
     const [filters, setFilters] = useState({});
@@ -215,19 +216,26 @@ function GenericTable({
         </colgroup>
     );
 
+    // Use flexbox for height management
+    const containerStyle = {
+        border: darkMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #dee2e6',
+        borderRadius: '0.75rem',
+        backgroundColor: darkMode ? 'rgba(15, 23, 42, 0.4)' : '#fff',
+        marginTop: '1.5rem',
+        boxShadow: darkMode ? '0 4px 12px rgba(0,0,0,0.3)' : '0 4px 6px rgba(0,0,0,0.1)',
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        flex: 1, // Take remaining space
+        minHeight: '350px', // Minimum ~5 rows + header
+        ...style
+    };
+
     return (
-        <div style={{
-            border: darkMode ? '1px solid rgba(255, 255, 255, 0.1)' : '1px solid #dee2e6',
-            borderRadius: '8px',
-            backgroundColor: darkMode ? 'rgba(15, 23, 42, 0.4)' : '#fff',
-            marginTop: '1.5rem',
-            boxShadow: darkMode ? '0 4px 12px rgba(0,0,0,0.3)' : '0 4px 6px rgba(0,0,0,0.1)',
-            display: 'flex',
-            flexDirection: 'column',
-            overflow: 'hidden'
-        }}>
+        <div style={containerStyle}>
             {/* Header Section */}
             <div style={{
+                flex: '0 0 auto', // Don't shrink or grow
                 overflow: 'hidden',
                 scrollbarGutter: 'stable',
                 backgroundColor: darkMode ? 'rgba(30, 41, 59, 0.9)' : '#f8f9fa',
@@ -265,10 +273,11 @@ function GenericTable({
 
             {/* Body Section */}
             <div style={{
+                flex: '1 1 auto', // Grow and shrink
                 overflowX: 'auto',
                 overflowY: 'auto',
                 scrollbarGutter: 'stable',
-                height: containerHeight,
+                // Removed fixed height calculation
             }}>
                 <table style={{ ...dynamicTableStyle, marginTop: 0, boxShadow: 'none', borderRadius: 0, borderTop: 'none' }}>
                     {renderColGroup()}

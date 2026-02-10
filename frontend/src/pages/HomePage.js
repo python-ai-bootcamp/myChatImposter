@@ -269,36 +269,46 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
 
   // Dark glassmorphism styles matching Profile page
   const pageStyle = {
-    minHeight: '100vh',
+    // 60px is the height of the fixed GlobalHeader
+    height: 'calc(100vh - 60px)',
+    width: '100vw',
     fontFamily: "'Inter', 'system-ui', sans-serif",
     display: 'flex',
-    alignItems: 'flex-start',
+    alignItems: 'center',
     justifyContent: 'center',
-    padding: '40px 20px',
+    padding: '3rem 2rem', // Increased vertical padding
     background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
     position: 'relative',
     overflow: 'hidden',
+    boxSizing: 'border-box',
   };
 
   const containerStyle = {
     background: 'rgba(30, 41, 59, 0.5)',
     border: '1px solid rgba(255, 255, 255, 0.1)',
     backdropFilter: 'blur(20px)',
-    padding: '2rem',
+    padding: '1rem', // Reduced from 2rem
     borderRadius: '1.5rem',
     width: '100%',
     maxWidth: '1200px',
+    // height: '100%', // Removed to allow shrinking
+    maxHeight: 'calc(100vh - 10rem)', // Reduced max height to ensure spacing (Header 60px + 3rem top + 3rem bottom approx)
     boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
     zIndex: 10,
+    display: 'flex',
+    flexDirection: 'column',
+    boxSizing: 'border-box',
   };
 
   const headerStyle = {
     fontSize: '2rem',
     fontWeight: 800,
-    marginBottom: '1.5rem',
+    marginBottom: '0.25rem', // Drastically reduced from 1.5rem
+    marginTop: '0.25rem', // Minimal top margin
     background: 'linear-gradient(to right, #c084fc, #6366f1)',
     WebkitBackgroundClip: 'text',
     WebkitTextFillColor: 'transparent',
+    textAlign: 'center', // Ensure text centering
   };
 
   const actionButtonsContainerStyle = {
@@ -363,6 +373,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
           onSelect={setSelectedBotId}
           enableFiltering={enableFiltering}
           darkMode={true}
+          style={{ marginTop: '0.5rem' }}
         />
 
         <div style={actionButtonsContainerStyle}>
