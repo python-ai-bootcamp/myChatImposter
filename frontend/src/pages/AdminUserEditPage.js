@@ -11,9 +11,7 @@ const AdminUserEditPage = () => {
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
 
-    // Password Reset State
-    const [newPassword, setNewPassword] = useState('');
-    const [showPasswordReset, setShowPasswordReset] = useState(false);
+
 
     const fetchUser = useCallback(() => {
         setLoading(true);
@@ -28,7 +26,7 @@ const AdminUserEditPage = () => {
             })
             .catch(err => {
                 alert(err.message);
-                navigate('/admin/user/list');
+                navigate('/admin/users');
             });
     }, [userId, navigate]);
 
@@ -70,160 +68,296 @@ const AdminUserEditPage = () => {
         }
     };
 
-    const handlePasswordReset = async () => {
-        if (!newPassword || newPassword.length < 8) {
-            alert("Password must be at least 8 characters");
-            return;
-        }
 
-        if (!window.confirm("Are you sure you want to reset this user's password? This will log them out of all sessions.")) return;
 
-        try {
-            const res = await fetch(`/api/external/users/${userId}/password`, {
-                method: 'PUT',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ password: newPassword })
-            });
-
-            if (!res.ok) throw new Error("Failed to reset password");
-
-            alert("Password reset successfully!");
-            setNewPassword('');
-            setShowPasswordReset(false);
-
-        } catch (err) {
-            alert(err.message);
-        }
-    };
-
-    if (loading) return <div>Loading...</div>;
-    if (!formData) return <div>User not found.</div>;
+    if (loading) return <div style={{ color: '#e2e8f0', textAlign: 'center', marginTop: '50px' }}>Loading...</div>;
+    if (!formData) return <div style={{ color: '#e2e8f0', textAlign: 'center', marginTop: '50px' }}>User not found.</div>;
 
     return (
-        <div style={{ padding: '20px', maxWidth: '800px', margin: '0 auto', textAlign: 'left' }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <h1>Edit User: {formData.user_id}</h1>
-                <button onClick={() => navigate('/admin/user/list')} style={{ backgroundColor: '#6c757d', fontSize: '0.9rem' }}>Back to List</button>
-            </div>
+        <div className="profile-page">
+            <style>{`
+                .profile-page {
+                    min-height: calc(100vh - 60px);
+                    width: 100%;
+                    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+                    color: #e2e8f0;
+                    font-family: 'Inter', sans-serif;
+                    display: flex;
+                    justify-content: center;
+                    align-items: flex-start;
+                    padding-top: 4rem;
+                    padding-bottom: 4rem;
+                    position: relative;
+                    overflow-y: auto;
+                }
 
-            <form onSubmit={handleSubmit} style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', marginBottom: '20px' }}>
+                .profile-container {
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.05);
+                    backdrop-filter: blur(20px);
+                    padding: 3rem;
+                    border-radius: 1.5rem;
+                    width: 100%;
+                    max-width: 800px;
+                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                    z-index: 10;
+                    animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+                    margin-bottom: 2rem;
+                }
 
-                <div style={{ display: 'flex', gap: '20px', marginBottom: '15px' }}>
-                    <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>First Name</label>
+                .profile-header {
+                    margin-bottom: 2rem;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                    padding-bottom: 1rem;
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                }
+
+                .profile-header h1 {
+                    font-size: 2rem;
+                    font-weight: 800;
+                    margin: 0;
+                    background: linear-gradient(to right, #c084fc, #6366f1);
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                }
+
+                .back-button {
+                    background: rgba(255, 255, 255, 0.1);
+                    border: 1px solid rgba(255, 255, 255, 0.2);
+                    color: #e2e8f0;
+                    padding: 8px 16px;
+                    border-radius: 8px;
+                    cursor: pointer;
+                    font-size: 0.9rem;
+                    transition: all 0.2s;
+                }
+
+                .back-button:hover {
+                    background: rgba(255, 255, 255, 0.2);
+                }
+
+                .form-group {
+                    display: grid;
+                    grid-template-columns: 140px 1fr;
+                    align-items: center;
+                    gap: 1rem;
+                    margin-bottom: 1rem;
+                }
+
+                .form-group label {
+                    color: #cbd5e1;
+                    font-size: 0.9rem;
+                    font-weight: 500;
+                    text-align: right;
+                    white-space: nowrap;
+                }
+
+                .form-group input, .form-group select {
+                    width: 100%;
+                    padding: 0.75rem 1rem;
+                    background: rgba(15, 23, 42, 0.6);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 0.75rem;
+                    color: #f8fafc;
+                    font-size: 1rem;
+                    transition: all 0.2s;
+                    box-sizing: border-box;
+                    height: 48px;
+                }
+
+                .form-group input:focus, .form-group select:focus {
+                    outline: none;
+                    border-color: #818cf8;
+                    box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+                    background: rgba(15, 23, 42, 0.8);
+                }
+
+                .form-group input:disabled {
+                    opacity: 0.6;
+                    cursor: not-allowed;
+                    background: rgba(15, 23, 42, 0.4);
+                }
+
+                 .form-row-split {
+                    display: grid;
+                    grid-template-columns: 140px 1fr 1fr;
+                    align-items: center;
+                    gap: 1rem;
+                    margin-bottom: 1rem;
+                }
+
+                .form-row-split label {
+                    color: #cbd5e1;
+                    font-size: 0.9rem;
+                    font-weight: 500;
+                    text-align: right;
+                    white-space: nowrap;
+                }
+
+                .form-row-split input {
+                    width: 100%;
+                    padding: 0.75rem 1rem;
+                    background: rgba(15, 23, 42, 0.6);
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                    border-radius: 0.75rem;
+                    color: #f8fafc;
+                    font-size: 1rem;
+                    transition: all 0.2s;
+                    box-sizing: border-box;
+                    height: 48px;
+                }
+                
+                .form-row-split input:focus {
+                    outline: none;
+                    border-color: #818cf8;
+                    box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
+                    background: rgba(15, 23, 42, 0.8);
+                }
+
+                .save-button {
+                    width: 100%;
+                    padding: 0.75rem;
+                    background: linear-gradient(135deg, #3b82f6, #2563eb);
+                    border: none;
+                    border-radius: 0.75rem;
+                    color: white;
+                    font-weight: 600;
+                    font-size: 1rem;
+                    cursor: pointer;
+                    transition: transform 0.2s, box-shadow 0.2s;
+                    margin-top: 1rem;
+                }
+
+                .save-button:hover:not(:disabled) {
+                    transform: translateY(-2px);
+                    box-shadow: 0 10px 15px -3px rgba(59, 130, 246, 0.3);
+                }
+
+                .save-button:disabled {
+                    opacity: 0.7;
+                    cursor: not-allowed;
+                }
+
+
+
+                /* Background shapes */
+                .shape {
+                    position: absolute;
+                    filter: blur(100px);
+                    z-index: 0;
+                    opacity: 0.4;
+                    pointer-events: none;
+                }
+                .shape-1 {
+                    top: -20%;
+                    left: -20%;
+                    width: 60vw;
+                    height: 60vw;
+                    background: radial-gradient(circle, #4f46e5 0%, transparent 70%);
+                }
+                .shape-2 {
+                    bottom: -20%;
+                    right: -20%;
+                    width: 50vw;
+                    height: 50vw;
+                    background: radial-gradient(circle, #ec4899 0%, transparent 70%);
+                }
+            `}</style>
+
+            <div className="shape shape-1" />
+            <div className="shape shape-2" />
+
+            <div className="profile-container">
+                <div className="profile-header">
+                    <h1>Edit User</h1>
+                    <button onClick={() => navigate('/admin/users')} className="back-button">
+                        Back to List
+                    </button>
+                </div>
+
+                <form onSubmit={handleSubmit}>
+                    <div className="form-group">
+                        <label>User ID</label>
+                        <input
+                            type="text"
+                            value={formData.user_id}
+                            disabled
+                        />
+                    </div>
+
+                    <div className="form-row-split">
+                        <label>Name</label>
                         <input
                             type="text"
                             name="first_name"
-                            value={formData.first_name}
+                            placeholder="First Name"
+                            value={formData.first_name || ''}
                             onChange={handleChange}
-                            style={{ width: '100%', padding: '8px' }}
                         />
-                    </div>
-                    <div style={{ flex: 1 }}>
-                        <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Last Name</label>
                         <input
                             type="text"
                             name="last_name"
-                            value={formData.last_name}
+                            placeholder="Last Name"
+                            value={formData.last_name || ''}
                             onChange={handleChange}
-                            style={{ width: '100%', padding: '8px' }}
                         />
                     </div>
-                </div>
 
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Email Address</label>
-                    <input
-                        type="email"
-                        name="email"
-                        value={formData.email}
-                        onChange={handleChange}
-                        style={{ width: '100%', padding: '8px' }}
-                    />
-                </div>
-
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Phone Number (E.164)</label>
-                    <PhoneInputWidget
-                        value={formData.phone_number}
-                        onChange={(val) => setFormData(prev => ({ ...prev, phone_number: val }))}
-                    />
-                </div>
-
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Country</label>
-                    <CountrySelectWidget
-                        value={formData.country_value}
-                        onChange={handleCountryChange}
-                    />
-                </div>
-
-                <div style={{ marginBottom: '15px' }}>
-                    <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>Role</label>
-                    <select
-                        name="role"
-                        value={formData.role}
-                        onChange={handleChange}
-                        style={{ width: '100%', padding: '8px' }}
-                    >
-                        <option value="user">User</option>
-                        <option value="admin">Admin</option>
-                    </select>
-                    <p style={{ fontSize: '0.8rem', color: '#666', marginTop: '5px' }}>
-                        Note: Changing role will invalidate user's active sessions.
-                    </p>
-                </div>
-
-                <button
-                    type="submit"
-                    disabled={saving}
-                    style={{
-                        backgroundColor: '#007bff',
-                        color: 'white',
-                        padding: '10px 20px',
-                        border: 'none',
-                        borderRadius: '5px',
-                        cursor: saving ? 'not-allowed' : 'pointer',
-                        fontSize: '1rem'
-                    }}
-                >
-                    {saving ? 'Saving...' : 'Save Changes'}
-                </button>
-            </form>
-
-            {/* Password Reset Section */}
-            <div style={{ backgroundColor: 'white', padding: '20px', borderRadius: '8px', boxShadow: '0 2px 4px rgba(0,0,0,0.1)', border: '1px solid #dee2e6' }}>
-                <h3 style={{ marginTop: 0 }}>Security</h3>
-                {!showPasswordReset ? (
-                    <button
-                        onClick={() => setShowPasswordReset(true)}
-                        style={{ backgroundColor: '#ffc107', color: '#212529' }}
-                    >
-                        Reset Password
-                    </button>
-                ) : (
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '5px' }}>New Password</label>
+                    <div className="form-group">
+                        <label>Email Address</label>
                         <input
-                            type="password"
-                            value={newPassword}
-                            onChange={(e) => setNewPassword(e.target.value)}
-                            style={{ padding: '8px', marginRight: '10px' }}
+                            type="email"
+                            name="email"
+                            value={formData.email || ''}
+                            onChange={handleChange}
                         />
-                        <button
-                            onClick={handlePasswordReset}
-                            style={{ backgroundColor: '#dc3545', color: 'white', marginRight: '10px' }}
-                        >
-                            Confirm Reset
-                        </button>
-                        <button
-                            onClick={() => { setShowPasswordReset(false); setNewPassword(''); }}
-                            style={{ backgroundColor: '#6c757d', color: 'white' }}
-                        >
-                            Cancel
-                        </button>
                     </div>
-                )}
+
+                    <div className="form-group">
+                        <label>Phone Number</label>
+                        <div style={{ width: '100%' }}>
+                            <PhoneInputWidget
+                                value={formData.phone_number}
+                                onChange={(val) => setFormData(prev => ({ ...prev, phone_number: val }))}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="form-group">
+                        <label>Country</label>
+                        <div style={{ width: '100%' }}>
+                            <CountrySelectWidget
+                                value={formData.country_value}
+                                onChange={handleCountryChange}
+                                darkMode={true}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="form-group">
+                        <label>Role</label>
+                        <select
+                            name="role"
+                            value={formData.role}
+                            onChange={handleChange}
+                        >
+                            <option value="user">User</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+
+                    <button
+                        type="submit"
+                        className="save-button"
+                        disabled={saving}
+                    >
+                        {saving ? 'Saving...' : 'Save Changes'}
+                    </button>
+                </form>
+
+
             </div>
         </div>
     );
