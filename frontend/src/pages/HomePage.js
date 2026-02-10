@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
+import { AdvisorIcon, RobotIcon, ShieldIcon, GroupIcon } from '../components/FeatureIcons';
 import GenericTable from '../components/GenericTable';
 import LinkUserModal from '../components/LinkUserModal';
 import CreateUserModal from '../components/CreateUserModal';
@@ -55,7 +56,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
       sortable: true,
       filterable: true,
       customFilter: (value, filter) => value.startsWith(filter), // Enforce prefix matching via custom function
-      width: showOwnerColumn ? '35%' : '50%',
+      width: showOwnerColumn ? '25%' : '35%', // Reduced width to make room
       getValue: (item) => String(item.status || ''),
       render: (item) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -69,6 +70,37 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
           {item.status}
         </div>
       )
+    },
+    {
+      key: 'active_features',
+      label: 'Active Features',
+      sortable: false,
+      filterable: true,
+      width: '25%',
+      // Smart Filter: Check if filter text is inside ANY of the features
+      customFilter: (_, filter, item) => {
+        const features = item.active_features || [];
+        if (!Array.isArray(features)) return false;
+        return features.some(f => f.toLowerCase().includes(filter.toLowerCase()));
+      },
+      getValue: (item) => (item.active_features || []).join(', '),
+      render: (item) => {
+        const features = item.active_features || [];
+        if (features.length === 0) return <span style={{ color: '#6c757d', fontSize: '0.85rem' }}>-</span>;
+
+        return (
+          <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center' }} title={features.join(', ')}>
+            {features.map((f, idx) => {
+              const commonProps = { key: idx, width: "20px", height: "20px", style: { cursor: 'help' } };
+              if (f === 'Auto Reply') return <div key={idx} title={f}><RobotIcon {...commonProps} /></div>;
+              if (f === 'Group Tracking') return <div key={idx} title={f}><GroupIcon {...commonProps} /></div>;
+              if (f === 'Kid Safety') return <div key={idx} title={f}><ShieldIcon {...commonProps} /></div>;
+              // Fallback
+              return <span key={idx} title={f} style={{ fontSize: '0.75rem', border: '1px solid #6c757d', borderRadius: '12px', padding: '2px 6px', color: '#e2e8f0', cursor: 'help' }}>{f}</span>;
+            })}
+          </div>
+        );
+      }
     }
   ];
 

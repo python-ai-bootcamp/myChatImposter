@@ -158,12 +158,25 @@ async def get_bot_info(bot_id: str, state: GlobalStateManager = Depends(ensure_d
             if owner_doc:
                 owner = owner_doc.get("user_id")
         
+        # Extract Active Features
+        active_features = []
+        if isinstance(config_data, dict):
+             features = config_data.get("features", {})
+             if isinstance(features, dict):
+                if features.get("automatic_bot_reply", {}).get("enabled"):
+                    active_features.append("Auto Reply")
+                if features.get("periodic_group_tracking", {}).get("enabled"):
+                    active_features.append("Group Tracking")
+                if features.get("kid_phone_safety_tracking", {}).get("enabled"):
+                    active_features.append("Kid Safety")
+
         return {
             "configurations": [{
                 "bot_id": bot_id,
                 "status": status_info.get('status', 'unknown'),
                 "authenticated": is_authenticated,
-                "owner": owner
+                "owner": owner,
+                "active_features": active_features
             }]
         }
     except HTTPException:
@@ -223,11 +236,23 @@ async def list_bots_status(
                 if instance:
                      status_info = await instance.get_status()
 
+                # Extract Active Features
+                active_features = []
+                features = config_val.get("features", {})
+                if isinstance(features, dict):
+                    if features.get("automatic_bot_reply", {}).get("enabled"):
+                        active_features.append("Auto Reply")
+                    if features.get("periodic_group_tracking", {}).get("enabled"):
+                        active_features.append("Group Tracking")
+                    if features.get("kid_phone_safety_tracking", {}).get("enabled"):
+                        active_features.append("Kid Safety")
+
                 statuses.append({
                     "bot_id": bot_id,
                     "status": status_info.get('status', 'unknown'),
                     "authenticated": is_authenticated,
-                    "owner": owner_map.get(bot_id, "unknown")
+                    "owner": owner_map.get(bot_id, "unknown"),
+                    "active_features": active_features
                 })
 
             except Exception as e:
