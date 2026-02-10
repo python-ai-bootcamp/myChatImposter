@@ -2,59 +2,22 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import GenericTable from '../components/GenericTable';
 
-// Styles matching HomePage
-const pageStyle = {
-    maxWidth: '1200px',
-    margin: '40px auto',
-    padding: '2rem',
-    backgroundColor: '#fff',
-    fontFamily: "'Inter', sans-serif",
-};
-
-const actionButtonsContainerStyle = {
-    display: 'flex',
-    gap: '1rem',
-    marginTop: '2rem',
-    paddingTop: '1rem',
-    borderTop: '1px solid #dee2e6',
-    marginBottom: '20px'
-};
-
-const getButtonStyle = (type, disabled) => {
-    const base = {
-        padding: '8px 16px',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        borderRadius: '4px',
-        fontSize: '0.9rem',
-        transition: 'all 0.2s',
-        opacity: disabled ? 0.6 : 1,
-        backgroundColor: disabled ? '#e9ecef' : '#f8f9fa',
-        color: disabled ? '#6c757d' : '#212529',
-        border: disabled ? '1px solid #ced4da' : '1px solid #ccc'
-    };
-
-    if (disabled) return base;
-
-    switch (type) {
-        case 'primary':
-            return { ...base, backgroundColor: '#007bff', color: 'white', border: 'none' };
-        case 'danger':
-            return { ...base, backgroundColor: '#dc3545', color: 'white', border: 'none' };
-        case 'success':
-            return { ...base, backgroundColor: '#28a745', color: 'white', border: 'none' };
-        case 'warning':
-            return { ...base, backgroundColor: '#ffc107', color: '#212529', border: 'none' };
-        default:
-            return base;
-    }
-};
-
 const UserListPage = ({ enableFiltering = true }) => {
     const [users, setUsers] = useState([]);
     const [selectedUserId, setSelectedUserId] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const [isCompact, setIsCompact] = useState(false);
     const navigate = useNavigate();
+
+    useEffect(() => {
+        const handleResize = () => {
+            setIsCompact(window.innerHeight < 900);
+        };
+        handleResize();
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
 
     useEffect(() => {
         fetchUsers();
@@ -150,9 +113,10 @@ const UserListPage = ({ enableFiltering = true }) => {
                 <span style={{
                     padding: '4px 8px',
                     borderRadius: '4px',
-                    backgroundColor: user.role === 'admin' ? '#007bff' : '#6c757d',
+                    backgroundColor: user.role === 'admin' ? '#0ea5e9' : '#64748b', // Updated colors for dark mode
                     color: 'white',
-                    fontSize: '0.8rem'
+                    fontSize: '0.8rem',
+                    fontWeight: 600
                 }}>
                     {user.role}
                 </span>
@@ -162,54 +126,178 @@ const UserListPage = ({ enableFiltering = true }) => {
         { key: 'country_value', label: 'Country', sortable: true, filterable: true, width: '20%' },
     ];
 
-    if (loading) return <div style={pageStyle}>Loading users...</div>;
+    // Styles matching HomePage
+    const pageStyle = {
+        height: 'calc(100vh - 60px)',
+        width: '100vw',
+        fontFamily: "'Inter', 'system-ui', sans-serif",
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        padding: isCompact ? '1rem' : '3rem 2rem',
+        background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
+        position: 'relative',
+        overflow: 'hidden',
+        boxSizing: 'border-box',
+        flexDirection: 'column',
+    };
+
+    const glassBase = {
+        background: 'rgba(30, 41, 59, 0.5)',
+        border: '1px solid rgba(255, 255, 255, 0.1)',
+        backdropFilter: 'blur(20px)',
+        width: '100%',
+        maxWidth: '1200px',
+        boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.5)',
+        boxSizing: 'border-box',
+    };
+
+    const headerPanelStyle = {
+        ...glassBase,
+        padding: '1.5rem',
+        borderRadius: '1.5rem',
+        borderBottomLeftRadius: '0.3rem',
+        borderBottomRightRadius: '0.3rem',
+        marginBottom: '10px',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        flexShrink: 0,
+        zIndex: 20,
+    };
+
+    const rowHeight = isCompact ? 40 : 60;
+    const overhead = isCompact ? 160 : 250;
+    const minTableHeight = isCompact ? 350 : 450;
+    const estimatedHeight = Math.max(minTableHeight, (users.length * rowHeight) + overhead);
+
+    const bodyPanelStyle = {
+        ...glassBase,
+        padding: isCompact ? '0.5rem' : '1rem',
+        borderRadius: '1.5rem',
+        borderTopLeftRadius: '0.3rem',
+        borderTopRightRadius: '0.3rem',
+        height: `min(calc(100vh - 16rem), ${estimatedHeight}px)`,
+        display: 'flex',
+        flexDirection: 'column',
+        overflow: 'hidden',
+        zIndex: 10,
+    };
+
+    const headerStyle = {
+        fontSize: '2.5rem',
+        fontWeight: 800,
+        margin: 0,
+        background: 'linear-gradient(to right, #38bdf8, #818cf8)', // Slightly different gradient for Users
+        WebkitBackgroundClip: 'text',
+        WebkitTextFillColor: 'transparent',
+        textShadow: '0 10px 20px rgba(0,0,0,0.2)',
+    };
+
+    const actionButtonsContainerStyle = {
+        display: 'flex',
+        gap: '1rem',
+        marginTop: '1rem',
+        paddingTop: '1rem',
+        borderTop: '1px solid rgba(255, 255, 255, 0.1)',
+        marginBottom: '20px'
+    };
+
+    const getButtonStyle = (type, disabled) => {
+        const base = {
+            padding: '10px 20px',
+            fontSize: '0.9rem',
+            fontWeight: 600,
+            border: 'none',
+            borderRadius: '0.75rem',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            opacity: disabled ? 0.5 : 1,
+            transition: 'all 0.2s ease',
+            boxShadow: disabled ? 'none' : '0 4px 12px rgba(0, 0, 0, 0.3)',
+            color: 'white',
+        };
+
+        if (disabled) return { ...base, background: '#475569', color: '#94a3b8', boxShadow: 'none' };
+
+        switch (type) {
+            case 'success': // Create User
+                return { ...base, background: 'linear-gradient(135deg, #10b981, #059669)' };
+            case 'primary': // Edit
+                return { ...base, background: 'linear-gradient(135deg, #3b82f6, #2563eb)' };
+            case 'warning': // Reset Password
+                return { ...base, background: 'linear-gradient(135deg, #f59e0b, #d97706)' };
+            case 'danger': // Delete
+                return { ...base, background: 'linear-gradient(135deg, #ef4444, #dc2626)' };
+            default:
+                return base;
+        }
+    };
+
+    if (loading) return (
+        <div style={{ ...pageStyle, justifyContent: 'center' }}>
+            <div style={{ color: 'white', fontSize: '1.5rem' }}>Loading users...</div>
+        </div>
+    );
 
     return (
         <div style={pageStyle}>
-            <h2 style={{ margin: 0, marginBottom: '1rem' }}>User Management</h2>
+            {/* Header Panel */}
+            <div style={headerPanelStyle}>
+                <h2 style={headerStyle}>User Management</h2>
+            </div>
 
-            {error && <div style={{ color: 'red', marginTop: '1rem', padding: '10px', backgroundColor: '#fff5f5', borderRadius: '4px' }}>Error: {error}</div>}
+            {/* Body Panel */}
+            <div style={bodyPanelStyle}>
+                {error && <div style={{ color: '#fca5a5', marginBottom: '1rem', padding: '12px', backgroundColor: 'rgba(239, 68, 68, 0.2)', borderRadius: '0.5rem', border: '1px solid rgba(239, 68, 68, 0.3)' }}>Error: {error}</div>}
 
-            <GenericTable
-                data={users}
-                columns={columns}
-                idField="user_id"
-                selectedId={selectedUserId}
-                onSelect={setSelectedUserId}
-                enableFiltering={enableFiltering}
-            />
+                <GenericTable
+                    data={users}
+                    columns={columns}
+                    idField="user_id"
+                    selectedId={selectedUserId}
+                    onSelect={setSelectedUserId}
+                    enableFiltering={enableFiltering}
+                    darkMode={true}
+                    compact={isCompact}
+                    style={{
+                        minHeight: isCompact ? '200px' : '300px',
+                        marginTop: 0
+                    }}
+                />
 
-            <div style={actionButtonsContainerStyle}>
-                <button
-                    onClick={handleAdd}
-                    style={getButtonStyle('success', false)}
-                >
-                    Create User
-                </button>
+                <div style={actionButtonsContainerStyle}>
+                    <button
+                        onClick={handleAdd}
+                        style={getButtonStyle('success', false)}
+                    >
+                        Create User
+                    </button>
 
-                <button
-                    onClick={handleEdit}
-                    disabled={!selectedUserId}
-                    style={getButtonStyle('primary', !selectedUserId)}
-                >
-                    Edit
-                </button>
+                    <button
+                        onClick={handleEdit}
+                        disabled={!selectedUserId}
+                        style={getButtonStyle('primary', !selectedUserId)}
+                    >
+                        Edit
+                    </button>
 
-                <button
-                    onClick={handleResetPassword}
-                    disabled={!selectedUserId}
-                    style={getButtonStyle('warning', !selectedUserId)}
-                >
-                    Reset Password
-                </button>
+                    <button
+                        onClick={handleResetPassword}
+                        disabled={!selectedUserId}
+                        style={getButtonStyle('warning', !selectedUserId)}
+                    >
+                        Reset Password
+                    </button>
 
-                <button
-                    onClick={handleDelete}
-                    disabled={!selectedUserId}
-                    style={getButtonStyle('danger', !selectedUserId)}
-                >
-                    Delete
-                </button>
+                    <button
+                        onClick={handleDelete}
+                        disabled={!selectedUserId}
+                        style={getButtonStyle('danger', !selectedUserId)}
+                    >
+                        Delete
+                    </button>
+                </div>
             </div>
         </div>
     );
