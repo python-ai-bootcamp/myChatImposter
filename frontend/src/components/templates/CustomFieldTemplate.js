@@ -44,7 +44,7 @@ export function CustomFieldTemplate(props) {
                 <div style={{ display: 'table-cell' }}></div>
                 <div style={{ display: 'table-cell', textAlign: 'left', width: '100%' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ whiteSpace: 'nowrap' }}>{label}</span>
+                        <span className="custom-label-text" style={{ whiteSpace: 'nowrap' }}>{label}</span>
                         {children}
                     </div>
                 </div>
@@ -86,7 +86,7 @@ export function CustomFieldTemplate(props) {
                 marginBottom: '0.5rem',
                 textAlign: 'left'
             }}>
-                <span style={{ whiteSpace: 'nowrap', minWidth: '110px' }}>
+                <span className="custom-label-text" style={{ whiteSpace: 'nowrap', minWidth: '110px' }}>
                     {label}
                 </span>
                 <input

@@ -15,7 +15,7 @@ import { GroupNameSelectorWidget } from '../components/widgets/GroupNameSelector
 import { ReadOnlyTextWidget } from '../components/widgets/ReadOnlyTextWidget';
 import { validateCronExpression } from '../utils/validation';
 import CronPickerWidget from '../components/CronPickerWidget';
-import { PageContainer, ContentCard, ScrollablePanel, FixedFooter, FloatingErrorBanner } from '../components/PageLayout';
+import { FloatingErrorBanner } from '../components/PageLayout';
 import '../styles/DarkFormStyles.css';
 
 function RestrictedEditPage() {
@@ -35,10 +35,10 @@ function RestrictedEditPage() {
     const handleScrollToError = () => {
         setScrollToErrorTrigger(prev => prev + 1);
 
-        // Robust retry mechanism to find the element after DOM updates (e.g. expansion)
+        // Robust retry mechanism to find the element after DOM updates
         let attempts = 0;
         const maxAttempts = 10;
-        const intervalTime = 100; // Total wait up to 1000ms
+        const intervalTime = 100;
 
         const tryScroll = () => {
             const firstIndex = cronErrors.findIndex(e => e);
@@ -46,35 +46,28 @@ function RestrictedEditPage() {
                 const elementId = `root_features_periodic_group_tracking_tracked_groups_${firstIndex}_cronTrackingSchedule`;
                 const element = document.getElementById(elementId);
                 if (element) {
-                    // Found it! Scroll and focus.
                     element.scrollIntoView({ behavior: 'smooth', block: 'center' });
                     element.focus();
                     return;
                 }
             }
-
-            // Not found yet, retry?
             attempts++;
             if (attempts < maxAttempts) {
                 setTimeout(tryScroll, intervalTime);
             }
         };
-
-        // Start trying
-        setTimeout(tryScroll, 100); // Initial small delay to let React start rendering
+        setTimeout(tryScroll, 100);
     };
 
 
     const [userStatus, setUserStatus] = useState(null);
-
-    // isNew determines if we are creating a new user (PUT) or editing (PATCH)
     const isNew = location.state?.isNew;
     const isLinked = userStatus === 'connected';
 
-    // Debounced validation (cron + backend API)
+    // Debounced validation
     useEffect(() => {
         const timer = setTimeout(async () => {
-            // 1. Cron validation (local)
+            // 1. Cron validation
             const tracking = formData?.features?.periodic_group_tracking?.tracked_groups;
             let newCronErrors = [];
             if (tracking && Array.isArray(tracking)) {
@@ -90,7 +83,7 @@ function RestrictedEditPage() {
                 setCronErrors(newCronErrors);
             }
 
-            // 2. Backend feature limit validation (only if no cron errors)
+            // 2. Backend feature limit validation
             if (formData && botId) {
                 try {
                     const response = await fetch(`/api/external/bots/${botId}/validate-config`, {
@@ -118,7 +111,6 @@ function RestrictedEditPage() {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                // Fetch Schema from standard API
                 const schemaResponse = await fetch('/api/external/bots/schema');
                 if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
                 const schemaData = await schemaResponse.json();
@@ -126,22 +118,16 @@ function RestrictedEditPage() {
 
                 let initialFormData;
                 if (isNew) {
-                    // Fetch dynamic defaults from backend (Single Source of Truth)
-                    // The backend now filters this based on X-User-Role (injected by Proxy)
                     const defaultsResponse = await fetch('/api/external/bots/defaults');
                     if (!defaultsResponse.ok) throw new Error('Failed to fetch configuration defaults.');
                     initialFormData = await defaultsResponse.json();
-
-                    // Override with current context
                     initialFormData.bot_id = botId;
 
-                    // Use browser's detected timezone
                     const localTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
                     if (localTimezone && initialFormData.configurations?.user_details) {
                         initialFormData.configurations.user_details.timezone = localTimezone;
                     }
 
-                    // Use browser's detected language if supported
                     try {
                         const languagesResponse = await fetch('/api/external/resources/languages');
                         if (languagesResponse.ok) {
@@ -159,12 +145,10 @@ function RestrictedEditPage() {
                         console.warn("Failed to auto-detect language:", langErr);
                     }
                 } else {
-                    // Fetch User Data from standard API
                     const dataResponse = await fetch(`/api/external/bots/${botId}`);
                     if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');
                     initialFormData = await dataResponse.json();
 
-                    // Fetch Status for Button Logic
                     try {
                         const statusRes = await fetch(`/api/external/bots/${botId}/info`);
                         if (statusRes.ok) {
@@ -186,7 +170,6 @@ function RestrictedEditPage() {
         fetchData();
     }, [botId, isNew]);
 
-    // Fetch Groups (Requires connected status)
     useEffect(() => {
         const fetchGroups = async () => {
             if (userStatus !== 'connected') {
@@ -213,8 +196,6 @@ function RestrictedEditPage() {
 
     const handleFormChange = (e) => {
         const newFormData = e.formData;
-
-        // Auto-populate displayName when groupIdentifier is selected
         const tracking = newFormData?.features?.periodic_group_tracking?.tracked_groups;
         if (tracking && Array.isArray(tracking) && availableGroups.length > 0) {
             tracking.forEach(item => {
@@ -229,9 +210,7 @@ function RestrictedEditPage() {
         setFormData(newFormData);
     };
 
-    // Generic Internal Save Function
     const performSave = async (submittedData) => {
-        // 1. Validate Cron Expressions
         setCronErrors([]);
         let hasCronErrors = false;
         const newCronErrors = [];
@@ -253,12 +232,10 @@ function RestrictedEditPage() {
             throw new Error("Validation failed");
         }
 
-        // 2. Validate Bot ID
         if (!isNew && submittedData.bot_id !== botId) {
             throw new Error("The bot_id cannot be changed.");
         }
 
-        // 3. Save Configuration
         const method = isNew ? 'PUT' : 'PATCH';
         const endpoint = `/api/external/bots/${botId}`;
         const finalApiData = { ...submittedData, bot_id: botId };
@@ -280,7 +257,7 @@ function RestrictedEditPage() {
         return finalApiData;
     };
 
-    const [savingStatus, setSavingStatus] = useState('idle'); // 'idle', 'saving', 'loading'
+    const [savingStatus, setSavingStatus] = useState('idle');
 
     const handleSaveConfiguration = async () => {
         if (!formRef.current) return;
@@ -302,14 +279,13 @@ function RestrictedEditPage() {
         formRef.current.submit();
     };
 
-    const actionIntentRef = useRef('save'); // 'save' or 'load'
+    const actionIntentRef = useRef('save');
 
     const onFormSubmit = async ({ formData: submittedData }) => {
         try {
             await performSave(submittedData);
 
             if (actionIntentRef.current === 'load') {
-                // Perform Link or Reload based on status
                 let action = 'link';
                 if (userStatus && userStatus !== 'disconnected' && userStatus !== 'error') {
                     action = 'reload';
@@ -320,8 +296,6 @@ function RestrictedEditPage() {
                 });
 
                 if (!actionRes.ok) {
-                    // Optimization: If link/reload fails, we warn but don't fail the "Save" part completely?
-                    // User probably wants to know.
                     const err = await actionRes.json();
                     throw new Error(`Configuration saved, but failed to ${action}: ${err.detail}`);
                 }
@@ -347,7 +321,7 @@ function RestrictedEditPage() {
     }
 
     if (!schema || !formData) {
-        return <div style={{ padding: '20px' }}>Loading form...</div>;
+        return <div style={{ padding: '20px', color: '#e2e8f0' }}>Loading form...</div>;
     }
 
     const templates = {
@@ -371,15 +345,14 @@ function RestrictedEditPage() {
     const uiSchema = {
         "ui:classNames": "form-container",
         "ui:title": " ",
-        "ui:description": " ", // Remove restricted text
+        "ui:description": " ",
         bot_id: {
             "ui:FieldTemplate": NullFieldTemplate
         },
-        // General Configurations section
         configurations: {
             "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
             "ui:title": "User Profile",
-            "ui:description": " ", // Remove restricted text
+            "ui:description": " ",
             "ui:options": { defaultOpen: true },
             user_details: {
                 "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
@@ -393,7 +366,6 @@ function RestrictedEditPage() {
                 }
             }
         },
-        // Feature Configurations section
         features: {
             "ui:ObjectFieldTemplate": CollapsibleObjectFieldTemplate,
             "ui:title": "Features",
@@ -404,17 +376,11 @@ function RestrictedEditPage() {
                 enabled: {
                     "ui:FieldTemplate": InlineCheckboxFieldTemplate
                 },
-                respond_to_whitelist: {
-                    "ui:title": " "
-                },
-                respond_to_whitelist_group: {
-                    "ui:title": " "
-                },
+                respond_to_whitelist: { "ui:title": " " },
+                respond_to_whitelist_group: { "ui:title": " " },
                 chat_system_prompt: {
                     "ui:widget": "textarea",
-                    "ui:options": {
-                        rows: 5
-                    }
+                    "ui:options": { rows: 5 }
                 }
             },
             periodic_group_tracking: {
@@ -460,7 +426,133 @@ function RestrictedEditPage() {
     };
 
     return (
-        <>
+        <div className="profile-page">
+            <style>{`
+                .profile-page {
+                    min-height: calc(100vh - 60px);
+                    width: 100%;
+                    background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+                    color: #e2e8f0;
+                    font-family: 'Inter', sans-serif;
+                    display: flex;
+                    justify-content: center;
+                    align-items: flex-start;
+                    padding-top: 4rem;
+                    padding-bottom: 4rem;
+                    position: relative;
+                    overflow: auto;
+                }
+
+                .profile-container {
+                    background: rgba(255, 255, 255, 0.03);
+                    border: 1px solid rgba(255, 255, 255, 0.05);
+                    backdrop-filter: blur(20px);
+                    padding: 3rem;
+                    border-radius: 1.5rem;
+                    width: 100%;
+                    max-width: 1000px;
+                    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+                    z-index: 10;
+                    animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+                }
+
+                .profile-header {
+                    margin-bottom: 2rem;
+                    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                    padding-bottom: 1rem;
+                }
+
+                .profile-header h1 {
+                    font-size: 2rem;
+                    font-weight: 800;
+                    margin-bottom: 0.5rem;
+                    background: linear-gradient(to right, #c084fc, #6366f1);
+                    -webkit-background-clip: text;
+                    -webkit-text-fill-color: transparent;
+                }
+
+                /* Background shapes */
+                .shape {
+                    position: absolute;
+                    filter: blur(100px);
+                    z-index: 0;
+                    opacity: 0.4;
+                    pointer-events: none;
+                }
+                .shape-1 {
+                    top: -20%;
+                    left: -20%;
+                    width: 60vw;
+                    height: 60vw;
+                    background: radial-gradient(circle, #4f46e5 0%, transparent 70%);
+                }
+                .shape-2 {
+                    bottom: -20%;
+                    right: -20%;
+                    width: 50vw;
+                    height: 50vw;
+                    background: radial-gradient(circle, #ec4899 0%, transparent 70%);
+                }
+
+                /* Action Bar Styling */
+                .action-bar {
+                    margin-top: 2rem;
+                    display: flex;
+                    gap: 1rem;
+                    justify-content: flex-end;
+                    border-top: 1px solid rgba(255, 255, 255, 0.1);
+                    padding-top: 2rem;
+                }
+
+                .btn-glass {
+                    padding: 0.75rem 1.5rem;
+                    border-radius: 0.75rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    border: 1px solid rgba(255, 255, 255, 0.1);
+                }
+
+                .btn-primary-glass {
+                    background: linear-gradient(135deg, #6366f1, #8b5cf6);
+                    color: white;
+                    border: none;
+                    box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.3);
+                }
+                .btn-primary-glass:hover:not(:disabled) {
+                    transform: translateY(-2px);
+                    box-shadow: 0 10px 15px -3px rgba(99, 102, 241, 0.4);
+                }
+
+                .btn-success-glass {
+                    background: linear-gradient(135deg, #22c55e, #16a34a);
+                    color: white;
+                    border: none;
+                    box-shadow: 0 4px 6px -1px rgba(34, 197, 94, 0.3);
+                }
+                .btn-success-glass:hover:not(:disabled) {
+                    transform: translateY(-2px);
+                    box-shadow: 0 10px 15px -3px rgba(34, 197, 94, 0.4);
+                }
+
+                .btn-secondary-glass {
+                    background: rgba(30, 41, 59, 0.6);
+                    color: #e2e8f0;
+                }
+                .btn-secondary-glass:hover:not(:disabled) {
+                    background: rgba(30, 41, 59, 0.8);
+                }
+
+                .btn-glass:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
+                    transform: none !important;
+                }
+            `}</style>
+
+            <div className="shape shape-1" />
+            <div className="shape shape-2" />
+
             <FloatingErrorBanner isVisible={validationError || cronErrors.some(e => e)} darkMode={true}>
                 <strong>⚠️ Cannot Save:</strong>
                 {validationError ? (
@@ -485,103 +577,75 @@ function RestrictedEditPage() {
                 )}
             </FloatingErrorBanner>
 
-            <PageContainer darkMode={true}>
-                <ContentCard title={isNew ? 'New Configuration: ' + botId : `Edit Configuration: ${botId}`} maxWidth="1000px" darkMode={true}>
-                    <ScrollablePanel darkMode={true}>
-                        <Form
-                            className="dark-form"
-                            ref={formRef}
-                            schema={schema}
-                            uiSchema={uiSchema}
-                            formData={formData}
-                            validator={validator}
-                            onSubmit={onFormSubmit}
-                            onChange={handleFormChange}
-                            onError={(errors) => {
-                                console.log('Form errors:', errors);
-                                setSavingStatus('idle');
-                            }}
-                            disabled={savingStatus !== 'idle'}
-                            templates={templates}
-                            widgets={widgets}
-                            formContext={{
-                                availableGroups,
-                                isLinked: isLinked,
-                                formData,
-                                setFormData,
-                                cronErrors,
-                                saveAttempt: 0,
-                                scrollToErrorTrigger
-                            }}
-                        >
-                            <div />
-                        </Form>
-                    </ScrollablePanel>
-                </ContentCard>
-            </PageContainer >
-            <FixedFooter darkMode={true}>
-                <div>
-                    <button
-                        type="button"
-                        onClick={handleSaveConfiguration}
-                        disabled={savingStatus !== 'idle' || cronErrors.some(e => e) || validationError}
-                        title={validationError || (cronErrors.some(e => e) ? 'Fix cron expression errors first' : 'Saves new configuration without reloading the bot')}
-                        style={{
-                            marginRight: '10px',
-                            padding: '10px 20px',
-                            background: (cronErrors.some(e => e) || validationError) ? '#4b5563' : 'linear-gradient(135deg, #6366f1, #8b5cf6)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '0.75rem',
-                            cursor: (cronErrors.some(e => e) || validationError) ? 'not-allowed' : 'pointer',
-                            fontWeight: 600,
-                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-                            opacity: (cronErrors.some(e => e) || validationError) ? 0.5 : 1
+            <div className="profile-container">
+                <div className="profile-header">
+                    <h1>{isNew ? 'New Configuration' : `Edit Bot: ${botId}`}</h1>
+                    <p style={{ color: '#94a3b8' }}>Manage your bot's behavior and features</p>
+                </div>
+
+                <div className="form-content">
+                    <Form
+                        className="dark-form"
+                        ref={formRef}
+                        schema={schema}
+                        uiSchema={uiSchema}
+                        formData={formData}
+                        validator={validator}
+                        onSubmit={onFormSubmit}
+                        onChange={handleFormChange}
+                        onError={(errors) => {
+                            console.log('Form errors:', errors);
+                            setSavingStatus('idle');
+                        }}
+                        disabled={savingStatus !== 'idle'}
+                        templates={templates}
+                        widgets={widgets}
+                        formContext={{
+                            availableGroups,
+                            isLinked: isLinked,
+                            formData,
+                            setFormData,
+                            cronErrors,
+                            saveAttempt: 0,
+                            scrollToErrorTrigger
                         }}
                     >
-                        {savingStatus === 'saving' ? 'Saving...' : 'Save Configuration'}
-                    </button>
+                        <div />
+                    </Form>
+                </div>
 
+                <div className="action-bar">
                     <button
                         type="button"
-                        onClick={handleSaveAndLoad}
-                        disabled={savingStatus !== 'idle' || cronErrors.some(e => e) || validationError}
-                        title={validationError || (cronErrors.some(e => e) ? 'Fix cron expression errors first' : 'Reloads the bot with the new configuration saved')}
-                        style={{
-                            marginRight: '10px',
-                            padding: '10px 20px',
-                            background: (cronErrors.some(e => e) || validationError) ? '#4b5563' : 'linear-gradient(135deg, #22c55e, #16a34a)',
-                            color: 'white',
-                            border: 'none',
-                            borderRadius: '0.75rem',
-                            cursor: (cronErrors.some(e => e) || validationError) ? 'not-allowed' : 'pointer',
-                            fontWeight: 600,
-                            boxShadow: '0 4px 12px rgba(0, 0, 0, 0.3)',
-                            opacity: (cronErrors.some(e => e) || validationError) ? 0.5 : 1
-                        }}
-                    >
-                        {savingStatus === 'loading' ? 'Processing...' : 'Save & Load'}
-                    </button>
-
-                    <button
-                        type="button"
+                        className="btn-glass btn-secondary-glass"
                         onClick={handleCancel}
                         disabled={savingStatus !== 'idle'}
-                        style={{
-                            padding: '10px 20px',
-                            border: '1px solid rgba(255, 255, 255, 0.2)',
-                            borderRadius: '0.75rem',
-                            cursor: 'pointer',
-                            background: 'rgba(30, 41, 59, 0.8)',
-                            color: '#e2e8f0',
-                            fontWeight: 600
-                        }}
                     >
                         Cancel
                     </button>
+
+                    <button
+                        type="button"
+                        className="btn-glass btn-success-glass"
+                        onClick={handleSaveAndLoad}
+                        disabled={savingStatus !== 'idle' || cronErrors.some(e => e) || validationError}
+                        title="Save and instantly reload the bot"
+                    >
+                        {savingStatus === 'loading' ? 'Processing...' : 'Save & Reload'}
+                    </button>
+
+                    <button
+                        type="button"
+                        className="btn-glass btn-primary-glass"
+                        onClick={handleSaveConfiguration}
+                        disabled={savingStatus !== 'idle' || cronErrors.some(e => e) || validationError}
+                        title="Save configuration only"
+                    >
+                        {savingStatus === 'saving' ? 'Saving...' : 'Save Configuration'}
+                    </button>
                 </div>
-            </FixedFooter>
-        </>
+            </div>
+        </div>
     );
 }
 

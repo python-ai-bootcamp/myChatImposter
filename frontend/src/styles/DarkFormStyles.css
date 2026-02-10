@@ -76,8 +76,10 @@
 }
 
 /* Labels */
-.dark-form label {
-    color: #cbd5e1;
+.dark-form label,
+.dark-form .custom-label-text {
+    color: #a5b4fc !important;
+    /* Indigo 300 - Matches Nested Section Headers */
     font-weight: 500;
 }
 
