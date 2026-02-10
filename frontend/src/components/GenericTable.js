@@ -104,8 +104,16 @@ function GenericTable({
                         const stringValue = String(itemValue || '').toLowerCase();
                         const filterValue = filters[key].toLowerCase();
 
+                        // EMERGENCY FIX: Force status to be startsWith
+                        if (key === 'status') {
+                            if (!stringValue.startsWith(filterValue)) return false;
+                            continue;
+                        }
+
                         // Check filter type
-                        if (column.filterType === 'startsWith') {
+                        if (column.customFilter) {
+                            if (!column.customFilter(stringValue, filterValue, item)) return false;
+                        } else if (column.filterType === 'startsWith') {
                             if (!stringValue.startsWith(filterValue)) return false;
                         } else {
                             if (!stringValue.includes(filterValue)) return false;

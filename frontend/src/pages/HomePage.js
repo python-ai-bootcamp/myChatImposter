@@ -54,6 +54,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
       label: 'Status',
       sortable: true,
       filterable: true,
+      customFilter: (value, filter) => value.startsWith(filter), // Enforce prefix matching via custom function
       width: showOwnerColumn ? '35%' : '50%',
       getValue: (item) => String(item.status || ''),
       render: (item) => (
@@ -299,9 +300,9 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
     ...glassBase,
     padding: '1.5rem',
     borderRadius: '1.5rem',
-    borderBottomLeftRadius: '0.5rem',
-    borderBottomRightRadius: '0.5rem',
-    marginBottom: '4px', // The transparent spacing line
+    borderBottomLeftRadius: '0.3rem', // Sharper connection
+    borderBottomRightRadius: '0.3rem', // Sharper connection
+    marginBottom: '10px', // Increased gap
     display: 'flex',
     flexDirection: 'column',
     alignItems: 'center',
@@ -310,13 +311,19 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
     zIndex: 20,
   };
 
+  // Calculate stable height based on UNFILTERED data count
+  // 5 rows min (approx 350px) -> ~60px per row + ~120px overhead (header/footer/padding)
+  // Updated to 450 min / 180 overhead to accommodate buttons + table minHeight (300px) + Generous buffer
+  const estimatedHeight = Math.max(450, (configs.length * 60) + 180);
+
   const bodyPanelStyle = {
     ...glassBase,
     padding: '1rem',
     borderRadius: '1.5rem',
-    borderTopLeftRadius: '0.5rem',
-    borderTopRightRadius: '0.5rem',
-    maxHeight: 'calc(100vh - 16rem)', // Adjusted for header height + gap
+    borderTopLeftRadius: '0.3rem', // Sharper connection
+    borderTopRightRadius: '0.3rem', // Sharper connection
+    // Use min() to cap at screen height, but otherwise stick to estimated height
+    height: `min(calc(100vh - 16rem), ${estimatedHeight}px)`,
     display: 'flex',
     flexDirection: 'column',
     overflow: 'hidden',
@@ -367,14 +374,14 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   };
 
   return (
-    <div style={pageStyle}>
+    <div style={pageStyle} >
       {/* Detached Header Panel */}
-      <div style={headerPanelStyle}>
+      < div style={headerPanelStyle} >
         <h2 style={headerStyle}>Bot Configurations</h2>
-      </div>
+      </div >
 
       {/* Body Panel */}
-      <div style={bodyPanelStyle}>
+      < div style={bodyPanelStyle} >
         {error && <div style={{ color: '#fca5a5', marginBottom: '1rem', padding: '12px', backgroundColor: 'rgba(239, 68, 68, 0.2)', borderRadius: '0.5rem', border: '1px solid rgba(239, 68, 68, 0.3)' }}>Error: {error}</div>}
 
         <GenericTable
@@ -440,8 +447,8 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
           onClose={() => setIsCreateModalOpen(false)}
           onConfirm={handleCreateConfirm}
         />
-      </div>
-    </div>
+      </div >
+    </div >
   );
 }
 
