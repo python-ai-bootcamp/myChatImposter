@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { AdvisorIcon, RobotIcon, ShieldIcon, GroupIcon } from '../components/FeatureIcons';
+import { RobotIcon, ShieldIcon, GroupIcon } from '../components/FeatureIcons';
 import GenericTable from '../components/GenericTable';
 import LinkUserModal from '../components/LinkUserModal';
 import CreateUserModal from '../components/CreateUserModal';
@@ -19,6 +19,9 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   // Create User Modal State
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [linkStatus, setLinkStatus] = useState(null);
+
+  // Responsive Layout State
+  const [isCompact, setIsCompact] = useState(false);
 
   const navigate = useNavigate();
   // ... (keep existing state/effects) ...
@@ -107,6 +110,16 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   // ... (keep hooks) ...
   const [searchParams, setSearchParams] = useSearchParams();
   const pollIntervalRef = useRef(null);
+
+  useEffect(() => {
+    const handleResize = () => {
+      // Detect small vertical space (e.g. laptop screens)
+      setIsCompact(window.innerHeight < 900);
+    };
+    handleResize(); // Initial check
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   // Handle Root Redirection
   useEffect(() => {
@@ -309,7 +322,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
     display: 'flex',
     alignItems: 'center',
     justifyContent: 'center',
-    padding: '3rem 2rem', // Increased vertical padding
+    padding: isCompact ? '1rem' : '3rem 2rem', // Reduced padding on small screens
     background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #0f172a 100%)',
     position: 'relative',
     overflow: 'hidden',
@@ -346,11 +359,18 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   // Calculate stable height based on UNFILTERED data count
   // 5 rows min (approx 350px) -> ~60px per row + ~120px overhead (header/footer/padding)
   // Updated to 450 min / 180 overhead to accommodate buttons + table minHeight (300px) + Generous buffer
-  const estimatedHeight = Math.max(450, (configs.length * 60) + 180);
+  // Compact Mode: 40px per row + reduced overhead
+  // Compact Mode: 40px per row + reduced overhead + MORE aggressive min height reduction
+  const rowHeight = isCompact ? 40 : 60;
+  // Increased overhead to 160 (from 100) to ensure buttons fit below table
+  // Increased minTableHeight to 350 (from 200) to give it more "breathing room" vertically
+  const overhead = isCompact ? 160 : 250;
+  const minTableHeight = isCompact ? 350 : 450;
+  const estimatedHeight = Math.max(minTableHeight, (configs.length * rowHeight) + overhead);
 
   const bodyPanelStyle = {
     ...glassBase,
-    padding: '1rem',
+    padding: isCompact ? '0.5rem' : '1rem',
     borderRadius: '1.5rem',
     borderTopLeftRadius: '0.3rem', // Sharper connection
     borderTopRightRadius: '0.3rem', // Sharper connection
@@ -424,7 +444,12 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
           onSelect={setSelectedBotId}
           enableFiltering={enableFiltering}
           darkMode={true}
-          style={{ marginTop: '0', flex: 1, minHeight: '300px' }}
+          compact={isCompact} // Pass compact state
+
+          style={{
+            minHeight: isCompact ? '200px' : '300px',
+            marginTop: 0 // Remove default margin top
+          }}
         />
 
         <div style={actionButtonsContainerStyle}>

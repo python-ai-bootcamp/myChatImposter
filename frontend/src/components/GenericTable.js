@@ -68,6 +68,7 @@ function GenericTable({
     onSelect,
     enableFiltering = false,
     darkMode = false,
+    compact = false, // Default to false
     style = {}
 }) {
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'ascending' });
@@ -178,9 +179,24 @@ function GenericTable({
         transition: 'background-color 0.2s'
     });
 
-    const ROW_HEIGHT = 60;
-    const HEADER_HEIGHT = 50;
+    const ROW_HEIGHT = compact ? 40 : 60;
+    const HEADER_HEIGHT = compact ? 40 : 50;
     const [containerHeight, setContainerHeight] = useState('auto');
+
+    // Dynamic Styles for Compact Mode
+    // ----------------------------
+    const activeTdStyle = {
+        ...dynamicTdStyle,
+        padding: compact ? '6px 12px' : '12px 15px',
+        fontSize: compact ? '0.9rem' : 'inherit'
+    };
+
+    const activeThStyle = {
+        ...dynamicThStyle,
+        padding: compact ? '8px 12px' : '12px 15px',
+        fontSize: compact ? '0.9rem' : 'inherit'
+    };
+    // ----------------------------
 
     React.useEffect(() => {
         const updateHeight = () => {
@@ -197,7 +213,7 @@ function GenericTable({
         updateHeight();
         window.addEventListener('resize', updateHeight);
         return () => window.removeEventListener('resize', updateHeight);
-    }, [data.length]);
+    }, [data.length, compact]);
 
     const renderSortArrow = (key) => {
         const content = sortConfig.key === key
@@ -235,7 +251,7 @@ function GenericTable({
         flexDirection: 'column',
         overflow: 'hidden',
         flex: 1, // Take remaining space
-        minHeight: '350px', // Minimum ~5 rows + header
+        minHeight: compact ? '200px' : '350px', // Reduced minimum in compact mode
         ...style
     };
 
@@ -256,7 +272,7 @@ function GenericTable({
                             {columns.map(col => (
                                 <th
                                     key={col.key}
-                                    style={{ ...dynamicThStyle }}
+                                    style={{ ...activeThStyle }}
                                     onClick={() => col.sortable && requestSort(col.key)}
                                 >
                                     <div style={{ display: 'flex', alignItems: 'center' }}>
@@ -292,7 +308,7 @@ function GenericTable({
                     <tbody>
                         {processedData.length === 0 ? (
                             <tr>
-                                <td colSpan={columns.length} style={{ ...dynamicTdStyle, textAlign: 'center', color: darkMode ? '#94a3b8' : '#6c757d' }}>
+                                <td colSpan={columns.length} style={{ ...activeTdStyle, textAlign: 'center', color: darkMode ? '#94a3b8' : '#6c757d' }}>
                                     No items found.
                                 </td>
                             </tr>
@@ -304,7 +320,7 @@ function GenericTable({
                                     onClick={() => onSelect(item[idField])}
                                 >
                                     {columns.map(col => (
-                                        <td key={`${item[idField]}-${col.key}`} style={dynamicTdStyle}>
+                                        <td key={`${item[idField]}-${col.key}`} style={activeTdStyle}>
                                             {col.render ? col.render(item) : (item[col.key] || '-')}
                                         </td>
                                     ))}
