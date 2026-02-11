@@ -60,7 +60,14 @@ export const GroupNameSelectorWidget = (props) => {
                 type="text"
                 value={props.value || '(connect to select)'}
                 disabled
-                style={{ width: '150px', backgroundColor: '#f0f0f0' }}
+                style={{
+                    width: '150px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.4)', // Dark disabled background
+                    color: '#64748b', // Slate-500 text
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                    borderRadius: '4px',
+                    padding: '4px 8px'
+                }}
                 title="Adding or changing group details is prohibited for disconnected users"
             />
         );
@@ -75,7 +82,14 @@ export const GroupNameSelectorWidget = (props) => {
                 onChange={handleInputChange}
                 onFocus={handleFocus}
                 onBlur={handleBlur}
-                style={{ width: '150px', padding: '4px' }}
+                style={{
+                    width: '150px',
+                    padding: '4px 8px',
+                    backgroundColor: 'rgba(15, 23, 42, 0.6)', // Dark input background
+                    color: '#f8fafc', // Light text
+                    border: '1px solid rgba(255, 255, 255, 0.15)',
+                    borderRadius: '4px'
+                }}
             />
             {isMenuOpen && filteredGroups.length > 0 && (
                 <div style={{
@@ -85,19 +99,27 @@ export const GroupNameSelectorWidget = (props) => {
                     width: '300px',
                     maxHeight: '200px',
                     overflowY: 'auto',
-                    border: '1px solid #ccc',
-                    backgroundColor: '#fff',
+                    border: '1px solid rgba(255, 255, 255, 0.2)',
+                    backgroundColor: '#1e293b', // Dark dropdown background
                     zIndex: 1000,
-                    boxShadow: '0 2px 8px rgba(0,0,0,0.15)'
+                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)',
+                    borderRadius: '0.375rem'
                 }}>
                     {filteredGroups.map(g => (
                         <div
                             key={g.id}
                             onMouseDown={() => handleSelect(g)}
-                            style={{ padding: '8px', cursor: 'pointer', borderBottom: '1px solid #eee' }}
+                            style={{
+                                padding: '8px',
+                                cursor: 'pointer',
+                                borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
+                                color: '#f8fafc'
+                            }}
+                            onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#334155'}
+                            onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
                         >
                             <strong>{g.subject}</strong><br />
-                            <small style={{ color: '#666' }}>{g.id}</small>
+                            <small style={{ color: '#94a3b8' }}>{g.id}</small>
                         </div>
                     ))}
                 </div>

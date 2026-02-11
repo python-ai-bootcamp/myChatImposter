@@ -7,7 +7,15 @@ export const ReadOnlyTextWidget = (props) => {
             type="text"
             value={props.value || ''}
             disabled
-            style={{ width: '90px', backgroundColor: '#f5f5f5', color: '#666', fontSize: '0.45rem', padding: '2px 4px' }}
+            style={{
+                width: '90px',
+                backgroundColor: 'rgba(15, 23, 42, 0.4)', // Dark disabled background
+                color: '#94a3b8', // Slate-400
+                fontSize: '0.45rem',
+                padding: '2px 4px',
+                border: '1px solid rgba(255, 255, 255, 0.1)',
+                borderRadius: '4px'
+            }}
             title="Auto-filled from group selection"
         />
     );

@@ -89,13 +89,19 @@ export function CustomFieldTemplate(props) {
                 <span className="custom-label-text" style={{ whiteSpace: 'nowrap', minWidth: '110px' }}>
                     {label}
                 </span>
-                <input
-                    type="checkbox"
-                    id={id}
-                    checked={typeof props.formData === 'undefined' ? false : props.formData}
-                    onChange={(e) => props.onChange(e.target.checked)}
-                    style={{ margin: 0, marginLeft: '18px' }}
-                />
+                {props.registry.widgets.CheckboxWidget && (
+                    <props.registry.widgets.CheckboxWidget
+                        id={id}
+                        value={typeof props.formData === 'undefined' ? false : props.formData}
+                        required={props.required}
+                        disabled={props.disabled}
+                        readonly={props.readonly}
+                        onChange={(value) => props.onChange(value)}
+                        options={props.uiSchema?.['ui:options']}
+                        schema={schema}
+                        label={label}
+                    />
+                )}
             </div>
         );
     }

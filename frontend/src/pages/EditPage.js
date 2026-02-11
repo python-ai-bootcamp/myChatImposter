@@ -325,13 +325,13 @@ function EditPage() {
       if (mode === 'reload') {
         const reloadResponse = await fetch(`/api/external/bots/${botId}/actions/reload`, { method: 'POST' });
         if (!reloadResponse.ok) throw new Error('Failed to reload configuration.');
-        navigate('/');
+        navigate('/admin/dashboard');
       } else if (mode === 'link') {
         const createResponse = await fetch(`/api/external/bots/${botId}/actions/link`, { method: 'POST' });
         if (!createResponse.ok) throw new Error('Failed to start session.');
-        navigate(`/?auto_link=${botId}`);
+        navigate(`/admin/dashboard?auto_link=${botId}`);
       } else {
-        navigate('/');
+        navigate('/admin/dashboard');
       }
 
     } catch (err) {
@@ -346,7 +346,7 @@ function EditPage() {
   const handleSaveAndLink = () => saveConfiguration('link');
 
   const handleCancel = () => {
-    navigate('/');
+    navigate('/admin/dashboard');
   };
 
 
@@ -644,8 +644,7 @@ function EditPage() {
 
       <div className="profile-container">
         <div className="profile-header">
-          <h1>{isNew ? 'Add New Configuration' : `Edit Configuration: ${botId}`}</h1>
-          <p style={{ color: '#94a3b8' }}>Advanced configuration and JSON editor</p>
+          <h1>{isNew ? 'Add New Bot Configuration' : `Edit Bot ${botId}'s Configuration`}</h1>
         </div>
 
         <div className="edit-content-grid">

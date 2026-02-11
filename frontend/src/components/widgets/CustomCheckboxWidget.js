@@ -10,7 +10,7 @@ export function CustomCheckboxWidget(props) {
             checked={typeof props.value === 'undefined' ? false : props.value}
             required={props.required}
             onChange={(event) => props.onChange(event.target.checked)}
-            style={{ margin: 0 }}
+        // style={{ margin: 0 }}
         />
     );
 }

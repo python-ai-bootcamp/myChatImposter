@@ -301,7 +301,7 @@ function RestrictedEditPage() {
                 }
             }
 
-            navigate('/');
+            navigate('/operator/dashboard');
 
         } catch (err) {
             if (err.message !== "Validation failed") {
@@ -313,7 +313,7 @@ function RestrictedEditPage() {
 
 
     const handleCancel = () => {
-        navigate('/');
+        navigate('/operator/dashboard');
     };
 
     if (error) {
@@ -580,7 +580,6 @@ function RestrictedEditPage() {
             <div className="profile-container">
                 <div className="profile-header">
                     <h1>{isNew ? 'New Configuration' : `Edit Bot: ${botId}`}</h1>
-                    <p style={{ color: '#94a3b8' }}>Manage your bot's behavior and features</p>
                 </div>
 
                 <div className="form-content">

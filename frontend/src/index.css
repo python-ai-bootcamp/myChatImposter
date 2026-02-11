@@ -173,8 +173,10 @@ button:disabled {
   white-space: nowrap;
   vertical-align: top;
   text-align: left;
-  padding-right: 1rem;
+  padding-right: 30px;
   min-width: 8rem;
+  color: #a5b4fc !important;
+  /* Fixed: Match other labels */
 }
 
 .panel-body>.form-group:has(#root_configurations_llm_provider_config_provider_config__oneof_select) select {

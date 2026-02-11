@@ -150,10 +150,12 @@ async def proxy_to_backend(path: str, request: Request):
     # Determine target URL based on path prefix
     if (path == "resources" or path.startswith("resources/") or 
         path == "users" or path.startswith("users/") or 
+        path == "ui" or path.startswith("ui/") or
         path == "bots" or path.startswith("bots/")):
-        # Map /api/external/resources[/...] -> /api/internal/resources[/...]
-        # Map /api/external/users[/...] -> /api/internal/users[/...]
-        # Map /api/external/bots[/...] -> /api/internal/bots[/...]
+        # Map /api/external/resources -> /api/internal/resources
+        # Map /api/external/users -> /api/internal/users
+        # Map /api/external/ui -> /api/internal/ui
+        # Map /api/external/bots -> /api/internal/bots
         backend_url = f"{gateway_state.backend_url}/api/internal/{path}"
     else:
         # Default to bots for backward compatibility (naked bot IDs)

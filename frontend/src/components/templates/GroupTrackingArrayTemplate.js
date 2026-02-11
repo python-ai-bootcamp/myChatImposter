@@ -9,15 +9,17 @@ export const GroupTrackingArrayTemplate = (props) => {
         padding: '0.1rem 0.4rem',
         fontSize: '0.8rem',
         lineHeight: 1.2,
-        border: '1px solid #ccc',
+        border: '1px solid rgba(255, 255, 255, 0.2)',
         borderRadius: '3px',
-        cursor: 'pointer'
+        cursor: 'pointer',
+        backgroundColor: 'rgba(255, 255, 255, 0.1)', // Light glass effect
+        color: '#e2e8f0', // Light text
     };
     const disabledBtnStyle = {
         ...btnStyle,
         cursor: 'not-allowed',
-        backgroundColor: '#f8f8f8',
-        color: '#ccc',
+        backgroundColor: 'rgba(15, 23, 42, 0.4)', // Dark background for disabled state
+        color: '#64748b', // Slate-500 for disabled text
     };
 
     return (
