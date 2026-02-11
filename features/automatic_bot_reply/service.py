@@ -189,13 +189,13 @@ class AutomaticBotReplyService:
 
     def _initialize_llm(self):
         try:
-            llm_provider_name = self.config.configurations.llm_provider_config.provider_name
+            llm_provider_name = self.config.configurations.llm_configs.high.provider_name
             llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
             LlmProviderClass = find_provider_class(llm_provider_module, BaseLlmProvider)
             if not LlmProviderClass:
                 raise ImportError(f"Could not find a valid LLM provider class in module 'llm_providers.{llm_provider_name}'")
 
-            llm_provider = LlmProviderClass(config=self.config.configurations.llm_provider_config, user_id=self.bot_id)
+            llm_provider = LlmProviderClass(config=self.config.configurations.llm_configs.high, user_id=self.bot_id)
             llm_instance = llm_provider.get_llm()
             
             # Get system prompt from the automatic_bot_reply feature

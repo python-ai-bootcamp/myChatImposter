@@ -125,15 +125,17 @@ function EditPage() {
           const data = await dataResponse.json();
           const originalData = Array.isArray(data) ? data[0] : data;
 
-          if (originalData.configurations?.llm_provider_config?.provider_config) {
-            const providerConfig = originalData.configurations.llm_provider_config.provider_config;
-            if (!providerConfig.hasOwnProperty('api_key_source')) {
-              if (providerConfig.api_key) {
-                providerConfig.api_key_source = 'explicit';
-              } else {
-                providerConfig.api_key_source = 'environment';
+          if (originalData.configurations?.llm_configs) {
+            ['high', 'low'].forEach(type => {
+              const providerConfig = originalData.configurations.llm_configs[type]?.provider_config;
+              if (providerConfig && !providerConfig.hasOwnProperty('api_key_source')) {
+                if (providerConfig.api_key) {
+                  providerConfig.api_key_source = 'explicit';
+                } else {
+                  providerConfig.api_key_source = 'environment';
+                }
               }
-            }
+            });
           }
           initialFormData = originalData;
         }
@@ -217,21 +219,23 @@ function EditPage() {
     const newFormData = e.formData;
     try {
       // Logic for LLM Provider Config updates (api_key_source, reasoning_effort, seed) omitted for brevity but preserved in logic
-      const providerConfig = newFormData?.configurations?.llm_provider_config?.provider_config;
-      if (providerConfig) {
-        if (providerConfig.api_key_source === 'environment') {
-          providerConfig.api_key = null;
-        } else if (providerConfig.api_key_source === 'explicit' && providerConfig.api_key === null) {
-          providerConfig.api_key = "";
-        }
+      // Logic for LLM Provider Config updates (api_key_source, reasoning_effort, seed) for both High and Low
+      ['high', 'low'].forEach(type => {
+        const providerConfig = newFormData?.configurations?.llm_configs?.[type]?.provider_config;
+        if (providerConfig) {
+          if (providerConfig.api_key_source === 'environment') {
+            providerConfig.api_key = null;
+          } else if (providerConfig.api_key_source === 'explicit' && providerConfig.api_key === null) {
+            providerConfig.api_key = "";
+          }
 
-        const oldProviderConfig = formData?.configurations?.llm_provider_config?.provider_config;
-        // ... (Logic preserved from original file) ...
-        const newReasoningEffort = providerConfig.reasoning_effort;
-        if (newReasoningEffort && !oldProviderConfig?.reasoning_effort) {
-          if (newReasoningEffort !== 'minimal') providerConfig.reasoning_effort = 'minimal';
+          const oldProviderConfig = formData?.configurations?.llm_configs?.[type]?.provider_config;
+          const newReasoningEffort = providerConfig.reasoning_effort;
+          if (newReasoningEffort && !oldProviderConfig?.reasoning_effort) {
+            if (newReasoningEffort !== 'minimal') providerConfig.reasoning_effort = 'minimal';
+          }
         }
-      }
+      });
 
       const tracking = newFormData?.features?.periodic_group_tracking?.tracked_groups;
       if (tracking && Array.isArray(tracking) && availableGroups.length > 0) {
@@ -403,16 +407,32 @@ function EditPage() {
         "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
         "ui:title": "Context Config"
       },
-      llm_provider_config: {
+      llm_configs: {
         "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
-        "ui:title": "LLM Provider Config",
-        provider_name: { "ui:title": "Provider Name" },
-        provider_config: {
-          "ui:ObjectFieldTemplate": FlatProviderConfigTemplate,
-          "ui:title": " ",
-          api_key_source: { "ui:title": "API Key Source" },
-          reasoning_effort: { "ui:title": "Reasoning Effort" },
-          seed: { "ui:title": "Seed" }
+        "ui:title": "LLM Configurations",
+        high: {
+          "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
+          "ui:title": "High Performance Model",
+          provider_name: { "ui:title": "Provider Name" },
+          provider_config: {
+            "ui:ObjectFieldTemplate": FlatProviderConfigTemplate,
+            "ui:title": " ",
+            api_key_source: { "ui:title": "API Key Source" },
+            reasoning_effort: { "ui:title": "Reasoning Effort" },
+            seed: { "ui:title": "Seed" }
+          }
+        },
+        low: {
+          "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
+          "ui:title": "Low Cost Model",
+          provider_name: { "ui:title": "Provider Name" },
+          provider_config: {
+            "ui:ObjectFieldTemplate": FlatProviderConfigTemplate,
+            "ui:title": " ",
+            api_key_source: { "ui:title": "API Key Source" },
+            reasoning_effort: { "ui:title": "Reasoning Effort" },
+            seed: { "ui:title": "Seed" }
+          }
         }
       }
     },

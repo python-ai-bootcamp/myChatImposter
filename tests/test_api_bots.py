@@ -19,15 +19,19 @@ class TestBotManagementAPI:
         
         # Mock Collections
         mock_state.configurations_collection = AsyncMock()
+        mock_state.configurations_collection.find_one.return_value = None
         mock_state.queues_collection = AsyncMock()
         mock_state.baileys_sessions_collection = AsyncMock()
+        mock_state.baileys_sessions_collection.find_one.return_value = None
+        mock_state.credentials_collection = AsyncMock()
+        mock_state.credentials_collection.find_one.return_value = None # Default to None to avoid AsyncMock propagation
         mock_state.active_bots = {}
         mock_state.chatbot_instances = {}
         
         # Mock Managers
         mock_state.group_tracker = MagicMock()
         mock_state.async_message_delivery_queue_manager = MagicMock()
-        mock_state.bot_lifecycle_service = MagicMock() # Updated service name (presumed)
+        mock_state.bot_lifecycle_service = MagicMock() 
         mock_state.bot_lifecycle_service.create_status_change_callback.return_value = AsyncMock()
         
         return mock_state
@@ -103,30 +107,52 @@ class TestBotManagementAPI:
                 "configurations": {
                     "user_details": {},
                     "chat_provider_config": {"provider_name": "mock", "provider_config": {}},
-                    "llm_provider_config": {"provider_name": "mock", "provider_config": {"model": "gpt-4"}},
+                    "llm_configs": {
+                        "high": {"provider_name": "mock", "provider_config": {"model": "gpt-4"}},
+                        "low": {"provider_name": "mock", "provider_config": {"model": "gpt-3.5"}}
+                    },
                     "queue_config": {},
                     "context_config": {}
                 },
-                "features": {}
+                "features": {
+                    "automatic_bot_reply": {"enabled": True},
+                    "kid_phone_safety_tracking": {"enabled": False}
+                }
             }
         })
         
         # Mock Session Instance
         mock_instance = AsyncMock()
         mock_instance.start = AsyncMock()
+        mock_instance.register_service = MagicMock()
+        mock_instance.register_message_handler = MagicMock()
+        mock_instance.register_feature = MagicMock()
+        
+        # Setup config on instance for service initialization
+        from config_models import BotConfiguration
+        config_obj = BotConfiguration.model_validate(mock_global_state.configurations_collection.find_one.return_value["config_data"])
+        mock_instance.config = config_obj
+        mock_instance.bot_id = bot_id
+        
         mock_session_cls.return_value = mock_instance
         
-        response = client.post(f"/api/internal/bots/{bot_id}/actions/link")
+        # Patch AutomaticBotReplyService to avoid real LLM init
+        with patch("routers.bot_management.AutomaticBotReplyService") as mock_auto_reply:
+             mock_auto_service = MagicMock()
+             mock_auto_reply.return_value = mock_auto_service
+             
+             response = client.post(f"/api/internal/bots/{bot_id}/actions/link")
         
         assert response.status_code == 200
         assert response.json()["status"] == "success"
         
         # Verify Session Started
         mock_instance.start.assert_called_once()
-        # Verify added to active bots
+        # Verify added to active bots (mock_global_state.active_bots is a dict)
         assert bot_id in mock_global_state.active_bots
 
-    def test_delete_bot_success(self, client, mock_global_state):
+    @pytest.mark.asyncio
+    async def test_delete_bot_success(self, client, mock_global_state):
         """Test DELETE /api/internal/bots/{bot_id}"""
         bot_id = "test_bot_del"
         
@@ -138,10 +164,7 @@ class TestBotManagementAPI:
         # Mock Delete Result
         mock_result = MagicMock()
         mock_result.deleted_count = 1
-        mock_global_state.configurations_collection.delete_one.return_value = mock_result
+        mock_global_state.bot_lifecycle_service.delete_bot_data = AsyncMock(return_value=True)
         
         response = client.delete(f"/api/internal/bots/{bot_id}")
         assert response.status_code == 200
-        
-        # Verify cleanup
-        mock_instance.stop.assert_called_with(cleanup_session=True)

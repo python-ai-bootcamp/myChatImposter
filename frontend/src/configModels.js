@@ -219,13 +219,34 @@ class UserDetails {
   }
 }
 
+class LLMConfigurations {
+  constructor({ high, low }) {
+    this.high = new LLMProviderConfig(high);
+    this.low = new LLMProviderConfig(low);
+  }
+
+  static validate(data) {
+    if (!data.high || typeof data.high !== 'object') {
+      throw new ValidationError('high config is required.', 'configurations.llm_configs.high');
+    }
+    LLMProviderConfig.validate(data.high);
+
+    if (!data.low || typeof data.low !== 'object') {
+      throw new ValidationError('low config is required.', 'configurations.llm_configs.low');
+    }
+    LLMProviderConfig.validate(data.low);
+
+    return new LLMConfigurations(data);
+  }
+}
+
 class ConfigurationsSettings {
-  constructor({ user_details, chat_provider_config, queue_config, context_config, llm_provider_config }) {
+  constructor({ user_details, chat_provider_config, queue_config, context_config, llm_configs }) {
     this.user_details = new UserDetails(user_details || {});
     this.chat_provider_config = new ChatProviderConfig(chat_provider_config);
     this.queue_config = new QueueConfig(queue_config || {});
     this.context_config = context_config || {};
-    this.llm_provider_config = new LLMProviderConfig(llm_provider_config);
+    this.llm_configs = new LLMConfigurations(llm_configs);
   }
 
   static validate(data) {
@@ -242,10 +263,10 @@ class ConfigurationsSettings {
       QueueConfig.validate(data.queue_config);
     }
 
-    if (!data.llm_provider_config || typeof data.llm_provider_config !== 'object') {
-      throw new ValidationError('llm_provider_config is required.', 'configurations.llm_provider_config');
+    if (!data.llm_configs || typeof data.llm_configs !== 'object') {
+      throw new ValidationError('llm_configs is required.', 'configurations.llm_configs');
     }
-    LLMProviderConfig.validate(data.llm_provider_config);
+    LLMConfigurations.validate(data.llm_configs);
 
     return new ConfigurationsSettings(data);
   }

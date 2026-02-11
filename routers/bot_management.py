@@ -10,7 +10,7 @@ from pymongo.errors import DuplicateKeyError
 
 from config_models import (
     BotConfiguration, BotGeneralSettings, FeaturesConfiguration,
-    ChatProviderConfig, LLMProviderConfig, ChatProviderSettings, LLMProviderSettings,
+    ChatProviderConfig, LLMProviderConfig, LLMConfigurations, ChatProviderSettings, LLMProviderSettings,
     UserDetails, QueueConfig, ContextConfig, DefaultConfigurations,
     RegularBotConfiguration, RegularBotGeneralSettings
 )
@@ -340,13 +340,24 @@ async def get_bot_defaults(
                 provider_name=DefaultConfigurations.chat_provider_name,
                 provider_config=ChatProviderSettings()
             ),
-            llm_provider_config=LLMProviderConfig(
-                provider_name=DefaultConfigurations.llm_provider_name,
-                provider_config=LLMProviderSettings(
-                    model=DefaultConfigurations.llm_model,
-                    api_key_source=DefaultConfigurations.llm_api_key_source,
-                    temperature=DefaultConfigurations.llm_temperature,
-                    reasoning_effort=DefaultConfigurations.llm_reasoning_effort
+            llm_configs=LLMConfigurations(
+                high=LLMProviderConfig(
+                    provider_name=DefaultConfigurations.llm_provider_name,
+                    provider_config=LLMProviderSettings(
+                        model=DefaultConfigurations.llm_model_high,
+                        api_key_source=DefaultConfigurations.llm_api_key_source,
+                        temperature=DefaultConfigurations.llm_temperature,
+                        reasoning_effort=DefaultConfigurations.llm_reasoning_effort
+                    )
+                ),
+                low=LLMProviderConfig(
+                    provider_name=DefaultConfigurations.llm_provider_name,
+                    provider_config=LLMProviderSettings(
+                        model=DefaultConfigurations.llm_model_low,
+                        api_key_source=DefaultConfigurations.llm_api_key_source,
+                        temperature=DefaultConfigurations.llm_temperature,
+                        reasoning_effort=DefaultConfigurations.llm_reasoning_effort
+                    )
                 )
             ),
             queue_config=QueueConfig(),

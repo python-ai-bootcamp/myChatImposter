@@ -61,6 +61,10 @@ class LLMProviderConfig(BaseModel):
     provider_name: str
     provider_config: LLMProviderSettings
 
+class LLMConfigurations(BaseModel):
+    high: LLMProviderConfig = Field(..., title="High Performance Model")
+    low: LLMProviderConfig = Field(..., title="Low Cost Model")
+
 class ContextConfig(BaseLimitConfig):
     shared_context: bool = True
 
@@ -102,7 +106,7 @@ class BotGeneralSettings(BaseModel):
     chat_provider_config: ChatProviderConfig = Field(..., title="Chat Provider Config")
     queue_config: QueueConfig = Field(default_factory=QueueConfig, title="Queue Config")
     context_config: ContextConfig = Field(default_factory=ContextConfig, title="Context Config")
-    llm_provider_config: LLMProviderConfig = Field(..., title="LLM Provider Config")
+    llm_configs: LLMConfigurations = Field(..., title="LLM Configurations")
 
 class RegularBotGeneralSettings(BaseModel):
     """
@@ -129,7 +133,8 @@ class BotConfiguration(BaseModel):
 class DefaultConfigurations:
     chat_provider_name: str = os.getenv("DEFAULT_CHAT_PROVIDER", "whatsAppBaileys")
     llm_provider_name: str = os.getenv("DEFAULT_LLM_PROVIDER", "openAi")
-    llm_model: str = os.getenv("DEFAULT_LLM_MODEL", "gpt-5-mini")
+    llm_model_high: str = os.getenv("DEFAULT_LLM_MODEL_HIGH", "gpt-5")
+    llm_model_low: str = os.getenv("DEFAULT_LLM_MODEL_LOW", "gpt-5-mini")
     llm_api_key_source: Literal["environment", "explicit"] = os.getenv("DEFAULT_LLM_API_KEY_SOURCE", "environment")
     llm_temperature: float = float(os.getenv("DEFAULT_LLM_TEMPERATURE", "0.05"))
     llm_reasoning_effort: str = os.getenv("DEFAULT_LLM_REASONING_EFFORT", "minimal")

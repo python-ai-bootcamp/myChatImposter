@@ -165,7 +165,7 @@ class GroupTrackingRunner:
                     user_tz = ZoneInfo("UTC")
 
                 # Get user's LLM config and language preference
-                llm_config = target_instance.config.configurations.llm_provider_config
+                llm_config = target_instance.config.configurations.llm_configs.low
                 language_code = target_instance.config.configurations.user_details.language_code
                 
                 # Extract action items
