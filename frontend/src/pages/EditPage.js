@@ -455,38 +455,39 @@ function EditPage() {
     <div className="profile-page">
       <style>{`
         .profile-page {
-            min-height: calc(100vh - 60px);
-            width: 100%;
+            height: calc(100vh - 60px);
+            width: 100vw;
             background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
             color: #e2e8f0;
             font-family: 'Inter', sans-serif;
             display: flex;
             justify-content: center;
-            align-items: flex-start;
-            padding-top: 4rem;
-            padding-bottom: 4rem;
+            align-items: center;
+            padding: 2rem;
             position: relative;
-            overflow: auto;
+            overflow: hidden; /* Prevent external scroll */
+            box-sizing: border-box;
         }
 
         .profile-container {
             background: rgba(255, 255, 255, 0.03);
             border: 1px solid rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(20px);
-            padding: 3rem;
+            padding: 2rem;
             border-radius: 1.5rem;
             width: 100%;
-            max-width: 1800px; /* Wide for split view */
+            max-width: 1800px;
             box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
             z-index: 10;
-            animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
             display: flex;
             flex-direction: column;
-            height: 90vh; /* Fixed height for scrollable content inside */
+            height: 100%; /* Fill the page padding area */
+            max-height: 100%;
+            overflow: hidden; /* Prevent container scroll */
         }
 
         .profile-header {
-            margin-bottom: 2rem;
+            margin-bottom: 1.5rem;
             border-bottom: 1px solid rgba(255, 255, 255, 0.1);
             padding-bottom: 1rem;
             flex-shrink: 0;
@@ -506,15 +507,17 @@ function EditPage() {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 2rem;
-            flex: 1;
-            min-height: 0; /* Important for recursion nested scrolling */
-            margin-bottom: 2rem;
+            flex: 1; /* Take remaining height */
+            min-height: 0; /* Critical for nested scrolling */
+            margin-bottom: 1rem;
+            overflow: hidden;
         }
 
         .scroll-section {
             overflow-y: auto;
+            height: 100%; /* Fill grid cell */
             padding-right: 10px;
-            /* Custom scrollbar for webkit */
+            /* Custom scrollbar */
             scrollbar-width: thin;
             scrollbar-color: rgba(255,255,255,0.2) transparent;
         }
@@ -574,7 +577,7 @@ function EditPage() {
             gap: 1rem;
             justify-content: flex-end;
             border-top: 1px solid rgba(255, 255, 255, 0.1);
-            padding-top: 1.5rem;
+            padding-top: 1rem;
             flex-shrink: 0;
         }
 

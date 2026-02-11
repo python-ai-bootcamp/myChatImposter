@@ -429,37 +429,58 @@ function RestrictedEditPage() {
         <div className="profile-page">
             <style>{`
                 .profile-page {
-                    min-height: calc(100vh - 60px);
-                    width: 100%;
+                    height: calc(100vh - 60px);
+                    width: 100vw;
                     background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
                     color: #e2e8f0;
                     font-family: 'Inter', sans-serif;
                     display: flex;
                     justify-content: center;
-                    align-items: flex-start;
-                    padding-top: 4rem;
-                    padding-bottom: 4rem;
+                    align-items: center;
+                    padding: 2rem;
                     position: relative;
-                    overflow: auto;
+                    overflow: hidden; /* Prevent external scroll */
+                    box-sizing: border-box;
                 }
 
                 .profile-container {
                     background: rgba(255, 255, 255, 0.03);
                     border: 1px solid rgba(255, 255, 255, 0.05);
                     backdrop-filter: blur(20px);
-                    padding: 3rem;
+                    padding: 2rem;
                     border-radius: 1.5rem;
                     width: 100%;
                     max-width: 1000px;
                     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
                     z-index: 10;
-                    animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+                    display: flex;
+                    flex-direction: column;
+                    height: 100%;
+                    max-height: 100%;
+                    overflow: hidden;
                 }
 
                 .profile-header {
-                    margin-bottom: 2rem;
+                    margin-bottom: 1.5rem;
                     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
                     padding-bottom: 1rem;
+                    flex-shrink: 0;
+                }
+
+                .form-content {
+                    flex: 1;
+                    overflow-y: auto;
+                    min-height: 0;
+                    padding-right: 10px;
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(255,255,255,0.2) transparent;
+                }
+                .form-content::-webkit-scrollbar {
+                    width: 6px;
+                }
+                .form-content::-webkit-scrollbar-thumb {
+                    background-color: rgba(255,255,255,0.2);
+                    border-radius: 3px;
                 }
 
                 .profile-header h1 {
@@ -496,12 +517,13 @@ function RestrictedEditPage() {
 
                 /* Action Bar Styling */
                 .action-bar {
-                    margin-top: 2rem;
+                    margin-top: 1rem;
                     display: flex;
                     gap: 1rem;
                     justify-content: flex-end;
                     border-top: 1px solid rgba(255, 255, 255, 0.1);
-                    padding-top: 2rem;
+                    padding-top: 1rem;
+                    flex-shrink: 0;
                 }
 
                 .btn-glass {

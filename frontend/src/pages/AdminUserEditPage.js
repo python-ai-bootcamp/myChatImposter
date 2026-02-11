@@ -77,41 +77,61 @@ const AdminUserEditPage = () => {
         <div className="profile-page">
             <style>{`
                 .profile-page {
-                    min-height: calc(100vh - 60px);
-                    width: 100%;
+                    height: calc(100vh - 60px);
+                    width: 100vw;
                     background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
                     color: #e2e8f0;
                     font-family: 'Inter', sans-serif;
                     display: flex;
                     justify-content: center;
-                    align-items: flex-start;
-                    padding-top: 4rem;
-                    padding-bottom: 4rem;
+                    align-items: center;
+                    padding: 2rem;
                     position: relative;
-                    overflow-y: auto;
+                    overflow: hidden; /* Prevent external scroll */
+                    box-sizing: border-box;
                 }
 
                 .profile-container {
                     background: rgba(255, 255, 255, 0.03);
                     border: 1px solid rgba(255, 255, 255, 0.05);
                     backdrop-filter: blur(20px);
-                    padding: 3rem;
+                    padding: 2rem;
                     border-radius: 1.5rem;
                     width: 100%;
                     max-width: 800px;
                     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
                     z-index: 10;
-                    animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
-                    margin-bottom: 2rem;
+                    display: flex;
+                    flex-direction: column;
+                    /* height: 100%; Removed to allow auto-height */
+                    max-height: 100%;
+                    overflow: hidden;
                 }
 
                 .profile-header {
-                    margin-bottom: 2rem;
+                    margin-bottom: 1.5rem;
                     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
                     padding-bottom: 1rem;
                     display: flex;
                     justify-content: space-between;
                     align-items: center;
+                    flex-shrink: 0;
+                }
+
+                .form-content {
+                    flex: 1;
+                    overflow-y: auto;
+                    min-height: 0;
+                    padding-right: 10px;
+                    scrollbar-width: thin;
+                    scrollbar-color: rgba(255,255,255,0.2) transparent;
+                }
+                .form-content::-webkit-scrollbar {
+                    width: 6px;
+                }
+                .form-content::-webkit-scrollbar-thumb {
+                    background-color: rgba(255,255,255,0.2);
+                    border-radius: 3px;
                 }
 
                 .profile-header h1 {
@@ -277,89 +297,91 @@ const AdminUserEditPage = () => {
                     </button>
                 </div>
 
-                <form onSubmit={handleSubmit}>
-                    <div className="form-group">
-                        <label>User ID</label>
-                        <input
-                            type="text"
-                            value={formData.user_id}
-                            disabled
-                        />
-                    </div>
+                <div className="form-content">
 
-                    <div className="form-row-split">
-                        <label>Name</label>
-                        <input
-                            type="text"
-                            name="first_name"
-                            placeholder="First Name"
-                            value={formData.first_name || ''}
-                            onChange={handleChange}
-                        />
-                        <input
-                            type="text"
-                            name="last_name"
-                            placeholder="Last Name"
-                            value={formData.last_name || ''}
-                            onChange={handleChange}
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label>Email Address</label>
-                        <input
-                            type="email"
-                            name="email"
-                            value={formData.email || ''}
-                            onChange={handleChange}
-                        />
-                    </div>
-
-                    <div className="form-group">
-                        <label>Phone Number</label>
-                        <div style={{ width: '100%' }}>
-                            <PhoneInputWidget
-                                value={formData.phone_number}
-                                onChange={(val) => setFormData(prev => ({ ...prev, phone_number: val }))}
+                    <form onSubmit={handleSubmit}>
+                        <div className="form-group">
+                            <label>User ID</label>
+                            <input
+                                type="text"
+                                value={formData.user_id}
+                                disabled
                             />
                         </div>
-                    </div>
 
-                    <div className="form-group">
-                        <label>Country</label>
-                        <div style={{ width: '100%' }}>
-                            <CountrySelectWidget
-                                value={formData.country_value}
-                                onChange={handleCountryChange}
-                                darkMode={true}
+                        <div className="form-row-split">
+                            <label>Name</label>
+                            <input
+                                type="text"
+                                name="first_name"
+                                placeholder="First Name"
+                                value={formData.first_name || ''}
+                                onChange={handleChange}
+                            />
+                            <input
+                                type="text"
+                                name="last_name"
+                                placeholder="Last Name"
+                                value={formData.last_name || ''}
+                                onChange={handleChange}
                             />
                         </div>
-                    </div>
 
-                    <div className="form-group">
-                        <label>Role</label>
-                        <select
-                            name="role"
-                            value={formData.role}
-                            onChange={handleChange}
+                        <div className="form-group">
+                            <label>Email Address</label>
+                            <input
+                                type="email"
+                                name="email"
+                                value={formData.email || ''}
+                                onChange={handleChange}
+                            />
+                        </div>
+
+                        <div className="form-group">
+                            <label>Phone Number</label>
+                            <div style={{ width: '100%' }}>
+                                <PhoneInputWidget
+                                    value={formData.phone_number}
+                                    onChange={(val) => setFormData(prev => ({ ...prev, phone_number: val }))}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="form-group">
+                            <label>Country</label>
+                            <div style={{ width: '100%' }}>
+                                <CountrySelectWidget
+                                    value={formData.country_value}
+                                    onChange={handleCountryChange}
+                                    darkMode={true}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="form-group">
+                            <label>Role</label>
+                            <select
+                                name="role"
+                                value={formData.role}
+                                onChange={handleChange}
+                            >
+                                <option value="user">User</option>
+                                <option value="admin">Admin</option>
+                            </select>
+                        </div>
+
+                        <button
+                            type="submit"
+                            className="save-button"
+                            disabled={saving}
                         >
-                            <option value="user">User</option>
-                            <option value="admin">Admin</option>
-                        </select>
-                    </div>
-
-                    <button
-                        type="submit"
-                        className="save-button"
-                        disabled={saving}
-                    >
-                        {saving ? 'Saving...' : 'Save Changes'}
-                    </button>
-                </form>
-
+                            {saving ? 'Saving...' : 'Save Changes'}
+                        </button>
+                    </form>
+                </div>
 
             </div>
-        </div>
+        </div >
     );
 };
 
