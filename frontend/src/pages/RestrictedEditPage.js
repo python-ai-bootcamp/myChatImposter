@@ -86,7 +86,7 @@ function RestrictedEditPage() {
             // 2. Backend feature limit validation
             if (formData && botId) {
                 try {
-                    const response = await fetch(`/api/external/bots/${botId}/validate-config`, {
+                    const response = await fetch(`/api/external/ui/bots/${botId}/validate-config`, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ features: formData.features || {} })
@@ -111,7 +111,7 @@ function RestrictedEditPage() {
     useEffect(() => {
         const fetchData = async () => {
             try {
-                const schemaResponse = await fetch('/api/external/bots/schema');
+                const schemaResponse = await fetch('/api/external/ui/bots/schema');
                 if (!schemaResponse.ok) throw new Error('Failed to fetch form schema.');
                 const schemaData = await schemaResponse.json();
                 setSchema(schemaData);
@@ -145,7 +145,7 @@ function RestrictedEditPage() {
                         console.warn("Failed to auto-detect language:", langErr);
                     }
                 } else {
-                    const dataResponse = await fetch(`/api/external/bots/${botId}`);
+                    const dataResponse = await fetch(`/api/external/ui/bots/${botId}`);
                     if (!dataResponse.ok) throw new Error('Failed to fetch configuration content.');
                     initialFormData = await dataResponse.json();
 
@@ -237,7 +237,7 @@ function RestrictedEditPage() {
         }
 
         const method = isNew ? 'PUT' : 'PATCH';
-        const endpoint = `/api/external/bots/${botId}`;
+        const endpoint = `/api/external/ui/bots/${botId}`;
         const finalApiData = { ...submittedData, bot_id: botId };
 
         const saveResponse = await fetch(endpoint, {

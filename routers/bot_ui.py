@@ -106,16 +106,29 @@ async def validate_config(
     new_count = count_enabled_features(features)
     
     limit = await get_user_feature_limit(requester_id, state)
-    current_global_usage = await calculate_global_feature_usage(requester_id, state, exclude_bot_id=bot_id)
+    current_global_usage_others = await calculate_global_feature_usage(requester_id, state, exclude_bot_id=bot_id)
     
-    proposed_total = current_global_usage + new_count
+    # Check if we are reducing or keeping same count (allow even if over limit)
+    current_config = await state.configurations_collection.find_one({"config_data.bot_id": bot_id})
+    old_count = 0
+    if current_config:
+        current_data = current_config.get("config_data", {})
+        current_features = current_data.get("features", {})
+        old_count = count_enabled_features(current_features)
+    
+    proposed_total = current_global_usage_others + new_count
+    
+    # Validation Rule:
+    # 1. If we are under the limit, we are good.
+    # 2. If we are over the limit, we are ONLY good if we are reducing/same usage.
     
     if proposed_total > limit:
-        return {
-            "valid": False,
-            "error_code": "feature_limit_exceeded",
-            "error_message": f"This would use {proposed_total} features (Others: {current_global_usage}, This config: {new_count}), but your limit is {limit}."
-        }
+        if new_count > old_count:
+             return {
+                "valid": False,
+                "error_code": "feature_limit_exceeded",
+                "error_message": f"Global feature limit exceeded. You are trying to use {proposed_total} features (New: {new_count}, Others: {current_global_usage_others}), but your limit is {limit}. (Previous Total: {current_global_usage_others + old_count})"
+            }
     
     return {"valid": True, "error_code": None, "error_message": None}
 
