@@ -474,6 +474,7 @@ function EditPage() {
             border: 1px solid rgba(255, 255, 255, 0.05);
             backdrop-filter: blur(20px);
             padding: 2rem;
+            padding-top: 1rem;
             border-radius: 1.5rem;
             width: 100%;
             max-width: 1800px;
@@ -497,6 +498,7 @@ function EditPage() {
             font-size: 2rem;
             font-weight: 800;
             margin-bottom: 0.5rem;
+            margin-top: 0px;
             background: linear-gradient(to right, #c084fc, #6366f1);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
@@ -682,7 +684,6 @@ function EditPage() {
 
           {/* Right Column: JSON Editor */}
           <div className="scroll-section" style={{ display: 'flex', flexDirection: 'column' }}>
-            <h3 style={{ marginTop: 0, color: '#a5b4fc', marginBottom: '1rem' }}>Live JSON Editor</h3>
             <textarea
               aria-label="Live JSON Editor"
               className="json-editor-area"

@@ -262,7 +262,6 @@ const UserSelfEditPage = () => {
             <div className="profile-container">
                 <div className="profile-header">
                     <h1>My Profile</h1>
-                    <p style={{ color: '#94a3b8' }}>Manage your personal details and settings</p>
                 </div>
 
                 <form onSubmit={handleSubmit}>
