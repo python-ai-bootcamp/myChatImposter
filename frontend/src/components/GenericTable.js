@@ -179,9 +179,7 @@ function GenericTable({
         transition: 'background-color 0.2s'
     });
 
-    const ROW_HEIGHT = compact ? 40 : 60;
-    const HEADER_HEIGHT = compact ? 40 : 50;
-    const [containerHeight, setContainerHeight] = useState('auto');
+
 
     // Dynamic Styles for Compact Mode
     // ----------------------------
@@ -198,22 +196,7 @@ function GenericTable({
     };
     // ----------------------------
 
-    React.useEffect(() => {
-        const updateHeight = () => {
-            const viewportHeight = window.innerHeight;
-            // Adjust maxAllowed slightly since header is now outside this calculation
-            // Was (viewport - 340), now maybe (viewport - 340 - HEADER_HEIGHT)?
-            // Actually, keep it simple. Body max height.
-            const maxAllowed = Math.max(200, viewportHeight - 400);
-            const contentHeight = (data.length * ROW_HEIGHT);
-            const target = Math.min(contentHeight, maxAllowed);
-            setContainerHeight(`${target}px`);
-        };
 
-        updateHeight();
-        window.addEventListener('resize', updateHeight);
-        return () => window.removeEventListener('resize', updateHeight);
-    }, [data.length, compact]);
 
     const renderSortArrow = (key) => {
         const content = sortConfig.key === key

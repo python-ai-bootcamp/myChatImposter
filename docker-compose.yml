@@ -61,6 +61,9 @@ services:
     volumes:
       - ./frontend:/app
       - /app/node_modules
+    environment:
+      - HOST=0.0.0.0
+      - WATCHPACK_POLLING=true
     depends_on:
       - gateway
 
