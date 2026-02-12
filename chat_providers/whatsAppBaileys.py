@@ -170,6 +170,14 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             if not self.is_listening:
                 break
             try:
+                # Ensure session is initialized on the server before connecting (handling restarts)
+                try:
+                    await self._send_config_to_server()
+                except Exception as e:
+                    logging.warning(f"Failed to send config to server before connecting: {e}")
+                    # Continue to try connecting, or let the loop retry? 
+                    # If we can't Init, WS connection will likely fail with 404, triggering retry.
+                
                 async with websockets.connect(uri, open_timeout=10) as websocket:
                     logging.info(f"WebSocket connection established to {uri}")
                     self._ws_connection = websocket

@@ -22,6 +22,9 @@ class IcsActionableItemProcessor(BaseMessageProcessor):
         
         # 2. Generate Calendar Event
         ics_bytes = ActionableItemFormatter.generate_ics(actionable_item)
+        if not ics_bytes:
+             raise ValueError(f"Generated ICS content is empty for item {message_id}")
+
         ics_filename = f"task_{message_id[:8]}.ics"
         
         # 3. Send as Single Message (File + Caption)

@@ -75,6 +75,24 @@ async def lifespan(app: FastAPI):
         # 4. Initialize BotLifecycleService
         global_state.bot_lifecycle_service = BotLifecycleService(global_state)
         
+        # 5. Initialize SessionMaintenanceService & Schedule
+        from features.session_maintenance.service import SessionMaintenanceService
+        global_state.session_maintenance = SessionMaintenanceService(global_state.db)
+        
+        # We can reuse the GroupTracker's scheduler for simplicity, or add a general one.
+        # GroupTracker scheduler is available at global_state.group_tracker.scheduler
+        if global_state.group_tracker and global_state.group_tracker.scheduler:
+             logging.info("API: Scheduling recurring session maintenance (Every 1 hour).")
+             global_state.group_tracker.scheduler.add_job(
+                 global_state.session_maintenance.run_global_maintenance,
+                 'interval', 
+                 hours=1,
+                 id='session_maintenance_global',
+                 replace_existing=True
+             )
+        else:
+             logging.warning("API: Could not schedule session maintenance - Scheduler not available.")
+
     except Exception as e:
         logging.error(f"API: Startup initialization failed: {e}")
         # We might want to exit or continue with limited functionality

@@ -727,6 +727,35 @@ const performSoftResetAction = async (userId, session) => {
     }
 };
 
+const performHardResetAction = async (userId, session) => {
+    console.log(`[${userId}] EXECUTING HARD RESET ACTION.`);
+    try {
+        // Close WebSocket to client if exists
+        // (We can't easily access wsConnections here unless it's global - it IS global)
+        if (wsConnections[userId]) {
+            wsConnections[userId].close();
+            // wsConnections[userId] = null; // handled by 'close' event listener
+        }
+
+        await baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } });
+        console.log(`[${userId}] Hard Reset: Auth info deleted.`);
+
+        if (session) {
+            session.authState = null;
+            session.sock?.end(undefined); // Ensure socket is closed
+
+            // Restart connection logic with new auth state (which will trigger QR)
+            if (session.vendorConfig) {
+                console.log(`[${userId}] Hard Reset: Scheduling reconnection/QR generation.`);
+                // Short delay to allow cleanup
+                setTimeout(() => connectToWhatsApp(userId, session.vendorConfig), 1000);
+            }
+        }
+    } catch (err) {
+        console.error(`[${userId}] Hard Reset Action failed:`, err);
+    }
+};
+
 async function connectToWhatsApp(userId, vendorConfig) {
     const waVersion = await getLatestWaVersion();
 
@@ -868,16 +897,16 @@ async function connectToWhatsApp(userId, vendorConfig) {
         console.log(`[${uId}] Crypto error count: ${sess.cryptoTracker.count}/3`);
 
         if (sess.cryptoTracker.count >= 3) {
-            console.log(`[${uId}] threshold reached. Triggering SOFT RESET.`);
-            sess.cryptoTracker = null; // Reset
-
-            // Trigger Soft Reset Logic
-            // We reuse the logic from connection.update, but we need to force it.
-            // We can emit a fake connection update or just run the logic directly.
-            // Best is to Close the socket with a specific reason that our handler recognizes,
-            // OR run the cleanup directly.
-
-            performSoftResetAction(uId, sess);
+            const softResetCount = sess.softResetCount || 0;
+            if (softResetCount >= 3) {
+                console.log(`[${uId}] Soft Reset limit reached (${softResetCount}) for Crypto Errors. Escalating to Hard Reset.`);
+                performHardResetAction(uId, sess);
+            } else {
+                sess.softResetCount = softResetCount + 1;
+                console.log(`[${uId}] Crypto error threshold reached. Triggering SOFT RESET (Attempt ${sess.softResetCount}/3).`);
+                sess.cryptoTracker = null; // Reset tracker
+                performSoftResetAction(uId, sess);
+            }
         }
     };
 
@@ -1080,6 +1109,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
             const isCryptoError = isInvalidPatchMac || isBadDecrypt || isSessionError;
 
             let performSoftReset = false;
+            let forceHardReset = false;
 
             if (isCryptoError) {
                 if (isInvalidPatchMac) {
@@ -1101,12 +1131,18 @@ async function connectToWhatsApp(userId, vendorConfig) {
                     }
                     console.log(`[${userId}] Crypto error (${errorMessage}). Count: ${session.cryptoTracker.count}/3 in 2m window.`);
                     if (session.cryptoTracker.count >= 3) {
-                        // CRITICAL FIX: Instead of deleting ALL credentials (which requires QR rescan),
-                        // perform a SOFT RESET - clear in-memory state and app-state-sync keys only.
-                        // This preserves the core session credentials (creds/keys) so no QR rescan needed.
-                        console.log(`[${userId}] 'Bad decrypt' threshold reached. Attempting SOFT RESET (preserving credentials) instead of full unlink.`);
-                        performSoftReset = true;
-                        session.cryptoTracker = null; // Reset tracker after attempting recovery
+                        // CRITICAL FIX: Escalation Logic
+                        const softResetCount = session.softResetCount || 0;
+                        if (softResetCount >= 3) {
+                            console.log(`[${userId}] Soft Reset limit reached (${softResetCount}) for Crypto Errors. Escalating to Hard Reset.`);
+                            performSoftReset = false;
+                            forceHardReset = true;
+                        } else {
+                            session.softResetCount = softResetCount + 1;
+                            console.log(`[${userId}] 'Bad decrypt' threshold reached. Attempting SOFT RESET (Attempt ${session.softResetCount}/3) (preserving credentials).`);
+                            performSoftReset = true;
+                            session.cryptoTracker = null; // Reset tracker after attempting recovery
+                        }
                     }
                 }
             }
@@ -1119,6 +1155,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
                     if (softResetCount >= 3) {
                         console.log(`[${userId}] Soft Reset limit reached (${softResetCount}). Escalating to Hard Reset.`);
                         performSoftReset = false; // Allow fallthrough to Hard Reset (shouldForceRelink logic)
+                        forceHardReset = true;
                     } else {
                         session.softResetCount = softResetCount + 1;
                         console.log(`[${userId}] Persistent 405 errors (Count: ${session.http405Tracker.count}). Attempting SOFT RESET (Attempt ${session.softResetCount}/3).`);
@@ -1138,7 +1175,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
                     connectToWhatsApp(userId, vendorConfig);
                 }
 
-            } else if (isPermanentDisconnection || isPersistentBadSession || shouldForceRelink(statusCode, session)) {
+            } else if (isPermanentDisconnection || isPersistentBadSession || forceHardReset || shouldForceRelink(statusCode, session)) {
                 if (!isPermanentDisconnection && !isPersistentBadSession) {
                     logPersistent405(userId, session);
                 }
@@ -1353,6 +1390,13 @@ app.post('/sessions/:userId/send', async (req, res) => {
                 return res.status(400).json({ error: 'content (base64), fileName, and mimetype are required for document type.' });
             }
             const buffer = Buffer.from(content, 'base64');
+            console.log(`[${userId}] sendFile debug: content b64 length: ${content.length}, buffer length: ${buffer.length}, filename: ${fileName}, mimetype: ${mimetype}`);
+
+            if (buffer.length === 0) {
+                console.error(`[${userId}] CRITICAL: Buffer is empty after base64 decode!`);
+                return res.status(400).json({ error: 'Content decode failed: Buffer is empty.' });
+            }
+
             sentMsgData = await session.sock.sendMessage(recipient, {
                 document: buffer,
                 fileName: fileName,
