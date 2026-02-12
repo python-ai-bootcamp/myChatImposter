@@ -66,7 +66,7 @@ class ActionItemExtractor:
             logger.error(f"Failed to parse LLM JSON: {e}. Raw: {json_str[:200]}...")
             return []
 
-    async def extract(self, messages: list, llm_config: LLMProviderConfig, user_id: str, timezone: ZoneInfo, group_id: str = "", language_code: str = "en") -> list:
+    async def extract(self, messages: list, llm_config: LLMProviderConfig, user_id: str, timezone: ZoneInfo, group_id: str = "", language_code: str = "en", llm_config_high: LLMProviderConfig = None) -> list:
         """
         Main entry point. Uses LLM to extract action items from group messages.
         
@@ -147,26 +147,92 @@ class ActionItemExtractor:
             print(f"------------------------")
 
             # Invoke the chain with all template variables
-            logger.info(f"Invoking LLM for action items extraction for user {user_id}")
-            result = await chain.ainvoke({"input": messages_json, "language_code": language_code, "language_name": language_name})
-            print(f"--- LLM RESULT DEBUG ---\n{result}\n-----------------------")
+            # PHASE 1: Low Model Extraction
+            # Invoke the chain with all template variables
+            logger.info(f"Invoking LLM (Low) for action items extraction for user {user_id}")
+            result_low = await chain.ainvoke({"input": messages_json, "language_code": language_code, "language_name": language_name})
+            print(f"--- LLM RESULT (LOW) DEBUG ---\n{result_low}\n-----------------------")
             
             # Sanitize LLM common error (escaped single quotes are invalid JSON)
-            if isinstance(result, str):
-                result = result.replace("\\'", "'")
+            if isinstance(result_low, str):
+                result_low = result_low.replace("\\'", "'")
             
+            # PHASE 2: High Model Refinement
+            if llm_config_high:
+                logger.info(f"Invoking LLM (High) for refinement for user {user_id}")
+                try:
+                    # 1. Load System Prompt
+                    refine_prompt_path = Path("prompts/action_item_refinement_system.txt")
+                    if refine_prompt_path.exists():
+                        refine_system_prompt = refine_prompt_path.read_text(encoding="utf-8")
+                    else:
+                        logger.warning("Refinement prompt file not found, skipping Stage 2.")
+                        refine_system_prompt = ""
+
+                    # 2. Initialize High Model
+                    provider_name = llm_config_high.provider_name
+                    module_name = f"llm_providers.{provider_name}"
+                    
+                    module = importlib.import_module(module_name)
+                    provider_class = find_provider_class(module, BaseLlmProvider)
+                    
+                    if not provider_class:
+                        raise ImportError(f"Could not find provider class in {module_name}")
+
+                    high_provider = provider_class(config=llm_config_high, user_id=user_id)
+                    high_llm = high_provider.get_llm()
+
+                    # 3. Create Chain
+                    # We pass the result_low as the USER message. System prompt is the file content.
+                    refine_prompt = ChatPromptTemplate.from_messages([
+                        ("system", "{system_content}"),
+                        ("user", "{input_content}")
+                    ])
+                    refine_chain = refine_prompt | high_llm | StrOutputParser()
+                    
+                    # Format system prompt with language_code and language_name if present
+                    try:
+                        formatted_system_prompt = refine_system_prompt.format(
+                            language_code=language_code,
+                            language_name=language_name
+                        )
+                    except Exception as fmt_err:
+                        logger.warning(f"Failed to format refinement system prompt: {fmt_err}. Using raw content.")
+                        formatted_system_prompt = refine_system_prompt
+
+                    # 4. Invoke
+                    result_high = await refine_chain.ainvoke({
+                        "system_content": formatted_system_prompt,
+                        "input_content": result_low
+                    })
+
+                    print(f"--- LLM RESULT (HIGH) DEBUG ---\n{result_high}\n-----------------------")
+                    
+                    # Sanitize
+                    if isinstance(result_high, str):
+                        result_high = result_high.replace("\\'", "'")
+                        
+                    # Use High result as final
+                    final_result = result_high
+
+                except Exception as e:
+                    logger.error(f"Stage 2 (High) Failed: {e}. Falling back to Low result.")
+                    final_result = result_low
+            else:
+                 final_result = result_low
+
             logger.info(f"LLM action items extraction completed for user {user_id}")
             
             # Record response if enabled
             if recorder and epoch_ts:
-                recorder.record_response(result, epoch_ts=epoch_ts)
+                recorder.record_response(final_result, epoch_ts=epoch_ts)
             
             # Parse the raw result string into a list of items
-            if "[Error" in result:
-                logger.error(f"LLM Error for {user_id}: {result}")
+            if "[Error" in final_result:
+                logger.error(f"LLM Error for {user_id}: {final_result}")
                 return []
 
-            action_items = self._parse_llm_json(result)
+            action_items = self._parse_llm_json(final_result)
             return action_items
             
         except Exception as e:

@@ -166,6 +166,7 @@ class GroupTrackingRunner:
 
                 # Get user's LLM config and language preference
                 llm_config = target_instance.config.configurations.llm_configs.low
+                llm_config_high = target_instance.config.configurations.llm_configs.high
                 language_code = target_instance.config.configurations.user_details.language_code
                 
                 # Extract action items
@@ -175,7 +176,8 @@ class GroupTrackingRunner:
                     user_id=user_id,
                     timezone=user_tz,
                     group_id=config.groupIdentifier,
-                    language_code=language_code
+                    language_code=language_code,
+                    llm_config_high=llm_config_high 
                 )
                 
                 if not action_items:
