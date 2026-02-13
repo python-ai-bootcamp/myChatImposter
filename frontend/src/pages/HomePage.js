@@ -124,7 +124,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   // Handle Root Redirection
   useEffect(() => {
     if (window.location.pathname === '/') {
-      const role = sessionStorage.getItem('role');
+      const role = localStorage.getItem('role');
       if (role === 'admin') {
         navigate('/admin/home', { replace: true });
       } else if (role === 'user') {
@@ -263,7 +263,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   const handleDelete = async (botId) => {
     if (window.confirm(`Are you sure you want to delete the configuration for "${botId}"?`)) {
       try {
-        const role = sessionStorage.getItem('role');
+        const role = localStorage.getItem('role');
         const endpoint = role === 'admin'
           ? `/api/external/bots/${botId}`
           : `/api/external/ui/bots/${botId}`;
@@ -289,7 +289,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
 
   const handleCreateConfirm = (botId) => {
     setIsCreateModalOpen(false);
-    const role = sessionStorage.getItem('role');
+    const role = localStorage.getItem('role');
     if (role === 'admin') {
       navigate(`/admin/edit/${botId}`, { state: { isNew: true } });
     } else {
@@ -298,7 +298,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   };
 
   const handleEdit = (botId) => {
-    const role = sessionStorage.getItem('role');
+    const role = localStorage.getItem('role');
     if (role === 'admin') {
       navigate(`/admin/edit/${botId}`);
     } else {

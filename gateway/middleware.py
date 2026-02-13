@@ -34,6 +34,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         "/",
         "/api/external/auth/login",
         "/api/external/auth/logout",
+        "/api/external/auth/validate",
         "/docs",
         "/openapi.json",
         "/health",

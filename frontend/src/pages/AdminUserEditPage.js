@@ -70,8 +70,10 @@ const AdminUserEditPage = () => {
 
 
 
-    if (loading) return <div style={{ color: '#e2e8f0', textAlign: 'center', marginTop: '50px' }}>Loading...</div>;
-    if (!formData) return <div style={{ color: '#e2e8f0', textAlign: 'center', marginTop: '50px' }}>User not found.</div>;
+    const pageBackground = { background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)', minHeight: '100vh', width: '100vw' };
+
+    if (loading) return <div style={{ ...pageBackground, color: '#e2e8f0', textAlign: 'center', paddingTop: '50px' }}>Loading...</div>;
+    if (!formData) return <div style={{ ...pageBackground, color: '#e2e8f0', textAlign: 'center', paddingTop: '50px' }}>User not found.</div>;
 
     return (
         <div className="profile-page">

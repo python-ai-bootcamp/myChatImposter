@@ -9,17 +9,13 @@ const UserSelfEditPage = () => {
     const [userId, setUserId] = useState(null);
 
     useEffect(() => {
-        // 1. Get current user ID from /me
-        fetch('/api/external/auth/me')
-            .then(res => {
-                if (res.ok) return res.json();
-                throw new Error("Not authenticated");
-            })
-            .then(data => {
-                setUserId(data.user_id);
-                // 2. Fetch details for this user (using self-access)
-                return fetch(`/api/external/users/${data.user_id}`);
-            })
+        const storedUserId = localStorage.getItem('user_id');
+        if (!storedUserId) {
+            setLoading(false);
+            return;
+        }
+        setUserId(storedUserId);
+        fetch(`/api/external/users/${storedUserId}`)
             .then(res => res.json())
             .then(data => {
                 setFormData(data);
@@ -81,8 +77,10 @@ const UserSelfEditPage = () => {
         }
     };
 
-    if (loading) return <div style={{ color: '#e2e8f0', textAlign: 'center', marginTop: '50px' }}>Loading profile...</div>;
-    if (!formData) return <div style={{ color: '#e2e8f0', textAlign: 'center', marginTop: '50px' }}>Failed to load profile.</div>;
+    const pageBackground = { background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)', minHeight: '100vh', width: '100vw' };
+
+    if (loading) return <div style={{ ...pageBackground, color: '#e2e8f0', textAlign: 'center', paddingTop: '50px' }}>Loading profile...</div>;
+    if (!formData) return <div style={{ ...pageBackground, color: '#e2e8f0', textAlign: 'center', paddingTop: '50px' }}>Failed to load profile.</div>;
 
     return (
         <div className="profile-page">

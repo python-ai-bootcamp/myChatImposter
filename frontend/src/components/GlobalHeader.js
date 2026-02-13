@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { logout } from '../utils/authApi';
 import './GlobalHeader.css'; // We'll create this or add to index.css
 
 const GlobalHeader = () => {
@@ -8,27 +9,31 @@ const GlobalHeader = () => {
     const location = useLocation();
 
     useEffect(() => {
-        // If on login page, do nothing (header is hidden anyway by the check below, but good practice)
+        // If on login page, do nothing
         if (location.pathname === '/login') return;
 
-        // If user is already loaded, we might not need to refetch, 
-        // but if we just logged in, user is null.
+        // Read user data from localStorage (set at login time)
         if (!user) {
-            fetch('/api/external/auth/me', { credentials: 'include' })
-                .then(res => {
-                    if (res.ok) return res.json();
-                    throw new Error('Not authenticated');
-                })
-                .then(data => setUser(data))
-                .catch(() => {
-                    // Silent fail or redirect
+            const storedRole = localStorage.getItem('role');
+            const storedUserId = localStorage.getItem('user_id');
+            if (storedRole && storedUserId) {
+                setUser({
+                    role: storedRole,
+                    user_id: storedUserId,
+                    first_name: localStorage.getItem('first_name'),
+                    last_name: localStorage.getItem('last_name'),
                 });
+            }
         }
     }, [location.pathname, user]);
 
     const handleLogout = () => {
-        fetch('/api/external/auth/logout', { method: 'POST' })
+        logout()
             .then(() => {
+                setUser(null);
+                navigate('/login');
+            })
+            .catch(() => {
                 setUser(null);
                 navigate('/login');
             });

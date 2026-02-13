@@ -316,12 +316,14 @@ function RestrictedEditPage() {
         navigate('/operator/dashboard');
     };
 
+    const pageBackground = { background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)', minHeight: '100vh', width: '100vw' };
+
     if (error) {
-        return <div style={{ padding: '20px', color: 'red' }}>{error}</div>;
+        return <div style={{ ...pageBackground, padding: '20px', color: '#fca5a5' }}>{error}</div>;
     }
 
     if (!schema || !formData) {
-        return <div style={{ padding: '20px', color: '#e2e8f0' }}>Loading form...</div>;
+        return <div style={{ ...pageBackground, padding: '20px', color: '#e2e8f0' }}>Loading form...</div>;
     }
 
     const templates = {

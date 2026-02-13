@@ -39,9 +39,11 @@ const LoginPage = () => {
       const response = await login(userId.trim(), password);
 
       if (response.success) {
-        // Store user info in sessionStorage (optional)
-        sessionStorage.setItem('user_id', response.user_id);
-        sessionStorage.setItem('role', response.role);
+        // Store user info in localStorage (persists across tabs)
+        localStorage.setItem('user_id', response.user_id);
+        localStorage.setItem('role', response.role);
+        if (response.first_name) localStorage.setItem('first_name', response.first_name);
+        if (response.last_name) localStorage.setItem('last_name', response.last_name);
 
         // Redirect to home page based on role
         if (response.role === 'admin') {
@@ -136,6 +138,21 @@ const LoginPage = () => {
                 border-color: #818cf8;
                 box-shadow: 0 0 0 3px rgba(129, 140, 248, 0.2);
                 background: rgba(15, 23, 42, 0.8);
+            }
+
+            /* Prevent browser autofill from turning inputs white */
+            .form-group input:-webkit-autofill,
+            .form-group input:-webkit-autofill:hover,
+            .form-group input:-webkit-autofill:focus,
+            .form-group input:-webkit-autofill:active {
+                -webkit-box-shadow: 0 0 0 30px rgba(15, 23, 42, 0.95) inset !important;
+                -webkit-text-fill-color: #f8fafc !important;
+                caret-color: #f8fafc;
+                transition: background-color 9999s ease-in-out 0s;
+            }
+
+            .form-group input {
+                color-scheme: dark;
             }
 
             .login-button {

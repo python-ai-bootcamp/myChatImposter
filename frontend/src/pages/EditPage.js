@@ -354,12 +354,14 @@ function EditPage() {
   };
 
 
+  const pageBackground = { background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)', minHeight: '100vh', width: '100vw' };
+
   if (error) {
-    return <div style={{ color: 'red', padding: '20px' }}>Error: {error}</div>;
+    return <div style={{ ...pageBackground, color: '#fca5a5', padding: '20px' }}>Error: {error}</div>;
   }
 
   if (!schema || !formData) {
-    return <div style={{ color: '#e2e8f0', padding: '20px' }}>Loading form...</div>;
+    return <div style={{ ...pageBackground, color: '#e2e8f0', padding: '20px' }}>Loading form...</div>;
   }
 
   const templates = {

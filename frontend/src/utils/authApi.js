@@ -70,6 +70,9 @@ export const logout = async () => {
       throw new Error(data.detail || data.message || 'Logout failed');
     }
 
+    // Clear persisted client data
+    localStorage.clear();
+
     return data;
   } catch (error) {
     if (error.message) {
