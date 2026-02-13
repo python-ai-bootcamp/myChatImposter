@@ -27,6 +27,9 @@ class GlobalStateManager:
         self.credentials_collection: Optional[AsyncIOMotorCollection] = None
         self.audit_logs_collection: Optional[AsyncIOMotorCollection] = None
         self.account_lockouts_collection: Optional[AsyncIOMotorCollection] = None
+        
+        # Telemetry
+        self.token_consumption_collection: Optional[AsyncIOMotorCollection] = None
 
         # State storage
         self.chatbot_instances: Dict[str, 'SessionManager'] = {}
@@ -60,6 +63,9 @@ class GlobalStateManager:
         self.credentials_collection = self.db.get_collection(db_schema.COLLECTION_CREDENTIALS)
         self.audit_logs_collection = self.db.get_collection(db_schema.COLLECTION_AUDIT_LOGS)
         self.account_lockouts_collection = self.db.get_collection(db_schema.COLLECTION_ACCOUNT_LOCKOUTS)
+
+        # Telemetry
+        self.token_consumption_collection = self.db.get_collection(db_schema.COLLECTION_TOKEN_CONSUMPTION)
 
         # Ensure indexes (Centralized)
         await db_schema.create_indexes(self.db)

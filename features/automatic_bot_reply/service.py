@@ -184,21 +184,26 @@ class AutomaticBotReplyService:
         self.whitelist = self.config.features.automatic_bot_reply.respond_to_whitelist
         self.whitelist_group = self.config.features.automatic_bot_reply.respond_to_whitelist_group
         self.chatbot_model: Optional[ChatbotModel] = None
+        self.llm: Any = None # Initialize self.llm here
         
         self._initialize_llm()
 
     def _initialize_llm(self):
         try:
-            llm_provider_name = self.config.configurations.llm_configs.high.provider_name
-            llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
-            LlmProviderClass = find_provider_class(llm_provider_module, BaseLlmProvider)
-            if not LlmProviderClass:
-                raise ImportError(f"Could not find a valid LLM provider class in module 'llm_providers.{llm_provider_name}'")
-
-            llm_provider = LlmProviderClass(config=self.config.configurations.llm_configs.high, user_id=self.bot_id)
-            llm_instance = llm_provider.get_llm()
+            from services.llm_factory import create_tracked_llm
             
-            # Get system prompt from the automatic_bot_reply feature
+            # Use the new factory with token tracking
+            llm_instance = create_tracked_llm(
+                llm_config=self.config.configurations.llm_configs.high,
+                user_id=self.bot_id, # Using bot_id as user_id context for the provider as before
+                bot_id=self.bot_id,
+                feature_name="automatic_bot_reply",
+                config_tier="high",
+                token_consumption_collection=self.session_manager.token_consumption_collection
+            )
+            
+            self.llm = llm_instance
+            logging.info(f"Initialized LLM provider '{self.config.configurations.llm_configs.high.provider_name}' with token tracking.")
             system_prompt = self.config.features.automatic_bot_reply.chat_system_prompt.format(user_id=self.bot_id)
             
             self.chatbot_model = ChatbotModel(
@@ -207,7 +212,7 @@ class AutomaticBotReplyService:
                 system_prompt,
                 self.config.configurations.context_config
             )
-            logging.info(f"AUTO_REPLY ({self.bot_id}): Initialized chatbot model using LLM provider '{llm_provider_name}'.")
+            logging.info(f"AUTO_REPLY ({self.bot_id}): Initialized chatbot model using LLM provider '{self.config.configurations.llm_configs.high.provider_name}'.")
         except Exception as e:
             logging.error(f"AUTO_REPLY ({self.bot_id}): Failed to initialize LLM: {e}")
             raise

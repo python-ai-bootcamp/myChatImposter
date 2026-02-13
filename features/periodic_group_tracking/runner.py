@@ -170,6 +170,7 @@ class GroupTrackingRunner:
                 language_code = target_instance.config.configurations.user_details.language_code
                 
                 # Extract action items
+                from dependencies import global_state
                 action_items = await self.extractor.extract(
                     messages=transformed_messages,
                     llm_config=llm_config,
@@ -177,7 +178,8 @@ class GroupTrackingRunner:
                     timezone=user_tz,
                     group_id=config.groupIdentifier,
                     language_code=language_code,
-                    llm_config_high=llm_config_high 
+                    llm_config_high=llm_config_high,
+                    token_consumption_collection=global_state.token_consumption_collection
                 )
                 
                 if not action_items:

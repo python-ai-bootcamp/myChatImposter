@@ -167,3 +167,9 @@ class SessionManager:
             else:
                 return await self.provider_instance.get_status()
         return {"status": "unknown", "message": "Provider does not support status checks."}
+
+    @property
+    def token_consumption_collection(self):
+        """Access the global token consumption collection."""
+        from dependencies import global_state
+        return global_state.token_consumption_collection

@@ -66,7 +66,7 @@ class ActionItemExtractor:
             logger.error(f"Failed to parse LLM JSON: {e}. Raw: {json_str[:200]}...")
             return []
 
-    async def extract(self, messages: list, llm_config: LLMProviderConfig, user_id: str, timezone: ZoneInfo, group_id: str = "", language_code: str = "en", llm_config_high: LLMProviderConfig = None) -> list:
+    async def extract(self, messages: list, llm_config: LLMProviderConfig, user_id: str, timezone: ZoneInfo, group_id: str = "", language_code: str = "en", llm_config_high: LLMProviderConfig = None, token_consumption_collection = None) -> list:
         """
         Main entry point. Uses LLM to extract action items from group messages.
         
@@ -117,18 +117,17 @@ class ActionItemExtractor:
             recorder.record_config(config_dict, epoch_ts=epoch_ts)
         
         try:
-            # Dynamically load the LLM provider
-            llm_provider_name = llm_config.provider_name
-            llm_provider_module = importlib.import_module(f"llm_providers.{llm_provider_name}")
-            from utils.provider_utils import find_provider_class
-            LlmProviderClass = find_provider_class(llm_provider_module, BaseLlmProvider)
+            # Dynamically load the LLM provider via Factory
+            from services.llm_factory import create_tracked_llm
             
-            if not LlmProviderClass:
-                logger.error(f"Could not find LLM provider class for {llm_provider_name}")
-                return []
-            
-            llm_provider = LlmProviderClass(config=llm_config, user_id=f"action_items_{user_id}")
-            llm = llm_provider.get_llm()
+            llm = create_tracked_llm(
+                llm_config=llm_config,
+                user_id=f"action_items_{user_id}", # Context user_id for provider
+                bot_id=list(messages[0].keys())[0] if messages else user_id, # Best effort bot_id or user_id
+                feature_name="periodic_group_tracking",
+                config_tier="low",
+                token_consumption_collection=token_consumption_collection
+            )
             
             # Create the prompt and chain - language_code passed as template variable
             prompt = ChatPromptTemplate.from_messages([
@@ -170,17 +169,15 @@ class ActionItemExtractor:
                         refine_system_prompt = ""
 
                     # 2. Initialize High Model
-                    provider_name = llm_config_high.provider_name
-                    module_name = f"llm_providers.{provider_name}"
-                    
-                    module = importlib.import_module(module_name)
-                    provider_class = find_provider_class(module, BaseLlmProvider)
-                    
-                    if not provider_class:
-                        raise ImportError(f"Could not find provider class in {module_name}")
-
-                    high_provider = provider_class(config=llm_config_high, user_id=user_id)
-                    high_llm = high_provider.get_llm()
+                    # 2. Initialize High Model via Factory
+                    high_llm = create_tracked_llm(
+                        llm_config=llm_config_high,
+                        user_id=user_id,
+                        bot_id=list(messages[0].keys())[0] if messages else user_id,
+                        feature_name="periodic_group_tracking",
+                        config_tier="high",
+                        token_consumption_collection=token_consumption_collection
+                    )
 
                     # 3. Create Chain
                     # We pass the result_low as the USER message. System prompt is the file content.

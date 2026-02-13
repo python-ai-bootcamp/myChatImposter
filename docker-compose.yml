@@ -63,6 +63,8 @@ services:
       - /app/node_modules
     environment:
       - HOST=0.0.0.0
+      - GENERATE_SOURCEMAP=false
+      - CHOKIDAR_USEPOLLING=true
     depends_on:
       - gateway
 

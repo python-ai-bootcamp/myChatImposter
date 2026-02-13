@@ -75,24 +75,30 @@ async def _setup_session(config: BotConfiguration, state: GlobalStateManager) ->
         on_status_change=state.bot_lifecycle_service.create_status_change_callback()
     )
     
-    # 1. Ingestion Service
-    if state.queues_collection is not None:
-        ingester = IngestionService(instance, state.queues_collection)
-        ingester.start()
-        instance.register_service(ingester)
+    try:
+        # 1. Ingestion Service
+        if state.queues_collection is not None:
+            ingester = IngestionService(instance, state.queues_collection)
+            ingester.start()
+            instance.register_service(ingester)
 
-    # 2. Features Subscription
-    if config.features.automatic_bot_reply.enabled:
-        bot_service = AutomaticBotReplyService(instance)
-        instance.register_message_handler(bot_service.handle_message)
-        instance.register_feature("automatic_bot_reply", bot_service)
-    
-    if config.features.kid_phone_safety_tracking.enabled:
-        kid_service = KidPhoneSafetyService(instance)
-        instance.register_message_handler(kid_service.handle_message)
-        instance.register_feature("kid_phone_safety_tracking", kid_service)
-    
-    return instance
+        # 2. Features Subscription
+        if config.features.automatic_bot_reply.enabled:
+            bot_service = AutomaticBotReplyService(instance)
+            instance.register_message_handler(bot_service.handle_message)
+            instance.register_feature("automatic_bot_reply", bot_service)
+        
+        if config.features.kid_phone_safety_tracking.enabled:
+            kid_service = KidPhoneSafetyService(instance)
+            instance.register_message_handler(kid_service.handle_message)
+            instance.register_feature("kid_phone_safety_tracking", kid_service)
+            
+        return instance
+        
+    except Exception as e:
+        logging.error(f"API: Error setting up session for {config.bot_id}: {e}")
+        await instance.stop()
+        raise e
 
 # --- Routes ---
 

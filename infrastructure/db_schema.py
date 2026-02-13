@@ -9,6 +9,8 @@ COLLECTION_QUEUES = "queues"
 COLLECTION_BAILEYS_SESSIONS = "baileys_sessions"
 COLLECTION_TRACKED_GROUPS = "tracked_groups"
 COLLECTION_TRACKED_GROUP_PERIODS = "tracked_group_periods"
+COLLECTION_GROUP_TRIALS = "group_trials"
+COLLECTION_TOKEN_CONSUMPTION = "token_consumption_events"
 COLLECTION_GROUP_TRACKING_STATE = "group_tracking_state"
 
 # Authentication Collections
@@ -81,3 +83,19 @@ async def create_indexes(db: AsyncIOMotorDatabase):
         
     except Exception as e:
         logger.warning(f"Could not create feature indexes: {e}")
+    # Token Consumption Events
+    # 4. Token Consumption Events
+    try:
+        token_events = db[COLLECTION_TOKEN_CONSUMPTION]
+        # TTL Index: Expire after 40 days (3456000 seconds)
+        await token_events.create_index([("timestamp", ASCENDING)], expireAfterSeconds=3456000)
+        # Compound Index for aggregation queries
+        await token_events.create_index([
+            ("user_id", ASCENDING),
+            ("bot_id", ASCENDING),
+            ("feature_name", ASCENDING),
+            ("timestamp", ASCENDING)
+        ])
+        logger.info(f"Created indexes for {COLLECTION_TOKEN_CONSUMPTION}.")
+    except Exception as e:
+        logger.warning(f"Could not create token consumption indexes: {e}")
