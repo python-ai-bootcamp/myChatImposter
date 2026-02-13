@@ -9,6 +9,7 @@ if TYPE_CHECKING:
     from features.periodic_group_tracking.service import GroupTracker
     from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManager
     from services.bot_lifecycle_service import BotLifecycleService
+    from gateway.session_manager import SessionManager
 
 class GlobalStateManager:
     _instance = None
@@ -26,7 +27,9 @@ class GlobalStateManager:
         self.stale_sessions_collection: Optional[AsyncIOMotorCollection] = None
         self.credentials_collection: Optional[AsyncIOMotorCollection] = None
         self.audit_logs_collection: Optional[AsyncIOMotorCollection] = None
+        self.audit_logs_collection: Optional[AsyncIOMotorCollection] = None
         self.account_lockouts_collection: Optional[AsyncIOMotorCollection] = None
+        self.session_manager: Optional['SessionManager'] = None # Added for backend access to session utils
         
         # Telemetry
         self.token_consumption_collection: Optional[AsyncIOMotorCollection] = None
@@ -63,6 +66,13 @@ class GlobalStateManager:
         self.credentials_collection = self.db.get_collection(db_schema.COLLECTION_CREDENTIALS)
         self.audit_logs_collection = self.db.get_collection(db_schema.COLLECTION_AUDIT_LOGS)
         self.account_lockouts_collection = self.db.get_collection(db_schema.COLLECTION_ACCOUNT_LOCKOUTS)
+
+        # Initialize SessionManager (Shared with Gateway logic)
+        from gateway.session_manager import SessionManager
+        self.session_manager = SessionManager(
+            sessions_collection=self.sessions_collection,
+            stale_sessions_collection=self.stale_sessions_collection
+        )
 
         # Telemetry
         self.token_consumption_collection = self.db.get_collection(db_schema.COLLECTION_TOKEN_CONSUMPTION)
