@@ -169,6 +169,7 @@ class AuditLog(BaseModel):
         "account_unlocked",
         "user_created",
         "user_updated",
+        "user_updated_full",
         "user_deleted",
         "password_reset"
     ] = Field(..., description="Security event type")

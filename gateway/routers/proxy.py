@@ -201,7 +201,11 @@ async def proxy_to_backend(path: str, request: Request):
     if len(parts) >= 2 and parts[0] == "bots":
         target_bot_id = parts[1]
     elif len(parts) >= 3 and parts[0] == "ui" and parts[1] == "bots":
-        target_bot_id = parts[2]
+        # Special Case: Validation endpoint should be public/whitelist
+        if parts[2] == "validate":
+            pass # Skip target_bot_id assignment to skip ownership check
+        else:
+            target_bot_id = parts[2]
 
     # Perform Check
     if target_bot_id:

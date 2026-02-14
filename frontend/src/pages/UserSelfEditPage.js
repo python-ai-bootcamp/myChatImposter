@@ -58,7 +58,7 @@ const UserSelfEditPage = () => {
 
         try {
             const res = await fetch(`/api/external/users/${userId}`, {
-                method: 'PUT', // or PATCH if supported
+                method: 'PATCH', // or PATCH if supported
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(formData)
             });
