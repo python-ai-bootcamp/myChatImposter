@@ -83,7 +83,22 @@ services:
     # We need to pass the port, user_id, and config.
     # For now, we'll just have it run and listen on a port.
     # The python code will be modified to NOT start this as a subprocess.
+    # The python code will be modified to NOT start this as a subprocess.
     command: ["node", "server.js", "9000"]
+
+  nginx:
+    build:
+      context: ./nginx
+      dockerfile: Dockerfile
+    container_name: nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx/certs:/etc/nginx/certs:ro
+    depends_on:
+      - frontend
+      - gateway
 
 
 volumes:
