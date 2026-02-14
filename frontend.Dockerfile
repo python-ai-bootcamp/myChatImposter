@@ -1,22 +1,27 @@
-# Use an official Node.js runtime as a parent image
-FROM node:18
+# Stage 1: Build the React production bundle
+FROM node:18 AS builder
 
-# Set the working directory in the container
 WORKDIR /app
 
-# Copy package.json and package-lock.json
-COPY frontend/package.json ./
-# If you have a package-lock.json, copy it as well
-# COPY frontend/package-lock.json ./
+# Copy package files first for better Docker layer caching
+COPY frontend/package.json frontend/package-lock.json* ./
 
 # Install dependencies
 RUN npm install
 
-# Copy the rest of the frontend application code
+# Copy the rest of the frontend source code
 COPY frontend/ .
 
-# Expose the port the app runs on
-EXPOSE 3000
+# Build the production bundle
+RUN npm run build
 
-# Command to run the application
-CMD ["npm", "start"]
+# Stage 2: The final image just holds the build output.
+# nginx will access it via a shared volume.
+FROM alpine:3.19
+
+# Copy build output from builder stage
+COPY --from=builder /app/build /usr/share/frontend/build
+
+# This container doesn't need to run anything — it just holds the files.
+# docker-compose will use volumes_from or a named volume to share them.
+CMD ["echo", "Frontend build complete. Static files at /usr/share/frontend/build"]

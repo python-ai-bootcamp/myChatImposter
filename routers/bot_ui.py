@@ -402,92 +402,147 @@ async def update_bot_ui_configuration(
     state: GlobalStateManager = Depends(ensure_db_connected)
 ):
     """
-    Partially update bot configuration (UI).
-    Enforces max_feature_limit (only if increasing count).
+    Create or update bot configuration (UI).
+    - If config doesn't exist: creates a new one (used by regular users for creation).
+    - If config exists: partially updates it.
+    Enforces max_feature_limit in both cases.
     """
     try:
         # 1. Validation
         if patch_data.bot_id != bot_id:
             raise HTTPException(status_code=400, detail="Bot ID mismatch.")
 
-        # 2. Extract allowed fields
-        update_payload = patch_data.model_dump(exclude_unset=True)
-        mongo_update = {}
-        
-        if "features" in update_payload:
-            mongo_update["config_data.features"] = update_payload["features"]
-            
-        if "configurations" in update_payload and "user_details" in update_payload["configurations"]:
-             mongo_update["config_data.configurations.user_details"] = update_payload["configurations"]["user_details"]
-             
-        if not mongo_update:
-             return {"status": "ignored", "message": "No valid fields to update"}
+        # Check if config exists
+        current_config = await state.configurations_collection.find_one({"config_data.bot_id": bot_id})
 
-        # 3. Check Feature Limit (if features are being updated)
-        if "features" in update_payload:
-            # Fetch existing config
-            current_config = await state.configurations_collection.find_one({"config_data.bot_id": bot_id})
-            if not current_config:
-                 raise HTTPException(status_code=404, detail="Configuration not found.")
-            
-            # Count Old
-            current_data = current_config.get("config_data", {})
-            current_features = current_data.get("features", {})
-            old_count = count_enabled_features(current_features)
-            
-            # Count New (Merge logic)
-            new_features = update_payload["features"]
-            new_count = count_enabled_features(new_features)
-            
-            # Use Requester ID (Owner) for limit check
-            owner_id = request.headers.get("X-User-Id")
-            
-            # Check for Admin Override
-            is_admin = False
-            if owner_id and state.credentials_collection is not None:
-                cred = await state.credentials_collection.find_one({"user_id": owner_id})
-                if cred and cred.get("role") == "admin":
-                    is_admin = True
-            
-            if is_admin:
-                pass
-            elif not owner_id:
-                limit = 5
-                current_global_usage_others = 0
-                old_global_total = 0 
-                new_global_total = new_count
-                if new_global_total > limit:
-                     raise HTTPException(status_code=400, detail="Feature limit exceeded.")
-            else:
+        owner_id = request.headers.get("X-User-Id")
+
+        # Check for Admin Override
+        is_admin = False
+        if owner_id and state.credentials_collection is not None:
+            cred = await state.credentials_collection.find_one({"user_id": owner_id})
+            if cred and cred.get("role") == "admin":
+                is_admin = True
+
+        if not current_config:
+            # === CREATION PATH ===
+            # Check Feature Limit
+            if not is_admin and owner_id:
                 limit = await get_user_feature_limit(owner_id, state)
-                # Exclude THIS bot from the sum
-                current_global_usage_others = await calculate_global_feature_usage(owner_id, state, exclude_bot_id=bot_id)
-                
-                old_count = count_enabled_features(current_features) # Recalculating safety
-                
-                old_global_total = current_global_usage_others + old_count
-                new_global_total = current_global_usage_others + new_count
+                current_global_usage = await calculate_global_feature_usage(owner_id, state, exclude_bot_id=None)
+                new_count = count_enabled_features(patch_data.features)
+                total_usage = current_global_usage + new_count
 
-                if new_global_total > old_global_total and new_global_total > limit:
-                     raise HTTPException(
-                         status_code=400, 
-                         detail=f"Global feature limit exceeded. You are trying to use {new_global_total} features (New: {new_count}, Others: {current_global_usage_others}), but your limit is {limit}. (Previous Total: {old_global_total})"
-                     )
+                if total_usage > limit:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Global feature limit exceeded. You are trying to use {total_usage} features (New: {new_count}, Others: {current_global_usage}), but your limit is {limit}."
+                    )
 
-        # 4. Perform Update
-        result = await state.configurations_collection.update_one(
-            {"config_data.bot_id": bot_id},
-            {"$set": mongo_update}
-        )
-        
-        if result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Configuration not found.")
-            
-        logging.info(f"UI API: Updated configuration for {bot_id}. Fields: {list(mongo_update.keys())}")
-        return {"status": "success", "bot_id": bot_id}
+            # Construct Default Full Configuration
+            default_chat_config = ChatProviderConfig(
+                provider_name=DefaultConfigurations.chat_provider_name,
+                provider_config=ChatProviderSettings()
+            )
+
+            default_llm_config = LLMProviderConfig(
+                provider_name=DefaultConfigurations.llm_provider_name,
+                provider_config=LLMProviderSettings(
+                    model=DefaultConfigurations.llm_model,
+                    api_key_source=DefaultConfigurations.llm_api_key_source,
+                    temperature=DefaultConfigurations.llm_temperature,
+                    reasoning_effort=DefaultConfigurations.llm_reasoning_effort
+                )
+            )
+
+            full_settings = BotGeneralSettings(
+                user_details=patch_data.configurations.user_details,
+                chat_provider_config=default_chat_config,
+                llm_provider_config=default_llm_config
+            )
+
+            full_config = BotConfiguration(
+                bot_id=bot_id,
+                configurations=full_settings,
+                features=patch_data.features
+            )
+
+            # Save to DB
+            await state.configurations_collection.insert_one({"config_data": full_config.model_dump()})
+
+            # Add to Owner's List
+            if owner_id and state.credentials_collection is not None:
+                await state.credentials_collection.update_one(
+                    {"user_id": owner_id},
+                    {"$addToSet": {"owned_bots": bot_id}}
+                )
+
+            logging.info(f"UI API: Created new configuration for {bot_id} via PATCH (Owner: {owner_id})")
+
+            return RegularBotConfiguration(
+                bot_id=bot_id,
+                configurations=patch_data.configurations,
+                features=patch_data.features
+            )
+
+        else:
+            # === UPDATE PATH ===
+            # 2. Extract allowed fields
+            update_payload = patch_data.model_dump(exclude_unset=True)
+            mongo_update = {}
+
+            if "features" in update_payload:
+                mongo_update["config_data.features"] = update_payload["features"]
+
+            if "configurations" in update_payload and "user_details" in update_payload["configurations"]:
+                mongo_update["config_data.configurations.user_details"] = update_payload["configurations"]["user_details"]
+
+            if not mongo_update:
+                return {"status": "ignored", "message": "No valid fields to update"}
+
+            # 3. Check Feature Limit (if features are being updated)
+            if "features" in update_payload:
+                current_data = current_config.get("config_data", {})
+                current_features = current_data.get("features", {})
+                old_count = count_enabled_features(current_features)
+
+                new_features = update_payload["features"]
+                new_count = count_enabled_features(new_features)
+
+                if is_admin:
+                    pass
+                elif not owner_id:
+                    limit = 5
+                    new_global_total = new_count
+                    if new_global_total > limit:
+                        raise HTTPException(status_code=400, detail="Feature limit exceeded.")
+                else:
+                    limit = await get_user_feature_limit(owner_id, state)
+                    current_global_usage_others = await calculate_global_feature_usage(owner_id, state, exclude_bot_id=bot_id)
+
+                    old_global_total = current_global_usage_others + old_count
+                    new_global_total = current_global_usage_others + new_count
+
+                    if new_global_total > old_global_total and new_global_total > limit:
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"Global feature limit exceeded. You are trying to use {new_global_total} features (New: {new_count}, Others: {current_global_usage_others}), but your limit is {limit}. (Previous Total: {old_global_total})"
+                        )
+
+            # 4. Perform Update
+            result = await state.configurations_collection.update_one(
+                {"config_data.bot_id": bot_id},
+                {"$set": mongo_update}
+            )
+
+            if result.matched_count == 0:
+                raise HTTPException(status_code=404, detail="Configuration not found.")
+
+            logging.info(f"UI API: Updated configuration for {bot_id}. Fields: {list(mongo_update.keys())}")
+            return {"status": "success", "bot_id": bot_id}
 
     except HTTPException:
         raise
     except Exception as e:
-        logging.error(f"UI API: Error updating config for {bot_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Could not update configuration: {e}")
+        logging.error(f"UI API: Error in PATCH for {bot_id}: {e}")
+        raise HTTPException(status_code=500, detail=f"Could not process configuration: {e}")

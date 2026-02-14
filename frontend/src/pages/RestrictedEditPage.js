@@ -236,7 +236,7 @@ function RestrictedEditPage() {
             throw new Error("The bot_id cannot be changed.");
         }
 
-        const method = isNew ? 'PUT' : 'PATCH';
+        const method = 'PATCH';
         const endpoint = `/api/external/ui/bots/${botId}`;
         const finalApiData = { ...submittedData, bot_id: botId };
 

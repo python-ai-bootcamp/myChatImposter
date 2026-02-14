@@ -144,9 +144,17 @@ class PermissionValidator:
         # Exception: /status endpoint
         if extracted_bot_id == "status":
              return True, None
+
+        # Exception: /defaults endpoint (bot configuration defaults)
+        if extracted_bot_id == "defaults":
+             return True, None
              
         # Exception: /validate/{bot_id} endpoint
         if "/ui/bots/validate/" in request_path:
+             return True, None
+
+        # Exception: /validate-config endpoint (feature limit validation for new bots)
+        if "/validate-config" in request_path:
              return True, None
 
         # STRICT SECURITY: PUT is ADMIN ONLY (as per Emperor's Decree)

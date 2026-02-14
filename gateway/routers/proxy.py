@@ -224,11 +224,13 @@ async def proxy_to_backend(path: str, request: Request):
                     logging.warning(f"GATEWAY: IDOR attempt by {session.user_id} on {target_bot_id}")
                     return JSONResponse(status_code=403, content={"detail": "Access denied."})
                 
-                # Special Case for POST (Actions on unowned bots) - Block unless whitelisted?
-                # Actually, POST to /actions/link usually requires ownership.
+                # Special Case for POST (Actions on unowned bots) - Block unless whitelisted
+                # validate-config is a validation-only endpoint, not an action
                 if request.method == "POST" and target_bot_id not in owned_ids:
-                     logging.warning(f"GATEWAY: Unauthorized action attempt by {session.user_id} on {target_bot_id}")
-                     return JSONResponse(status_code=403, content={"detail": "Access denied."})
+                     # Allow validate-config POST (feature limit check, not an action)
+                     if not any(sub in path for sub in ["validate-config"]):
+                         logging.warning(f"GATEWAY: Unauthorized action attempt by {session.user_id} on {target_bot_id}")
+                         return JSONResponse(status_code=403, content={"detail": "Access denied."})
 
                 # 2. Bot Limit Check (for PATCH creation)
                 # If PATCH and not owned, assume Creation attempt.
