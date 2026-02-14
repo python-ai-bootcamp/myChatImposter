@@ -1,5 +1,6 @@
-const CACHE_NAME = 'static-resources-v1';
-const RESOURCE_URL_PATTERN = /\/api\/external\/resources\//;
+const CACHE_NAME = 'static-resources-v3';
+const RESOURCE_URL_PATTERN = /\/api\/external\/resources\/(languages|timezones|countries)/;
+const STATIC_ASSETS_PATTERN = /\/(favicon\.ico|logo192\.png|logo512\.png|manifest\.json)/;
 
 self.addEventListener('install', (event) => {
     // Skip waiting to activate immediately
@@ -23,7 +24,7 @@ self.addEventListener('activate', (event) => {
 
 self.addEventListener('fetch', (event) => {
     // Only intercept requests for our specific resources
-    if (RESOURCE_URL_PATTERN.test(event.request.url)) {
+    if (RESOURCE_URL_PATTERN.test(event.request.url) || STATIC_ASSETS_PATTERN.test(event.request.url)) {
         event.respondWith(
             caches.open(CACHE_NAME).then((cache) => {
                 return cache.match(event.request).then((cachedResponse) => {
