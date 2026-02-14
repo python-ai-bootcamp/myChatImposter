@@ -140,6 +140,27 @@ const LoginPage = () => {
                 background: rgba(15, 23, 42, 0.8);
             }
 
+
+
+            /* Robust fix for disabled state during submission */
+            .form-group input:disabled {
+                background-color: rgba(15, 23, 42, 0.6) !important;
+                color: #94a3b8 !important;
+                cursor: not-allowed;
+                border-color: rgba(255, 255, 255, 0.1) !important;
+                -webkit-text-fill-color: #94a3b8 !important;
+                box-shadow: none !important;
+            }
+
+            /* Ensure autofill hack persists even when disabled */
+            .form-group input:disabled:-webkit-autofill,
+            .form-group input:disabled:-webkit-autofill:hover, 
+            .form-group input:disabled:-webkit-autofill:focus, 
+            .form-group input:disabled:-webkit-autofill:active {
+                -webkit-box-shadow: 0 0 0 30px rgba(15, 23, 42, 0.95) inset !important;
+                -webkit-text-fill-color: #94a3b8 !important;
+            }
+
             /* Prevent browser autofill from turning inputs white */
             .form-group input:-webkit-autofill,
             .form-group input:-webkit-autofill:hover,

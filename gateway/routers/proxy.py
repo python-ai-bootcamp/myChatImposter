@@ -135,6 +135,8 @@ async def list_bots_status_proxy(request: Request):
     )
 
 
+import urllib.parse
+
 @router.api_route(
     "/api/external/{path:path}",
     methods=["GET", "POST", "PUT", "DELETE", "PATCH"],
@@ -146,7 +148,10 @@ async def proxy_to_backend(path: str, request: Request):
     """
     # Transform path: /api/external/* → /api/internal/*
     
-    # Determine target URL based on path prefix
+    # Encode the path to ensure special characters (like #) are preserved as %23
+    # and not treated as fragments by httpx.
+    encoded_path = urllib.parse.quote(path, safe="/")
+
     # Determine target URL based on path prefix
     if (path == "resources" or path.startswith("resources/") or 
         path == "users" or path.startswith("users/") or 
@@ -156,11 +161,11 @@ async def proxy_to_backend(path: str, request: Request):
         # Map /api/external/users -> /api/internal/users
         # Map /api/external/ui -> /api/internal/ui
         # Map /api/external/bots -> /api/internal/bots
-        backend_url = f"{gateway_state.backend_url}/api/internal/{path}"
+        backend_url = f"{gateway_state.backend_url}/api/internal/{encoded_path}"
     else:
         # Default to bots for backward compatibility (naked bot IDs)
         # Map /api/external/{bot_id}/... -> /api/internal/bots/{bot_id}/...
-        backend_url = f"{gateway_state.backend_url}/api/internal/bots/{path}"
+        backend_url = f"{gateway_state.backend_url}/api/internal/bots/{encoded_path}"
 
     # Get query parameters
     query_params = dict(request.query_params)

@@ -106,14 +106,31 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
     const handleInputChange = (e) => {
         const value = e.target.value;
         setBotId(value);
-        setValidationResult(null);
 
         // Clear previous debounce
         if (debounceRef.current) {
             clearTimeout(debounceRef.current);
         }
 
-        // Set new debounce (300ms)
+        if (!value || value.trim() === '') {
+            setValidationResult(null);
+            return;
+        }
+
+        // Client-side regex check (Alphanumeric, -, _, 1-30 chars)
+        const isValidFormat = /^[a-zA-Z0-9_-]{1,30}$/.test(value);
+        if (!isValidFormat) {
+            setValidationResult({
+                valid: false,
+                error_code: 'invalid_format',
+                error_message: "Must be 1-30 chars, alphanumeric, '_' or '-'."
+            });
+            return; // Stop here, do not hit backend
+        }
+
+        setValidationResult(null); // Clear previous errors while waiting
+
+        // Set new debounce (300ms) for backend check (Existence & Limit)
         debounceRef.current = setTimeout(() => {
             validateBotId(value);
         }, 300);

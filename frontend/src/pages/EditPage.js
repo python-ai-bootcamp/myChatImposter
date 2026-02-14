@@ -18,6 +18,7 @@ import CronPickerWidget from '../components/CronPickerWidget';
 import { FloatingErrorBanner } from '../components/PageLayout';
 import '../styles/DarkFormStyles.css';
 
+
 function EditPage() {
   const { botId } = useParams();
   const navigate = useNavigate();
@@ -102,6 +103,10 @@ function EditPage() {
           if (localTimezone && initialFormData.configurations?.user_details) {
             initialFormData.configurations.user_details.timezone = localTimezone;
           }
+
+
+
+          // ... (inside EditPage component)
 
           try {
             const languagesResponse = await fetch('/api/external/resources/languages');
