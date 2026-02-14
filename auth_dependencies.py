@@ -50,7 +50,9 @@ async def require_admin(
     # Session object from middleware is likely an object, not a dict, 
     # but let's handle attribute access safely
     role = getattr(session, "role", None)
+    logging.info(f"AUTH_DEBUG: require_admin check. User: {getattr(session, 'user_id', 'unknown')}, Role: {role}")
     if role != "admin":
+        logging.warning(f"AUTH_DEBUG: Access denied for {getattr(session, 'user_id', 'unknown')}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Administration privileges required"

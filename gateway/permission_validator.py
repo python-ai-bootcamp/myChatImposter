@@ -149,11 +149,44 @@ class PermissionValidator:
         if "/ui/bots/validate/" in request_path:
              return True, None
 
-        # Exception: PUT (Creation/Update)
-        # We allow PUT for authenticated users even if they don't own it *yet* (New Bot Creation).
-        # The backend/gateway will handle the "Don't Overwrite Others" check.
+        # STRICT SECURITY: PUT is ADMIN ONLY (as per Emperor's Decree)
         if method == "PUT":
-            return True, extracted_bot_id
+            logging.warning(
+                f"GATEWAY: User {session_user_id} attempted PUT on {extracted_bot_id} (Blocked - PUT is Admin Only)"
+            )
+            return False, extracted_bot_id
+
+        # Exception: PATCH (Create/Update)
+        # We allow PATCH for authenticated users for creation or update of owned bots.
+        if method == "PATCH":
+             return True, extracted_bot_id
+             
+        # Exception: POST (Actions)
+        # Allowed if user owns bot (checked above in 'if extracted_bot_id in owned_bots')
+        # But if we are here, bot_id is NOT in owned_bots.
+        # So we only allow PATCH (Create) on unowned IDs?
+        # WAIT: If it's a new bot, it won't be in owned_bots.
+        # So PATCH must be allowed if it doesn't exist? Gateway doesn't know if it exists.
+        # Gateway logic:
+        # If method is PATCH, allow it (Backend will check limits/existence/ownership).
+        # We need to be careful not to allow PATCH on *someone else's* bot.
+        # But Gateway doesn't know who owns "extracted_bot_id" if it's not in the list.
+        # It relies on the list being accurate.
+        # If I PATCH "admin_bot", and it's not in my list, Gateway says "Not in list".
+        # If I return True here, I allow access.
+        
+        # We must ONLY allow PATCH if we are Creating (New ID) or Updating (Owned).
+        # If it's Owned, we returned True above (Line 138).
+        # So we are here because it is NOT owned.
+        # Thus, we are trying to access a bot we don't own.
+        # If it's PATCH, it might be a Creation attempt (New ID).
+        # If it's an existing ID owned by someone else, Backend MUST block it.
+        # Gateway can't distinguish "New" vs "Someone Else's".
+        # So we must allow it pass to backend for validation?
+        # Yes, similar to how PUT was allowed before.
+        
+        if method == "PATCH":
+             return True, extracted_bot_id
 
         else:
             logging.warning(

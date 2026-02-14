@@ -135,13 +135,12 @@ async def update_user_full(
     request: Request,
     user_id: str,
     user_data: UserUpdateRequest,
-    session: dict = Depends(require_user_or_admin("user_id")), # Allow Admin or Self-Edit
+    session: dict = Depends(require_admin), # STRICT SECURITY: Admin Only
     state: GlobalStateManager = Depends(get_global_state)
 ):
     """
-    Update user details (Admin).
-    Handles Session Invalidation if role/status changes.
-    Last Admin Protection.
+    Update user details (Admin Only).
+    Full update / Replace.
     """
     # 1. Fetch existing
     existing = await state.auth_service.get_credentials(user_id)
@@ -176,11 +175,77 @@ async def update_user_full(
         logger = AuditLogger(state.audit_logs_collection)
         current_user = getattr(session, "user_id", "unknown")
         await logger.log_event(
-            event_type="user_updated",
+            event_type="user_updated_full",
             user_id=current_user,
             details={"target_user": user_id, "updates": list(update_data.keys())}
         )
         
+    return {"status": "success"}
+
+@router.patch("/{user_id}")
+async def update_user_partial(
+    request: Request,
+    user_id: str,
+    user_data: UserUpdateRequest,
+    session: dict = Depends(require_user_or_admin("user_id")), # Admin or Self
+    state: GlobalStateManager = Depends(get_global_state)
+):
+    """
+    Partial update user details.
+    Restricted fields for non-admins (NO ROLE CHANGE).
+    """
+    # 1. Fetch existing
+    existing = await state.auth_service.get_credentials(user_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    # 2. Prepare Update Data
+    update_data = user_data.model_dump(exclude_unset=True)
+    
+    # 3. Security: Role Sanitization
+    current_role = getattr(session, "role", "user")
+    if current_role != "admin":
+        if "role" in update_data:
+            # Silently strip or error? Strip is safer/easier for FE potentially sending stale data.
+            # But let's be explicit if they try to hack.
+            if update_data["role"] != existing.role:
+                 # If they try to change it to something else
+                 logging.warning(f"SECURITY: User {user_id} tried to change role to {update_data['role']}")
+            
+            # Remove dangerous fields
+            update_data.pop("role", None)
+            # Potentially other fields? (e.g. governance flags if any)
+            
+    # 4. Last Admin Protection (If Admin is demoting self/others via PATCH)
+    if "role" in update_data and existing.role == "admin" and update_data["role"] == "user":
+        admin_count = await state.credentials_collection.count_documents({"role": "admin"})
+        if admin_count <= 1:
+            raise HTTPException(status_code=400, detail="Cannot demote the last administrator.")
+
+    if not update_data:
+        return {"status": "success", "message": "No changes detected"}
+
+    # 5. Update
+    result = await state.credentials_collection.update_one(
+        {"user_id": user_id},
+        {"$set": update_data}
+    )
+    
+    # 6. Session Invalidation
+    if "role" in update_data and update_data["role"] != existing.role:
+        await state.session_manager.invalidate_all_sessions(user_id, reason="Role Changed")
+        
+    # 7. Audit
+    if state.audit_logs_collection is not None:
+        from gateway.audit_logger import AuditLogger
+        logger = AuditLogger(state.audit_logs_collection)
+        current_user = getattr(session, "user_id", "unknown")
+        await logger.log_event(
+            event_type="user_updated",
+            user_id=current_user,
+            details={"target_user": user_id, "updates": list(update_data.keys()), "type": "partial"}
+        )
+
     return {"status": "success"}
 
 @router.delete("/{user_id}")

@@ -209,17 +209,21 @@ async def proxy_to_backend(path: str, request: Request):
                 owned_ids = getattr(session, "owned_bots", [])
                 
                 # 1. Block access to unowned bots (unless it's a creation request)
-                if request.method != "PUT" and request.method != "POST" and target_bot_id not in owned_ids:
+                # PUT is blocked by PermissionValidator for users. 
+                # POST is for actions, PATCH is for Create/Update.
+                if request.method != "POST" and request.method != "PATCH" and target_bot_id not in owned_ids:
                     logging.warning(f"GATEWAY: IDOR attempt by {session.user_id} on {target_bot_id}")
                     return JSONResponse(status_code=403, content={"detail": "Access denied."})
                 
-                # Special Case for POST/PUT (Linking/Actions on unowned bots)
+                # Special Case for POST (Actions on unowned bots) - Block unless whitelisted?
+                # Actually, POST to /actions/link usually requires ownership.
                 if request.method == "POST" and target_bot_id not in owned_ids:
                      logging.warning(f"GATEWAY: Unauthorized action attempt by {session.user_id} on {target_bot_id}")
                      return JSONResponse(status_code=403, content={"detail": "Access denied."})
 
-                # 2. Bot Limit Check (for PUT creation)
-                if request.method == "PUT" and target_bot_id not in owned_ids:
+                # 2. Bot Limit Check (for PATCH creation)
+                # If PATCH and not owned, assume Creation attempt.
+                if request.method == "PATCH" and target_bot_id not in owned_ids:
                        limit = getattr(session, "max_user_configuration_limit", 5)
                        if len(owned_ids) >= limit:
                             logging.warning(f"GATEWAY: User {session.user_id} reached limit ({limit}) trying to create {target_bot_id}")
@@ -237,9 +241,9 @@ async def proxy_to_backend(path: str, request: Request):
         body=body,
     )
 
-    # Interceptor: PUT Creation (Ownership Claim)
-    # Check if successful PUT to a bot resource
-    if request.method == "PUT" and response.status_code == 200:
+    # Interceptor: PATCH Creation (Ownership Claim)
+    # Check if successful PATCH to a bot resource
+    if request.method == "PATCH" and response.status_code in [200, 201]:
         target_bot_id = None
         parts = path.strip("/").split("/")
         

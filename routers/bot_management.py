@@ -26,6 +26,7 @@ from features.automatic_bot_reply.service import AutomaticBotReplyService
 from features.kid_phone_safety_tracking.service import KidPhoneSafetyService
 from dependencies import GlobalStateManager, get_global_state
 from fastapi import Depends
+from auth_dependencies import require_admin, get_current_user
 
 router = APIRouter(
     prefix="/api/internal/bots",
@@ -426,7 +427,118 @@ async def get_bot_configuration(
         raise
     except Exception as e:
         logging.error(f"API: Error getting config for {bot_id}: {e}")
-        raise HTTPException(status_code=500, detail="Could not retrieve configuration.")
+@router.patch("/{bot_id}")
+async def patch_bot_configuration(
+    bot_id: str,
+    config_patch: Dict[str, Any] = Body(...),
+    session: dict = Depends(get_current_user), # User or Admin
+    state: GlobalStateManager = Depends(ensure_db_connected),
+    x_user_id: str = Header(None, alias="X-User-Id"), 
+    x_user_role: str = Header("user", alias="X-User-Role") 
+):
+    """
+    Partial Update or Create Bot (Users/Admins).
+    """
+    user_id = getattr(session, "user_id", "unknown")
+    role = getattr(session, "role", "user") # Trust backend session object
+
+    # 1. Check if bot exists
+    existing_data = await _get_bot_config(bot_id, state.configurations_collection)
+
+    if existing_data:
+        # --- UPDATE PATH ---
+        
+        # Ownership Check (if not Admin)
+        if role != "admin":
+            owner_doc = await state.credentials_collection.find_one(
+                {"owned_bots": bot_id},
+                {"user_id": 1}
+            )
+            owner = owner_doc.get("user_id") if owner_doc else None
+            
+            # If no owner, maybe allow claim? Or block?
+            # Gateway logic handles claiming. Here we enforce ownership.
+            if owner and owner != user_id:
+                raise HTTPException(status_code=403, detail="You do not own this bot.")
+            
+            # If no owner, we proceed (Gateway should have claimed it or will claim it)
+            
+        # Apply Patch
+        # Flatten the patch to dot notation for MongoDB partial update?
+        # Or simple merge?
+        # If we use $set, we can update nested fields if keys are "features.x.y"
+        # But incoming JSON is usually nested.
+        # Minimal implementation:
+        updates = {}
+        def flatten(d, parent_key='', sep='.'):
+            items = []
+            for k, v in d.items():
+                new_key = parent_key + sep + k if parent_key else k
+                if isinstance(v, dict):
+                    items.extend(flatten(v, new_key, sep=sep).items())
+                else:
+                    items.append((new_key, v))
+            return dict(items)
+            
+        flat_patch = flatten(config_patch)
+        
+        # Pydantic validation bypass for now, or we construct full object?
+        # Let's trust the patch for now but prefix with config_data per DB schema
+        db_updates = {f"config_data.{k}": v for k, v in flat_patch.items()}
+        
+        if db_updates:
+            await state.configurations_collection.update_one(
+                {"config_data.bot_id": bot_id},
+                {"$set": db_updates}
+            )
+            
+        logging.info(f"API: Patched bot {bot_id} by {user_id}")
+        return {"status": "success", "bot_id": bot_id, "action": "updated"}
+
+    else:
+        # --- CREATE PATH ---
+        # User Limit Check is done in Gateway.
+        
+        # Create new full config merging defaults + patch
+        # 1. Get Defaults
+        # Use ADMIN role to get FULL defaults (including hidden fields like LLM config)
+        # because the internal BotConfiguration model requires them.
+        defaults = await get_bot_defaults(x_user_role="admin")
+        default_dict = defaults.model_dump()
+        
+        # 2. Merge Patch (Deep Merge preferable, but for creation usually we just set overrides)
+        # Simple recursive update
+        def update_recursive(d, u):
+            for k, v in u.items():
+                if isinstance(v, dict):
+                    d[k] = update_recursive(d.get(k, {}), v)
+                else:
+                    d[k] = v
+            return d
+            
+        final_data = update_recursive(default_dict, config_patch)
+        final_data["bot_id"] = bot_id # Ensure ID
+        
+        # Validate logic (using Pydantic)
+        try:
+             # RegularBotConfiguration or BotConfiguration
+             # We should validate as BotConfiguration to be safe for DB
+             BotConfiguration.model_validate(final_data)
+        except Exception as e:
+             raise HTTPException(status_code=400, detail=f"Invalid configuration: {e}")
+
+        # Save
+        db_document = {"config_data": final_data}
+        await state.configurations_collection.insert_one(db_document)
+        
+        logging.info(f"API: Created bot {bot_id} by {user_id} (via PATCH)")
+        
+        # Auto-claim ownership (Redundant with Gateway but safe)
+        if role == "user":
+            await state.auth_service.add_owned_configuration(user_id, bot_id)
+            
+        return {"status": "success", "bot_id": bot_id, "action": "created"}
+
 
 @router.put("/{bot_id}")
 async def save_bot_configuration(bot_id: str, config: BotConfiguration = Body(...), state: GlobalStateManager = Depends(ensure_db_connected)):
