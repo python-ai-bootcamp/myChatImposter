@@ -159,6 +159,9 @@ async def lifespan(app: FastAPI):
         aus=app.state.auth_service,
     )
 
+    # Initialize persistent HTTP client for backend proxying
+    gateway_state.initialize_http_client()
+
     # Start background tasks
     cleanup_task = asyncio.create_task(cleanup_old_data())
     lockout_cleanup_task = asyncio.create_task(cleanup_expired_lockouts())
@@ -213,11 +216,37 @@ async def root():
     }
 
 
-# Health check
+# Health check — gateway only (no backend proxying)
 @app.get("/health")
 async def health():
-    """Health check endpoint."""
+    """Legacy health check endpoint."""
     return {"status": "healthy"}
+
+
+@app.get("/api/health/gateway")
+async def health_check_gateway():
+    """Gateway-only health check. Returns 200 if gateway is alive."""
+    return {"status": "gateway_ok"}
+
+
+@app.get("/api/health/backend")
+async def health_check_backend():
+    """Full-flow health check: gateway → backend."""
+    backend_url = f"{gateway_state.backend_url}/health"
+    try:
+        response = await gateway_state.http_client.get(backend_url, timeout=5.0)
+        if response.status_code == 200:
+            return {"status": "backend_ok", "backend_response": response.json()}
+        else:
+            return JSONResponse(
+                status_code=502,
+                content={"status": "backend_error", "detail": f"Backend returned {response.status_code}"},
+            )
+    except Exception as e:
+        return JSONResponse(
+            status_code=502,
+            content={"status": "backend_unreachable", "detail": str(e)},
+        )
 
 
 # Error handler for 404

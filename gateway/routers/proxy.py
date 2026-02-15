@@ -19,43 +19,42 @@ async def _forward_request(
     headers: dict,
     body: bytes,
 ) -> Response:
-    """Helper to forward request to backend."""
-    async with httpx.AsyncClient(timeout=30.0) as client:
-        try:
-            backend_response = await client.request(
-                method=method,
-                url=url,
-                params=params,
-                headers=headers,
-                content=body,
-            )
+    """Helper to forward request to backend using persistent connection pool."""
+    try:
+        backend_response = await gateway_state.http_client.request(
+            method=method,
+            url=url,
+            params=params,
+            headers=headers,
+            content=body,
+        )
 
-            # Log response
-            logging.debug(
-                f"GATEWAY: Backend response {backend_response.status_code} for {url}"
-            )
+        # Log response
+        logging.debug(
+            f"GATEWAY: Backend response {backend_response.status_code} for {url}"
+        )
 
-            return Response(
-                content=backend_response.content,
-                status_code=backend_response.status_code,
-                headers=dict(backend_response.headers),
-            )
+        return Response(
+            content=backend_response.content,
+            status_code=backend_response.status_code,
+            headers=dict(backend_response.headers),
+        )
 
-        except httpx.TimeoutException:
-            logging.error(f"GATEWAY: Backend timeout for {url}")
-            return Response(
-                content=b'{"detail": "Backend request timeout"}',
-                status_code=504,
-                media_type="application/json",
-            )
+    except httpx.TimeoutException:
+        logging.error(f"GATEWAY: Backend timeout for {url}")
+        return Response(
+            content=b'{"detail": "Backend request timeout"}',
+            status_code=504,
+            media_type="application/json",
+        )
 
-        except httpx.RequestError as e:
-            logging.error(f"GATEWAY: Backend request error for {url}: {e}")
-            return Response(
-                content=b'{"detail": "Backend request failed"}',
-                status_code=502,
-                media_type="application/json",
-            )
+    except httpx.RequestError as e:
+        logging.error(f"GATEWAY: Backend request error for {url}: {e}")
+        return Response(
+            content=b'{"detail": "Backend request failed"}',
+            status_code=502,
+            media_type="application/json",
+        )
 
 
 @router.get("/api/external/bots")

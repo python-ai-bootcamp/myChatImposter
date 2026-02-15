@@ -38,6 +38,8 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
         "/docs",
         "/openapi.json",
         "/health",
+        "/api/health/gateway",
+        "/api/health/backend",
     ]
 
     async def dispatch(self, request: Request, call_next):

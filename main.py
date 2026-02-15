@@ -146,6 +146,12 @@ async def log_requests(request, call_next):
 async def root():
     return {"message": "Chatbot Manager API Running"}
 
+# Health check endpoint (no auth required — accessed internally by gateway)
+@app.get("/health")
+async def health():
+    """Backend health check endpoint."""
+    return {"status": "backend_ok"}
+
 if __name__ == "__main__":
     import uvicorn
     # Use environment variable for port or default to 8000
