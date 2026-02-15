@@ -13,6 +13,9 @@ from config_models import (
     ChatProviderSettings, 
     LLMProviderConfig, 
     LLMProviderSettings,
+    LLMConfigurations,
+    QueueConfig,
+    ContextConfig,
     DefaultConfigurations
 )
 
@@ -227,111 +230,6 @@ async def calculate_global_feature_usage(
         
     return total
 
-@router.put("/{bot_id}", response_model=RegularBotConfiguration)
-async def create_bot_ui_configuration(
-    bot_id: str,
-    request: Request,
-    payload: RegularBotConfiguration = Body(...),
-    state: GlobalStateManager = Depends(ensure_db_connected)
-):
-    """
-    Create a new configuration with restricted view.
-    Enforces max_feature_limit.
-    """
-    try:
-        # 1. Validation
-        if payload.bot_id != bot_id:
-             raise HTTPException(status_code=400, detail="Bot ID mismatch.")
-
-        # Check Existience
-        existing = await state.configurations_collection.find_one({"config_data.bot_id": bot_id})
-        if existing:
-             raise HTTPException(status_code=409, detail="Configuration already exists. Use PATCH to update.")
-
-        # 2. Check Feature Limit
-        # Use Requester ID (Owner) for limit check
-        owner_id = request.headers.get("X-User-Id")
-        if not owner_id:
-            # Fallback or strict? Strict is safer.
-            # But during local dev without gateway it might fail. 
-            # We default to 5 if missing, assuming admin or system.
-            limit = 5
-            current_global_usage = 0
-            # For creation without owner_id, we can't check global usage effectively
-        else:
-            # Check for Admin Override
-            is_admin = False
-            if state.credentials_collection is not None:
-                cred = await state.credentials_collection.find_one({"user_id": owner_id})
-                if cred and cred.get("role") == "admin":
-                    is_admin = True
-
-            if is_admin:
-                 pass
-            else:
-                limit = await get_user_feature_limit(owner_id, state)
-                current_global_usage = await calculate_global_feature_usage(owner_id, state, exclude_bot_id=None)
-                
-                new_count = count_enabled_features(payload.features)
-                total_usage = current_global_usage + new_count
-                
-                if total_usage > limit:
-                     raise HTTPException(
-                         status_code=400, 
-                         detail=f"Global feature limit exceeded. You have used {total_usage} features (New: {new_count}, Others: {current_global_usage}), but your limit is {limit}."
-                     )
-
-        # 3. Construct Default Full Configuration
-        default_chat_config = ChatProviderConfig(
-            provider_name=DefaultConfigurations.chat_provider_name,
-            provider_config=ChatProviderSettings()
-        )
-        
-        default_llm_config = LLMProviderConfig(
-            provider_name=DefaultConfigurations.llm_provider_name,
-            provider_config=LLMProviderSettings(
-                model=DefaultConfigurations.llm_model,
-                api_key_source=DefaultConfigurations.llm_api_key_source,
-                temperature=DefaultConfigurations.llm_temperature,
-                reasoning_effort=DefaultConfigurations.llm_reasoning_effort
-            )
-        )
-        
-        full_settings = BotGeneralSettings(
-            user_details=payload.configurations.user_details,
-            chat_provider_config=default_chat_config,
-            llm_provider_config=default_llm_config
-        )
-        
-        full_config = BotConfiguration(
-            bot_id=bot_id,
-            configurations=full_settings,
-            features=payload.features
-        )
-        
-        # 4. Save to DB
-        await state.configurations_collection.insert_one({"config_data": full_config.model_dump()})
-        
-        # 5. Add to Owner's List (NEW: Important for ownership tracking!)
-        if owner_id and state.credentials_collection is not None:
-             await state.credentials_collection.update_one(
-                 {"user_id": owner_id},
-                 {"$addToSet": {"owned_bots": bot_id}}
-             )
-
-        logging.info(f"UI API: Created new configuration for {bot_id} (Owner: {owner_id})")
-        
-        return RegularBotConfiguration(
-            bot_id=bot_id,
-            configurations=payload.configurations,
-            features=payload.features
-        )
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logging.error(f"UI API: Error creating config for {bot_id}: {e}")
-        raise HTTPException(status_code=500, detail=f"Could not create configuration: {e}")
 
 @router.delete("/{bot_id}")
 async def delete_bot_ui(
@@ -439,26 +337,35 @@ async def update_bot_ui_configuration(
                         detail=f"Global feature limit exceeded. You are trying to use {total_usage} features (New: {new_count}, Others: {current_global_usage}), but your limit is {limit}."
                     )
 
-            # Construct Default Full Configuration
-            default_chat_config = ChatProviderConfig(
-                provider_name=DefaultConfigurations.chat_provider_name,
-                provider_config=ChatProviderSettings()
-            )
-
-            default_llm_config = LLMProviderConfig(
-                provider_name=DefaultConfigurations.llm_provider_name,
-                provider_config=LLMProviderSettings(
-                    model=DefaultConfigurations.llm_model,
-                    api_key_source=DefaultConfigurations.llm_api_key_source,
-                    temperature=DefaultConfigurations.llm_temperature,
-                    reasoning_effort=DefaultConfigurations.llm_reasoning_effort
-                )
-            )
-
+            # Construct Default Full Configuration (matching bot_management.py defaults)
             full_settings = BotGeneralSettings(
                 user_details=patch_data.configurations.user_details,
-                chat_provider_config=default_chat_config,
-                llm_provider_config=default_llm_config
+                chat_provider_config=ChatProviderConfig(
+                    provider_name=DefaultConfigurations.chat_provider_name,
+                    provider_config=ChatProviderSettings()
+                ),
+                llm_configs=LLMConfigurations(
+                    high=LLMProviderConfig(
+                        provider_name=DefaultConfigurations.llm_provider_name,
+                        provider_config=LLMProviderSettings(
+                            model=DefaultConfigurations.llm_model_high,
+                            api_key_source=DefaultConfigurations.llm_api_key_source,
+                            temperature=DefaultConfigurations.llm_temperature,
+                            reasoning_effort=DefaultConfigurations.llm_reasoning_effort
+                        )
+                    ),
+                    low=LLMProviderConfig(
+                        provider_name=DefaultConfigurations.llm_provider_name,
+                        provider_config=LLMProviderSettings(
+                            model=DefaultConfigurations.llm_model_low,
+                            api_key_source=DefaultConfigurations.llm_api_key_source,
+                            temperature=DefaultConfigurations.llm_temperature,
+                            reasoning_effort=DefaultConfigurations.llm_reasoning_effort
+                        )
+                    )
+                ),
+                queue_config=QueueConfig(),
+                context_config=ContextConfig()
             )
 
             full_config = BotConfiguration(
