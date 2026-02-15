@@ -173,12 +173,10 @@ function CreateUserModal({ isOpen, onClose, onConfirm }) {
         <div style={modalOverlayStyle} onClick={onClose}>
             <div style={modalContentStyle} onClick={e => e.stopPropagation()}>
                 <h2 style={{ margin: '0 0 20px 0', color: '#fff', fontSize: '1.3rem' }}>
-                    Create New User
+                    Select New Bot ID
                 </h2>
 
-                <label style={{ color: '#aaa', fontSize: '0.9rem', marginBottom: '8px', display: 'block' }}>
-                    Bot ID
-                </label>
+
                 <input
                     type="text"
                     value={botId}

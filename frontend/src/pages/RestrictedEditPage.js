@@ -31,6 +31,24 @@ function RestrictedEditPage() {
     const [cronErrors, setCronErrors] = useState([]);
     const [validationError, setValidationError] = useState(null);
     const [scrollToErrorTrigger, setScrollToErrorTrigger] = useState(0);
+    const [goToFeaturesTrigger, setGoToFeaturesTrigger] = useState(0);
+
+    // Scroll to features section within the .form-content container (not the window)
+    // Double rAF defers until after React's cascading renders (expand parent → mount children → expand children) are painted
+    useEffect(() => {
+        if (goToFeaturesTrigger > 0) {
+            requestAnimationFrame(() => {
+                requestAnimationFrame(() => {
+                    const el = document.getElementById('root_features');
+                    const scrollContainer = document.querySelector('.form-content');
+                    if (el && scrollContainer) {
+                        const targetTop = el.offsetTop - scrollContainer.offsetTop;
+                        scrollContainer.scrollTo({ top: targetTop, behavior: 'smooth' });
+                    }
+                });
+            });
+        }
+    }, [goToFeaturesTrigger]);
 
     const handleScrollToError = () => {
         setScrollToErrorTrigger(prev => prev + 1);
@@ -584,7 +602,7 @@ function RestrictedEditPage() {
                         <span style={{ marginLeft: '5px' }}>{validationError}</span>
                         <button
                             type="button"
-                            onClick={() => document.getElementById('root_features')?.scrollIntoView({ behavior: 'smooth', block: 'start' })}
+                            onClick={() => setGoToFeaturesTrigger(prev => prev + 1)}
                             style={{ marginLeft: '10px', padding: '4px 8px', fontSize: '12px', cursor: 'pointer', textDecoration: 'underline', background: 'none', border: 'none', color: '#991b1b', fontWeight: 'bold' }}
                         >
                             Go to Features
@@ -630,7 +648,8 @@ function RestrictedEditPage() {
                             setFormData,
                             cronErrors,
                             saveAttempt: 0,
-                            scrollToErrorTrigger
+                            scrollToErrorTrigger,
+                            goToFeaturesTrigger
                         }}
                     >
                         <div />

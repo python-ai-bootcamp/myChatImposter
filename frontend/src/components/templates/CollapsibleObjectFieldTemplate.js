@@ -3,12 +3,17 @@ import React, { useState, useEffect, useRef } from 'react';
 export function CollapsibleObjectFieldTemplate(props) {
     const defaultOpen = props.uiSchema?.['ui:options']?.defaultOpen || false;
     const [isOpen, setIsOpen] = useState(defaultOpen);
-    const { cronErrors, saveAttempt, scrollToErrorTrigger } = props.registry?.formContext || props.formContext || {};
+    const { cronErrors, saveAttempt, scrollToErrorTrigger, goToFeaturesTrigger } = props.registry?.formContext || props.formContext || {};
     const prevSaveAttempt = useRef(saveAttempt);
     const prevTrigger = useRef(scrollToErrorTrigger);
+    const prevGoToFeatures = useRef(goToFeaturesTrigger);
 
     // Check if this section contains the periodic_group_tracking field
     const containsTracking = props.properties.some(p => p.name === 'periodic_group_tracking');
+    // Check if this is the Features section (contains feature sub-sections)
+    const isFeaturesSection = props.properties.some(p =>
+        p.name === 'automatic_bot_reply' || p.name === 'periodic_group_tracking' || p.name === 'kid_phone_safety_tracking'
+    );
 
     useEffect(() => {
         // Auto-expand when saveAttempt increments OR trigger changes and there are cron errors
@@ -23,6 +28,16 @@ export function CollapsibleObjectFieldTemplate(props) {
             prevTrigger.current = scrollToErrorTrigger;
         }
     }, [saveAttempt, scrollToErrorTrigger, containsTracking, cronErrors]);
+
+    // Auto-expand when "Go to Features" is clicked
+    useEffect(() => {
+        if (goToFeaturesTrigger !== prevGoToFeatures.current) {
+            if (isFeaturesSection) {
+                setIsOpen(true);
+            }
+            prevGoToFeatures.current = goToFeaturesTrigger;
+        }
+    }, [goToFeaturesTrigger, isFeaturesSection]);
 
     // Dark glassmorphism container style
     const containerStyle = {
@@ -44,7 +59,7 @@ export function CollapsibleObjectFieldTemplate(props) {
     };
 
     return (
-        <div style={containerStyle}>
+        <div id={props.idSchema?.$id} style={containerStyle}>
             <h3 style={titleStyle} onClick={() => setIsOpen(!isOpen)}>
                 {props.title} {isOpen ? '[-]' : '[+]'}
             </h3>

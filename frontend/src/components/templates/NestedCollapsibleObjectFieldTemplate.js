@@ -2,17 +2,36 @@ import React, { useState, useEffect, useRef } from 'react';
 
 // Nested collapsible object template for sub-sections within main sections
 export function NestedCollapsibleObjectFieldTemplate(props) {
-    const { cronErrors, saveAttempt, scrollToErrorTrigger } = props.registry?.formContext || props.formContext || {};
+    const { cronErrors, saveAttempt, scrollToErrorTrigger, goToFeaturesTrigger } = props.registry?.formContext || props.formContext || {};
     const prevSaveAttempt = useRef(saveAttempt);
     const prevTrigger = useRef(scrollToErrorTrigger);
+    const prevGoToFeatures = useRef(goToFeaturesTrigger);
 
     // Check if this section contains tracked_groups field (for periodic_group_tracking feature)
     const containsTrackedGroups = props.properties.some(p => p.name === 'tracked_groups');
+    // Check if this is a feature sub-section (has an 'enabled' property)
+    const isFeatureSubSection = props.properties.some(p => p.name === 'enabled');
+    // Check if this feature is actually enabled (ticked)
+    const isFeatureEnabled = isFeatureSubSection && props.formData?.enabled === true;
+
+    // Initialize highlight at mount if trigger is active and feature is enabled
+    const [highlightEnabled, setHighlightEnabled] = useState(isFeatureEnabled && goToFeaturesTrigger > 0);
+
+    // Auto-clear highlight after animation completes
+    useEffect(() => {
+        if (highlightEnabled) {
+            const timer = setTimeout(() => setHighlightEnabled(false), 2500);
+            return () => clearTimeout(timer);
+        }
+    }, [highlightEnabled]);
 
     // Force open on mount if we have errors and the trigger was recently fired (simplified: just if we have errors)
     // We assume if scrollToErrorTrigger > 0, the user wants us to find errors.
+    // Also open immediately if goToFeaturesTrigger > 0 (so sub-sections expand simultaneously with parent)
     const defaultOpen = props.uiSchema?.['ui:options']?.defaultOpen || false;
-    const shouldStartOpen = defaultOpen || (containsTrackedGroups && cronErrors && cronErrors.some(e => e) && scrollToErrorTrigger > 0);
+    const shouldStartOpen = defaultOpen
+        || (containsTrackedGroups && cronErrors && cronErrors.some(e => e) && scrollToErrorTrigger > 0)
+        || (isFeatureSubSection && goToFeaturesTrigger > 0);
     const [isOpen, setIsOpen] = useState(shouldStartOpen);
 
     useEffect(() => {
@@ -28,6 +47,19 @@ export function NestedCollapsibleObjectFieldTemplate(props) {
             prevTrigger.current = scrollToErrorTrigger;
         }
     }, [saveAttempt, scrollToErrorTrigger, containsTrackedGroups, cronErrors]);
+
+    // Auto-expand and highlight when "Go to Features" is clicked (for already-mounted components)
+    useEffect(() => {
+        if (goToFeaturesTrigger !== prevGoToFeatures.current) {
+            if (isFeatureSubSection) {
+                setIsOpen(true);
+                if (isFeatureEnabled) {
+                    setHighlightEnabled(true);
+                }
+            }
+            prevGoToFeatures.current = goToFeaturesTrigger;
+        }
+    }, [goToFeaturesTrigger, isFeatureSubSection, isFeatureEnabled]);
 
     // Dark glassmorphism nested container style
     const containerStyle = {
@@ -50,11 +82,28 @@ export function NestedCollapsibleObjectFieldTemplate(props) {
 
     return (
         <div style={containerStyle}>
+            <style>{`
+                @keyframes featureHighlightPulse {
+                    0% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7); }
+                    40% { box-shadow: 0 0 0 6px rgba(239, 68, 68, 0.4); }
+                    80% { box-shadow: 0 0 0 10px rgba(239, 68, 68, 0); }
+                    100% { box-shadow: 0 0 0 0 rgba(239, 68, 68, 0); }
+                }
+                .feature-highlight-enabled .inline-checkbox-field {
+                    animation: featureHighlightPulse 0.8s ease-out 3;
+                    border-radius: 6px;
+                    outline: 2px solid #ef4444;
+                    outline-offset: 2px;
+                }
+            `}</style>
             <h4 style={titleStyle} onClick={() => setIsOpen(!isOpen)}>
                 {props.title} {isOpen ? '[-]' : '[+]'}
             </h4>
             {isOpen && (
-                <div style={{ marginTop: '0.75rem', color: '#e2e8f0' }}>
+                <div
+                    style={{ marginTop: '0.75rem', color: '#e2e8f0' }}
+                    className={highlightEnabled ? 'feature-highlight-enabled' : ''}
+                >
                     {props.description}
                     {props.properties.map(element => (
                         <React.Fragment key={element.content.key}>
