@@ -1,7 +1,9 @@
-import React from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import './widgets/CountrySelectWidget.css'; // Re-use the existing CSS for consistency
 
 /**
  * A generic filterable dropdown select component.
+ * Now styled to match CountrySelectWidget.
  * 
  * Props:
  * - value: The currently selected value.
@@ -9,7 +11,7 @@ import React from 'react';
  * - options: Array of { value, label, secondary (optional) }.
  * - placeholder: Placeholder text when no value is selected.
  * - loading: Boolean to indicate if options are loading.
- * - width: Optional width (default 250px).
+ * - darkMode: Boolean for dark mode styling.
  */
 function FilterableSelect({
     value,
@@ -17,34 +19,33 @@ function FilterableSelect({
     options = [],
     placeholder = 'Select...',
     loading = false,
-    width = '250px'
+    darkMode = false,
+    error // New error prop
 }) {
-    const [isOpen, setIsOpen] = React.useState(false);
-    const [filter, setFilter] = React.useState('');
-    const containerRef = React.useRef(null);
+    const [isOpen, setIsOpen] = useState(false);
+    const [searchTerm, setSearchTerm] = useState('');
+    const containerRef = useRef(null);
 
     // Filter options based on input
-    const filteredOptions = React.useMemo(() => {
-        if (!filter) return options;
-        const lowerFilter = filter.toLowerCase();
+    const filteredOptions = useMemo(() => {
+        if (!searchTerm) return options;
+        const lowerFilter = searchTerm.toLowerCase();
         return options.filter(opt =>
             opt.label.toLowerCase().includes(lowerFilter) ||
             opt.value.toLowerCase().includes(lowerFilter) ||
             (opt.secondary && opt.secondary.toLowerCase().includes(lowerFilter))
         );
-    }, [filter, options]);
+    }, [searchTerm, options]);
 
-    // Get display text for current value
+    // Find current option
     const currentOption = options.find(opt => opt.value === value);
-    const displayText = currentOption
-        ? (currentOption.secondary ? `${currentOption.label} (${currentOption.secondary})` : currentOption.label)
-        : loading ? 'Loading...' : placeholder;
 
     // Close dropdown when clicking outside
-    React.useEffect(() => {
+    useEffect(() => {
         const handleClickOutside = (event) => {
             if (containerRef.current && !containerRef.current.contains(event.target)) {
                 setIsOpen(false);
+                setSearchTerm(''); // Reset search on close
             }
         };
         document.addEventListener('mousedown', handleClickOutside);
@@ -54,88 +55,87 @@ function FilterableSelect({
     const handleSelect = (optValue) => {
         onChange(optValue);
         setIsOpen(false);
-        setFilter('');
+        setSearchTerm('');
     };
 
+    const handleClear = (e) => {
+        e.stopPropagation();
+        onChange('');
+        setSearchTerm('');
+    };
+
+    const handleInputClick = () => {
+        if (!loading) {
+            setIsOpen(true);
+        }
+    };
+
+    const handleKeyDown = (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (filteredOptions.length > 0) {
+                handleSelect(filteredOptions[0].value);
+            }
+        } else if (e.key === 'Escape') {
+            setIsOpen(false);
+            setSearchTerm('');
+        }
+    };
+
+    const containerClass = `country-select-container ${darkMode ? 'dark' : ''} ${isOpen ? 'open' : ''} ${error ? 'has-error' : ''}`;
+
     return (
-        <div ref={containerRef} style={{ position: 'relative', display: 'inline-block', width }}>
-            <div
-                onClick={() => !loading && setIsOpen(!isOpen)}
-                style={{
-                    padding: '4px 8px',
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    borderRadius: '3px',
-                    cursor: loading ? 'wait' : 'pointer',
-                    backgroundColor: 'rgba(15, 23, 42, 0.6)',
-                    color: '#e2e8f0',
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
-                }}
-            >
-                <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                    {displayText}
-                </span>
-                <span style={{ marginLeft: '8px' }}>{isOpen ? '▲' : '▼'}</span>
+        <div ref={containerRef} className={containerClass} style={{ width: '100%' }} title={error || ''}>
+            <div className="country-select-control" onClick={handleInputClick}>
+                <div className="country-select-value">
+                    {isOpen ? (
+                        <input
+                            type="text"
+                            className="country-select-input"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            onKeyDown={handleKeyDown}
+                            placeholder={currentOption ? currentOption.label : placeholder}
+                            autoFocus
+                        />
+                    ) : (
+                        <span className="country-select-display">
+                            {loading ? 'Loading...' : (currentOption ? `${currentOption.label} ${currentOption.secondary ? `(${currentOption.secondary})` : ''}` : placeholder)}
+                        </span>
+                    )}
+                </div>
+
+                {/* Clear button */}
+                {value && !loading && (
+                    <button type="button" className="country-select-clear" onClick={handleClear}>
+                        ×
+                    </button>
+                )}
+
+                {/* Dropdown arrow */}
+                <div className="country-select-arrow">
+                    <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+                        <path d="M2 4l4 4 4-4" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" />
+                    </svg>
+                </div>
             </div>
 
             {isOpen && (
-                <div style={{
-                    position: 'absolute',
-                    top: '100%',
-                    left: 0,
-                    right: 0,
-                    border: '1px solid rgba(255, 255, 255, 0.2)',
-                    borderRadius: '3px',
-                    backgroundColor: '#1e293b',
-                    zIndex: 1000,
-                    boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.5)',
-                    maxHeight: '250px',
-                    display: 'flex',
-                    flexDirection: 'column'
-                }}>
-                    <input
-                        type="text"
-                        placeholder="Filter..."
-                        value={filter}
-                        onChange={(e) => setFilter(e.target.value)}
-                        onClick={(e) => e.stopPropagation()}
-                        style={{
-                            padding: '6px 8px',
-                            border: 'none',
-                            borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-                            outline: 'none',
-                            width: '100%',
-                            boxSizing: 'border-box',
-                            backgroundColor: 'rgba(15, 23, 42, 0.6)',
-                            color: '#e2e8f0'
-                        }}
-                        autoFocus
-                    />
-                    <div style={{ overflowY: 'auto', maxHeight: '200px' }}>
-                        {filteredOptions.map(opt => (
+                <div className="country-select-menu">
+                    {filteredOptions.length === 0 ? (
+                        <div className="country-select-no-options">No matches found</div>
+                    ) : (
+                        filteredOptions.map(opt => (
                             <div
                                 key={opt.value}
+                                className={`country-select-option ${opt.value === value ? 'selected' : ''}`}
                                 onClick={() => handleSelect(opt.value)}
-                                style={{
-                                    padding: '6px 8px',
-                                    cursor: 'pointer',
-                                    backgroundColor: opt.value === value ? 'rgba(99, 102, 241, 0.3)' : 'transparent',
-                                    color: '#e2e8f0',
-                                    display: 'flex',
-                                    justifyContent: 'space-between'
-                                }}
-                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = '#334155'}
-                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = opt.value === value ? 'rgba(99, 102, 241, 0.3)' : 'transparent'}
                             >
-                                <span>{opt.label}</span>
-                                {opt.secondary && <span style={{ color: '#94a3b8', fontSize: '0.9em' }}>{opt.secondary}</span>}
+                                <span className="country-name">{opt.label}</span>
+                                {opt.secondary && <span style={{ opacity: 0.6, fontSize: '0.85em', marginLeft: 'auto' }}>{opt.secondary}</span>}
                             </div>
-                        ))}
-                        {filteredOptions.length === 0 && (
-                            <div style={{ padding: '8px', color: '#94a3b8', textAlign: 'center' }}>No matches</div>
-                        )}
-                    </div>
+                        ))
+                    )}
                 </div>
             )}
         </div>

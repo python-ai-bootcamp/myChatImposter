@@ -1,12 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import CountrySelectWidget from '../widgets/CountrySelectWidget';
-import PhoneInputWidget from '../widgets/PhoneInputWidget';
+import CountrySelectWidget from '../components/widgets/CountrySelectWidget';
+import PhoneInputWidget from '../components/widgets/PhoneInputWidget';
+import { LanguageSelectWidget } from '../components/widgets/LanguageSelectWidget';
 
 const UserSelfEditPage = () => {
     const [formData, setFormData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
     const [userId, setUserId] = useState(null);
+    const [validationErrors, setValidationErrors] = useState({});
 
     useEffect(() => {
         const storedUserId = localStorage.getItem('user_id');
@@ -18,6 +20,8 @@ const UserSelfEditPage = () => {
         fetch(`/api/external/users/${storedUserId}`)
             .then(res => res.json())
             .then(data => {
+                // Ensure defaults
+                if (!data.language) data.language = 'en';
                 setFormData(data);
                 setLoading(false);
             })
@@ -31,6 +35,10 @@ const UserSelfEditPage = () => {
         const { name, value } = e.target;
         if (name === 'user_id' || name === 'role') return; // Prevent editing these
         setFormData(prev => ({ ...prev, [name]: value }));
+
+        if (validationErrors[name]) {
+            setValidationErrors(prev => ({ ...prev, [name]: null }));
+        }
     };
 
     // Prevent Enter key from submitting the form in text inputs
@@ -44,15 +52,37 @@ const UserSelfEditPage = () => {
         setFormData(prev => ({ ...prev, country_value: value }));
     };
 
+    const handleLanguageChange = (value) => {
+        setFormData(prev => ({ ...prev, language: value }));
+        if (validationErrors.language) {
+            setValidationErrors(prev => ({ ...prev, language: null }));
+        }
+    };
+
+    const validate = () => {
+        const errors = {};
+        const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+
+        if (formData.phone_number && !phoneRegex.test(formData.phone_number)) {
+            errors.phone_number = "Invalid phone number format. Please use E.164 (e.g., +1234567890).";
+        }
+
+        if (!formData.gov_id || formData.gov_id.trim() === '') {
+            errors.gov_id = "Government ID is required";
+        }
+
+        if (!formData.language) {
+            errors.language = "Language is required";
+        }
+
+        setValidationErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
 
-        // Validation
-        const phoneRegex = /^\+?[1-9]\d{1,14}$/;
-        if (formData.phone_number && !phoneRegex.test(formData.phone_number)) {
-            alert("Invalid phone number format. Please use E.164 format (e.g., +1234567890).");
-            return;
-        }
+        if (!validate()) return;
 
         setSaving(true);
 
@@ -306,20 +336,55 @@ const UserSelfEditPage = () => {
                     </div>
 
                     <div className="form-group">
+                        <label>Government ID *</label>
+                        <div style={{ width: '100%' }}>
+                            <input
+                                type="text"
+                                name="gov_id"
+                                value={formData.gov_id || ''}
+                                onChange={handleChange}
+                                onKeyDown={handleInputKeyDown}
+                                placeholder="e.g. Passport or National ID"
+                                style={{
+                                    borderColor: validationErrors.gov_id ? '#ef4444' : 'rgba(255, 255, 255, 0.1)'
+                                }}
+                            />
+                            {validationErrors.gov_id && <span style={{ color: '#ef4444', fontSize: '0.85rem', display: 'block', marginTop: '4px' }}>{validationErrors.gov_id}</span>}
+                        </div>
+                    </div>
+
+                    <div className="form-group">
                         <label>Phone Number</label>
-                        <PhoneInputWidget
-                            value={formData.phone_number}
-                            onChange={(val) => setFormData(prev => ({ ...prev, phone_number: val }))}
-                        />
+                        <div style={{ width: '100%' }}>
+                            <PhoneInputWidget
+                                value={formData.phone_number}
+                                onChange={(val) => setFormData(prev => ({ ...prev, phone_number: val }))}
+                            />
+                            {validationErrors.phone_number && <span style={{ color: '#ef4444', fontSize: '0.85rem', display: 'block', marginTop: '4px' }}>{validationErrors.phone_number}</span>}
+                        </div>
                     </div>
 
                     <div className="form-group">
                         <label>Country</label>
-                        <CountrySelectWidget
-                            value={formData.country_value}
-                            onChange={handleCountryChange}
-                            darkMode={true}
-                        />
+                        <div style={{ width: '100%' }}>
+                            <CountrySelectWidget
+                                value={formData.country_value}
+                                onChange={handleCountryChange}
+                                darkMode={true}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="form-group">
+                        <label>Language *</label>
+                        <div style={{ width: '100%' }}>
+                            <LanguageSelectWidget
+                                value={formData.language}
+                                onChange={handleLanguageChange}
+                                darkMode={true}
+                            />
+                            {validationErrors.language && <span style={{ color: '#ef4444', fontSize: '0.85rem', display: 'block', marginTop: '4px' }}>{validationErrors.language}</span>}
+                        </div>
                     </div>
 
                     <button

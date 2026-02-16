@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { RobotIcon, ShieldIcon, GroupIcon } from '../components/FeatureIcons';
 import GenericTable from '../components/GenericTable';
 import LinkUserModal from '../components/LinkUserModal';
-import CreateUserModal from '../components/CreateUserModal';
+import CreateBotModal from '../components/CreateBotModal';
 import { isActionEnabled } from '../utils/actionHelpers';
 
 const HomePage = ({ enableFiltering, showOwnerColumn }) => {
@@ -499,7 +499,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
           onClose={closeModal}
         />
 
-        <CreateUserModal
+        <CreateBotModal
           isOpen={isCreateModalOpen}
           onClose={() => setIsCreateModalOpen(false)}
           onConfirm={handleCreateConfirm}

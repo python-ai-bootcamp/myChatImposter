@@ -19,13 +19,13 @@ class UserCreateRequest(BaseModel):
     user_id: str = Field(..., min_length=1, max_length=30, pattern=r"^[a-zA-Z0-9_-]+$")
     password: str = Field(..., min_length=8)
     role: str = Field(..., pattern="^(admin|user)$")
-    first_name: str = Field(default="Unknown")
-    last_name: str = Field(default="User")
-    email: Optional[EmailStr] = None
-    phone_number: Optional[str] = None
-    gov_id: Optional[str] = None
-    country_value: str = "US"
-    language: str = "en"
+    first_name: str = Field(..., min_length=1)
+    last_name: str = Field(..., min_length=1)
+    email: EmailStr = Field(...)
+    phone_number: str = Field(..., min_length=3)
+    gov_id: str = Field(..., min_length=1, description="Government ID (Required, can be duplicate)")
+    country_value: str = Field(..., min_length=2)
+    language: str = Field("en", min_length=2)
 
 class UserUpdateRequest(BaseModel):
     # All fields optional for PATCH/PUT (we handle partials manually if needed, 
@@ -36,7 +36,7 @@ class UserUpdateRequest(BaseModel):
     last_name: Optional[str] = None
     email: Optional[EmailStr] = None
     phone_number: Optional[str] = None
-    gov_id: Optional[str] = None
+    gov_id: Optional[str] = Field(None, min_length=1, description="Government ID (Cannot be empty if provided)")
     country_value: Optional[str] = None
     language: Optional[str] = None
     role: Optional[str] = None # Admin only
@@ -343,7 +343,9 @@ async def validate_user_id(
     Check if user_id is available.
     """
     existing = await state.credentials_collection.find_one({"user_id": value})
-    return {"available": existing is None}
+    if existing:
+        return {"valid": False, "error_message": "User ID already exists."}
+    return {"valid": True, "error_message": None}
 
 @router.get("/validate/email")
 async def validate_email(

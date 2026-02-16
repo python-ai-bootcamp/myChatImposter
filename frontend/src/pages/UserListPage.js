@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import GenericTable from '../components/GenericTable';
+import CreateUserModal from '../components/CreateUserModal';
 
 const UserListPage = ({ enableFiltering = true }) => {
     const [users, setUsers] = useState([]);
@@ -8,6 +9,7 @@ const UserListPage = ({ enableFiltering = true }) => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [isCompact, setIsCompact] = useState(false);
+    const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
     const navigate = useNavigate();
 
     useEffect(() => {
@@ -70,8 +72,17 @@ const UserListPage = ({ enableFiltering = true }) => {
         }
     };
 
-    const handleAdd = () => {
-        navigate('/admin/users/create');
+    const handleAddClick = () => {
+        setIsCreateModalOpen(true);
+    };
+
+    const handleCreateModalConfirm = (newUserId) => {
+        setIsCreateModalOpen(false);
+        navigate('/admin/users/create', { state: { user_id: newUserId } });
+    };
+
+    const handleCreateModalClose = () => {
+        setIsCreateModalOpen(false);
     };
 
     const handleResetPassword = () => {
@@ -268,7 +279,7 @@ const UserListPage = ({ enableFiltering = true }) => {
 
                 <div style={actionButtonsContainerStyle}>
                     <button
-                        onClick={handleAdd}
+                        onClick={handleAddClick}
                         style={getButtonStyle('success', false)}
                     >
                         Create User
@@ -299,6 +310,12 @@ const UserListPage = ({ enableFiltering = true }) => {
                     </button>
                 </div>
             </div>
+
+            <CreateUserModal
+                isOpen={isCreateModalOpen}
+                onClose={handleCreateModalClose}
+                onConfirm={handleCreateModalConfirm}
+            />
         </div>
     );
 };

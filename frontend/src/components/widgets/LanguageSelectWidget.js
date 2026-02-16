@@ -39,6 +39,8 @@ export function LanguageSelectWidget(props) {
             options={options}
             placeholder="Select language..."
             loading={loading}
+            darkMode={props.darkMode}
+            error={props.error} // Pass error down
         />
     );
 }

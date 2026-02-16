@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import './CountrySelectWidget.css';
 
-const CountrySelectWidget = ({ value, onChange, disabled, darkMode }) => {
+const CountrySelectWidget = ({ value, onChange, disabled, darkMode, error }) => {
     const [countries, setCountries] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -68,10 +68,10 @@ const CountrySelectWidget = ({ value, onChange, disabled, darkMode }) => {
         }
     };
 
-    const containerClass = `country-select-container ${darkMode ? 'dark' : ''} ${isOpen ? 'open' : ''}`;
+    const containerClass = `country-select-container ${darkMode ? 'dark' : ''} ${isOpen ? 'open' : ''} ${error ? 'has-error' : ''}`;
 
     return (
-        <div className={containerClass}>
+        <div className={containerClass} title={error || ''}>
             <div className="country-select-control" onClick={() => !disabled && setIsOpen(!isOpen)}>
                 {/* Display selected value or search input */}
                 <div className="country-select-value">

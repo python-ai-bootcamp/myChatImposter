@@ -72,6 +72,17 @@
     -webkit-text-fill-color: #f8fafc !important;
 }
 
+/* Fix for white background on autofill */
+.profile-page .PhoneInputInput:-webkit-autofill,
+.profile-page .PhoneInputInput:-webkit-autofill:hover,
+.profile-page .PhoneInputInput:-webkit-autofill:focus,
+.profile-page .PhoneInputInput:-webkit-autofill:active {
+    -webkit-box-shadow: 0 0 0 30px #1e293b inset !important;
+    -webkit-text-fill-color: #f8fafc !important;
+    caret-color: #f8fafc !important;
+    transition: background-color 5000s ease-in-out 0s;
+}
+
 /* Country selector button */
 .profile-page .PhoneInputCountry {
     background: rgba(15, 23, 42, 0.6) !important;
@@ -174,4 +185,13 @@
 /* Focus state for the whole component */
 .profile-page .PhoneInput--focus .PhoneInputCountry {
     border-color: #818cf8 !important;
+}
+
+/* Error state */
+.custom-phone-input.has-error .PhoneInputInput {
+    border-color: #ef4444 !important;
+}
+
+.custom-phone-input.has-error .PhoneInputCountry {
+    border-color: #ef4444 !important;
 }

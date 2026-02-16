@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import CountrySelectWidget from '../widgets/CountrySelectWidget';
-import PhoneInputWidget from '../widgets/PhoneInputWidget';
+import CountrySelectWidget from '../components/widgets/CountrySelectWidget';
+import PhoneInputWidget from '../components/widgets/PhoneInputWidget';
+import { LanguageSelectWidget } from '../components/widgets/LanguageSelectWidget';
 
 const AdminUserEditPage = () => {
     const { userId } = useParams();
@@ -10,8 +11,7 @@ const AdminUserEditPage = () => {
     const [formData, setFormData] = useState(null);
     const [loading, setLoading] = useState(true);
     const [saving, setSaving] = useState(false);
-
-
+    const [validationErrors, setValidationErrors] = useState({});
 
     const fetchUser = useCallback(() => {
         setLoading(true);
@@ -21,6 +21,8 @@ const AdminUserEditPage = () => {
                 return res.json();
             })
             .then(data => {
+                // Ensure defaults
+                if (!data.language) data.language = 'en';
                 setFormData(data);
                 setLoading(false);
             })
@@ -37,14 +39,40 @@ const AdminUserEditPage = () => {
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
+
+        if (validationErrors[name]) {
+            setValidationErrors(prev => ({ ...prev, [name]: null }));
+        }
     };
 
     const handleCountryChange = (value) => {
         setFormData(prev => ({ ...prev, country_value: value }));
     };
 
+    const handleLanguageChange = (value) => {
+        setFormData(prev => ({ ...prev, language: value }));
+        if (validationErrors.language) {
+            setValidationErrors(prev => ({ ...prev, language: null }));
+        }
+    };
+
+    const validate = () => {
+        const errors = {};
+        if (!formData.gov_id || formData.gov_id.trim() === '') {
+            errors.gov_id = "Government ID is required";
+        }
+        if (!formData.language) {
+            errors.language = "Language is required";
+        }
+        setValidationErrors(errors);
+        return Object.keys(errors).length === 0;
+    };
+
     const handleSubmit = async (e) => {
         e.preventDefault();
+
+        if (!validate()) return;
+
         setSaving(true);
 
         try {
@@ -68,8 +96,6 @@ const AdminUserEditPage = () => {
         }
     };
 
-
-
     const pageBackground = { background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)', minHeight: '100vh', width: '100vw' };
 
     if (loading) return <div style={{ ...pageBackground, color: '#e2e8f0', textAlign: 'center', paddingTop: '50px' }}>Loading...</div>;
@@ -80,7 +106,7 @@ const AdminUserEditPage = () => {
             <style>{`
                 .profile-page {
                     height: calc(100vh - 60px);
-                    width: 100vw;
+                    width: 100%;
                     background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
                     color: #e2e8f0;
                     font-family: 'Inter', sans-serif;
@@ -340,6 +366,23 @@ const AdminUserEditPage = () => {
                         </div>
 
                         <div className="form-group">
+                            <label>Government ID *</label>
+                            <div style={{ width: '100%' }}>
+                                <input
+                                    type="text"
+                                    name="gov_id"
+                                    value={formData.gov_id || ''}
+                                    onChange={handleChange}
+                                    placeholder="e.g. Passport or National ID"
+                                    style={{
+                                        borderColor: validationErrors.gov_id ? '#ef4444' : 'rgba(255, 255, 255, 0.1)'
+                                    }}
+                                />
+                                {validationErrors.gov_id && <span style={{ color: '#ef4444', fontSize: '0.85rem', display: 'block', marginTop: '4px' }}>{validationErrors.gov_id}</span>}
+                            </div>
+                        </div>
+
+                        <div className="form-group">
                             <label>Phone Number</label>
                             <div style={{ width: '100%' }}>
                                 <PhoneInputWidget
@@ -357,6 +400,18 @@ const AdminUserEditPage = () => {
                                     onChange={handleCountryChange}
                                     darkMode={true}
                                 />
+                            </div>
+                        </div>
+
+                        <div className="form-group">
+                            <label>Language *</label>
+                            <div style={{ width: '100%' }}>
+                                <LanguageSelectWidget
+                                    value={formData.language}
+                                    onChange={handleLanguageChange}
+                                    darkMode={true}
+                                />
+                                {validationErrors.language && <span style={{ color: '#ef4444', fontSize: '0.85rem', display: 'block', marginTop: '4px' }}>{validationErrors.language}</span>}
                             </div>
                         </div>
 

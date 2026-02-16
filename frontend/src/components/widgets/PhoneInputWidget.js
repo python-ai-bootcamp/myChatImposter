@@ -4,7 +4,7 @@ import flags from 'react-phone-number-input/flags';
 import 'react-phone-number-input/style.css';
 import './PhoneInputWidget.css'; // Custom styles to match theme
 
-const PhoneInputWidget = ({ value, onChange, disabled, onKeyDown }) => {
+const PhoneInputWidget = ({ value, onChange, disabled, onKeyDown, error }) => {
     // Prevent Enter from submitting the form
     const handleKeyDown = (e) => {
         if (e.key === 'Enter') {
@@ -17,16 +17,18 @@ const PhoneInputWidget = ({ value, onChange, disabled, onKeyDown }) => {
     };
 
     return (
-        <PhoneInput
-            international
-            defaultCountry="IL"
-            value={value}
-            onChange={onChange}
-            disabled={disabled}
-            flags={flags}
-            className="custom-phone-input"
-            onKeyDown={handleKeyDown}
-        />
+        <div title={error || ''} style={{ width: '100%' }}>
+            <PhoneInput
+                international
+                defaultCountry="IL"
+                value={value}
+                onChange={onChange}
+                disabled={disabled}
+                flags={flags}
+                className={`custom-phone-input ${error ? 'has-error' : ''}`}
+                onKeyDown={handleKeyDown}
+            />
+        </div>
     );
 };
 
