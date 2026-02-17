@@ -16,34 +16,38 @@ import UserSelfEditPage from './pages/UserSelfEditPage';
 import LandingPage from './pages/LandingPage';
 import ProtectedRoute from './components/ProtectedRoute';
 
+import { ThemeProvider } from './contexts/ThemeContext';
+
 function App() {
   return (
-    <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
-      <div>
-        <GlobalHeader />
-        <Routes>
-          {/* Public Routes */}
-          <Route path="/" element={<LandingPage />} />
-          <Route path="/login" element={<LoginPage />} />
+    <ThemeProvider>
+      <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
+        <div>
+          <GlobalHeader />
+          <Routes>
+            {/* Public Routes */}
+            <Route path="/" element={<LandingPage />} />
+            <Route path="/login" element={<LoginPage />} />
 
-          {/* Protected Routes */}
-          <Route element={<ProtectedRoute />}>
-            <Route path="/admin/dashboard" element={<HomePage enableFiltering={true} showOwnerColumn={true} />} />
-            <Route path="/operator/dashboard" element={<HomePage enableFiltering={false} showOwnerColumn={false} />} />
+            {/* Protected Routes */}
+            <Route element={<ProtectedRoute />}>
+              <Route path="/admin/dashboard" element={<HomePage enableFiltering={true} showOwnerColumn={true} />} />
+              <Route path="/operator/dashboard" element={<HomePage enableFiltering={false} showOwnerColumn={false} />} />
 
-            {/* Bot Edit Routes */}
-            <Route path="/admin/edit/:botId" element={<EditPage />} />
-            <Route path="/operator/bot/:botId" element={<RestrictedEditPage />} />
+              {/* Bot Edit Routes */}
+              <Route path="/admin/edit/:botId" element={<EditPage />} />
+              <Route path="/operator/bot/:botId" element={<RestrictedEditPage />} />
 
-            {/* User Management Routes */}
-            <Route path="/admin/users" element={<UserListPage />} />
-            <Route path="/admin/users/create" element={<CreateUserPage />} />
-            <Route path="/admin/users/edit/:userId" element={<AdminUserEditPage />} />
-            <Route path="/operator/profile" element={<UserSelfEditPage />} />
-          </Route>
-        </Routes>
-      </div>
-    </Router>
+              {/* User Management Routes */}
+              <Route path="/admin/users" element={<UserListPage />} />
+              <Route path="/admin/users/create" element={<CreateUserPage />} />
+              <Route path="/admin/users/edit/:userId" element={<AdminUserEditPage />} />
+              <Route path="/operator/profile" element={<UserSelfEditPage />} />
+            </Route>
+          </Routes>
+        </div>
+      </Router>
+    </ThemeProvider>
   );
 }
 

@@ -702,7 +702,8 @@ function EditPage() {
                 setFormData,
                 cronErrors,
                 saveAttempt,
-                scrollToErrorTrigger
+                scrollToErrorTrigger,
+                darkMode: true
               }}
             >
               <div />

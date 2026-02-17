@@ -39,15 +39,6 @@ const CreateUserPage = () => {
         }
     }, [predefinedUserId, navigate]);
 
-    // Debounced validation
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            validate();
-        }, 500);
-
-        return () => clearTimeout(timer);
-    }, [formData]);
-
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
@@ -56,6 +47,7 @@ const CreateUserPage = () => {
             setValidationErrors(prev => ({ ...prev, [name]: null }));
         }
     };
+
 
     const handleCountryChange = (value) => {
         setFormData(prev => ({ ...prev, country_value: value }));
@@ -90,7 +82,7 @@ const CreateUserPage = () => {
             errors.password = "Password must contain at least one lowercase letter";
         } else if (!/\d/.test(formData.password)) {
             errors.password = "Password must contain at least one digit";
-        } else if (!/[!@#$%^&*()_+\-=\[\]{};':"\\|,.<>\/?`~]/.test(formData.password)) {
+        } else if (!/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?`~]/.test(formData.password)) {
             errors.password = "Password must contain at least one special character/symbol";
         }
         if (!formData.gov_id || formData.gov_id.trim() === '') errors.gov_id = "Government ID is required";
@@ -100,6 +92,15 @@ const CreateUserPage = () => {
         setValidationErrors(errors);
         return Object.keys(errors).length === 0;
     }, [formData]);
+
+    // Debounced validation
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            validate();
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [formData, validate]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();

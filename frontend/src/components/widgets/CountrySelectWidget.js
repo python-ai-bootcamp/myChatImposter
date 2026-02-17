@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
+import { useTheme } from '../../contexts/ThemeContext';
 import './CountrySelectWidget.css';
 
-const CountrySelectWidget = ({ value, onChange, disabled, darkMode, error }) => {
+const CountrySelectWidget = ({ value, onChange, disabled, error, ...props }) => {
     const [countries, setCountries] = useState([]);
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
@@ -68,7 +69,9 @@ const CountrySelectWidget = ({ value, onChange, disabled, darkMode, error }) => 
         }
     };
 
-    const containerClass = `country-select-container ${darkMode ? 'dark' : ''} ${isOpen ? 'open' : ''} ${error ? 'has-error' : ''}`;
+    const { isDarkMode } = useTheme();
+
+    const containerClass = `country-select-container ${props.darkMode || isDarkMode ? 'dark' : ''} ${isOpen ? 'open' : ''} ${error ? 'has-error' : ''}`;
 
     return (
         <div className={containerClass} title={error || ''}>

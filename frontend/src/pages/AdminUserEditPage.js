@@ -36,17 +36,6 @@ const AdminUserEditPage = () => {
         fetchUser();
     }, [fetchUser]);
 
-    // Debounced validation
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            if (formData) {
-                validate();
-            }
-        }, 500);
-
-        return () => clearTimeout(timer);
-    }, [formData]);
-
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
@@ -99,6 +88,17 @@ const AdminUserEditPage = () => {
         setValidationErrors(errors);
         return Object.keys(errors).length === 0;
     }, [formData]);
+
+    // Debounced validation
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (formData) {
+                validate();
+            }
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [formData, validate]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -429,7 +429,6 @@ const AdminUserEditPage = () => {
                                     type="text"
                                     name="gov_id"
                                     value={formData.gov_id || ''}
-                                    onChange={handleChange}
                                     onChange={handleChange}
                                     placeholder="e.g. Passport or National ID"
                                     style={{

@@ -1,5 +1,6 @@
 import React from 'react';
 import FilterableSelect from '../FilterableSelect';
+import { useTheme } from '../../contexts/ThemeContext';
 
 
 /**
@@ -8,6 +9,8 @@ import FilterableSelect from '../FilterableSelect';
 export function LanguageSelectWidget(props) {
     const [languages, setLanguages] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
+
+    const { isDarkMode } = useTheme();
 
     // Fetch languages from API on mount
     React.useEffect(() => {
@@ -39,7 +42,7 @@ export function LanguageSelectWidget(props) {
             options={options}
             placeholder="Select language..."
             loading={loading}
-            darkMode={props.darkMode}
+            darkMode={props.formContext?.darkMode || props.darkMode || isDarkMode}
             error={props.error} // Pass error down
         />
     );

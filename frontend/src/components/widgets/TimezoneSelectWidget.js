@@ -1,5 +1,6 @@
 import React from 'react';
 import FilterableSelect from '../FilterableSelect';
+import { useTheme } from '../../contexts/ThemeContext';
 
 // Get UTC offset string for a timezone (e.g., "+02:00", "-05:00")
 function getTimezoneOffset(timezone) {
@@ -36,6 +37,8 @@ function getTimezoneOffset(timezone) {
 export function TimezoneSelectWidget(props) {
     const [timezones, setTimezones] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
+
+    const { isDarkMode } = useTheme();
 
     React.useEffect(() => {
         fetch('/api/external/resources/timezones')
@@ -75,6 +78,7 @@ export function TimezoneSelectWidget(props) {
             options={options}
             placeholder="Select timezone..."
             loading={loading}
+            darkMode={props.formContext?.darkMode || props.darkMode || isDarkMode}
         />
     );
 }

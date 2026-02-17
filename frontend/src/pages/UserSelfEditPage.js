@@ -31,17 +31,6 @@ const UserSelfEditPage = () => {
             });
     }, []);
 
-    // Debounced validation
-    useEffect(() => {
-        const timer = setTimeout(() => {
-            if (formData) {
-                validate();
-            }
-        }, 500);
-
-        return () => clearTimeout(timer);
-    }, [formData]);
-
     const handleChange = (e) => {
         const { name, value } = e.target;
         if (name === 'user_id' || name === 'role') return; // Prevent editing these
@@ -104,6 +93,17 @@ const UserSelfEditPage = () => {
         setValidationErrors(errors);
         return Object.keys(errors).length === 0;
     }, [formData]);
+
+    // Debounced validation
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (formData) {
+                validate();
+            }
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [formData, validate]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
