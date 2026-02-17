@@ -133,9 +133,9 @@ const UserSelfEditPage = () => {
         }
     };
 
-    const pageBackground = { background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)', minHeight: '100vh', width: '100vw' };
+    const pageBackground = { background: 'linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%)', minHeight: 'calc(100vh - 60px)', width: '100vw' };
 
-    if (loading) return <div style={{ ...pageBackground, color: '#e2e8f0', textAlign: 'center', paddingTop: '50px' }}>Loading profile...</div>;
+    if (loading) return <div style={pageBackground} />;
     if (!formData) return <div style={{ ...pageBackground, color: '#e2e8f0', textAlign: 'center', paddingTop: '50px' }}>Failed to load profile.</div>;
 
     return (
