@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import CountrySelectWidget from '../components/widgets/CountrySelectWidget';
 import PhoneInputWidget from '../components/widgets/PhoneInputWidget';
@@ -39,6 +39,15 @@ const CreateUserPage = () => {
         }
     }, [predefinedUserId, navigate]);
 
+    // Debounced validation
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            validate();
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [formData]);
+
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
@@ -59,8 +68,13 @@ const CreateUserPage = () => {
         }
     };
 
-    const validate = () => {
+    const validate = useCallback(() => {
         const errors = {};
+        // Initial empty state should show errors if we want "validation once after loading"
+        // But usually we don't want to show errors on a fresh empty form immediately.
+        // However, user requested: "UI validations are cheap, make them happen once after loading of the page"
+        // So checking emptiness immediately is correct per request.
+
         if (!formData.first_name) errors.first_name = "First Name is required";
         if (!formData.last_name) errors.last_name = "Last Name is required";
         if (!formData.password) errors.password = "Password is required";
@@ -85,7 +99,7 @@ const CreateUserPage = () => {
 
         setValidationErrors(errors);
         return Object.keys(errors).length === 0;
-    };
+    }, [formData]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -326,12 +340,20 @@ const CreateUserPage = () => {
                 }
                 /* Autofill styling fix */
                 input:-webkit-autofill,
-                input:-webkit-autofill:hover,
-                input:-webkit-autofill:focus,
+                input:-webkit-autofill:hover, 
                 input:-webkit-autofill:active {
-                    -webkit-box-shadow: 0 0 0 30px #1e293b inset !important;
+                    -webkit-box-shadow: 0 0 0 1000px #0f172a inset !important;
                     -webkit-text-fill-color: #f8fafc !important;
                     caret-color: #f8fafc;
+                    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                    transition: background-color 5000s ease-in-out 0s;
+                }
+
+                input:-webkit-autofill:focus {
+                    -webkit-box-shadow: 0 0 0 1000px #0f172a inset, 0 0 0 3px rgba(129, 140, 248, 0.2) !important;
+                    -webkit-text-fill-color: #f8fafc !important;
+                    caret-color: #f8fafc;
+                    border-color: #818cf8 !important;
                     transition: background-color 5000s ease-in-out 0s;
                 }
             `}</style>

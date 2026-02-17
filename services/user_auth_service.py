@@ -235,6 +235,62 @@ class UserAuthService:
             return True, "Password updated successfully"
         return False, "Password update failed"
 
+    async def update_credentials(
+        self, 
+        user_id: str, 
+        **kwargs
+    ) -> Tuple[bool, str]:
+        """
+        Update user credentials with validation.
+        
+        Args:
+            user_id: User identifier
+            **kwargs: Fields to update
+            
+        Returns:
+            Tuple of (success, message)
+        """
+        # Check if user exists
+        existing = await self.credentials_collection.find_one({"user_id": user_id})
+        if not existing:
+            return False, f"User '{user_id}' not found"
+
+        update_data = {}
+
+        # Email Uniqueness Check
+        if "email" in kwargs and kwargs["email"] is not None:
+            new_email = kwargs["email"]
+            # Only check if email is actually changing
+            if new_email != existing.get("email"):
+                email_conflict = await self.credentials_collection.find_one({"email": new_email})
+                if email_conflict:
+                    return False, f"Email '{new_email}' is already in use."
+            update_data["email"] = new_email
+
+        # Password Validation & Hashing
+        if "password" in kwargs and kwargs["password"] is not None:
+             is_valid, error_msg = self.validate_password_strength(kwargs["password"])
+             if not is_valid:
+                 return False, error_msg
+             update_data["password_hash"] = self.hash_password(kwargs["password"])
+
+        # Other fields
+        allowed_fields = {"first_name", "last_name", "phone_number", "gov_id", "country_value", "language", "role"}
+        for field in allowed_fields:
+            if field in kwargs and kwargs[field] is not None:
+                 update_data[field] = kwargs[field]
+
+        if not update_data:
+            return True, "No changes detected"
+
+        # Update
+        await self.credentials_collection.update_one(
+            {"user_id": user_id},
+            {"$set": update_data}
+        )
+        
+        return True, "User updated successfully"
+
     async def delete_credentials(self, user_id: str) -> Tuple[bool, str]:
         """
         Delete user credentials.

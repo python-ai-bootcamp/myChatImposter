@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import CountrySelectWidget from '../components/widgets/CountrySelectWidget';
 import PhoneInputWidget from '../components/widgets/PhoneInputWidget';
 import { LanguageSelectWidget } from '../components/widgets/LanguageSelectWidget';
@@ -31,6 +31,17 @@ const UserSelfEditPage = () => {
             });
     }, []);
 
+    // Debounced validation
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (formData) {
+                validate();
+            }
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [formData]);
+
     const handleChange = (e) => {
         const { name, value } = e.target;
         if (name === 'user_id' || name === 'role') return; // Prevent editing these
@@ -59,16 +70,31 @@ const UserSelfEditPage = () => {
         }
     };
 
-    const validate = () => {
+    const validate = useCallback(() => {
+        if (!formData) return false;
         const errors = {};
-        const phoneRegex = /^\+?[1-9]\d{1,14}$/;
+        const phoneRegex = /^\+\d{10,15}$/;
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!formData.first_name || formData.first_name.trim() === '') errors.first_name = "First Name is required";
+        if (!formData.last_name || formData.last_name.trim() === '') errors.last_name = "Last Name is required";
+
+        if (!formData.email || !emailRegex.test(formData.email)) {
+            errors.email = "A valid email address is required";
+        }
 
         if (formData.phone_number && !phoneRegex.test(formData.phone_number)) {
             errors.phone_number = "Invalid phone number format. Please use E.164 (e.g., +1234567890).";
         }
+        if (!formData.phone_number) {
+            errors.phone_number = "Phone number is required";
+        }
 
         if (!formData.gov_id || formData.gov_id.trim() === '') {
             errors.gov_id = "Government ID is required";
+        }
+        if (!formData.country_value) {
+            errors.country_value = "Country is required";
         }
 
         if (!formData.language) {
@@ -77,7 +103,7 @@ const UserSelfEditPage = () => {
 
         setValidationErrors(errors);
         return Object.keys(errors).length === 0;
-    };
+    }, [formData]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -123,8 +149,8 @@ const UserSelfEditPage = () => {
                     font-family: 'Inter', sans-serif;
                     display: flex;
                     justify-content: center;
-                    align-items: flex-start;
-                    padding-top: 4rem;
+                    align-items: center; /* Center vertically */
+                    padding-top: 2rem;
                     position: relative;
                     overflow: hidden;
                 }
@@ -139,9 +165,19 @@ const UserSelfEditPage = () => {
                     max-width: 800px;
                     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
                     z-index: 10;
-                    animation: scaleIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+                    max-height: 90vh; /* changed from animation to proper bounds */
+                    overflow-y: auto;
+                    scrollbar-width: none;
                 }
-
+/* ... existing styles ... */
+                        <div style={{ width: '100%' }}>
+                            <CountrySelectWidget
+                                value={formData.country_value}
+                                onChange={handleCountryChange}
+                                darkMode={true}
+                                error={validationErrors.country_value}
+                            />
+                        </div>
                 .profile-header {
                     margin-bottom: 2rem;
                     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
@@ -282,6 +318,25 @@ const UserSelfEditPage = () => {
                     height: 50vw;
                     background: radial-gradient(circle, #ec4899 0%, transparent 70%);
                 }
+
+                /* Autofill styling fix */
+                input:-webkit-autofill,
+                input:-webkit-autofill:hover, 
+                input:-webkit-autofill:active {
+                    -webkit-box-shadow: 0 0 0 1000px #0f172a inset !important;
+                    -webkit-text-fill-color: #f8fafc !important;
+                    caret-color: #f8fafc;
+                    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                    transition: background-color 5000s ease-in-out 0s;
+                }
+
+                input:-webkit-autofill:focus {
+                    -webkit-box-shadow: 0 0 0 1000px #0f172a inset, 0 0 0 3px rgba(129, 140, 248, 0.2) !important;
+                    -webkit-text-fill-color: #f8fafc !important;
+                    caret-color: #f8fafc;
+                    border-color: #818cf8 !important;
+                    transition: background-color 5000s ease-in-out 0s;
+                }
             `}</style>
 
             <div className="shape shape-1" />
@@ -310,6 +365,8 @@ const UserSelfEditPage = () => {
                             value={formData.first_name || ''}
                             onChange={handleChange}
                             onKeyDown={handleInputKeyDown}
+                            style={{ border: validationErrors.first_name ? '1px solid #ef4444' : undefined }}
+                            title={validationErrors.first_name || ''}
                         />
                     </div>
 
@@ -321,6 +378,8 @@ const UserSelfEditPage = () => {
                             value={formData.last_name || ''}
                             onChange={handleChange}
                             onKeyDown={handleInputKeyDown}
+                            style={{ border: validationErrors.last_name ? '1px solid #ef4444' : undefined }}
+                            title={validationErrors.last_name || ''}
                         />
                     </div>
 
@@ -332,6 +391,8 @@ const UserSelfEditPage = () => {
                             value={formData.email || ''}
                             onChange={handleChange}
                             onKeyDown={handleInputKeyDown}
+                            style={{ border: validationErrors.email ? '1px solid #ef4444' : undefined }}
+                            title={validationErrors.email || ''}
                         />
                     </div>
 
@@ -348,8 +409,8 @@ const UserSelfEditPage = () => {
                                 style={{
                                     borderColor: validationErrors.gov_id ? '#ef4444' : 'rgba(255, 255, 255, 0.1)'
                                 }}
+                                title={validationErrors.gov_id || ''}
                             />
-                            {validationErrors.gov_id && <span style={{ color: '#ef4444', fontSize: '0.85rem', display: 'block', marginTop: '4px' }}>{validationErrors.gov_id}</span>}
                         </div>
                     </div>
 
@@ -359,8 +420,8 @@ const UserSelfEditPage = () => {
                             <PhoneInputWidget
                                 value={formData.phone_number}
                                 onChange={(val) => setFormData(prev => ({ ...prev, phone_number: val }))}
+                                error={validationErrors.phone_number}
                             />
-                            {validationErrors.phone_number && <span style={{ color: '#ef4444', fontSize: '0.85rem', display: 'block', marginTop: '4px' }}>{validationErrors.phone_number}</span>}
                         </div>
                     </div>
 
@@ -371,6 +432,7 @@ const UserSelfEditPage = () => {
                                 value={formData.country_value}
                                 onChange={handleCountryChange}
                                 darkMode={true}
+                                error={validationErrors.country_value}
                             />
                         </div>
                     </div>
@@ -382,8 +444,8 @@ const UserSelfEditPage = () => {
                                 value={formData.language}
                                 onChange={handleLanguageChange}
                                 darkMode={true}
+                                error={validationErrors.language}
                             />
-                            {validationErrors.language && <span style={{ color: '#ef4444', fontSize: '0.85rem', display: 'block', marginTop: '4px' }}>{validationErrors.language}</span>}
                         </div>
                     </div>
 

@@ -44,8 +44,10 @@ const GlobalHeader = () => {
     };
 
     // Helper to determine if a path is active
-    const isActive = (path) => {
+    // Helper to determine if a path is active
+    const isActive = (path, exact = false) => {
         if (path === '/' && location.pathname === '/') return true;
+        if (exact) return location.pathname === path;
         if (path !== '/' && location.pathname.startsWith(path)) return true;
         return false;
     };
@@ -70,7 +72,7 @@ const GlobalHeader = () => {
                 {user ? (
                     <>
                         {user.role === 'admin' && (
-                            <Link to="/admin/users" className={`nav-link ${isActive('/admin/users') ? 'active' : ''}`}>
+                            <Link to="/admin/users" className={`nav-link ${isActive('/admin/users', true) ? 'active' : ''}`}>
                                 Manage Users
                             </Link>
                         )}

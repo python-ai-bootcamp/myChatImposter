@@ -225,3 +225,23 @@ select[id^="root_configurations_llm_provider_config"] {
   resize: both;
   box-sizing: border-box;
 }
+
+/* GLOBAL AUTOFILL OVERRIDE - High Specificity */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #0f172a inset !important;
+  -webkit-text-fill-color: #f8fafc !important;
+  caret-color: #f8fafc !important;
+  border: 1px solid rgba(255, 255, 255, 0.1) !important;
+  background-color: #0f172a !important;
+  background-image: none !important;
+  transition: background-color 5000s ease-in-out 0s !important;
+}
+
+/* Global Focus Override for Autofill */
+input:-webkit-autofill:focus {
+  border-color: #818cf8 !important;
+  -webkit-box-shadow: 0 0 0 1000px #0f172a inset, 0 0 0 3px rgba(129, 140, 248, 0.2) !important;
+}

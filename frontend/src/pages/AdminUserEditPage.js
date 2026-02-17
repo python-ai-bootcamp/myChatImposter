@@ -36,6 +36,17 @@ const AdminUserEditPage = () => {
         fetchUser();
     }, [fetchUser]);
 
+    // Debounced validation
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            if (formData) {
+                validate();
+            }
+        }, 500);
+
+        return () => clearTimeout(timer);
+    }, [formData]);
+
     const handleChange = (e) => {
         const { name, value } = e.target;
         setFormData(prev => ({ ...prev, [name]: value }));
@@ -56,17 +67,38 @@ const AdminUserEditPage = () => {
         }
     };
 
-    const validate = () => {
+    const validate = useCallback(() => {
+        if (!formData) return false;
         const errors = {};
+        const phoneRegex = /^\+\d{10,15}$/;
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+        if (!formData.first_name || formData.first_name.trim() === '') errors.first_name = "First Name is required";
+        if (!formData.last_name || formData.last_name.trim() === '') errors.last_name = "Last Name is required";
+
+        if (!formData.email || !emailRegex.test(formData.email)) {
+            errors.email = "A valid email address is required";
+        }
+
+        if (formData.phone_number && !phoneRegex.test(formData.phone_number)) {
+            errors.phone_number = "Invalid phone number format. Please use E.164 (e.g., +1234567890).";
+        }
+        if (!formData.phone_number) {
+            errors.phone_number = "Phone number is required";
+        }
+
         if (!formData.gov_id || formData.gov_id.trim() === '') {
             errors.gov_id = "Government ID is required";
+        }
+        if (!formData.country_value) {
+            errors.country_value = "Country is required";
         }
         if (!formData.language) {
             errors.language = "Language is required";
         }
         setValidationErrors(errors);
         return Object.keys(errors).length === 0;
-    };
+    }, [formData]);
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -312,6 +344,25 @@ const AdminUserEditPage = () => {
                     height: 50vw;
                     background: radial-gradient(circle, #ec4899 0%, transparent 70%);
                 }
+                
+                /* Autofill styling fix */
+                input:-webkit-autofill,
+                input:-webkit-autofill:hover, 
+                input:-webkit-autofill:active {
+                    -webkit-box-shadow: 0 0 0 1000px #0f172a inset !important;
+                    -webkit-text-fill-color: #f8fafc !important;
+                    caret-color: #f8fafc;
+                    border: 1px solid rgba(255, 255, 255, 0.1) !important;
+                    transition: background-color 5000s ease-in-out 0s;
+                }
+
+                input:-webkit-autofill:focus {
+                    -webkit-box-shadow: 0 0 0 1000px #0f172a inset, 0 0 0 3px rgba(129, 140, 248, 0.2) !important;
+                    -webkit-text-fill-color: #f8fafc !important;
+                    caret-color: #f8fafc;
+                    border-color: #818cf8 !important;
+                    transition: background-color 5000s ease-in-out 0s;
+                }
             `}</style>
 
             <div className="shape shape-1" />
@@ -345,6 +396,8 @@ const AdminUserEditPage = () => {
                                 placeholder="First Name"
                                 value={formData.first_name || ''}
                                 onChange={handleChange}
+                                style={{ border: validationErrors.first_name ? '1px solid #ef4444' : undefined }}
+                                title={validationErrors.first_name || ''}
                             />
                             <input
                                 type="text"
@@ -352,6 +405,8 @@ const AdminUserEditPage = () => {
                                 placeholder="Last Name"
                                 value={formData.last_name || ''}
                                 onChange={handleChange}
+                                style={{ border: validationErrors.last_name ? '1px solid #ef4444' : undefined }}
+                                title={validationErrors.last_name || ''}
                             />
                         </div>
 
@@ -362,6 +417,8 @@ const AdminUserEditPage = () => {
                                 name="email"
                                 value={formData.email || ''}
                                 onChange={handleChange}
+                                style={{ border: validationErrors.email ? '1px solid #ef4444' : undefined }}
+                                title={validationErrors.email || ''}
                             />
                         </div>
 
@@ -373,12 +430,13 @@ const AdminUserEditPage = () => {
                                     name="gov_id"
                                     value={formData.gov_id || ''}
                                     onChange={handleChange}
+                                    onChange={handleChange}
                                     placeholder="e.g. Passport or National ID"
                                     style={{
                                         borderColor: validationErrors.gov_id ? '#ef4444' : 'rgba(255, 255, 255, 0.1)'
                                     }}
+                                    title={validationErrors.gov_id || ''}
                                 />
-                                {validationErrors.gov_id && <span style={{ color: '#ef4444', fontSize: '0.85rem', display: 'block', marginTop: '4px' }}>{validationErrors.gov_id}</span>}
                             </div>
                         </div>
 
@@ -388,6 +446,7 @@ const AdminUserEditPage = () => {
                                 <PhoneInputWidget
                                     value={formData.phone_number}
                                     onChange={(val) => setFormData(prev => ({ ...prev, phone_number: val }))}
+                                    error={validationErrors.phone_number}
                                 />
                             </div>
                         </div>
@@ -399,6 +458,7 @@ const AdminUserEditPage = () => {
                                     value={formData.country_value}
                                     onChange={handleCountryChange}
                                     darkMode={true}
+                                    error={validationErrors.country_value}
                                 />
                             </div>
                         </div>
@@ -410,8 +470,8 @@ const AdminUserEditPage = () => {
                                     value={formData.language}
                                     onChange={handleLanguageChange}
                                     darkMode={true}
+                                    error={validationErrors.language}
                                 />
-                                {validationErrors.language && <span style={{ color: '#ef4444', fontSize: '0.85rem', display: 'block', marginTop: '4px' }}>{validationErrors.language}</span>}
                             </div>
                         </div>
 

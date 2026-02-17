@@ -50,15 +50,15 @@
 
 .country-select-input {
     width: 100%;
-    border: none;
-    background: transparent;
+    border: none !important;
+    background: transparent !important;
     font-size: 1rem;
     color: #333;
     outline: none;
     box-shadow: none !important;
     /* Force remove any browser default shadows */
-    padding: 0;
-    margin: 0;
+    padding: 0 !important;
+    margin: 0 !important;
 }
 
 .country-select-input:focus {

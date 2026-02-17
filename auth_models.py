@@ -64,6 +64,22 @@ class UserResponse(BaseModel):
     country_value: str = Field(default="US", description="Country code (ISO 3166-1 alpha-2)")
     language: str = Field(default="en", description="Language code (ISO 639-1)")
 
+class UserRestrictedResponse(BaseModel):
+    """
+    Restricted user details for non-admins (excludes role and limits).
+    """
+    user_id: str = Field(..., description="Unique user identifier")
+    # Exclude role, limits
+    owned_bots: list[str] = Field(default_factory=list, description="List of bot_ids this user owns")
+    
+    first_name: str = Field(default="Unknown", description="User first name")
+    last_name: str = Field(default="User", description="User last name")
+    phone_number: str = Field(default="", description="User phone number (E.164)")
+    email: str = Field(default="", description="User email address")
+    gov_id: str = Field(default="", description="Government ID")
+    country_value: str = Field(default="US", description="Country code (ISO 3166-1 alpha-2)")
+    language: str = Field(default="en", description="Language code (ISO 639-1)")
+
 class SessionData(BaseModel):
     """
     Active user session data.
