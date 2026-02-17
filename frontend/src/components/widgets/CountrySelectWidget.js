@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useTheme } from '../../contexts/ThemeContext';
+import SelectMenuPortal from './SelectMenuPortal';
 import './CountrySelectWidget.css';
 
 const CountrySelectWidget = ({ value, onChange, disabled, error, ...props }) => {
@@ -7,6 +8,7 @@ const CountrySelectWidget = ({ value, onChange, disabled, error, ...props }) => 
     const [loading, setLoading] = useState(true);
     const [searchTerm, setSearchTerm] = useState('');
     const [isOpen, setIsOpen] = useState(false);
+    const containerRef = useRef(null);
 
     useEffect(() => {
         fetch('/api/external/resources/countries')
@@ -51,10 +53,8 @@ const CountrySelectWidget = ({ value, onChange, disabled, error, ...props }) => 
         setIsOpen(true);
     };
 
-    const handleInputBlur = () => {
-        // Delay to allow click on option
-        setTimeout(() => setIsOpen(false), 200);
-    };
+    // Removed blur handler because Portal click-outside handles closing now
+    // If we keep blur, it might race with the portal click
 
     const handleKeyDown = (e) => {
         if (e.key === 'Enter') {
@@ -70,11 +70,12 @@ const CountrySelectWidget = ({ value, onChange, disabled, error, ...props }) => 
     };
 
     const { isDarkMode } = useTheme();
+    const isDark = props.darkMode || isDarkMode;
 
-    const containerClass = `country-select-container ${props.darkMode || isDarkMode ? 'dark' : ''} ${isOpen ? 'open' : ''} ${error ? 'has-error' : ''}`;
+    const containerClass = `country-select-container ${isDark ? 'dark' : ''} ${isOpen ? 'open' : ''} ${error ? 'has-error' : ''}`;
 
     return (
-        <div className={containerClass} title={error || ''}>
+        <div className={containerClass} title={error || ''} ref={containerRef}>
             <div className="country-select-control" onClick={() => !disabled && setIsOpen(!isOpen)}>
                 {/* Display selected value or search input */}
                 <div className="country-select-value">
@@ -85,7 +86,6 @@ const CountrySelectWidget = ({ value, onChange, disabled, error, ...props }) => 
                             value={searchTerm}
                             onChange={handleInputChange}
                             onFocus={handleInputFocus}
-                            onBlur={handleInputBlur}
                             onKeyDown={handleKeyDown}
                             placeholder={selectedCountry ? `${selectedCountry.flag} ${selectedCountry.name}` : "Select Country..."}
                             disabled={disabled}
@@ -113,16 +113,20 @@ const CountrySelectWidget = ({ value, onChange, disabled, error, ...props }) => 
                 </div>
             </div>
 
-            {/* Dropdown menu */}
-            {isOpen && !disabled && (
-                <div className="country-select-menu">
+            {/* Dropdown menu via Portal */}
+            <SelectMenuPortal
+                isOpen={isOpen && !disabled}
+                anchorRef={containerRef}
+                onClose={() => setIsOpen(false)}
+            >
+                <div className={`country-select-menu ${isDark ? 'dark' : ''}`} style={{ position: 'static', marginTop: 0, width: '100%', boxSizing: 'border-box' }}>
                     {filteredCountries.length === 0 ? (
-                        <div className="country-select-no-options">No countries found</div>
+                        <div className={`country-select-no-options ${isDark ? 'dark' : ''}`}>No countries found</div>
                     ) : (
                         filteredCountries.map(country => (
                             <div
                                 key={country.code}
-                                className={`country-select-option ${country.code === value ? 'selected' : ''}`}
+                                className={`country-select-option ${country.code === value ? 'selected' : ''} ${isDark ? 'dark' : ''}`}
                                 onClick={() => handleSelect(country.code)}
                             >
                                 <span className="country-flag">{country.flag}</span>
@@ -131,7 +135,7 @@ const CountrySelectWidget = ({ value, onChange, disabled, error, ...props }) => 
                         ))
                     )}
                 </div>
-            )}
+            </SelectMenuPortal>
         </div>
     );
 };

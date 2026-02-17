@@ -206,45 +206,50 @@
     color: #818cf8;
 }
 
+
 /* Dark mode dropdown menu */
-.country-select-container.dark .country-select-menu {
+/* Adjusted for Portal: menu is now a direct child of body, so it needs its own .dark class */
+.country-select-menu.dark {
     background: #0f172a;
     border-color: rgba(129, 140, 248, 0.2);
     box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    color: #e2e8f0;
+    /* Ensure text color is inherited */
 }
 
-.country-select-container.dark .country-select-option {
+/* Option Styles inside Dark Menu */
+.country-select-menu.dark .country-select-option {
     color: #cbd5e1;
 }
 
-.country-select-container.dark .country-select-option:hover {
+.country-select-menu.dark .country-select-option:hover {
     background-color: rgba(99, 102, 241, 0.2);
     color: #f8fafc;
 }
 
-.country-select-container.dark .country-select-option.selected {
+.country-select-menu.dark .country-select-option.selected {
     background-color: rgba(99, 102, 241, 0.3);
     color: #f8fafc;
 }
 
-.country-select-container.dark .country-name {
+.country-select-menu.dark .country-name {
     color: inherit;
 }
 
-.country-select-container.dark .country-select-no-options {
+.country-select-menu.dark .country-select-no-options {
     color: #94a3b8;
 }
 
 /* Scrollbar styling for dark mode */
-.country-select-container.dark .country-select-menu::-webkit-scrollbar {
+.country-select-menu.dark::-webkit-scrollbar {
     width: 6px;
 }
 
-.country-select-container.dark .country-select-menu::-webkit-scrollbar-track {
+.country-select-menu.dark::-webkit-scrollbar-track {
     background: transparent;
 }
 
-.country-select-container.dark .country-select-menu::-webkit-scrollbar-thumb {
+.country-select-menu.dark::-webkit-scrollbar-thumb {
     background: rgba(99, 102, 241, 0.5);
     border-radius: 3px;
 }

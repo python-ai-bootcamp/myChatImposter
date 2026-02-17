@@ -1,4 +1,5 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo } from 'react';
+import SelectMenuPortal from './widgets/SelectMenuPortal';
 import './widgets/CountrySelectWidget.css'; // Re-use the existing CSS for consistency
 
 /**
@@ -40,17 +41,8 @@ function FilterableSelect({
     // Find current option
     const currentOption = options.find(opt => opt.value === value);
 
-    // Close dropdown when clicking outside
-    useEffect(() => {
-        const handleClickOutside = (event) => {
-            if (containerRef.current && !containerRef.current.contains(event.target)) {
-                setIsOpen(false);
-                setSearchTerm(''); // Reset search on close
-            }
-        };
-        document.addEventListener('mousedown', handleClickOutside);
-        return () => document.removeEventListener('mousedown', handleClickOutside);
-    }, []);
+    // Close logic is now handled by SelectMenuPortal for outside clicks in the menu,
+    // but the input logic remains here.
 
     const handleSelect = (optValue) => {
         onChange(optValue);
@@ -120,15 +112,19 @@ function FilterableSelect({
                 </div>
             </div>
 
-            {isOpen && (
-                <div className="country-select-menu">
+            <SelectMenuPortal
+                isOpen={isOpen}
+                anchorRef={containerRef}
+                onClose={() => setIsOpen(false)}
+            >
+                <div className={`country-select-menu ${darkMode ? 'dark' : ''}`} style={{ position: 'static', marginTop: 0, width: '100%', boxSizing: 'border-box' }}>
                     {filteredOptions.length === 0 ? (
-                        <div className="country-select-no-options">No matches found</div>
+                        <div className={`country-select-no-options ${darkMode ? 'dark' : ''}`}>No matches found</div>
                     ) : (
                         filteredOptions.map(opt => (
                             <div
                                 key={opt.value}
-                                className={`country-select-option ${opt.value === value ? 'selected' : ''}`}
+                                className={`country-select-option ${opt.value === value ? 'selected' : ''} ${darkMode ? 'dark' : ''}`}
                                 onClick={() => handleSelect(opt.value)}
                             >
                                 <span className="country-name">{opt.label}</span>
@@ -137,7 +133,7 @@ function FilterableSelect({
                         ))
                     )}
                 </div>
-            )}
+            </SelectMenuPortal>
         </div>
     );
 }
