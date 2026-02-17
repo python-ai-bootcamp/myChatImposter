@@ -30,12 +30,13 @@ async def create_indexes(db: AsyncIOMotorDatabase):
     """
     logger = logging.getLogger("api.schema")
     
-    # 1. configurations
+    # 1. bot_configurations (Replaces deprecated 'configurations')
     try:
-        await db[COLLECTION_CONFIGURATIONS].create_index([("config_data.user_id", ASCENDING)], unique=True)
-        logger.info(f"Ensured unique index for '{COLLECTION_CONFIGURATIONS}.config_data.user_id'.")
+        # Unique index on bot_id
+        await db[COLLECTION_BOT_CONFIGURATIONS].create_index([("config_data.bot_id", ASCENDING)], unique=True)
+        logger.info(f"Ensured unique index for '{COLLECTION_BOT_CONFIGURATIONS}.config_data.bot_id'.")
     except Exception as e:
-        logger.warning(f"Could not create index for {COLLECTION_CONFIGURATIONS}: {e}")
+        logger.warning(f"Could not create index for {COLLECTION_BOT_CONFIGURATIONS}: {e}")
 
     # 2. Authentication Collections
     try:

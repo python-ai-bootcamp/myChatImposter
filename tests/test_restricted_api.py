@@ -1,4 +1,4 @@
-
+import pytest
 import asyncio
 import sys
 import httpx
@@ -21,7 +21,8 @@ async def get_cookies(client: httpx.AsyncClient, user_id: str, password: str) ->
         raise Exception(f"Login failed for {user_id}: {res.text}")
     return res.cookies
 
-async def run_tests():
+@pytest.mark.asyncio
+async def test_restricted_api_flow():
     async with httpx.AsyncClient(timeout=10.0, base_url=GATEWAY_URL) as client:
         
         try:
@@ -121,10 +122,4 @@ async def run_tests():
 
         except Exception as e:
             logger.error(f"TEST EXCEPTION: {e}")
-
-if __name__ == "__main__":
-    if sys.platform == "win32":
-        try:
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-        except AttributeError: pass
-    asyncio.run(run_tests())
+            raise e

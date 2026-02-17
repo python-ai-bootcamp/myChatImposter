@@ -16,7 +16,7 @@ async def setup_test_users():
     client = AsyncIOMotorClient(mongodb_url)
     db = client.get_database("chat_manager")
     credentials_collection = db.get_collection(db_schema.COLLECTION_CREDENTIALS)
-    configurations_collection = db.get_collection(db_schema.COLLECTION_CONFIGURATIONS)
+    configurations_collection = db.get_collection(db_schema.COLLECTION_BOT_CONFIGURATIONS)
 
     # Create 'test_user'
     user_id = "test_user"
@@ -43,6 +43,7 @@ async def setup_test_users():
     # Create valid Configuration for test_user (Fixes 500 error)
     config_doc = {
         "config_data": {
+            "bot_id": user_id, # ADDED: Essential for bot_configurations
             "user_id": user_id,
             "configurations": {
                 "user_details": {},
@@ -55,7 +56,7 @@ async def setup_test_users():
         }
     }
     await configurations_collection.update_one(
-        {"config_data.user_id": user_id},
+        {"config_data.bot_id": user_id},
         {"$set": config_doc},
         upsert=True
     )
@@ -64,18 +65,23 @@ async def setup_test_users():
 
     # Ensure 'admin' exists too
     admin_id = "admin"
-    admin_doc = {
-        "user_id": admin_id,
-        "password_hash": hashed, # Same password for ease
-        "role": "admin",
-        "owned_user_configurations": ["admin"] # Admins usually don't rely on this list but good to have
-    }
+    # Default password for NEW admins only. Existing admins will NOT have their password changed.
+    default_admin_password = "password123" 
+    admin_hashed = bcrypt.hashpw(default_admin_password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+    
     await credentials_collection.update_one(
         {"user_id": admin_id},
-        {"$set": admin_doc},
+        {
+            "$setOnInsert": {
+                "user_id": admin_id,
+                "password_hash": admin_hashed,
+                "role": "admin",
+                "owned_user_configurations": ["admin"] 
+            }
+        },
         upsert=True
     )
-    print(f"User '{admin_id}' created/updated.")
+    print(f"User '{admin_id}' check complete (Created if missing, otherwise untouched).")
     
     client.close()
 
