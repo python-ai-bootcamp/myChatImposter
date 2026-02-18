@@ -133,6 +133,35 @@ const UserListPage = ({ enableFiltering = true }) => {
                 </span>
             )
         },
+        {
+            key: 'quota',
+            label: 'Quota',
+            sortable: false,
+            filterable: false,
+            width: '20%',
+            render: (user) => {
+                const quota = user.llm_quota || {};
+                const used = quota.dollars_used || 0;
+                const limit = quota.dollars_per_period || 1;
+                const percentage = Math.min((used / limit) * 100, 100).toFixed(0);
+                const enabled = quota.enabled !== false;
+
+                let color = '#10b981'; // Green
+                if (percentage > 80) color = '#f59e0b'; // Orange
+                if (percentage >= 100 || !enabled) color = '#ef4444'; // Red
+
+                return (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', width: '100%' }}>
+                        <div style={{ flex: 1, backgroundColor: 'rgba(255,255,255,0.1)', borderRadius: '4px', height: '6px', overflow: 'hidden' }}>
+                            <div style={{ width: `${percentage}%`, backgroundColor: color, height: '100%' }} />
+                        </div>
+                        <span style={{ fontSize: '0.75rem', color: enabled ? '#cbd5e1' : '#94a3b8', minWidth: '35px', textAlign: 'right' }}>
+                            {enabled ? `${percentage}%` : 'Off'}
+                        </span>
+                    </div>
+                );
+            }
+        },
         { key: 'email', label: 'Email', sortable: true, filterable: true, width: '25%' },
         { key: 'country_value', label: 'Country', sortable: true, filterable: true, width: '20%' },
     ];

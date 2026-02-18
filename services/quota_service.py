@@ -39,13 +39,11 @@ class QuotaService:
     def calculate_cost(self, 
                        input_tokens: int, 
                        output_tokens: int, 
-                       config_tier: Literal["high", "low"]) -> float:
+                       config_tier: Literal["high", "low"],
+                       cached_input_tokens: int = 0) -> float:
         """
         Calculates cost in dollars based on tokens and tier.
-        Attributes usage to cached input tokens?? 
-        NOTE: The spec distinguishes 'input_tokens' and 'cached_input_tokens'.
-        However, the current tracking service only reports 'input_tokens'. 
-        Assumption: treat all input tokens as standard 'input_tokens' for now unless tracking distinguishes them.
+        Subtracts cached tokens from total input tokens to apply correct rates.
         """
         if config_tier not in self._token_menu:
              # Fallback or error?
@@ -57,47 +55,62 @@ class QuotaService:
         # Determine rates (per 1M tokens)
         rate_input = menu.get("input_tokens", 0)
         rate_output = menu.get("output_tokens", 0)
+        rate_cached = menu.get("cached_input_tokens", 0) # Assumes this key exists in menu
         
-        cost = (input_tokens * rate_input / 1_000_000) + (output_tokens * rate_output / 1_000_000)
+        # Calculate uncached input tokens
+        # Ensure we don't have negative uncached tokens if something is wonky
+        uncached_input = max(0, input_tokens - cached_input_tokens)
+        
+        cost = (uncached_input * rate_input / 1_000_000) + \
+               (cached_input_tokens * rate_cached / 1_000_000) + \
+               (output_tokens * rate_output / 1_000_000)
+        
         return cost
 
     async def update_user_usage(self, user_id: str, cost: float):
         """
-        Updates user's dollars_used and checks against limit.
-        If limit exceeded, disables user and stops bots.
+        Updates user's dollars_used atomically and checks against limit.
         """
         if cost <= 0:
             return
 
-        # Fetch user's current quota
+        # Atomic increment
+        await self.credentials_collection.update_one(
+            {"user_id": user_id},
+            {"$inc": {"llm_quota.dollars_used": cost}}
+        )
+
+        # Fetch updated user to check limit
+        # Optimization: We could use find_one_and_update to get the doc in one go, 
+        # but pure update_one is often faster if we don't *always* need the doc, 
+        # though here we do need to check the limit.
+        # Let's fetch after update to see current state.
         user = await self.credentials_collection.find_one({"user_id": user_id}, {"llm_quota": 1})
+        
         if not user or "llm_quota" not in user:
-            # logger.warning(f"User {user_id} has no quota defined. Skipping enforcement.")
             return
 
         quota = user["llm_quota"]
         
-        # Check if already disabled (to avoid redundant updates/stops)
+        # Check if already disabled
         if not quota.get("enabled", True):
              return
 
-        new_usage = quota.get("dollars_used", 0.0) + cost
-        limit = quota.get("dollars_per_period", 1.0) # Default 1.0 if missing
+        usage = quota.get("dollars_used", 0.0)
+        limit = quota.get("dollars_per_period", 1.0)
 
-        updates = {"llm_quota.dollars_used": new_usage}
-        
         # Check limit
-        if new_usage >= limit:
-            logger.info(f"User {user_id} exceeded quota ({new_usage} >= {limit}). Disabling.")
-            updates["llm_quota.enabled"] = False
+        if usage >= limit:
+            logger.info(f"User {user_id} exceeded quota ({usage} >= {limit}). Disabling.")
+            
+            # Disable user
+            await self.credentials_collection.update_one(
+                {"user_id": user_id},
+                {"$set": {"llm_quota.enabled": False}}
+            )
             
             # Stop bots
             await self._stop_user_bots(user_id)
-
-        await self.credentials_collection.update_one(
-            {"user_id": user_id},
-            {"$set": updates}
-        )
 
     async def _stop_user_bots(self, user_id: str):
         """
