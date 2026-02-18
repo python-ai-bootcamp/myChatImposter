@@ -15,6 +15,7 @@ class QuotaService:
         self.global_config_collection = db[db_schema.COLLECTION_GLOBAL_CONFIGURATIONS]
         self.credentials_collection = db[db_schema.COLLECTION_CREDENTIALS]
         self.bot_config_collection = db[db_schema.COLLECTION_BOT_CONFIGURATIONS]
+        self.baileys_sessions_collection = db[db_schema.COLLECTION_BAILEYS_SESSIONS]
 
     @classmethod
     def get_instance(cls):
@@ -156,12 +157,27 @@ class QuotaService:
             
             # Filter by activated flag in bot_configurations
             cursor = self.bot_config_collection.find({
-                "config_data.bot_id": {"$in": owned_bots},
-                "config_data.configurations.user_details.activated": True
+                "config_data.bot_id": {"$in": owned_bots}
             })
             
             async for doc in cursor:
-                bot_id = doc.get("config_data", {}).get("bot_id")
+                config_data = doc.get("config_data", {})
+                bot_id = config_data.get("bot_id")
+                
+                # Check 1: Activated
+                user_details = config_data.get("configurations", {}).get("user_details", {})
+                activated = user_details.get("activated", user_details.get("active", True))
+                
+                if not activated:
+                    continue
+
+                # Check 2: Authenticated (Has Credentials)
+                # Only start if credentials exist
+                auth_doc = await self.baileys_sessions_collection.find_one({"_id": f"{bot_id}-creds"})
+                if not auth_doc:
+                     logger.info(f"QuotaService: Skipping auto-start for {bot_id} (Activated but Not Authenticated)")
+                     continue
+
                 if bot_id:
                     await lifecycle.start_bot(bot_id)
                     
@@ -208,6 +224,10 @@ class QuotaService:
         """
         Starts bots for all users with enabled quota.
         """
+        import asyncio
+        logger.info("QuotaService: Waiting 60s before auto-starting bots to ensure system stability...")
+        await asyncio.sleep(60) 
+
         logger.info("QuotaService: Starting bots for all enabled users...")
         count = 0
         async for user in self.credentials_collection.find({"llm_quota.enabled": True}):

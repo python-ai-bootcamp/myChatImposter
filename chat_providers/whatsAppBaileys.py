@@ -126,7 +126,18 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         logging.info(f"Connecting to Node.js server at {self.base_url}")
         try:
             # Map bot_id to userId for Node.js server compatibility
-            config_data = {"userId": self.bot_id, "config": self.config.provider_config.model_dump()}
+            # Force re-initialization if we are not currently connected to ensure a fresh start
+            # This fixes "ghost session" issues where Node.js thinks we have a session but we don't.
+            force_reinit = not self.is_connected
+            config_data = {
+                "userId": self.bot_id, 
+                "config": self.config.provider_config.model_dump(),
+                "forceReinit": force_reinit
+            }
+            
+            if force_reinit:
+                logging.info(f"Refusing to resume ghost session. Requesting FORCE RE-INIT for {self.bot_id}")
+
             async with httpx.AsyncClient() as client:
                 try:
                     response = await client.post(

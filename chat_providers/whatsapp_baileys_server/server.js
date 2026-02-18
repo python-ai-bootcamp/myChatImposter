@@ -756,9 +756,20 @@ const performHardResetAction = async (userId, session) => {
     }
 };
 
-async function connectToWhatsApp(userId, vendorConfig) {
+async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
     const waVersion = await getLatestWaVersion();
 
+    if (forceReinit && sessions[userId]) {
+        console.log(`[${userId}] Force Reinit requested. Destroying existing ghost session.`);
+        try {
+            if (sessions[userId].sock) {
+                sessions[userId].sock.end(undefined);
+            }
+        } catch (e) {
+            console.log(`[${userId}] Failed to close socket during force reinit:`, e);
+        }
+        delete sessions[userId];
+    }
 
     if (sessions[userId] && sessions[userId].sock) {
         console.log(`[${userId}] Session already exists. Re-initializing.`);
@@ -825,7 +836,7 @@ async function connectToWhatsApp(userId, vendorConfig) {
 
     // Custom logger to intercept decryption errors
     const logger = pino({
-        level: 'info',
+        level: 'warn', // Changed to warn to suppress verbose key dumping
         transport: {
             target: 'pino-pretty',
             options: {
