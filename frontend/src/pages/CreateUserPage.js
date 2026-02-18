@@ -22,7 +22,12 @@ const CreateUserPage = () => {
         confirm_password: '',
         gov_id: '',
         country_value: 'US', // Default to US as per image
-        language: 'en'
+        language: 'en',
+        llm_quota: {
+            enabled: true,
+            reset_days: 7,
+            dollars_per_period: 1.0
+        }
     });
 
     const [validationErrors, setValidationErrors] = useState({});
@@ -58,6 +63,19 @@ const CreateUserPage = () => {
         if (validationErrors.language) {
             setValidationErrors(prev => ({ ...prev, language: null }));
         }
+    };
+
+    const handleQuotaChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        const val = type === 'checkbox' ? checked : value;
+
+        setFormData(prev => ({
+            ...prev,
+            llm_quota: {
+                ...prev.llm_quota,
+                [name]: type === 'number' ? parseFloat(val) : val
+            }
+        }));
     };
 
     const validate = useCallback(() => {
@@ -496,6 +514,49 @@ const CreateUserPage = () => {
                             </select>
                         </div>
 
+                        {/* Quota Section */}
+                        <div style={{ marginTop: '1rem', marginBottom: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
+                            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem', color: '#cbd5e1' }}>LLM Quota</h3>
+
+                            <div className="form-group">
+                                <label>Enabled</label>
+                                <div style={{ display: 'flex', alignItems: 'center', height: '48px' }}>
+                                    <input
+                                        type="checkbox"
+                                        name="enabled"
+                                        checked={formData.llm_quota.enabled}
+                                        onChange={handleQuotaChange}
+                                        style={{ width: '20px', height: '20px', margin: 0 }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="form-row-split">
+                                <label>Limits</label>
+                                <div className="form-group" style={{ gridTemplateColumns: '1fr', gap: '0.5rem', margin: 0 }}>
+                                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '4px' }}>Reset Days</span>
+                                    <input
+                                        type="number"
+                                        name="reset_days"
+                                        value={formData.llm_quota.reset_days}
+                                        onChange={handleQuotaChange}
+                                        min="1"
+                                    />
+                                </div>
+                                <div className="form-group" style={{ gridTemplateColumns: '1fr', gap: '0.5rem', margin: 0 }}>
+                                    <span style={{ display: 'block', fontSize: '0.8rem', color: '#94a3b8', marginBottom: '4px' }}>$ Limit / Period</span>
+                                    <input
+                                        type="number"
+                                        name="dollars_per_period"
+                                        value={formData.llm_quota.dollars_per_period}
+                                        onChange={handleQuotaChange}
+                                        step="0.01"
+                                        min="0"
+                                    />
+                                </div>
+                            </div>
+                        </div>
+
                         {/* Password */}
                         <div className="form-group">
                             <label>Password *</label>
@@ -581,8 +642,8 @@ const CreateUserPage = () => {
                         </button>
                     </form>
                 </div>
-            </div>
-        </div>
+            </div >
+        </div >
     );
 };
 

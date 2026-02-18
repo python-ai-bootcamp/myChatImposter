@@ -9,6 +9,12 @@ if TYPE_CHECKING:
     from dependencies import GlobalStateManager
 
 from config_models import BotConfiguration
+import asyncio
+import uuid
+from services.session_manager import SessionManager
+from services.ingestion_service import IngestionService
+from features.automatic_bot_reply.service import AutomaticBotReplyService
+from features.kid_phone_safety_tracking.service import KidPhoneSafetyService
 
 
 class BotLifecycleService:
@@ -150,3 +156,103 @@ class BotLifecycleService:
         except Exception as e:
             logging.error(f"LIFECYCLE: Error deleting bot data for {bot_id}: {e}")
             raise e
+
+    async def create_bot_session(self, config: BotConfiguration) -> SessionManager:
+        """
+        Create and configure a SessionManager with all services and features.
+        Replicates logic from bot_management._setup_session.
+        """
+        loop = asyncio.get_running_loop()
+        
+        instance = SessionManager(
+            config=config,
+            on_session_end=self.global_state.remove_active_bot,
+            queues_collection=self.global_state.queues_collection,
+            main_loop=loop,
+            on_status_change=self.create_status_change_callback()
+        )
+        
+        try:
+            # 1. Ingestion Service
+            if self.global_state.queues_collection is not None:
+                ingester = IngestionService(instance, self.global_state.queues_collection)
+                ingester.start()
+                instance.register_service(ingester)
+
+            # 2. Features Subscription
+            if config.features.automatic_bot_reply.enabled:
+                bot_service = AutomaticBotReplyService(instance)
+                instance.register_message_handler(bot_service.handle_message)
+                instance.register_feature("automatic_bot_reply", bot_service)
+            
+            if config.features.kid_phone_safety_tracking.enabled:
+                kid_service = KidPhoneSafetyService(instance)
+                instance.register_message_handler(kid_service.handle_message)
+                instance.register_feature("kid_phone_safety_tracking", kid_service)
+                
+            return instance
+            
+        except Exception as e:
+            logging.error(f"LIFECYCLE: Error setting up session for {config.bot_id}: {e}")
+            await instance.stop()
+            raise e
+
+    async def start_bot(self, bot_id: str):
+        """
+        Start a specific bot by ID.
+        """
+        if bot_id in self.global_state.active_bots:
+            logging.info(f"LIFECYCLE: Bot {bot_id} already active. Skipping start.")
+            return
+
+        config_dict = await self._get_bot_config(bot_id)
+        if not config_dict:
+            logging.error(f"LIFECYCLE: Config not found for {bot_id}. Cannot start.")
+            return
+
+        try:
+            config = BotConfiguration.model_validate(config_dict)
+            
+            # Start Instance
+            instance_id = str(uuid.uuid4())
+            logging.info(f"LIFECYCLE: Starting bot {bot_id} (Instance {instance_id})")
+            
+            instance = await self.create_bot_session(config)
+
+            self.global_state.chatbot_instances[instance_id] = instance
+            await instance.start()
+            self.global_state.active_bots[bot_id] = instance_id
+            
+            # Clear tracking jobs in case relevant
+            if self.global_state.group_tracker:
+                 self.global_state.group_tracker.update_jobs(bot_id, [])
+
+        except Exception as e:
+            logging.error(f"LIFECYCLE: Failed to start bot {bot_id}: {e}")
+            if bot_id in self.global_state.active_bots:
+                self.global_state.remove_active_bot(bot_id)
+
+    async def stop_bot(self, bot_id: str):
+        """
+        Stop a specific bot by ID.
+        """
+        if bot_id not in self.global_state.active_bots:
+            return
+
+        logging.info(f"LIFECYCLE: Stopping bot {bot_id}")
+        instance_id = self.global_state.active_bots[bot_id]
+        instance = self.global_state.chatbot_instances.get(instance_id)
+
+        try:
+            if instance:
+                await instance.stop(cleanup_session=True)
+            
+            self.global_state.remove_active_bot(bot_id)
+            
+            if self.global_state.async_message_delivery_queue_manager:
+                 await self.global_state.async_message_delivery_queue_manager.move_user_to_holding(bot_id)
+            if self.global_state.group_tracker:
+                 self.global_state.group_tracker.stop_tracking_jobs(bot_id)
+                 
+        except Exception as e:
+            logging.error(f"LIFECYCLE: Error stopping bot {bot_id}: {e}")

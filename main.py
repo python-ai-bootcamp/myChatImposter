@@ -78,11 +78,17 @@ async def lifespan(app: FastAPI):
         # 5. Initialize SessionMaintenanceService & Schedule
         from features.session_maintenance.service import SessionMaintenanceService
         global_state.session_maintenance = SessionMaintenanceService(global_state.db)
+
+        # 6. Initialize QuotaService & Schedule
+        from services.quota_service import QuotaService
+        quota_service = await QuotaService.initialize(global_state.db)
         
+        # Schedule Midnight Reset
         # We can reuse the GroupTracker's scheduler for simplicity, or add a general one.
-        # GroupTracker scheduler is available at global_state.group_tracker.scheduler
         if global_state.group_tracker and global_state.group_tracker.scheduler:
-             logging.info("API: Scheduling recurring session maintenance (Every 1 hour).")
+             logging.info("API: Scheduling recurring session maintenance (Every 1 hour) and Quota Reset (Midnight).")
+             
+             # Session Maintenance
              global_state.group_tracker.scheduler.add_job(
                  global_state.session_maintenance.run_global_maintenance,
                  'interval', 
@@ -90,8 +96,23 @@ async def lifespan(app: FastAPI):
                  id='session_maintenance_global',
                  replace_existing=True
              )
+             
+             # Quota Reset (Midnight UTC)
+             global_state.group_tracker.scheduler.add_job(
+                 quota_service.check_and_reset_quotas,
+                 'cron',
+                 hour=0,
+                 minute=0,
+                 timezone='UTC',
+                 id='quota_reset_job',
+                 replace_existing=True
+             )
         else:
-             logging.warning("API: Could not schedule session maintenance - Scheduler not available.")
+             logging.warning("API: Could not schedule maintenance/quota jobs - Scheduler not available.")
+
+        # 7. Start Enabled Bots (Late Binding)
+        # Delay slightly to ensure everything is up? No, just await.
+        asyncio.create_task(quota_service.start_all_active_users_bots())
 
     except Exception as e:
         logging.error(f"API: Startup initialization failed: {e}")

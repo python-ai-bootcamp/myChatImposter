@@ -56,6 +56,19 @@ const AdminUserEditPage = () => {
         }
     };
 
+    const handleQuotaChange = (e) => {
+        const { name, value, type, checked } = e.target;
+        const val = type === 'checkbox' ? checked : value; // Handle checkbox
+
+        setFormData(prev => ({
+            ...prev,
+            llm_quota: {
+                ...(prev.llm_quota || {}),
+                [name]: type === 'number' ? parseFloat(val) : val
+            }
+        }));
+    };
+
     const validate = useCallback(() => {
         if (!formData) return false;
         const errors = {};
@@ -484,6 +497,71 @@ const AdminUserEditPage = () => {
                                 <option value="user">User</option>
                                 <option value="admin">Admin</option>
                             </select>
+                        </div>
+
+                        {/* Quota Section */}
+                        <div style={{ marginTop: '2rem', marginBottom: '1rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
+                            <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem', color: '#cbd5e1' }}>LLM Quota</h3>
+
+                            <div className="form-group">
+                                <label>Enabled</label>
+                                <div style={{ display: 'flex', alignItems: 'center', height: '48px' }}>
+                                    <input
+                                        type="checkbox"
+                                        name="enabled"
+                                        checked={formData.llm_quota?.enabled !== false} // Default true
+                                        onChange={handleQuotaChange}
+                                        style={{ width: '20px', height: '20px', margin: 0 }}
+                                    />
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
+                                <div className="form-group" style={{ gridTemplateColumns: '1fr', gap: '0.5rem' }}>
+                                    <label style={{ textAlign: 'left', fontSize: '0.8rem', color: '#94a3b8' }}>Reset Days</label>
+                                    <input
+                                        type="number"
+                                        name="reset_days"
+                                        value={formData.llm_quota?.reset_days ?? 7}
+                                        onChange={handleQuotaChange}
+                                        min="1"
+                                    />
+                                </div>
+                                <div className="form-group" style={{ gridTemplateColumns: '1fr', gap: '0.5rem' }}>
+                                    <label style={{ textAlign: 'left', fontSize: '0.8rem', color: '#94a3b8' }}>$ Limit / Period</label>
+                                    <input
+                                        type="number"
+                                        name="dollars_per_period"
+                                        value={formData.llm_quota?.dollars_per_period ?? 1.0}
+                                        onChange={handleQuotaChange}
+                                        step="0.01"
+                                        min="0"
+                                    />
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+                                <div className="form-group" style={{ gridTemplateColumns: '1fr', gap: '0.5rem' }}>
+                                    <label style={{ textAlign: 'left', fontSize: '0.8rem', color: '#94a3b8' }}>$ Used (Current)</label>
+                                    <input
+                                        type="number"
+                                        name="dollars_used"
+                                        value={formData.llm_quota?.dollars_used ?? 0.0}
+                                        onChange={handleQuotaChange}
+                                        step="0.0001"
+                                        min="0"
+                                    />
+                                </div>
+                                <div className="form-group" style={{ gridTemplateColumns: '1fr', gap: '0.5rem' }}>
+                                    <label style={{ textAlign: 'left', fontSize: '0.8rem', color: '#94a3b8' }}>Last Reset</label>
+                                    <input
+                                        type="text"
+                                        value={formData.llm_quota?.last_reset ? new Date(formData.llm_quota.last_reset).toLocaleString() : 'Never'}
+                                        disabled
+                                        style={{ background: 'rgba(255,255,255,0.05)', color: '#94a3b8' }}
+                                    />
+                                </div>
+                            </div>
                         </div>
 
                         <button

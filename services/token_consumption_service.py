@@ -43,5 +43,18 @@ class TokenConsumptionService:
             }
             await self.collection.insert_one(doc)
             # logger.debug(f"Recorded token usage for {feature_name}: {input_tokens} in, {output_tokens} out.")
+            
+            # --- Quota Enforcement ---
+            try:
+                from services.quota_service import QuotaService
+                quota_service = QuotaService.get_instance()
+                if quota_service:
+                    cost = quota_service.calculate_cost(input_tokens, output_tokens, config_tier)
+                    await quota_service.update_user_usage(user_id, cost)
+                else:
+                    logger.warning("TokenConsumptionService: QuotaService not initialized. Cost not tracked.")
+            except Exception as qe:
+                logger.error(f"TokenConsumptionService: Failed to update quota: {qe}")
+                
         except Exception as e:
             logger.error(f"Failed to record token consumption event: {e}")

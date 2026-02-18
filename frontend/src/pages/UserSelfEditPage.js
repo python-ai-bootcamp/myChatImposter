@@ -449,6 +449,40 @@ const UserSelfEditPage = () => {
                         </div>
                     </div>
 
+                    {/* Quota Section (Read Only) */}
+                    <div style={{ marginTop: '2rem', marginBottom: '2rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
+                        <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem', color: '#cbd5e1' }}>My LLM Quota</h3>
+
+                        {formData.llm_quota && formData.llm_quota.enabled === false ? (
+                            <div style={{ color: '#ef4444', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem' }}>
+                                Quota is currently disabled. Your bots may not respond.
+                            </div>
+                        ) : (
+                            <div style={{ display: 'grid', gap: '1rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '0.5rem' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Usage</span>
+                                    <span style={{ color: '#e2e8f0', fontWeight: 600 }}>
+                                        ${formData.llm_quota?.dollars_used?.toFixed(4) || '0.0000'} / ${formData.llm_quota?.dollars_per_period?.toFixed(2) || '1.00'}
+                                    </span>
+                                </div>
+
+                                {/* Progress Bar */}
+                                <div style={{ height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
+                                    <div style={{
+                                        height: '100%',
+                                        width: `${Math.min(((formData.llm_quota?.dollars_used || 0) / (formData.llm_quota?.dollars_per_period || 1)) * 100, 100)}%`,
+                                        background: (formData.llm_quota?.dollars_used || 0) >= (formData.llm_quota?.dollars_per_period || 1) ? '#ef4444' : '#10b981'
+                                    }} />
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#94a3b8' }}>
+                                    <span>Resets every {formData.llm_quota?.reset_days || 7} days</span>
+                                    <span>Last Reset: {formData.llm_quota?.last_reset ? new Date(formData.llm_quota.last_reset).toLocaleDateString() : 'Never'}</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+
                     <button
                         type="submit"
                         className="save-button"

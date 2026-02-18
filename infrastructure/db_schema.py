@@ -3,7 +3,7 @@ from motor.motor_asyncio import AsyncIOMotorDatabase
 from pymongo import ASCENDING, DESCENDING
 
 # --- Collection Constants ---
-COLLECTION_CONFIGURATIONS = "configurations"
+COLLECTION_GLOBAL_CONFIGURATIONS = "configurations" # Repurposed for global settings (e.g. token_menu)
 COLLECTION_BOT_CONFIGURATIONS = "bot_configurations" # New collection name
 COLLECTION_QUEUES = "queues"
 COLLECTION_BAILEYS_SESSIONS = "baileys_sessions"

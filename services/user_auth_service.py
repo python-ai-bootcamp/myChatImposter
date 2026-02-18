@@ -8,7 +8,7 @@ import bcrypt
 import re
 from typing import Optional, Tuple, List
 from motor.motor_asyncio import AsyncIOMotorCollection
-from auth_models import UserAuthCredentials
+from auth_models import UserAuthCredentials, LLMQuota
 
 
 class UserAuthService:
@@ -125,7 +125,8 @@ class UserAuthService:
         email: str = "",
         gov_id: str = "",
         country_value: str = "US",
-        language: str = "en"
+        language: str = "en",
+        llm_quota: Optional[LLMQuota] = None
     ) -> Tuple[bool, str]:
         """
         Create new user credentials after validation.
@@ -141,9 +142,7 @@ class UserAuthService:
             gov_id: Government ID
             country_value: Country code
             language: Language code
-
-        Returns:
-            Tuple of (success, message)
+            llm_quota: LLM Quota settings
         """
         # Validate user_id safety
         is_safe, error_msg = self.validate_user_id_safety(user_id)
@@ -178,7 +177,8 @@ class UserAuthService:
             email=email,
             gov_id=gov_id,
             country_value=country_value,
-            language=language
+            language=language,
+            llm_quota=llm_quota
         )
 
         # Insert into MongoDB
@@ -275,7 +275,8 @@ class UserAuthService:
              update_data["password_hash"] = self.hash_password(kwargs["password"])
 
         # Other fields
-        allowed_fields = {"first_name", "last_name", "phone_number", "gov_id", "country_value", "language", "role"}
+        # Other fields
+        allowed_fields = {"first_name", "last_name", "phone_number", "gov_id", "country_value", "language", "role", "llm_quota"}
         for field in allowed_fields:
             if field in kwargs and kwargs[field] is not None:
                  update_data[field] = kwargs[field]

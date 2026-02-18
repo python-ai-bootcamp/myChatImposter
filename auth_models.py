@@ -35,6 +35,7 @@ class UserAuthCredentials(BaseModel):
     gov_id: str = Field(default="", description="Government ID")
     country_value: str = Field(default="US", description="Country code (ISO 3166-1 alpha-2)")
     language: str = Field(default="en", description="Language code (ISO 639-1)")
+    llm_quota: Optional["LLMQuota"] = Field(None, description="LLM Quota details")
 
     @field_validator("user_id")
     @classmethod
@@ -63,6 +64,7 @@ class UserResponse(BaseModel):
     gov_id: str = Field(default="", description="Government ID")
     country_value: str = Field(default="US", description="Country code (ISO 3166-1 alpha-2)")
     language: str = Field(default="en", description="Language code (ISO 639-1)")
+    llm_quota: Optional["LLMQuota"] = Field(None, description="LLM Quota details")
 
 class UserRestrictedResponse(BaseModel):
     """
@@ -211,3 +213,15 @@ class AccountLockout(BaseModel):
     failed_attempts: int = Field(0, description="Number of failed login attempts")
     locked_until: Optional[datetime] = Field(None, description="Lockout expiration timestamp")
     last_attempt: datetime = Field(..., description="Most recent failed attempt timestamp")
+
+
+class LLMQuota(BaseModel):
+    """
+    LLM Quota settings and usage for a user.
+    """
+    reset_days: int = Field(default=7, description="Days between quota reset")
+    dollars_per_period: float = Field(default=1.0, description="Max dollars per period")
+    dollars_used: float = Field(default=0.0, description="Dollars used in current period")
+    last_reset: float = Field(default=0.0, description="Timestamp of last reset (epoch)")
+    enabled: bool = Field(default=True, description="Is user quota enabled")
+

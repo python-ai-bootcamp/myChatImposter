@@ -7,7 +7,7 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query, Request
 from dependencies import GlobalStateManager, get_global_state
 from auth_dependencies import require_admin, require_user_or_admin, get_current_user
-from auth_models import UserAuthCredentials, UserResponse, UserRestrictedResponse
+from auth_models import UserAuthCredentials, UserResponse, UserRestrictedResponse, LLMQuota
 
 router = APIRouter(prefix="/api/internal/users", tags=["User Management"])
 
@@ -43,6 +43,7 @@ class UserCreateRequest(UserProfileBase):
     user_id: str = Field(..., **USER_ID_CONSTRAINTS)
     password: str = Field(..., **PASSWORD_CONSTRAINTS)
     role: str = Field(..., **ROLE_CONSTRAINTS)
+    llm_quota: Optional[LLMQuota] = None
     # Inherits: first_name, last_name, email, phone_number, gov_id, country_value, language
 
 class UserPatchRequest(BaseModel):
@@ -58,6 +59,7 @@ class UserPatchRequest(BaseModel):
 class UserAdminUpdateRequest(UserPatchRequest):
     # For PUT (Admin Only): Includes role.
     role: Optional[str] = Field(None, **ROLE_CONSTRAINTS)
+    llm_quota: Optional[LLMQuota] = None
     
 class PasswordResetRequest(BaseModel):
     password: str = Field(..., min_length=8)
@@ -128,7 +130,8 @@ async def create_user(
         email=user_data.email,
         gov_id=user_data.gov_id,
         country_value=user_data.country_value,
-        language=user_data.language
+        language=user_data.language,
+        llm_quota=user_data.llm_quota
     )
     
     if not success:
