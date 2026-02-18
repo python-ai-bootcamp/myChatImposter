@@ -399,7 +399,8 @@ function EditPage() {
         "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
         "ui:title": "User Details",
         timezone: { "ui:widget": "TimezoneSelectWidget" },
-        language_code: { "ui:widget": "LanguageSelectWidget" }
+        language_code: { "ui:widget": "LanguageSelectWidget" },
+        activated: { "ui:FieldTemplate": InlineCheckboxFieldTemplate, "ui:title": "Auto Activate" }
       },
       chat_provider_config: {
         "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,

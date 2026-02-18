@@ -42,16 +42,25 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
   };
 
   const columns = [
-    { key: 'bot_id', label: 'Bot ID', sortable: true, filterable: true, width: showOwnerColumn ? '25%' : '35%' },
-    ...(showOwnerColumn ? [{ key: 'owner', label: 'Owner', sortable: true, filterable: true, width: '25%' }] : []),
+    { key: 'bot_id', label: 'Bot ID', sortable: true, filterable: true, width: showOwnerColumn ? '18%' : '26%' },
+    ...(showOwnerColumn ? [{ key: 'owner', label: 'Owner', sortable: true, filterable: true, width: '18%' }] : []),
     {
       key: 'authenticated',
       label: 'Authenticated',
       sortable: true,
       filterable: true,
-      width: '15%',
+      width: '12%',
       getValue: (item) => item.authenticated ? 'Yes' : 'No',
       render: (item) => item.authenticated ? <span style={{ color: 'green', fontWeight: 'bold' }}>Yes</span> : <span style={{ color: '#6c757d' }}>No</span>
+    },
+    {
+      key: 'activated',
+      label: 'Auto Activate',
+      sortable: true,
+      filterable: true,
+      width: '12%',
+      getValue: (item) => item.activated !== false ? 'Yes' : 'No',
+      render: (item) => item.activated !== false ? <span style={{ color: 'green', fontWeight: 'bold' }}>Yes</span> : <span style={{ color: '#ef4444' }}>No</span>
     },
     {
       key: 'status',
@@ -59,7 +68,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
       sortable: true,
       filterable: true,
       customFilter: (value, filter) => value.startsWith(filter), // Enforce prefix matching via custom function
-      width: showOwnerColumn ? '25%' : '35%', // Reduced width to make room
+      width: showOwnerColumn ? '20%' : '25%', // Reduced width to make room
       getValue: (item) => String(item.status || ''),
       render: (item) => (
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
@@ -79,7 +88,7 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
       label: 'Active Features',
       sortable: false,
       filterable: true,
-      width: '25%',
+      width: '20%',
       // Smart Filter: Check if filter text is inside ANY of the features
       customFilter: (_, filter, item) => {
         const features = item.active_features || [];

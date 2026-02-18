@@ -108,6 +108,22 @@ async def get_user(
         # User sees restricted view (no role, no limits)
         return UserRestrictedResponse(**user_dict)
 
+@router.get("/{user_id}/llm_quota", response_model=Optional[LLMQuota])
+async def get_user_quota(
+    user_id: str,
+    session: dict = Depends(require_user_or_admin("user_id")),
+    state: GlobalStateManager = Depends(get_global_state)
+):
+    """
+    Get user's LLM quota details (Self or Admin).
+    Accessible to the user themselves.
+    """
+    user = await state.auth_service.get_credentials(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+        
+    return user.llm_quota
+
 @router.post("", status_code=status.HTTP_201_CREATED)
 async def create_user(
     request: Request,

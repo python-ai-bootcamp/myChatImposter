@@ -20,7 +20,8 @@ const thStyle = {
     userSelect: 'none',
     position: 'sticky',
     top: 0,
-    zIndex: 1
+    zIndex: 1,
+    whiteSpace: 'nowrap'
 };
 
 const tdStyle = {

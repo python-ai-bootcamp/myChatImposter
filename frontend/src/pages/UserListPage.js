@@ -133,11 +133,13 @@ const UserListPage = ({ enableFiltering = true }) => {
                 </span>
             )
         },
+        { key: 'email', label: 'Email', sortable: true, filterable: true, width: '25%' },
+        { key: 'country_value', label: 'Country', sortable: true, filterable: true, width: '20%' },
         {
             key: 'quota',
             label: 'Quota',
             sortable: false,
-            filterable: false,
+            filterable: true,
             width: '20%',
             render: (user) => {
                 const quota = user.llm_quota || {};
@@ -160,10 +162,48 @@ const UserListPage = ({ enableFiltering = true }) => {
                         </span>
                     </div>
                 );
+            },
+            customFilter: (stringValue, filterValue, user) => {
+                // 1. Calculate percentage
+                const quota = user.llm_quota || {};
+                const used = quota.dollars_used || 0;
+                const limit = quota.dollars_per_period || 1;
+                // Use actual percentage for filtering, not clamped
+                const percentage = (used / (limit || 1)) * 100;
+
+                // 2. Parse Logic: "OR" splits, then "AND" splits
+                // filterValue is already lowercased by GenericTable
+                const orSegments = filterValue.split(' or ');
+
+                return orSegments.some(segment => {
+                    const andSegments = segment.split(' and ');
+
+                    return andSegments.every(condition => {
+                        condition = condition.trim();
+                        if (!condition) return true;
+
+                        // Match operator and value. 
+                        // Operators: >=, <=, >, <, = (optional)
+                        // Value: digits (optional decimals)
+                        const match = condition.match(/^([<>]=?|=)?\s*(\d+(\.\d+)?)$/);
+
+                        if (!match) return false; // Invalid condition fails this AND segment
+
+                        const operator = match[1] || '=';
+                        const value = parseFloat(match[2]);
+
+                        switch (operator) {
+                            case '>': return percentage > value;
+                            case '>=': return percentage >= value;
+                            case '<': return percentage < value;
+                            case '<=': return percentage <= value;
+                            case '=': return Math.abs(percentage - value) < 0.1;
+                            default: return false;
+                        }
+                    });
+                });
             }
-        },
-        { key: 'email', label: 'Email', sortable: true, filterable: true, width: '25%' },
-        { key: 'country_value', label: 'Country', sortable: true, filterable: true, width: '20%' },
+        }
     ];
 
     // Styles matching HomePage

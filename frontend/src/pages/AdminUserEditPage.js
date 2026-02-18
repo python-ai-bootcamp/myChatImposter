@@ -518,7 +518,7 @@ const AdminUserEditPage = () => {
 
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginBottom: '1rem' }}>
                                 <div className="form-group" style={{ gridTemplateColumns: '1fr', gap: '0.5rem' }}>
-                                    <label style={{ textAlign: 'left', fontSize: '0.8rem', color: '#94a3b8' }}>Reset Days</label>
+                                    <label style={{ textAlign: 'left', fontSize: '0.8rem', color: '#94a3b8' }}>Reset Period (Days)</label>
                                     <input
                                         type="number"
                                         name="reset_days"
@@ -528,7 +528,7 @@ const AdminUserEditPage = () => {
                                     />
                                 </div>
                                 <div className="form-group" style={{ gridTemplateColumns: '1fr', gap: '0.5rem' }}>
-                                    <label style={{ textAlign: 'left', fontSize: '0.8rem', color: '#94a3b8' }}>$ Limit / Period</label>
+                                    <label style={{ textAlign: 'left', fontSize: '0.8rem', color: '#94a3b8' }}>Spending Limit ($ / Period)</label>
                                     <input
                                         type="number"
                                         name="dollars_per_period"
@@ -542,7 +542,7 @@ const AdminUserEditPage = () => {
 
                             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
                                 <div className="form-group" style={{ gridTemplateColumns: '1fr', gap: '0.5rem' }}>
-                                    <label style={{ textAlign: 'left', fontSize: '0.8rem', color: '#94a3b8' }}>$ Used (Current)</label>
+                                    <label style={{ textAlign: 'left', fontSize: '0.8rem', color: '#94a3b8' }}>Current Usage ($)</label>
                                     <input
                                         type="number"
                                         name="dollars_used"
@@ -553,7 +553,7 @@ const AdminUserEditPage = () => {
                                     />
                                 </div>
                                 <div className="form-group" style={{ gridTemplateColumns: '1fr', gap: '0.5rem' }}>
-                                    <label style={{ textAlign: 'left', fontSize: '0.8rem', color: '#94a3b8' }}>Last Reset</label>
+                                    <label style={{ textAlign: 'left', fontSize: '0.8rem', color: '#94a3b8' }}>Last Reset Date</label>
                                     <input
                                         type="text"
                                         value={formData.llm_quota?.last_reset ? new Date(formData.llm_quota.last_reset).toLocaleString() : 'Never'}

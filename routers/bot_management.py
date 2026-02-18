@@ -183,7 +183,8 @@ async def get_bot_info(bot_id: str, state: GlobalStateManager = Depends(ensure_d
                 "status": status_info.get('status', 'unknown'),
                 "authenticated": is_authenticated,
                 "owner": owner,
-                "active_features": active_features
+                "active_features": active_features,
+                "activated": config_data.get("configurations", {}).get("user_details", {}).get("activated", config_data.get("configurations", {}).get("user_details", {}).get("active", True))
             }]
         }
     except HTTPException:
@@ -254,18 +255,29 @@ async def list_bots_status(
                     if features.get("kid_phone_safety_tracking", {}).get("enabled"):
                         active_features.append("Kid Safety")
 
+                # Safe extraction of activated status
+                configs = config_val.get("configurations") or {}
+                user_details = configs.get("user_details") or {}
+                activated = user_details.get("activated", user_details.get("active", True))
+
                 statuses.append({
                     "bot_id": bot_id,
                     "status": status_info.get('status', 'unknown'),
                     "authenticated": is_authenticated,
                     "owner": owner_map.get(bot_id, "unknown"),
-                    "active_features": active_features
+                    "active_features": active_features,
+                    "activated": activated
                 })
 
             except Exception as e:
                 logging.warning(f"API: Error processing status for bot config: {e}")
                 if bot_id:
-                     statuses.append({"bot_id": bot_id, "status": "error", "authenticated": False})
+                     statuses.append({
+                         "bot_id": bot_id, 
+                         "status": "error", 
+                         "authenticated": False,
+                         "activated": True # Default to True on error to match schema default
+                     })
 
         return {"configurations": statuses}
     except Exception as e:

@@ -383,6 +383,10 @@ function RestrictedEditPage() {
                 },
                 language_code: {
                     "ui:widget": "LanguageSelectWidget"
+                },
+                activated: {
+                    "ui:FieldTemplate": InlineCheckboxFieldTemplate,
+                    "ui:title": "Auto Activate"
                 }
             }
         },

@@ -17,12 +17,24 @@ const UserSelfEditPage = () => {
             return;
         }
         setUserId(storedUserId);
-        fetch(`/api/external/users/${storedUserId}`)
-            .then(res => res.json())
-            .then(data => {
+
+        Promise.all([
+            fetch(`/api/external/users/${storedUserId}`).then(res => res.json()),
+            fetch(`/api/external/users/${storedUserId}/llm_quota`).then(res => {
+                if (res.ok) return res.json();
+                return null;
+            })
+        ])
+            .then(([userData, quotaData]) => {
                 // Ensure defaults
-                if (!data.language) data.language = 'en';
-                setFormData(data);
+                if (!userData.language) userData.language = 'en';
+
+                // Merge quota data if available
+                if (quotaData) {
+                    userData.llm_quota = quotaData;
+                }
+
+                setFormData(userData);
                 setLoading(false);
             })
             .catch(err => {
@@ -451,7 +463,7 @@ const UserSelfEditPage = () => {
 
                     {/* Quota Section (Read Only) */}
                     <div style={{ marginTop: '2rem', marginBottom: '2rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
-                        <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem', color: '#cbd5e1' }}>My LLM Quota</h3>
+                        <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem', color: '#cbd5e1' }}>My AI Token Quota</h3>
 
                         {formData.llm_quota && formData.llm_quota.enabled === false ? (
                             <div style={{ color: '#ef4444', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem' }}>
@@ -462,7 +474,7 @@ const UserSelfEditPage = () => {
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Usage</span>
                                     <span style={{ color: '#e2e8f0', fontWeight: 600 }}>
-                                        ${formData.llm_quota?.dollars_used?.toFixed(4) || '0.0000'} / ${formData.llm_quota?.dollars_per_period?.toFixed(2) || '1.00'}
+                                        {Math.round((formData.llm_quota?.dollars_used || 0) * 1000000).toLocaleString()} / {Math.round((formData.llm_quota?.dollars_per_period || 0) * 1000000).toLocaleString()}
                                     </span>
                                 </div>
 
@@ -476,7 +488,25 @@ const UserSelfEditPage = () => {
                                 </div>
 
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#94a3b8' }}>
-                                    <span>Resets every {formData.llm_quota?.reset_days || 7} days</span>
+                                    <span>
+                                        {(() => {
+                                            const lastReset = formData.llm_quota?.last_reset || 0;
+                                            const resetDays = formData.llm_quota?.reset_days || 7;
+                                            const nextReset = lastReset + (resetDays * 24 * 60 * 60 * 1000);
+                                            const diff = nextReset - Date.now();
+
+                                            if (diff <= 0) return "Replenishment due";
+
+                                            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+                                            if (days > 0) return `Replenish in ${days} day${days > 1 ? 's' : ''}`;
+
+                                            const hours = Math.floor(diff / (1000 * 60 * 60));
+                                            if (hours > 0) return `Replenish in ${hours} hour${hours > 1 ? 's' : ''}`;
+
+                                            const minutes = Math.floor(diff / (1000 * 60));
+                                            return `Replenish in ${minutes} minute${minutes > 1 ? 's' : ''}`;
+                                        })()}
+                                    </span>
                                     <span>Last Reset: {formData.llm_quota?.last_reset ? new Date(formData.llm_quota.last_reset).toLocaleDateString() : 'Never'}</span>
                                 </div>
                             </div>

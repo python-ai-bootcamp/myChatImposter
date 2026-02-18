@@ -81,6 +81,7 @@ class UserDetails(BaseModel):
         default="en",
         title="Language"
     )
+    activated: bool = Field(default=True, title="Auto Activate", description="Enable or disable this bot.")
 
 # Feature Models
 class AutomaticBotReplyFeature(BaseModel):
