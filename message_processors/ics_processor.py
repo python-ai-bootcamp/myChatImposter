@@ -32,6 +32,6 @@ class IcsActionableItemProcessor(BaseMessageProcessor):
             recipient=recipient_jid,
             file_data=ics_bytes,
             filename=ics_filename,
-            mime_type="text/calendar",
+            mime_type="application/ics",
             caption=formatted_text
         )

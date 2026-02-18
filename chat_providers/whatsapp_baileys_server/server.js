@@ -853,12 +853,44 @@ async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
         get(target, prop) {
             if (prop === 'error') {
                 return (...args) => {
-                    // Log originally
-                    target.error(...args);
+                    // Check for verbose "error in handling message" which dumps buffers
+                    const arg0 = args[0];
+                    if (arg0 && typeof arg0 === 'object' && arg0.err && arg0.err.message === 'error in handling message') {
+                        // This is the noisy one. We want to log it but WITHOUT the massive buffer dump.
+                        // The structure is usually { trace: '...', err: { message: ... }, node: { ... HUGE BUFFER ... } }
+                        // We can sanitize 'node' or just log a summary.
+                        console.log(`[${userId}] Suppressed verbose Baileys error: ${arg0.err.message}`);
+                        return;
+                    }
+
+                    // Also check string variant
+                    if (typeof arg0 === 'string' && arg0.includes('error in handling message')) {
+                        console.log(`[${userId}] Suppressed verbose Baileys error string: ${arg0.substring(0, 100)}...`);
+                        return;
+                    }
+
+                    // Log originally (but maybe with a sanitizer for other large buffers?)
+                    // Simple sanitizer for arguments
+                    const sanitizedArgs = args.map(arg => {
+                        if (arg && typeof arg === 'object' && arg.node && arg.node.content) {
+                            // Clone to avoid mutating original if used elsewhere (unlikely)
+                            // But usually it's just for logging.
+                            // If we see a huge array in content, replace it.
+                            try {
+                                const str = JSON.stringify(arg);
+                                if (str.length > 2000) {
+                                    return { ...arg, node: { ...arg.node, content: '[Large Buffer Suppressed]' } };
+                                }
+                            } catch (e) { }
+                        }
+                        return arg;
+                    });
+
+                    target.error(...sanitizedArgs);
 
                     // Check for crypto errors
                     // Args can be [obj, msg] or [msg] or [obj]
-                    const arg0 = args[0];
+                    // const arg0 = args[0]; // Already defined above
                     const arg1 = args[1];
 
                     let isCryptoError = false;
@@ -870,7 +902,7 @@ async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
                             isCryptoError = true;
                         }
                         // check child err property
-                        if (arg0.err && (arg0.err.message?.includes('Bad MAC') || arg0.err.message?.includes('SessionError'))) {
+                        if (arg0.err && (arg0.err && arg0.err.message && (arg0.err.message.includes('Bad MAC') || arg0.err.message.includes('SessionError')))) {
                             isCryptoError = true;
                         }
                     } else if (typeof arg0 === 'string') {
@@ -1396,25 +1428,37 @@ app.post('/sessions/:userId/send', async (req, res) => {
         }
         if (req.body.type === 'document') {
             const { content, fileName, mimetype, caption } = req.body;
+
+            // 1. Log inputs
+            console.log(`[${userId}] sendFile debug: fileName: ${fileName}, mimetype: ${mimetype}, content_length: ${content ? content.length : 0}`);
+
             if (!content || !fileName || !mimetype) {
                 console.error(`[${userId}] Invalid document request. fileName: ${fileName}, mimetype: ${mimetype}, content length: ${content ? content.length : 'missing'}`);
                 return res.status(400).json({ error: 'content (base64), fileName, and mimetype are required for document type.' });
             }
             const buffer = Buffer.from(content, 'base64');
-            console.log(`[${userId}] sendFile debug: content b64 length: ${content.length}, buffer length: ${buffer.length}, filename: ${fileName}, mimetype: ${mimetype}`);
 
             if (buffer.length === 0) {
                 console.error(`[${userId}] CRITICAL: Buffer is empty after base64 decode!`);
                 return res.status(400).json({ error: 'Content decode failed: Buffer is empty.' });
             }
 
-            sentMsgData = await session.sock.sendMessage(recipient, {
-                document: buffer,
-                fileName: fileName,
-                mimetype: mimetype,
-                caption: caption
-            });
-            console.log(`[${userId}] sendFile() invoked for ${recipient} (File: ${fileName})`);
+            // 2. Log sending attempt
+            console.log(`[${userId}] Attempting to send document to ${recipient}...`);
+
+            // 3. Log the RESULT of the send
+            try {
+                sentMsgData = await session.sock.sendMessage(recipient, {
+                    document: buffer,
+                    fileName: fileName,
+                    mimetype: mimetype,
+                    caption: caption
+                });
+                console.log(`[${userId}] sendMessage SUCCESS. Result Key: ${JSON.stringify(sentMsgData.key)}`);
+            } catch (sendError) {
+                console.error(`[${userId}] sendMessage FAILED:`, sendError);
+                throw sendError; // Re-throw to be caught by outer catch
+            }
         } else {
             // Default to text
             sentMsgData = await session.sock.sendMessage(recipient, { text: message });
