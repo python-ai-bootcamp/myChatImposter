@@ -256,9 +256,11 @@ class BotLifecycleService:
             if bot_id in self.global_state.active_bots:
                 self.global_state.remove_active_bot(bot_id)
 
-    async def stop_bot(self, bot_id: str):
+    async def stop_bot(self, bot_id: str, cleanup_session: bool = True):
         """
         Stop a specific bot by ID.
+        :param bot_id: The ID of the bot to stop.
+        :param cleanup_session: If True, deletes session credentials. If False, keeps them (Soft Stop).
         """
         if bot_id not in self.global_state.active_bots:
             return
@@ -269,7 +271,7 @@ class BotLifecycleService:
 
         try:
             if instance:
-                await instance.stop(cleanup_session=True)
+                await instance.stop(cleanup_session=cleanup_session)
             
             self.global_state.remove_active_bot(bot_id)
             

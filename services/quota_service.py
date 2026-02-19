@@ -133,7 +133,7 @@ class QuotaService:
             # Stop each if active
             # We can iterate owned_bots and call stop_bot (it handles 'if active' check)
             for bot_id in owned_bots:
-                 await lifecycle.stop_bot(bot_id)
+                 await lifecycle.stop_bot(bot_id, cleanup_session=False)
                  
         except Exception as e:
             logger.error(f"QuotaService: Error stopping bots for {user_id}: {e}")

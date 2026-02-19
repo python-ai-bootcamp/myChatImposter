@@ -524,7 +524,7 @@ const AdminUserEditPage = () => {
                                         name="reset_days"
                                         value={formData.llm_quota?.reset_days ?? 7}
                                         onChange={handleQuotaChange}
-                                        min="1"
+                                        min="0"
                                     />
                                 </div>
                                 <div className="form-group" style={{ gridTemplateColumns: '1fr', gap: '0.5rem' }}>

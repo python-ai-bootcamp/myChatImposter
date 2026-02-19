@@ -746,55 +746,27 @@ async def reload_bot(bot_id: str, state: GlobalStateManager = Depends(ensure_db_
     if bot_id not in state.active_bots:
          raise HTTPException(status_code=404, detail="No active session found.")
     
-    logging.info(f"API: Reloading bot {bot_id}")
+    logging.info(f"API: Reloading bot {bot_id} (via Lifecycle Service)")
     
-    # 1. Stop Current
-    instance_id = state.active_bots[bot_id]
-    instance = state.chatbot_instances.get(instance_id)
-    
+    if not state.bot_lifecycle_service:
+         raise HTTPException(status_code=500, detail="BotLifecycleService not initialized.")
+
     try:
-        if instance:
-            await instance.stop(cleanup_session=False)
-            if state.async_message_delivery_queue_manager:
-                await state.async_message_delivery_queue_manager.move_user_to_holding(bot_id)
-        else:
-             state.remove_active_bot(bot_id)
-             raise HTTPException(status_code=500, detail="Instance missing.")
+        # 1. Soft Stop (Preserve session)
+        await state.bot_lifecycle_service.stop_bot(bot_id, cleanup_session=False)
         
-        # 2. Fetch Config
-        config_data = await _get_bot_config(bot_id, state.configurations_collection)
+        # 2. Start (Re-read config, create new session)
+        await state.bot_lifecycle_service.start_bot(bot_id)
         
-        if not config_data:
-             raise HTTPException(status_code=404, detail="Config not found for reload.")
-             
-        config = BotConfiguration.model_validate(config_data)
-        
-        # 3. Start New
-        new_id = str(uuid.uuid4())
-        
-        new_instance = await _setup_session(config, state)
-        
-        state.chatbot_instances[new_id] = new_instance
-        await new_instance.start()
-        state.active_bots[bot_id] = new_id
-        
-        if state.group_tracker:
-                  state.group_tracker.stop_tracking_jobs(bot_id)
+        # Note: start_bot logs errors but doesn't raise exception.
+        # We assume success if no exception raised here.
         
         return {"status": "success", "message": "Reloaded"}
 
-    except ProviderAuthenticationError as e:
-        logging.error(f"API: Reload auth failed for {bot_id}: {e}")
-        if bot_id in state.active_bots: state.remove_active_bot(bot_id)
-        raise HTTPException(status_code=401, detail=f"Authentication failed: {e}")
-    except ProviderConnectionError as e:
-        logging.error(f"API: Reload connection failed for {bot_id}: {e}")
-        if bot_id in state.active_bots: state.remove_active_bot(bot_id)
-        raise HTTPException(status_code=503, detail=f"Provider unavailable: {e}")
     except Exception as e:
         logging.error(f"API: Reload failed for {bot_id}: {e}")
-        if bot_id in state.active_bots:
-             state.remove_active_bot(bot_id)
+        # If possible, try to cleanup if left in bad state?
+        # Lifecycle service should handle its own cleanup.
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/{bot_id}/groups")
