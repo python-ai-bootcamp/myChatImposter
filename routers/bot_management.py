@@ -59,6 +59,31 @@ def ensure_db_connected(state: GlobalStateManager = Depends(get_global_state)) -
         raise HTTPException(status_code=503, detail="Database connection not available.")
     return state
 
+async def _check_quota_enabled(bot_id: str, state: GlobalStateManager):
+    """
+    Helper to check if the owner of a bot has an enabled quota.
+    Raises HTTPException(403) if quota is disabled.
+    """
+    if state.credentials_collection is None:
+        return # Skip check if credentials collection not available (e.g. testing)
+
+    # 1. Find Owner
+    owner_doc = await state.credentials_collection.find_one(
+        {"owned_bots": bot_id},
+        {"llm_quota": 1}
+    )
+    
+    if not owner_doc:
+        return # No owner found, assume allowed or handled elsewhere
+        
+    # 2. Check Quota
+    llm_quota = owner_doc.get("llm_quota", {})
+    if not llm_quota.get("enabled", True):
+        raise HTTPException(
+            status_code=403, 
+            detail="Action blocked: User quota usage limit exceeded."
+        )
+
 
 async def _setup_session(config: BotConfiguration, state: GlobalStateManager) -> SessionManager:
     """
@@ -217,11 +242,17 @@ async def list_bots_status(
     try:
         # Pre-fetch ownership map for efficiency
         owner_map = {}
+        owner_quota_map = {}
         if state.credentials_collection is not None:
-             creds_cursor = state.credentials_collection.find({}, {"user_id": 1, "owned_bots": 1})
+             creds_cursor = state.credentials_collection.find({}, {"user_id": 1, "owned_bots": 1, "llm_quota": 1})
              async for cred in creds_cursor:
                  owner_id = cred.get("user_id")
                  owned_bots = cred.get("owned_bots", [])
+                 # Check quota
+                 quota = cred.get("llm_quota", {})
+                 enabled = quota.get("enabled", True)
+                 owner_quota_map[owner_id] = enabled
+                 
                  for bid in owned_bots:
                      owner_map[bid] = owner_id
         
@@ -272,13 +303,22 @@ async def list_bots_status(
                 user_details = configs.get("user_details") or {}
                 activated = user_details.get("activated", user_details.get("active", True))
 
+                owner_id = owner_map.get(bot_id, "unknown")
+                user_enabled = True
+                
+                # Fetch quota status from pre-fetched owner data or fetch now?
+                # Optimization: We pre-fetched owned_bots but didn't fetch llm_quota.
+                # Let's adjust the pre-fetch query above or just fetch here if map is insufficient.
+                # Actually, let's adjust the pre-fetch query to include llm_quota.
+                
                 statuses.append({
                     "bot_id": bot_id,
                     "status": status_info.get('status', 'unknown'),
                     "authenticated": is_authenticated,
-                    "owner": owner_map.get(bot_id, "unknown"),
+                    "owner": owner_id,
                     "active_features": active_features,
-                    "activated": activated
+                    "activated": activated,
+                    "user_enabled": owner_quota_map.get(owner_id, True) # New Field
                 })
 
             except Exception as e:
@@ -645,6 +685,8 @@ async def link_bot(bot_id: str, state: GlobalStateManager = Depends(ensure_db_co
     """
     Start bot session (Link).
     """
+    # 0. Check Quota
+    await _check_quota_enabled(bot_id, state)
     
     # Check for existing session
     if bot_id in state.active_bots:
@@ -743,6 +785,9 @@ async def reload_bot(bot_id: str, state: GlobalStateManager = Depends(ensure_db_
     """
     Reload bot session.
     """
+    # 0. Check Quota
+    await _check_quota_enabled(bot_id, state)
+
     if bot_id not in state.active_bots:
          raise HTTPException(status_code=404, detail="No active session found.")
     
