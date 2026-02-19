@@ -548,7 +548,7 @@ const AdminUserEditPage = () => {
                                         name="dollars_used"
                                         value={formData.llm_quota?.dollars_used ?? 0.0}
                                         onChange={handleQuotaChange}
-                                        step="0.0001"
+                                        step="any"
                                         min="0"
                                     />
                                 </div>

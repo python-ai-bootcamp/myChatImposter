@@ -150,6 +150,44 @@ const UserSelfEditPage = () => {
     if (loading) return <div style={pageBackground} />;
     if (!formData) return <div style={{ ...pageBackground, color: '#e2e8f0', textAlign: 'center', paddingTop: '50px' }}>Failed to load profile.</div>;
 
+    const getReplenishText = () => {
+        if (!formData?.llm_quota) return "";
+
+        const lastReset = formData.llm_quota.last_reset || 0;
+        const resetDays = formData.llm_quota.reset_days || 7;
+        const rawTarget = lastReset + (resetDays * 24 * 60 * 60 * 1000);
+
+        let targetDate = new Date(rawTarget);
+        if (targetDate.getMinutes() > 0 || targetDate.getSeconds() > 0 || targetDate.getMilliseconds() > 0) {
+            targetDate.setHours(targetDate.getHours() + 1);
+            targetDate.setMinutes(0, 0, 0);
+        }
+
+        let targetTime = targetDate.getTime();
+        const now = Date.now();
+
+        if (targetTime <= now) {
+            const nextHour = new Date(now);
+            nextHour.setHours(nextHour.getHours() + 1);
+            nextHour.setMinutes(0, 0, 0);
+            targetTime = nextHour.getTime();
+        }
+
+        const diff = targetTime - now;
+        if (diff <= 0) return "Replenishment due soon";
+
+        const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+        if (days > 0) return `in ${days} day${days > 1 ? 's' : ''}`;
+
+        const hours = Math.floor(diff / (1000 * 60 * 60));
+        if (hours > 0) return `in ${hours} hour${hours > 1 ? 's' : ''}`;
+
+        const minutes = Math.floor(diff / (1000 * 60));
+        return `in ${minutes} minute${minutes > 1 ? 's' : ''}`;
+    };
+
+    const replenishText = getReplenishText();
+
     return (
         <div className="profile-page">
             <style>{`
@@ -465,12 +503,15 @@ const UserSelfEditPage = () => {
                     <div style={{ marginTop: '2rem', marginBottom: '2rem', borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: '1rem' }}>
                         <h3 style={{ margin: '0 0 1rem 0', fontSize: '1.2rem', color: '#cbd5e1' }}>My AI Token Quota</h3>
 
-                        {formData.llm_quota && formData.llm_quota.enabled === false ? (
-                            <div style={{ color: '#ef4444', padding: '1rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem' }}>
-                                Quota is currently disabled. Your bots may not respond.
-                            </div>
-                        ) : (
+                        {formData.llm_quota && (
                             <div style={{ display: 'grid', gap: '1rem', background: 'rgba(255,255,255,0.02)', padding: '1rem', borderRadius: '0.5rem' }}>
+
+                                {formData.llm_quota.enabled === false && (
+                                    <div style={{ color: '#ef4444', padding: '0.75rem', background: 'rgba(239, 68, 68, 0.1)', borderRadius: '0.5rem', fontSize: '0.9rem', marginBottom: '0.5rem' }}>
+                                        AI Token Quota was depleted. Your bots will start working again in {replenishText}.
+                                    </div>
+                                )}
+
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                     <span style={{ color: '#94a3b8', fontSize: '0.9rem' }}>Usage</span>
                                     <span style={{ color: '#e2e8f0', fontWeight: 600 }}>
@@ -479,56 +520,31 @@ const UserSelfEditPage = () => {
                                 </div>
 
                                 {/* Progress Bar */}
-                                <div style={{ height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden' }}>
+                                <div style={{ height: '8px', background: 'rgba(255,255,255,0.1)', borderRadius: '4px', overflow: 'hidden', position: 'relative' }}>
+                                    {/* Gradient Background */}
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: 0,
+                                        left: 0,
+                                        height: '100%',
+                                        width: '100%',
+                                        background: 'linear-gradient(to right, #22c55e, #eab308, #f97316, #ef4444)',
+                                        opacity: 0.2
+                                    }} />
+
+                                    {/* Active Bar with Masking */}
                                     <div style={{
                                         height: '100%',
                                         width: `${Math.min(((formData.llm_quota?.dollars_used || 0) / (formData.llm_quota?.dollars_per_period || 1)) * 100, 100)}%`,
-                                        background: (formData.llm_quota?.dollars_used || 0) >= (formData.llm_quota?.dollars_per_period || 1) ? '#ef4444' : '#10b981'
+                                        background: 'linear-gradient(to right, #22c55e, #eab308, #f97316, #ef4444)',
+                                        transition: 'width 0.3s ease-in-out',
+                                        boxShadow: '0 0 10px rgba(0,0,0,0.3)'
                                     }} />
                                 </div>
 
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', color: '#94a3b8' }}>
                                     <span>
-                                        {(() => {
-                                            const lastReset = formData.llm_quota?.last_reset || 0;
-                                            const resetDays = formData.llm_quota?.reset_days || 7;
-                                            // Raw target: When the period actually ends
-                                            const rawTarget = lastReset + (resetDays * 24 * 60 * 60 * 1000);
-
-                                            // Effective target: The next top-of-the-hour after rawTarget
-                                            // (Because the cron job runs at minute=0)
-                                            let targetDate = new Date(rawTarget);
-                                            if (targetDate.getMinutes() > 0 || targetDate.getSeconds() > 0 || targetDate.getMilliseconds() > 0) {
-                                                targetDate.setHours(targetDate.getHours() + 1);
-                                                targetDate.setMinutes(0, 0, 0);
-                                            }
-
-                                            let targetTime = targetDate.getTime();
-                                            const now = Date.now();
-
-                                            // If we passed the target but haven't reset yet, 
-                                            // it means we are waiting for the next hourly check.
-                                            if (targetTime <= now) {
-                                                const nextHour = new Date(now);
-                                                nextHour.setHours(nextHour.getHours() + 1);
-                                                nextHour.setMinutes(0, 0, 0);
-                                                targetTime = nextHour.getTime();
-                                            }
-
-                                            const diff = targetTime - now;
-
-                                            // Should not happen due to logic above, but safety check
-                                            if (diff <= 0) return "Replenishment due soon";
-
-                                            const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-                                            if (days > 0) return `Replenish in ${days} day${days > 1 ? 's' : ''}`;
-
-                                            const hours = Math.floor(diff / (1000 * 60 * 60));
-                                            if (hours > 0) return `Replenish in ${hours} hour${hours > 1 ? 's' : ''}`;
-
-                                            const minutes = Math.floor(diff / (1000 * 60));
-                                            return `Replenish in ${minutes} minute${minutes > 1 ? 's' : ''}`;
-                                        })()}
+                                        Replenish {replenishText}
                                     </span>
                                     <span>Last Reset: {formData.llm_quota?.last_reset ? new Date(formData.llm_quota.last_reset).toLocaleDateString() : 'Never'}</span>
                                 </div>
