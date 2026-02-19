@@ -16,13 +16,16 @@ from .history_service import GroupHistoryService
 
 logger = logging.getLogger(__name__)
 
+from motor.motor_asyncio import AsyncIOMotorCollection
+
 class GroupTrackingRunner:
-    def __init__(self, chatbot_instances: Dict[str, SessionManager], history_service: GroupHistoryService, queue_manager: AsyncMessageDeliveryQueueManager, extractor: ActionItemExtractor, window_calculator: CronWindowCalculator):
+    def __init__(self, chatbot_instances: Dict[str, SessionManager], history_service: GroupHistoryService, queue_manager: AsyncMessageDeliveryQueueManager, extractor: ActionItemExtractor, window_calculator: CronWindowCalculator, token_consumption_collection: AsyncIOMotorCollection):
         self.chatbot_instances = chatbot_instances
         self.history = history_service
         self.queue_manager = queue_manager
         self.extractor = extractor
         self.window_calculator = window_calculator
+        self.token_consumption_collection = token_consumption_collection
 
     async def run_tracking_cycle(self, bot_id: str, owner_user_id: str, config: PeriodicGroupTrackingConfig, timezone: str = "UTC"):
         """
@@ -170,7 +173,6 @@ class GroupTrackingRunner:
                 language_code = target_instance.config.configurations.user_details.language_code
                 
                 # Extract action items
-                from dependencies import global_state
                 action_items = await self.extractor.extract(
                     messages=transformed_messages,
                     llm_config=llm_config,
@@ -180,7 +182,7 @@ class GroupTrackingRunner:
                     group_id=config.groupIdentifier,
                     language_code=language_code,
                     llm_config_high=llm_config_high,
-                    token_consumption_collection=global_state.token_consumption_collection
+                    token_consumption_collection=self.token_consumption_collection
                 )
                 
                 if not action_items:

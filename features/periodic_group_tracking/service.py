@@ -5,7 +5,7 @@ import random
 from datetime import datetime
 from zoneinfo import ZoneInfo
 from typing import Dict
-from motor.motor_asyncio import AsyncIOMotorDatabase
+from motor.motor_asyncio import AsyncIOMotorDatabase, AsyncIOMotorCollection
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -23,7 +23,7 @@ from .cron_window import CronWindowCalculator
 logger = logging.getLogger(__name__)
 
 class GroupTracker:
-    def __init__(self, db: AsyncIOMotorDatabase, chatbot_instances: Dict[str, SessionManager], async_message_delivery_queue_manager: AsyncMessageDeliveryQueueManager = None):
+    def __init__(self, db: AsyncIOMotorDatabase, chatbot_instances: Dict[str, SessionManager], token_consumption_collection: AsyncIOMotorCollection, async_message_delivery_queue_manager: AsyncMessageDeliveryQueueManager = None):
         
         # Dependencies
         self.chatbot_instances = chatbot_instances
@@ -41,7 +41,8 @@ class GroupTracker:
             history_service=self.history,
             queue_manager=self.async_message_delivery_queue_manager,
             extractor=extractor,
-            window_calculator=window_calculator
+            window_calculator=window_calculator,
+            token_consumption_collection=token_consumption_collection
         )
         
         # Scheduler

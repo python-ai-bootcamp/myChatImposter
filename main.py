@@ -65,7 +65,7 @@ async def lifespan(app: FastAPI):
         await global_state.async_message_delivery_queue_manager.start_consumer()
         
         # 3. Initialize GroupTracker
-        global_state.group_tracker = GroupTracker(global_state.db, global_state.chatbot_instances, global_state.async_message_delivery_queue_manager)
+        global_state.group_tracker = GroupTracker(global_state.db, global_state.chatbot_instances, global_state.token_consumption_collection, global_state.async_message_delivery_queue_manager)
         global_state.group_tracker.start()
         
         # 4a. Initialize UserAuthService (Needed by User Management)
