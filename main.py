@@ -86,7 +86,7 @@ async def lifespan(app: FastAPI):
         # Schedule Midnight Reset
         # We can reuse the GroupTracker's scheduler for simplicity, or add a general one.
         if global_state.group_tracker and global_state.group_tracker.scheduler:
-             logging.info("API: Scheduling recurring session maintenance (Every 1 hour) and Quota Reset (Midnight).")
+             logging.info("API: Scheduling recurring session maintenance (Every 1 hour) and Quota Reset (Every 1 hour).")
              
              # Session Maintenance
              global_state.group_tracker.scheduler.add_job(
@@ -97,11 +97,12 @@ async def lifespan(app: FastAPI):
                  replace_existing=True
              )
              
-             # Quota Reset (Midnight UTC)
+             # Quota Reset (Hourly)
+             # Checks if any user is due for a reset and processes them.
              global_state.group_tracker.scheduler.add_job(
                  quota_service.check_and_reset_quotas,
                  'cron',
-                 hour=0,
+                 hour='*', # Run every hour
                  minute=0,
                  timezone='UTC',
                  id='quota_reset_job',

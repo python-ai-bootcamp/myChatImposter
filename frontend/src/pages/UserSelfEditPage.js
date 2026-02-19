@@ -492,10 +492,33 @@ const UserSelfEditPage = () => {
                                         {(() => {
                                             const lastReset = formData.llm_quota?.last_reset || 0;
                                             const resetDays = formData.llm_quota?.reset_days || 7;
-                                            const nextReset = lastReset + (resetDays * 24 * 60 * 60 * 1000);
-                                            const diff = nextReset - Date.now();
+                                            // Raw target: When the period actually ends
+                                            const rawTarget = lastReset + (resetDays * 24 * 60 * 60 * 1000);
 
-                                            if (diff <= 0) return "Replenishment due";
+                                            // Effective target: The next top-of-the-hour after rawTarget
+                                            // (Because the cron job runs at minute=0)
+                                            let targetDate = new Date(rawTarget);
+                                            if (targetDate.getMinutes() > 0 || targetDate.getSeconds() > 0 || targetDate.getMilliseconds() > 0) {
+                                                targetDate.setHours(targetDate.getHours() + 1);
+                                                targetDate.setMinutes(0, 0, 0);
+                                            }
+
+                                            let targetTime = targetDate.getTime();
+                                            const now = Date.now();
+
+                                            // If we passed the target but haven't reset yet, 
+                                            // it means we are waiting for the next hourly check.
+                                            if (targetTime <= now) {
+                                                const nextHour = new Date(now);
+                                                nextHour.setHours(nextHour.getHours() + 1);
+                                                nextHour.setMinutes(0, 0, 0);
+                                                targetTime = nextHour.getTime();
+                                            }
+
+                                            const diff = targetTime - now;
+
+                                            // Should not happen due to logic above, but safety check
+                                            if (diff <= 0) return "Replenishment due soon";
 
                                             const days = Math.floor(diff / (1000 * 60 * 60 * 24));
                                             if (days > 0) return `Replenish in ${days} day${days > 1 ? 's' : ''}`;

@@ -138,69 +138,93 @@ class QuotaService:
         except Exception as e:
             logger.error(f"QuotaService: Error stopping bots for {user_id}: {e}")
 
-    async def start_user_bots(self, user_id: str):
+    async def _process_activation_queue(self, bot_ids: list[str]):
         """
-        Start all activated bots for a user.
+        Activates bots sequentially with a random delay to prevent load spikes.
+        Re-evaluates conditions before each activation.
         """
-        try:
-            from dependencies import GlobalStateManager
-            lifecycle = GlobalStateManager.get_instance().bot_lifecycle_service
-            if not lifecycle:
-                 logger.error("QuotaService: BotLifecycleService not available to start bots.")
-                 return
+        import asyncio
+        import random
+        from dependencies import GlobalStateManager
+        
+        lifecycle = GlobalStateManager.get_instance().bot_lifecycle_service
+        if not lifecycle:
+            logger.error("QuotaService: BotLifecycleService not available.")
+            return
 
-            # Get owned bots
-            user_doc = await self.credentials_collection.find_one({"user_id": user_id}, {"owned_bots": 1})
-            if not user_doc: return
-            
-            owned_bots = user_doc.get("owned_bots", [])
-            
-            # Filter by activated flag in bot_configurations
-            cursor = self.bot_config_collection.find({
-                "config_data.bot_id": {"$in": owned_bots}
-            })
-            
-            async for doc in cursor:
-                config_data = doc.get("config_data", {})
-                bot_id = config_data.get("bot_id")
+        logger.info(f"QuotaService: Processing activation queue for {len(bot_ids)} bots...")
+        
+        for i, bot_id in enumerate(bot_ids):
+            try:
+                # 1. Re-evaluate conditions
+                # We need to find the bot owner to check quota
+                # This is a bit expensive to query for every bot, but necessary for strict correctness
+                # Optimization: We could fetch the config and owner in one go.
                 
-                # Check 1: Activated
-                user_details = config_data.get("configurations", {}).get("user_details", {})
-                activated = user_details.get("activated", user_details.get("active", True))
-                
-                if not activated:
+                bot_config = await self.bot_config_collection.find_one({"config_data.bot_id": bot_id})
+                if not bot_config:
+                    logger.warning(f"QuotaService: Bot {bot_id} not found during activation. Skipping.")
                     continue
-
-                # Check 2: Authenticated (Has Credentials)
-                # Only start if credentials exist
+                
+                config_data = bot_config.get("config_data", {})
+                user_details = config_data.get("configurations", {}).get("user_details", {})
+                
+                # Check 1: Bot Activated
+                if not user_details.get("activated", user_details.get("active", True)):
+                    logger.info(f"QuotaService: Bot {bot_id} is disabled by user. Skipping.")
+                    continue
+                
+                # Check 2: Owner Quota Enabled
+                owner_phone = config_data.get("owner_phone_number") # This is actually the owner's ID in this system context? 
+                # Wait, strictly speaking we need the User ID from the credentials that OWNS this bot.
+                # In bot_management, owner is stored.
+                # Let's rely on finding the user who has this bot in `owned_bots`
+                
+                owner_doc = await self.credentials_collection.find_one({"owned_bots": bot_id})
+                if not owner_doc:
+                     logger.warning(f"QuotaService: Owner for bot {bot_id} not found. Skipping.")
+                     continue
+                     
+                llm_quota = owner_doc.get("llm_quota", {})
+                if not llm_quota.get("enabled", True):
+                     logger.info(f"QuotaService: User quota disabled for bot {bot_id}. Skipping.")
+                     continue
+                
+                # Check 3: Authenticated
                 auth_doc = await self.baileys_sessions_collection.find_one({"_id": f"{bot_id}-creds"})
                 if not auth_doc:
-                     logger.info(f"QuotaService: Skipping auto-start for {bot_id} (Activated but Not Authenticated)")
-                     continue
+                    logger.info(f"QuotaService: Bot {bot_id} not authenticated. Skipping.")
+                    continue
 
-                if bot_id:
-                    await lifecycle.start_bot(bot_id)
-                    
-        except Exception as e:
-             logger.error(f"QuotaService: Error starting bots for {user_id}: {e}")
+                # All checks passed - Activate
+                logger.info(f"QuotaService: Auto-activating bot {bot_id} ({i+1}/{len(bot_ids)})")
+                await lifecycle.start_bot(bot_id)
+
+                # Random Delay (10-20s) if not the last one
+                if i < len(bot_ids) - 1:
+                    delay = random.uniform(10, 20)
+                    logger.info(f"QuotaService: Waiting {delay:.2f}s before next activation...")
+                    await asyncio.sleep(delay)
+
+            except Exception as e:
+                logger.error(f"QuotaService: Error activating bot {bot_id}: {e}")
+                # Continue to next bot even if this one fails
 
     async def check_and_reset_quotas(self):
         """
-        Midnight job to reset quotas.
+        Hourly job to reset quotas.
         """
         now_ms = datetime.utcnow().timestamp() * 1000
-        
-        # Iterate all users with quota
-        # Optimization: Add index on last_reset if this becomes slow.
-        async for user in self.credentials_collection.find({"llm_quota": {"$exists": True}}):
+        bots_to_activate = []
+
+        # Iterate users needing reset
+        async for user in self.credentials_collection.find({"llm_quota.enabled": False}):
             try:
                 user_id = user["user_id"]
                 quota = user.get("llm_quota", {})
                 last_reset = quota.get("last_reset", 0)
                 reset_days = quota.get("reset_days", 7)
                 
-                # Check if due for reset
-                # (last_reset + reset_days_in_ms) < now
                 next_reset = last_reset + (reset_days * 24 * 60 * 60 * 1000)
                 
                 if now_ms >= next_reset:
@@ -213,25 +237,36 @@ class QuotaService:
                     }
                     await self.credentials_collection.update_one({"user_id": user_id}, {"$set": updates})
                     
-                    # If it was disabled, restart bots
-                    if not quota.get("enabled", True):
-                         await self.start_user_bots(user_id)
+                    # Collect bots for this user
+                    user_bots = user.get("owned_bots", [])
+                    bots_to_activate.extend(user_bots)
                          
             except Exception as e:
                 logger.error(f"QuotaService: Error resetting quota for user {user.get('user_id')}: {e}")
+
+        # Process activations
+        if bots_to_activate:
+             await self._process_activation_queue(bots_to_activate)
 
     async def start_all_active_users_bots(self):
         """
         Starts bots for all users with enabled quota.
         """
         import asyncio
-        logger.info("QuotaService: Waiting 60s before auto-starting bots to ensure system stability...")
-        await asyncio.sleep(60) 
+        logger.info("QuotaService: Waiting 10s before auto-starting bots to ensure system stability...")
+        await asyncio.sleep(10) 
 
-        logger.info("QuotaService: Starting bots for all enabled users...")
-        count = 0
+        logger.info("QuotaService: Collecting bots for startup activation...")
+        bots_to_activate = []
+        
         async for user in self.credentials_collection.find({"llm_quota.enabled": True}):
-             await self.start_user_bots(user["user_id"])
-             count += 1
-        logger.info(f"QuotaService: Processed startup for {count} users.")
+             # Only add bots if they currently exist in owned_bots
+             # We initiate the list here, validation happens in _process_activation_queue
+             bots_to_activate.extend(user.get("owned_bots", []))
+        
+        if bots_to_activate:
+            logger.info(f"QuotaService: Found {len(bots_to_activate)} potential bots to start.")
+            await self._process_activation_queue(bots_to_activate)
+        else:
+            logger.info("QuotaService: No bots found to start.")
 

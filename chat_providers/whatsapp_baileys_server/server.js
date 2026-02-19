@@ -699,7 +699,8 @@ const performSoftResetAction = async (userId, session) => {
     try {
         const keysToDelete = [
             `^${userId}-app-state-sync-`,
-            `^${userId}-sender-key-memory`
+            `^${userId}-sender-key-memory`,
+            `^${userId}-pre-key-`
         ];
         const deletePattern = keysToDelete.join('|');
         await baileysSessionsCollection.deleteMany({ _id: { $regex: deletePattern } });
@@ -930,16 +931,17 @@ async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
         if (!sess.cryptoTracker) {
             sess.cryptoTracker = { count: 1, firstTimestamp: now };
         } else {
-            if (now - sess.cryptoTracker.firstTimestamp > 120000) {
+            // 5-minute window (300,000ms)
+            if (now - sess.cryptoTracker.firstTimestamp > 300000) {
                 sess.cryptoTracker = { count: 1, firstTimestamp: now };
             } else {
                 sess.cryptoTracker.count += 1;
             }
         }
 
-        console.log(`[${uId}] Crypto error count: ${sess.cryptoTracker.count}/3`);
+        console.log(`[${uId}] Crypto error count: ${sess.cryptoTracker.count}/10`);
 
-        if (sess.cryptoTracker.count >= 3) {
+        if (sess.cryptoTracker.count >= 10) {
             const softResetCount = sess.softResetCount || 0;
             if (softResetCount >= 3) {
                 console.log(`[${uId}] Soft Reset limit reached (${softResetCount}) for Crypto Errors. Escalating to Hard Reset.`);

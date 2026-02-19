@@ -47,6 +47,8 @@ class TokenTrackingCallback(AsyncCallbackHandler):
                         if 'input_token_details' in usage:
                             cached_input_tokens = usage['input_token_details'].get('cache_read', 0)
             
+
+
             # --- Strategy 2: Provider-Specific Normalizer (Fallback or Enrichment) ---
             # Even if we got basic tokens, we might need provider specific extraction for cached tokens
             # if LangChain didn't normalize them yet.
@@ -56,8 +58,18 @@ class TokenTrackingCallback(AsyncCallbackHandler):
                 input_tokens = provider_input
                 output_tokens = provider_output
             
+            # If we haven't found cached tokens yet, try the provider-specific one
             if cached_input_tokens == 0 and provider_cached > 0:
                  cached_input_tokens = provider_cached
+
+            # --- Extra Check for OpenAI 'cached_tokens' in llm_output ---
+            # The logs showed: 'prompt_tokens_details': {'audio_tokens': 0, 'cached_tokens': 0}
+            if cached_input_tokens == 0 and response.llm_output and 'token_usage' in response.llm_output:
+                token_usage = response.llm_output['token_usage']
+                if 'prompt_tokens_details' in token_usage:
+                    cached_tokens = token_usage['prompt_tokens_details'].get('cached_tokens', 0)
+                    if cached_tokens > 0:
+                        cached_input_tokens = cached_tokens
 
             # --- Record Event ---
             if input_tokens > 0 or output_tokens > 0:
