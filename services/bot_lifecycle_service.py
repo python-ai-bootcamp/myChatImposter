@@ -61,15 +61,27 @@ class BotLifecycleService:
 
                 if config_dict:
                     config = BotConfiguration.model_validate(config_dict)
+                    
+                    # Determine Owner
+                    owner_user_id = None
+                    if self.global_state.credentials_collection is not None:
+                         # Find credential that owns this configuration
+                         owner_doc = await self.global_state.credentials_collection.find_one(
+                             {"owned_bots": bot_id},
+                             {"user_id": 1}
+                         )
+                         if owner_doc:
+                             owner_user_id = owner_doc.get("user_id")
 
                     if config.features.periodic_group_tracking.enabled:
                         self.global_state.group_tracker.update_jobs(
                             bot_id,
                             config.features.periodic_group_tracking.tracked_groups,
-                            config.configurations.user_details.timezone
+                            config.configurations.user_details.timezone,
+                            owner_user_id=owner_user_id
                         )
                     else:
-                        self.global_state.group_tracker.update_jobs(bot_id, [])
+                        self.global_state.group_tracker.update_jobs(bot_id, [], owner_user_id=owner_user_id)
             except Exception as e:
                 logging.error(f"LIFECYCLE: Failed to start tracking for {bot_id}: {e}")
     
@@ -164,12 +176,24 @@ class BotLifecycleService:
         """
         loop = asyncio.get_running_loop()
         
+        # Determine Owner
+        owner_user_id = None
+        if self.global_state.credentials_collection is not None:
+            # Find credential that owns this configuration
+            owner_doc = await self.global_state.credentials_collection.find_one(
+                {"owned_bots": config.bot_id},
+                {"user_id": 1}
+            )
+            if owner_doc:
+                owner_user_id = owner_doc.get("user_id")
+        
         instance = SessionManager(
             config=config,
             on_session_end=self.global_state.remove_active_bot,
             queues_collection=self.global_state.queues_collection,
             main_loop=loop,
-            on_status_change=self.create_status_change_callback()
+            on_status_change=self.create_status_change_callback(),
+            owner_user_id=owner_user_id
         )
         
         try:

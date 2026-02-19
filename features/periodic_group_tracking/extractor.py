@@ -66,14 +66,15 @@ class ActionItemExtractor:
             logger.error(f"Failed to parse LLM JSON: {e}. Raw: {json_str[:200]}...")
             return []
 
-    async def extract(self, messages: list, llm_config: LLMProviderConfig, user_id: str, timezone: ZoneInfo, group_id: str = "", language_code: str = "en", llm_config_high: LLMProviderConfig = None, token_consumption_collection = None) -> list:
+    async def extract(self, messages: list, llm_config: LLMProviderConfig, user_id: str, bot_id: str, timezone: ZoneInfo, group_id: str = "", language_code: str = "en", llm_config_high: LLMProviderConfig = None, token_consumption_collection = None) -> list:
         """
         Main entry point. Uses LLM to extract action items from group messages.
         
         Args:
             messages: List of raw message dicts
             llm_config: LLM provider configuration
-            user_id: User identifier
+            user_id: User identifier (Owner)
+            bot_id: Bot identifier
             timezone: User's timezone
             group_id: Group identifier for recording purposes
             language_code: ISO 639-1 language code for response language
@@ -85,7 +86,7 @@ class ActionItemExtractor:
         
         # Build Input JSON
         messages_json = self._build_llm_input_json(messages, timezone)
-        logger.info(f"Built LLM input JSON with {len(messages)} messages for user {user_id}")
+        logger.info(f"Built LLM input JSON with {len(messages)} messages for bot {bot_id} (owner: {user_id})")
 
         # System prompt with language placeholder - loaded from external file
         try:
@@ -104,7 +105,11 @@ class ActionItemExtractor:
         recorder = None
         epoch_ts = None
         if record_enabled:
-            recorder = LLMRecorder(user_id, "periodic_group_tracking", group_id)
+            # Recorder uses owner_id? or bot_id? Usually owner_id for user-visible logs, but features are bot-centric.
+            # Using bot_id for recorder to keep it associated with the bot's activity stream?
+            # Existing code used user_id which was bot_id.
+            # Let's use bot_id for recording context in recorder, but token tracking uses owner_id.
+            recorder = LLMRecorder(bot_id, "periodic_group_tracking", group_id)
             epoch_ts = recorder.start_recording()
             # Format prompt for recording - substitute language_name variable
             language_name = get_language_name(language_code)
@@ -122,8 +127,8 @@ class ActionItemExtractor:
             
             llm = create_tracked_llm(
                 llm_config=llm_config,
-                user_id=f"action_items_{user_id}", # Context user_id for provider
-                bot_id=list(messages[0].keys())[0] if messages else user_id, # Best effort bot_id or user_id
+                user_id=user_id if user_id else bot_id, # Use owner_id if available, else fallback to bot_id
+                bot_id=bot_id, 
                 feature_name="periodic_group_tracking",
                 config_tier="low",
                 token_consumption_collection=token_consumption_collection
@@ -148,7 +153,8 @@ class ActionItemExtractor:
             # Invoke the chain with all template variables
             # PHASE 1: Low Model Extraction
             # Invoke the chain with all template variables
-            logger.info(f"Invoking LLM (Low) for action items extraction for user {user_id}")
+            # Invoke the chain with all template variables
+            logger.info(f"Invoking LLM (Low) for action items extraction for bot {bot_id}")
             result_low = await chain.ainvoke({"input": messages_json, "language_code": language_code, "language_name": language_name})
             print(f"--- LLM RESULT (LOW) DEBUG ---\n{result_low}\n-----------------------")
             
@@ -158,7 +164,7 @@ class ActionItemExtractor:
             
             # PHASE 2: High Model Refinement
             if llm_config_high:
-                logger.info(f"Invoking LLM (High) for refinement for user {user_id}")
+                logger.info(f"Invoking LLM (High) for refinement for bot {bot_id}")
                 try:
                     # 1. Load System Prompt
                     refine_prompt_path = Path("prompts/action_item_refinement_system.txt")
@@ -172,8 +178,8 @@ class ActionItemExtractor:
                     # 2. Initialize High Model via Factory
                     high_llm = create_tracked_llm(
                         llm_config=llm_config_high,
-                        user_id=user_id,
-                        bot_id=list(messages[0].keys())[0] if messages else user_id,
+                        user_id=user_id if user_id else bot_id,
+                        bot_id=bot_id,
                         feature_name="periodic_group_tracking",
                         config_tier="high",
                         token_consumption_collection=token_consumption_collection
@@ -218,7 +224,7 @@ class ActionItemExtractor:
             else:
                  final_result = result_low
 
-            logger.info(f"LLM action items extraction completed for user {user_id}")
+            logger.info(f"LLM action items extraction completed for bot {bot_id}")
             
             # Record response if enabled
             if recorder and epoch_ts:
@@ -226,14 +232,14 @@ class ActionItemExtractor:
             
             # Parse the raw result string into a list of items
             if "[Error" in final_result:
-                logger.error(f"LLM Error for {user_id}: {final_result}")
+                logger.error(f"LLM Error for {bot_id}: {final_result}")
                 return []
 
             action_items = self._parse_llm_json(final_result)
             return action_items
             
         except Exception as e:
-            logger.error(f"Failed to extract action items for user {user_id}: {e}")
+            logger.error(f"Failed to extract action items for bot {bot_id}: {e}")
             error_msg = f"[Error extracting action items: {e}]"
             
             # Record error as response if enabled

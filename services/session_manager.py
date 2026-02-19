@@ -26,9 +26,11 @@ class SessionManager:
         on_session_end: Optional[Callable[[str], None]] = None, 
         queues_collection: Optional[Collection] = None, 
         main_loop = None, 
-        on_status_change: Optional[Callable[[str, str], Awaitable[None]]] = None
+        on_status_change: Optional[Callable[[str, str], Awaitable[None]]] = None,
+        owner_user_id: Optional[str] = None
     ):
         self.bot_id = config.bot_id
+        self.owner_user_id = owner_user_id # Store the owner ID (e.g. 'admin')
         self.config = config
         self.on_session_end = on_session_end
         self.main_loop = main_loop

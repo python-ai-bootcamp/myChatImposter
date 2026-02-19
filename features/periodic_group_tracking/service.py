@@ -97,17 +97,17 @@ class GroupTracker:
         for k in keys_to_remove:
             del self.jobs[k]
 
-    def update_jobs(self, user_id: str, tracking_configs: list[PeriodicGroupTrackingConfig], timezone: str = "UTC"):
+    def update_jobs(self, bot_id: str, tracking_configs: list[PeriodicGroupTrackingConfig], timezone: str = "UTC", owner_user_id: str = None):
         # Remove existing jobs for this user by querying the scheduler directly
         # This ensures we catch any zombie jobs even if self.jobs is out of sync
         all_jobs = self.scheduler.get_jobs()
-        prefix = f"{user_id}_"
+        prefix = f"{bot_id}_"
         
         for job in all_jobs:
             if job.id.startswith(prefix):
                 try:
                     self.scheduler.remove_job(job.id)
-                    logger.info(f"Removed tracking job {job.id} for user {user_id}")
+                    logger.info(f"Removed tracking job {job.id} for bot {bot_id}")
                 except Exception as e:
                     logger.warning(f"Failed to remove job {job.id}: {e}")
         
@@ -118,18 +118,18 @@ class GroupTracker:
 
         # Add new jobs
         for config in tracking_configs:
-            job_id = f"{user_id}_{config.groupIdentifier}"
+            job_id = f"{bot_id}_{config.groupIdentifier}"
             try:
                 trigger = CronTrigger.from_crontab(config.cronTrackingSchedule, timezone=ZoneInfo(timezone))
                 self.scheduler.add_job(
                     self.track_group_context,
                     trigger,
                     id=job_id,
-                    args=[user_id, config, timezone],
+                    args=[bot_id, owner_user_id, config, timezone],
                     replace_existing=True
                 )
                 self.jobs[job_id] = True
-                logger.info(f"Added tracking job {job_id} with schedule {config.cronTrackingSchedule}")
+                logger.info(f"Added tracking job {job_id} with schedule {config.cronTrackingSchedule} for bot {bot_id} (owner: {owner_user_id})")
             except Exception as e:
                 logger.error(f"Failed to add tracking job {job_id}: {e}")
 
@@ -137,13 +137,13 @@ class GroupTracker:
         max_interval = self._calculate_max_interval(tracking_configs)
         target_instance = None
         for instance in self.chatbot_instances.values():
-            if instance.bot_id == user_id:
+            if instance.bot_id == bot_id:
                 target_instance = instance
                 break
 
         if target_instance and target_instance.provider_instance:
             target_instance.provider_instance.update_cache_policy(max_interval)
 
-    async def track_group_context(self, user_id: str, config: PeriodicGroupTrackingConfig, timezone: str = "UTC"):
+    async def track_group_context(self, bot_id: str, owner_user_id: str, config: PeriodicGroupTrackingConfig, timezone: str = "UTC"):
         # Delegate to Runner
-        await self.runner.run_tracking_cycle(user_id, config, timezone)
+        await self.runner.run_tracking_cycle(bot_id, owner_user_id, config, timezone)

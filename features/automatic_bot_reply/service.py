@@ -193,9 +193,12 @@ class AutomaticBotReplyService:
             from services.llm_factory import create_tracked_llm
             
             # Use the new factory with token tracking
+            # user_id should be the OWNER of the bot
+            owner_user_id = self.session_manager.owner_user_id if self.session_manager.owner_user_id else self.bot_id
+            
             llm_instance = create_tracked_llm(
                 llm_config=self.config.configurations.llm_configs.high,
-                user_id=self.bot_id, # Using bot_id as user_id context for the provider as before
+                user_id=owner_user_id, 
                 bot_id=self.bot_id,
                 feature_name="automatic_bot_reply",
                 config_tier="high",

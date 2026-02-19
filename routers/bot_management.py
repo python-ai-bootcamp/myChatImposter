@@ -68,12 +68,24 @@ async def _setup_session(config: BotConfiguration, state: GlobalStateManager) ->
     """
     loop = asyncio.get_running_loop()
     
+    # Determine Owner
+    owner_user_id = None
+    if state.credentials_collection is not None:
+        # Find credential that owns this configuration
+        owner_doc = await state.credentials_collection.find_one(
+            {"owned_bots": config.bot_id},
+            {"user_id": 1}
+        )
+        if owner_doc:
+            owner_user_id = owner_doc.get("user_id")
+
     instance = SessionManager(
         config=config,
         on_session_end=state.remove_active_bot,
         queues_collection=state.queues_collection,
         main_loop=loop,
-        on_status_change=state.bot_lifecycle_service.create_status_change_callback()
+        on_status_change=state.bot_lifecycle_service.create_status_change_callback(),
+        owner_user_id=owner_user_id
     )
     
     try:
