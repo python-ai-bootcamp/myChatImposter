@@ -57,14 +57,4 @@ def _extract_provider_specific_usage(self, llm_output: Optional[Dict]) -> tuple[
 ```
 
 #### [MODIFY] `on_llm_end`
-I added an extra safety check directly in the callback handler to ensure that if `cached_input_tokens` is still 0 after initial extraction, we double-check the `llm_output` manually:
-
-```python
-# --- Extra Check for OpenAI 'cached_tokens' in llm_output ---
-if cached_input_tokens == 0 and response.llm_output and 'token_usage' in response.llm_output:
-    token_usage = response.llm_output['token_usage']
-    if 'prompt_tokens_details' in token_usage:
-        cached_tokens = token_usage['prompt_tokens_details'].get('cached_tokens', 0)
-        if cached_tokens > 0:
-            cached_input_tokens = cached_tokens
-```
+The `on_llm_end` method now uses `_extract_provider_specific_usage` as a robust fallback to check for provider-specific token details if standard LangChain extraction fails.
