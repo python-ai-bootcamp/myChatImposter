@@ -308,10 +308,17 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
 
   const handleEdit = (botId) => {
     const role = localStorage.getItem('role');
+    const config = configs.find(c => c.bot_id === botId);
+    const state = {
+      isNew: false,
+      user_enabled: config?.user_enabled,
+      status: config?.status
+    };
+
     if (role === 'admin') {
-      navigate(`/admin/edit/${botId}`);
+      navigate(`/admin/edit/${botId}`, { state });
     } else {
-      navigate(`/operator/bot/${botId}`);
+      navigate(`/operator/bot/${botId}`, { state });
     }
   };
 
@@ -466,23 +473,31 @@ const HomePage = ({ enableFiltering, showOwnerColumn }) => {
             Add
           </button>
 
-          {status === 'connected' ? (
-            <button
-              onClick={() => handleUnlink(selectedBotId)}
-              disabled={!isActionEnabled('unlink', status, selectedBotId)}
-              style={getButtonStyle('warning', !isActionEnabled('unlink', status, selectedBotId))}
-            >
-              Unlink
-            </button>
-          ) : (
-            <button
-              onClick={() => handleLink(selectedBotId)}
-              disabled={!isActionEnabled('link', status, selectedBotId) || isLinking}
-              style={getButtonStyle('success', !isActionEnabled('link', status, selectedBotId) || isLinking)}
-            >
-              {isLinking && linkingBotId === selectedBotId ? 'Linking...' : 'Link'}
-            </button>
-          )}
+
+
+          {(() => {
+            const isUserEnabled = selectedConfig?.user_enabled !== false;
+            const disabledTitle = !isUserEnabled ? "Owner disabled due to quota depletion" : "";
+
+            return status === 'connected' ? (
+              <button
+                onClick={() => handleUnlink(selectedBotId)}
+                disabled={!isActionEnabled('unlink', status, selectedBotId)}
+                style={getButtonStyle('warning', !isActionEnabled('unlink', status, selectedBotId))}
+              >
+                Unlink
+              </button>
+            ) : (
+              <button
+                onClick={() => handleLink(selectedBotId)}
+                disabled={!isUserEnabled || !isActionEnabled('link', status, selectedBotId) || isLinking}
+                style={getButtonStyle('success', !isUserEnabled || !isActionEnabled('link', status, selectedBotId) || isLinking)}
+                title={disabledTitle}
+              >
+                {isLinking && linkingBotId === selectedBotId ? 'Linking...' : 'Link'}
+              </button>
+            );
+          })()}
 
           <button
             onClick={() => handleEdit(selectedBotId)}

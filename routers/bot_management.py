@@ -191,16 +191,19 @@ async def get_bot_info(bot_id: str, state: GlobalStateManager = Depends(ensure_d
         if instance:
             status_info = await instance.get_status()
 
-        # Determine Owner
+        # Determine Owner & Check Quota
         owner = "unknown"
+        user_enabled = True
         if state.credentials_collection is not None:
             # Find credential that owns this configuration
             owner_doc = await state.credentials_collection.find_one(
                 {"owned_bots": bot_id},
-                {"user_id": 1}
+                {"user_id": 1, "llm_quota": 1}
             )
             if owner_doc:
                 owner = owner_doc.get("user_id")
+                llm_quota = owner_doc.get("llm_quota", {})
+                user_enabled = llm_quota.get("enabled", True)
         
         # Extract Active Features
         active_features = []
@@ -220,6 +223,7 @@ async def get_bot_info(bot_id: str, state: GlobalStateManager = Depends(ensure_d
                 "status": status_info.get('status', 'unknown'),
                 "authenticated": is_authenticated,
                 "owner": owner,
+                "user_enabled": user_enabled,
                 "active_features": active_features,
                 "activated": config_data.get("configurations", {}).get("user_details", {}).get("activated", config_data.get("configurations", {}).get("user_details", {}).get("active", True))
             }]

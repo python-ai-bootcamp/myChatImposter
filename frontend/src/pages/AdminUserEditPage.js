@@ -98,6 +98,15 @@ const AdminUserEditPage = () => {
         if (!formData.language) {
             errors.language = "Language is required";
         }
+
+        // Quota Validation
+        if (formData.llm_quota?.enabled) {
+            const limit = formData.llm_quota.dollars_per_period;
+            if (limit === undefined || limit === null || isNaN(limit) || limit <= 0) {
+                errors.dollars_per_period = "Spending limit must be greater than 0";
+            }
+        }
+
         setValidationErrors(errors);
         return Object.keys(errors).length === 0;
     }, [formData]);
@@ -534,8 +543,10 @@ const AdminUserEditPage = () => {
                                         name="dollars_per_period"
                                         value={formData.llm_quota?.dollars_per_period ?? 1.0}
                                         onChange={handleQuotaChange}
-                                        step="0.01"
+                                        step="any"
                                         min="0"
+                                        style={{ border: validationErrors.dollars_per_period ? '1px solid #ef4444' : undefined }}
+                                        title={validationErrors.dollars_per_period || ''}
                                     />
                                 </div>
                             </div>

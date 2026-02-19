@@ -38,6 +38,7 @@ function EditPage() {
   const [validationError, setValidationError] = useState(null);
   const [scrollToErrorTrigger, setScrollToErrorTrigger] = useState(0);
 
+  const [userEnabled, setUserEnabled] = useState(location.state?.user_enabled !== undefined ? location.state.user_enabled : true);
   const isNew = location.state?.isNew;
 
   // Debounced validation (cron + backend API)
@@ -605,7 +606,7 @@ function EditPage() {
         .action-bar {
             display: flex;
             gap: 1rem;
-            justify-content: flex-end;
+            justify-content: center;
             border-top: 1px solid rgba(255, 255, 255, 0.1);
             padding-top: 1rem;
             flex-shrink: 0;
@@ -733,8 +734,8 @@ function EditPage() {
             type="button"
             className="btn-glass btn-success-glass"
             onClick={handleSaveAndLink}
-            disabled={isSaving || isLinked || cronErrors.some(e => e) || validationError}
-            title={validationError || (cronErrors.some(e => e) ? 'Fix cron errors first' : (!isLinked ? 'Save and link' : 'Only available when not connected'))}
+            disabled={isSaving || isLinked || cronErrors.some(e => e) || validationError || !userEnabled}
+            title={!userEnabled ? "Owner disabled due to quota depletion" : (validationError || (cronErrors.some(e => e) ? 'Fix cron errors first' : (!isLinked ? 'Save and link' : 'Only available when not connected')))}
           >
             {isSaving ? 'Saving...' : 'Save & Link'}
           </button>
@@ -743,8 +744,8 @@ function EditPage() {
             type="button"
             className="btn-glass btn-success-glass"
             onClick={handleSaveAndReload}
-            disabled={isSaving || !isLinked || cronErrors.some(e => e) || validationError}
-            title={validationError || (cronErrors.some(e => e) ? 'Fix cron errors first' : (isLinked ? 'Save and reload' : 'Only available when connected'))}
+            disabled={isSaving || !isLinked || cronErrors.some(e => e) || validationError || !userEnabled}
+            title={!userEnabled ? "Owner disabled due to quota depletion" : (validationError || (cronErrors.some(e => e) ? 'Fix cron errors first' : (isLinked ? 'Save and reload' : 'Only available when connected')))}
           >
             {isSaving ? 'Saving...' : 'Save & Reload'}
           </button>

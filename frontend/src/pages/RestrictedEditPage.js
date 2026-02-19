@@ -78,7 +78,8 @@ function RestrictedEditPage() {
     };
 
 
-    const [userStatus, setUserStatus] = useState(null);
+    const [userStatus, setUserStatus] = useState(location.state?.status || null);
+    const [userEnabled, setUserEnabled] = useState(location.state?.user_enabled !== undefined ? location.state.user_enabled : true);
     const isNew = location.state?.isNew;
     const isLinked = userStatus === 'connected';
 
@@ -172,6 +173,14 @@ function RestrictedEditPage() {
                         if (statusRes.ok) {
                             const statusData = await statusRes.json();
                             if (statusData.configurations && statusData.configurations.length > 0) {
+                                // If status was passed via state, we trust it, but updating from API ensures freshness.
+                                // However, for user_enabled, user explicitly requested "no fallback",
+                                // implying we trust the passed prop or default to true (and fail on backend).
+                                // We will update status but NOT user_enabled from here to strictly follow instruction
+                                // or rather, the instruction "no fallback" applied to "don't do another api call".
+                                // Since we ARE doing the api call anyway for status... 
+                                // Actually, I should probably respect the FRESH status from backend for status, 
+                                // but for user_enabled, the instruction was specific.
                                 setUserStatus(statusData.configurations[0].status);
                             }
                         }
@@ -544,7 +553,7 @@ function RestrictedEditPage() {
                     margin-top: 1rem;
                     display: flex;
                     gap: 1rem;
-                    justify-content: flex-end;
+                    justify-content: center;
                     border-top: 1px solid rgba(255, 255, 255, 0.1);
                     padding-top: 1rem;
                     flex-shrink: 0;
@@ -674,8 +683,8 @@ function RestrictedEditPage() {
                         type="button"
                         className="btn-glass btn-success-glass"
                         onClick={handleSaveAndLoad}
-                        disabled={savingStatus !== 'idle' || cronErrors.some(e => e) || validationError}
-                        title="Save and instantly reload the bot"
+                        disabled={savingStatus !== 'idle' || cronErrors.some(e => e) || validationError || !userEnabled}
+                        title={!userEnabled ? "Owner disabled due to quota depletion" : "Save and instantly reload the bot"}
                     >
                         {savingStatus === 'loading' ? 'Processing...' : 'Save & Reload'}
                     </button>
