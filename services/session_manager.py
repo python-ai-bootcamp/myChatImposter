@@ -6,7 +6,7 @@ from typing import Optional, Callable, List, Dict, Any, Awaitable
 from pymongo.collection import Collection
 
 from config_models import BotConfiguration
-from queue_manager import UserQueuesManager, Message
+from queue_manager import BotQueuesManager, Message
 from chat_providers.base import BaseChatProvider
 
 from utils.provider_utils import find_provider_class
@@ -38,7 +38,7 @@ class SessionManager:
         self._queues_collection = queues_collection
         
         # Components
-        self.user_queues_manager: Optional[UserQueuesManager] = None
+        self.bot_queues_manager: Optional[BotQueuesManager] = None
         self.provider_instance: Optional[BaseChatProvider] = None
         
         # Feature Handlers (Subscribers)
@@ -62,7 +62,7 @@ class SessionManager:
         chat_provider_config = self.config.configurations.chat_provider_config
         provider_name = chat_provider_config.provider_name
         
-        self.user_queues_manager = UserQueuesManager(
+        self.bot_queues_manager = BotQueuesManager(
             bot_id=self.bot_id, # QueueManager might still expect 'user_id' param name, or needs refactoring too. Keeping param name if it's external, but value is bot_id.
             provider_name=provider_name,
             queue_config=self.config.configurations.queue_config,
@@ -72,7 +72,7 @@ class SessionManager:
         
         # Register self as the callback to receive messages from the Queue Manager
         # Note: QueueManager calls callback(user_id, correspondent_id, message)
-        self.user_queues_manager.register_callback(self._on_queue_message)
+        self.bot_queues_manager.register_callback(self._on_queue_message)
         
         logging.info(f"SESSION ({self.bot_id}): Initialized queue manager.")
 
@@ -86,7 +86,7 @@ class SessionManager:
             provider_init_params = {
                 "bot_id": self.bot_id, # Providers now expect 'bot_id' key.
                 "config": chat_provider_config,
-                "user_queues": {self.bot_id: self.user_queues_manager},
+                "bot_queues": {self.bot_id: self.bot_queues_manager},
                 "on_session_end": self.on_session_end,
                 "on_status_change": self.on_status_change,
                 "main_loop": self.main_loop

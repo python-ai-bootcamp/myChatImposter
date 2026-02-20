@@ -40,6 +40,10 @@ class TestBotLifecycleService:
         self.mock_configurations_collection = MagicMock()
         self.mock_global_state.configurations_collection = self.mock_configurations_collection
         
+        # Mock credentials collection
+        self.mock_global_state.credentials_collection = AsyncMock()
+        self.mock_global_state.credentials_collection.find_one.return_value = None
+        
         # Create service instance
         self.service = BotLifecycleService(self.mock_global_state)
 
@@ -54,8 +58,7 @@ class TestBotLifecycleService:
         
         asyncio.run(self.service.on_bot_connected(bot_id))
         
-        # Verify queue manager was called
-        self.mock_queue_manager.move_user_to_active.assert_called_once_with(bot_id)
+        self.mock_queue_manager.move_bot_to_active.assert_called_once_with(bot_id)
 
     def test_on_bot_connected_starts_group_tracking_when_enabled(self):
         """Test that group tracking starts when bot connects and feature is enabled."""
@@ -84,9 +87,15 @@ class TestBotLifecycleService:
                     "provider_name": "dummy",
                     "provider_config": {}
                 },
-                "llm_provider_config": {
-                    "provider_name": "fakeLlm",
-                    "provider_config": {"model": "test", "temperature": 0.7}
+                "llm_configs": {
+                    "high": {
+                        "provider_name": "fakeLlm",
+                        "provider_config": {"model": "test", "temperature": 0.7}
+                    },
+                    "low": {
+                        "provider_name": "fakeLlm",
+                        "provider_config": {"model": "test", "temperature": 0.7}
+                    }
                 }
             }
         }
@@ -124,9 +133,15 @@ class TestBotLifecycleService:
                     "provider_name": "dummy",
                     "provider_config": {}
                 },
-                "llm_provider_config": {
-                    "provider_name": "fakeLlm",
-                    "provider_config": {"model": "test", "temperature": 0.7}
+                "llm_configs": {
+                    "high": {
+                        "provider_name": "fakeLlm",
+                        "provider_config": {"model": "test", "temperature": 0.7}
+                    },
+                    "low": {
+                        "provider_name": "fakeLlm",
+                        "provider_config": {"model": "test", "temperature": 0.7}
+                    }
                 }
             }
         }
@@ -138,7 +153,7 @@ class TestBotLifecycleService:
         asyncio.run(self.service.on_bot_connected(bot_id))
         
         # Verify tracker was called with empty list
-        self.mock_group_tracker.update_jobs.assert_called_once_with(bot_id, [])
+        self.mock_group_tracker.update_jobs.assert_called_once_with(bot_id, [], owner_user_id=None)
 
     def test_on_bot_connected_handles_missing_config(self):
         """Test graceful handling when bot config doesn't exist."""
@@ -149,8 +164,7 @@ class TestBotLifecycleService:
         # Should not raise
         asyncio.run(self.service.on_bot_connected(bot_id))
         
-        # Queue should still be moved
-        self.mock_queue_manager.move_user_to_active.assert_called_once_with(bot_id)
+        self.mock_queue_manager.move_bot_to_active.assert_called_once_with(bot_id)
         
         # Tracker should not be called (no config)
         self.mock_group_tracker.update_jobs.assert_not_called()
@@ -166,8 +180,7 @@ class TestBotLifecycleService:
         # Should not raise
         asyncio.run(self.service.on_bot_connected(bot_id))
         
-        # Queue should still be moved
-        self.mock_queue_manager.move_user_to_active.assert_called_once_with(bot_id)
+        self.mock_queue_manager.move_bot_to_active.assert_called_once_with(bot_id)
 
     # --- on_bot_disconnected tests ---
 
@@ -202,8 +215,7 @@ class TestBotLifecycleService:
         
         asyncio.run(callback(bot_id, "connected"))
         
-        # Verify on_bot_connected was triggered (queue was moved)
-        self.mock_queue_manager.move_user_to_active.assert_called_once_with(bot_id)
+        self.mock_queue_manager.move_bot_to_active.assert_called_once_with(bot_id)
 
     def test_callback_dispatches_disconnected_status(self):
         """Test callback correctly dispatches 'disconnected' status."""
@@ -225,8 +237,7 @@ class TestBotLifecycleService:
         # Should not raise or trigger any action
         asyncio.run(callback(bot_id, "unknown_status"))
         
-        # Nothing should be called
-        self.mock_queue_manager.move_user_to_active.assert_not_called()
+        self.mock_queue_manager.move_bot_to_active.assert_not_called()
         self.mock_group_tracker.stop_tracking_jobs.assert_not_called()
 
     # --- _get_bot_config tests ---

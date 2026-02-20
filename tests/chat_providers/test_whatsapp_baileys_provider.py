@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 from chat_providers.whatsAppBaileys import WhatsAppBaileysProvider
 from config_models import ChatProviderConfig, ChatProviderSettings
-from queue_manager import UserQueuesManager
+from queue_manager import BotQueuesManager
 
 
 class TestWhatsAppBaileysProviderInit:
@@ -34,7 +34,7 @@ class TestWhatsAppBaileysProviderInit:
                 process_offline_messages=False
             )
         )
-        self.mock_queues = {self.bot_id: MagicMock(spec=UserQueuesManager)}
+        self.mock_queues = {self.bot_id: MagicMock(spec=BotQueuesManager)}
         self.mock_loop = asyncio.new_event_loop()
 
     def teardown_method(self):
@@ -46,7 +46,7 @@ class TestWhatsAppBaileysProviderInit:
         provider = WhatsAppBaileysProvider(
             bot_id=self.bot_id,
             config=self.config,
-            user_queues=self.mock_queues,
+            bot_queues=self.mock_queues,
             main_loop=self.mock_loop
         )
         
@@ -68,7 +68,7 @@ class TestWhatsAppBaileysProviderInit:
         provider = WhatsAppBaileysProvider(
             bot_id=self.bot_id,
             config=self.config,
-            user_queues=self.mock_queues,
+            bot_queues=self.mock_queues,
             main_loop=self.mock_loop
         )
         
@@ -80,7 +80,7 @@ class TestWhatsAppBaileysProviderInit:
         provider = WhatsAppBaileysProvider(
             bot_id=self.bot_id,
             config=self.config,
-            user_queues=self.mock_queues,
+            bot_queues=self.mock_queues,
             main_loop=self.mock_loop
         )
         
@@ -99,12 +99,12 @@ class TestBotMessageDetection:
             provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings()
         )
-        self.mock_queues = {self.bot_id: MagicMock(spec=UserQueuesManager)}
+        self.mock_queues = {self.bot_id: MagicMock(spec=BotQueuesManager)}
         self.mock_loop = asyncio.new_event_loop()
         self.provider = WhatsAppBaileysProvider(
             bot_id=self.bot_id,
             config=self.config,
-            user_queues=self.mock_queues,
+            bot_queues=self.mock_queues,
             main_loop=self.mock_loop
         )
 
@@ -213,12 +213,12 @@ class TestHTTPAPICalls:
             provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings()
         )
-        self.mock_queues = {self.bot_id: MagicMock(spec=UserQueuesManager)}
+        self.mock_queues = {self.bot_id: MagicMock(spec=BotQueuesManager)}
         self.mock_loop = asyncio.new_event_loop()
         self.provider = WhatsAppBaileysProvider(
             bot_id=self.bot_id,
             config=self.config,
-            user_queues=self.mock_queues,
+            bot_queues=self.mock_queues,
             main_loop=self.mock_loop
         )
 
@@ -419,13 +419,13 @@ class TestWebSocketMessageProcessing:
             provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings(allow_group_messages=True)
         )
-        self.mock_queue_manager = MagicMock(spec=UserQueuesManager)
+        self.mock_queue_manager = MagicMock(spec=BotQueuesManager)
         self.mock_queues = {self.bot_id: self.mock_queue_manager}
         self.mock_loop = asyncio.new_event_loop()
         self.provider = WhatsAppBaileysProvider(
             bot_id=self.bot_id,
             config=self.config,
-            user_queues=self.mock_queues,
+            bot_queues=self.mock_queues,
             main_loop=self.mock_loop
         )
 
@@ -550,7 +550,7 @@ class TestWebSocketMessageProcessing:
         provider = WhatsAppBaileysProvider(
             bot_id=self.bot_id,
             config=config,
-            user_queues=self.mock_queues,
+            bot_queues=self.mock_queues,
             main_loop=self.mock_loop
         )
         
@@ -577,12 +577,12 @@ class TestLifecycleAndConnectionState:
             provider_name="whatsAppBaileys",
             provider_config=ChatProviderSettings()
         )
-        self.mock_queues = {self.bot_id: MagicMock(spec=UserQueuesManager)}
+        self.mock_queues = {self.bot_id: MagicMock(spec=BotQueuesManager)}
         self.mock_loop = asyncio.new_event_loop()
         self.provider = WhatsAppBaileysProvider(
             bot_id=self.bot_id,
             config=self.config,
-            user_queues=self.mock_queues,
+            bot_queues=self.mock_queues,
             main_loop=self.mock_loop
         )
 

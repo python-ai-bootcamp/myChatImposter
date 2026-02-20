@@ -1,0 +1,398 @@
+{
+  "$defs": {
+    "AutomaticBotReplyFeature": {
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enable automatic bot replies",
+          "type": "boolean"
+        },
+        "respond_to_whitelist": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Respond To Direct Contact Whitelist",
+          "type": "array"
+        },
+        "respond_to_whitelist_group": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Respond To Group Whitelist",
+          "type": "array"
+        },
+        "chat_system_prompt": {
+          "default": "",
+          "title": "Chat System Prompt",
+          "type": "string"
+        }
+      },
+      "title": "AutomaticBotReplyFeature",
+      "type": "object"
+    },
+    "BotGeneralSettings": {
+      "properties": {
+        "user_details": {
+          "$ref": "#/$defs/UserDetails",
+          "title": "User Details"
+        },
+        "chat_provider_config": {
+          "$ref": "#/$defs/ChatProviderConfig",
+          "title": "Chat Provider Config"
+        },
+        "queue_config": {
+          "$ref": "#/$defs/QueueConfig",
+          "title": "Queue Config"
+        },
+        "context_config": {
+          "$ref": "#/$defs/ContextConfig",
+          "title": "Context Config"
+        },
+        "llm_configs": {
+          "$ref": "#/$defs/LLMConfigurations",
+          "title": "LLM Configurations"
+        }
+      },
+      "required": [
+        "chat_provider_config",
+        "llm_configs"
+      ],
+      "title": "BotGeneralSettings",
+      "type": "object"
+    },
+    "ChatProviderConfig": {
+      "properties": {
+        "provider_name": {
+          "title": "Provider Name",
+          "type": "string"
+        },
+        "provider_config": {
+          "$ref": "#/$defs/ChatProviderSettings"
+        }
+      },
+      "required": [
+        "provider_name",
+        "provider_config"
+      ],
+      "title": "ChatProviderConfig",
+      "type": "object"
+    },
+    "ChatProviderSettings": {
+      "additionalProperties": true,
+      "properties": {
+        "allow_group_messages": {
+          "default": false,
+          "title": "Allow Group Messages",
+          "type": "boolean"
+        },
+        "process_offline_messages": {
+          "default": false,
+          "title": "Process Offline Messages",
+          "type": "boolean"
+        },
+        "sync_full_history": {
+          "default": true,
+          "title": "Sync Full History",
+          "type": "boolean"
+        }
+      },
+      "title": "ChatProviderSettings",
+      "type": "object"
+    },
+    "ContextConfig": {
+      "properties": {
+        "max_messages": {
+          "default": 100,
+          "title": "Max Messages",
+          "type": "integer"
+        },
+        "max_characters": {
+          "default": 10000,
+          "title": "Max Characters",
+          "type": "integer"
+        },
+        "max_days": {
+          "default": 1,
+          "title": "Max Days",
+          "type": "integer"
+        },
+        "max_characters_single_message": {
+          "default": 350,
+          "title": "Max Characters Single Message",
+          "type": "integer"
+        },
+        "shared_context": {
+          "default": true,
+          "title": "Shared Context",
+          "type": "boolean"
+        }
+      },
+      "title": "ContextConfig",
+      "type": "object"
+    },
+    "FeaturesConfiguration": {
+      "properties": {
+        "automatic_bot_reply": {
+          "$ref": "#/$defs/AutomaticBotReplyFeature",
+          "title": "Automatic Bot Reply"
+        },
+        "periodic_group_tracking": {
+          "$ref": "#/$defs/PeriodicGroupTrackingFeature",
+          "title": "Periodic Group Tracking"
+        },
+        "kid_phone_safety_tracking": {
+          "$ref": "#/$defs/KidPhoneSafetyTrackingFeature",
+          "title": "Kid Phone Safety Tracking"
+        }
+      },
+      "title": "FeaturesConfiguration",
+      "type": "object"
+    },
+    "KidPhoneSafetyTrackingFeature": {
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enable kid phone safety tracking",
+          "type": "boolean"
+        }
+      },
+      "title": "KidPhoneSafetyTrackingFeature",
+      "type": "object"
+    },
+    "LLMConfigurations": {
+      "properties": {
+        "high": {
+          "$ref": "#/$defs/LLMProviderConfig",
+          "title": "High Performance Model"
+        },
+        "low": {
+          "$ref": "#/$defs/LLMProviderConfig",
+          "title": "Low Cost Model"
+        }
+      },
+      "required": [
+        "high",
+        "low"
+      ],
+      "title": "LLMConfigurations",
+      "type": "object"
+    },
+    "LLMProviderConfig": {
+      "properties": {
+        "provider_name": {
+          "title": "Provider Name",
+          "type": "string"
+        },
+        "provider_config": {
+          "$ref": "#/$defs/LLMProviderSettings"
+        }
+      },
+      "required": [
+        "provider_name",
+        "provider_config"
+      ],
+      "title": "LLMProviderConfig",
+      "type": "object"
+    },
+    "LLMProviderSettings": {
+      "additionalProperties": true,
+      "properties": {
+        "api_key_source": {
+          "default": "environment",
+          "description": "Choose how the API key is provided.",
+          "enum": [
+            "environment",
+            "explicit"
+          ],
+          "title": "API Key Source",
+          "type": "string"
+        },
+        "api_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "API Key"
+        },
+        "model": {
+          "title": "Model",
+          "type": "string"
+        },
+        "temperature": {
+          "default": 0.7,
+          "title": "Temperature",
+          "type": "number"
+        },
+        "reasoning_effort": {
+          "anyOf": [
+            {
+              "enum": [
+                "low",
+                "medium",
+                "high",
+                "minimal"
+              ],
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Reasoning Effort"
+        },
+        "seed": {
+          "anyOf": [
+            {
+              "title": "Defined",
+              "type": "integer"
+            },
+            {
+              "title": "Undefined",
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Seed"
+        },
+        "record_llm_interactions": {
+          "default": false,
+          "title": "Record Traffic",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "model"
+      ],
+      "title": "LLMProviderSettings",
+      "type": "object"
+    },
+    "PeriodicGroupTrackingConfig": {
+      "properties": {
+        "groupIdentifier": {
+          "description": "The stable JID of the group to track.",
+          "title": "Group Identifier",
+          "type": "string"
+        },
+        "cronTrackingSchedule": {
+          "default": "0 20 * * *",
+          "description": "Cron expression for tracking frequency.",
+          "title": "Cron Schedule",
+          "type": "string"
+        },
+        "displayName": {
+          "description": "User-friendly name of the group.",
+          "title": "Display Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "groupIdentifier",
+        "displayName"
+      ],
+      "title": "PeriodicGroupTrackingConfig",
+      "type": "object"
+    },
+    "PeriodicGroupTrackingFeature": {
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enable periodic group tracking",
+          "type": "boolean"
+        },
+        "tracked_groups": {
+          "items": {
+            "$ref": "#/$defs/PeriodicGroupTrackingConfig"
+          },
+          "title": "Tracked Groups",
+          "type": "array"
+        }
+      },
+      "title": "PeriodicGroupTrackingFeature",
+      "type": "object"
+    },
+    "QueueConfig": {
+      "properties": {
+        "max_messages": {
+          "default": 200,
+          "title": "Max Messages",
+          "type": "integer"
+        },
+        "max_characters": {
+          "default": 20000,
+          "title": "Max Characters",
+          "type": "integer"
+        },
+        "max_days": {
+          "default": 2,
+          "title": "Max Days",
+          "type": "integer"
+        },
+        "max_characters_single_message": {
+          "default": 700,
+          "title": "Max Characters Single Message",
+          "type": "integer"
+        }
+      },
+      "title": "QueueConfig",
+      "type": "object"
+    },
+    "UserDetails": {
+      "properties": {
+        "first_name": {
+          "default": "",
+          "title": "First Name",
+          "type": "string"
+        },
+        "last_name": {
+          "default": "",
+          "title": "Last Name",
+          "type": "string"
+        },
+        "timezone": {
+          "default": "UTC",
+          "title": "Timezone",
+          "type": "string"
+        },
+        "language_code": {
+          "default": "en",
+          "title": "Language",
+          "type": "string"
+        },
+        "activated": {
+          "default": true,
+          "description": "Enable or disable this bot.",
+          "title": "Auto Activate",
+          "type": "boolean"
+        }
+      },
+      "title": "UserDetails",
+      "type": "object"
+    }
+  },
+  "properties": {
+    "bot_id": {
+      "title": "Bot Id",
+      "type": "string"
+    },
+    "configurations": {
+      "$ref": "#/$defs/BotGeneralSettings",
+      "title": "General Configurations"
+    },
+    "features": {
+      "$ref": "#/$defs/FeaturesConfiguration",
+      "title": "Feature Configurations"
+    }
+  },
+  "required": [
+    "bot_id",
+    "configurations"
+  ],
+  "title": "BotConfiguration",
+  "type": "object"
+}

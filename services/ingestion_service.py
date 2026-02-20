@@ -32,12 +32,12 @@ class IngestionService:
             any_message_processed = False
             
             # Access queues via SessionManager
-            if not self.session_manager.user_queues_manager:
+            if not self.session_manager.bot_queues_manager:
                  # Should not happen if session started
                  await asyncio.sleep(1)
                  continue
 
-            all_queues = self.session_manager.user_queues_manager.get_all_queues()
+            all_queues = self.session_manager.bot_queues_manager.get_all_queues()
 
             for queue in all_queues:
                 while True:

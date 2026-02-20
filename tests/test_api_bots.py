@@ -40,7 +40,8 @@ class TestBotManagementAPI:
     def client(self, mock_global_state):
         """Test Client with dependency override."""
         app.dependency_overrides[get_global_state] = lambda: mock_global_state
-        return TestClient(app)
+        yield TestClient(app)
+        app.dependency_overrides.clear()
 
     def test_list_bots_success(self, client, mock_global_state):
         """Test GET /api/internal/bots"""

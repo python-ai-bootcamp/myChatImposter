@@ -18,16 +18,16 @@ def _ensure_db_connected():
 
 # --- Queue Endpoints ---
 
-@router.get("/queue/{user_id}")
-async def get_user_queue(user_id: str):
+@router.get("/queue/{bot_id}")
+async def get_bot_queue(bot_id: str):
     """
-    Returns a dictionary of all correspondent queues for a user.
+    Returns a dictionary of all correspondent queues for a bot.
     """
     _ensure_db_connected()
     try:
         messages_cursor = global_state.queues_collection.find(
-            {"user_id": user_id},
-            {"_id": 0, "user_id": 0, "provider_name": 0}
+            {"bot_id": bot_id},
+            {"_id": 0, "bot_id": 0, "provider_name": 0}
         ).sort("id", 1)
 
         grouped_messages = {}
@@ -39,77 +39,77 @@ async def get_user_queue(user_id: str):
 
         return JSONResponse(content=grouped_messages)
     except Exception as e:
-        logging.error(f"API: Failed to get queue for {user_id}: {e}")
+        logging.error(f"API: Failed to get queue for {bot_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to get queue.")
 
-@router.delete("/queue/{user_id}")
-async def clear_all_user_queues(user_id: str):
+@router.delete("/queue/{bot_id}")
+async def clear_all_bot_queues(bot_id: str):
     """
-    Clears all of a user's queues (DB + In-Memory).
+    Clears all of a bot's queues (DB + In-Memory).
     """
     _ensure_db_connected()
     try:
-        query = {"user_id": user_id}
+        query = {"bot_id": bot_id}
         doc_count = await global_state.queues_collection.count_documents(query, limit=1)
         if doc_count == 0:
-             return JSONResponse(status_code=410, content={"ERROR": True, "ERROR_MSG": f"no queues exist for user {user_id}"})
+             return JSONResponse(status_code=410, content={"ERROR": True, "ERROR_MSG": f"no queues exist for bot {bot_id}"})
         
         result = await global_state.queues_collection.delete_many(query)
-        logging.info(f"API: Deleted {result.deleted_count} messages for {user_id}.")
+        logging.info(f"API: Deleted {result.deleted_count} messages for {bot_id}.")
 
         # Clear In-Memory
-        instance = global_state.get_chatbot_instance_by_bot(user_id)
-        if instance and instance.user_queues_manager:
-            all_queues = instance.user_queues_manager.get_all_queues()
+        instance = global_state.get_chatbot_instance_by_bot(bot_id)
+        if instance and instance.bot_queues_manager:
+            all_queues = instance.bot_queues_manager.get_all_queues()
             for queue in all_queues:
                 queue.clear()
-            logging.info(f"API: Cleared in-memory queues for {user_id}.")
+            logging.info(f"API: Cleared in-memory queues for {bot_id}.")
             
         return Response(status_code=204)
     except Exception as e:
-         logging.error(f"API: Failed to clear queues for {user_id}: {e}")
+         logging.error(f"API: Failed to clear queues for {bot_id}: {e}")
          raise HTTPException(status_code=500, detail="Failed to clear queues.")
 
-@router.delete("/queue/{user_id}/{correspondent_id}")
-async def clear_correspondent_queue(user_id: str, correspondent_id: str):
+@router.delete("/queue/{bot_id}/{correspondent_id}")
+async def clear_correspondent_queue(bot_id: str, correspondent_id: str):
     """
     Clear specific correspondent queue.
     """
     _ensure_db_connected()
     try:
         if correspondent_id == "__missing_correspondent_id__":
-            query = {"user_id": user_id, "correspondent_id": {"$exists": False}}
+            query = {"bot_id": bot_id, "correspondent_id": {"$exists": False}}
         else:
-            query = {"user_id": user_id, "correspondent_id": correspondent_id}
+            query = {"bot_id": bot_id, "correspondent_id": correspondent_id}
         
         doc_count = await global_state.queues_collection.count_documents(query, limit=1)
         if doc_count == 0:
-             return JSONResponse(status_code=410, content={"ERROR": True, "ERROR_MSG": f"queue {user_id}/{correspondent_id} does not exist"})
+             return JSONResponse(status_code=410, content={"ERROR": True, "ERROR_MSG": f"queue {bot_id}/{correspondent_id} does not exist"})
 
         await global_state.queues_collection.delete_many(query)
         
         # In-Memory
-        instance = global_state.get_chatbot_instance_by_bot(user_id)
-        if instance and instance.user_queues_manager:
-            queue = instance.user_queues_manager.get_queue(correspondent_id)
+        instance = global_state.get_chatbot_instance_by_bot(bot_id)
+        if instance and instance.bot_queues_manager:
+            queue = instance.bot_queues_manager.get_queue(correspondent_id)
             if queue: queue.clear()
             
         return Response(status_code=204)
     except Exception as e:
-        logging.error(f"API: Failed to clear queue {user_id}/{correspondent_id}: {e}")
+        logging.error(f"API: Failed to clear queue {bot_id}/{correspondent_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to clear queue.")
 
 # --- Context Endpoints ---
 
-@router.get("/context/{user_id}")
-async def get_user_context(user_id: str):
+@router.get("/context/{bot_id}")
+async def get_bot_context(bot_id: str):
     """
     Get LLM-ready context.
     """
-    if user_id not in global_state.active_bots:
+    if bot_id not in global_state.active_bots:
          raise HTTPException(status_code=404, detail="No active session found.")
     
-    instance = global_state.get_chatbot_instance_by_bot(user_id)
+    instance = global_state.get_chatbot_instance_by_bot(bot_id)
     if not instance:
          raise HTTPException(status_code=404, detail="Instance not found.")
     
@@ -125,11 +125,11 @@ async def get_user_context(user_id: str):
         }
         return JSONResponse(content=formatted_histories)
     except Exception as e:
-        logging.error(f"API: Failed to get context for {user_id}: {e}")
+        logging.error(f"API: Failed to get context for {bot_id}: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get context: {e}")
 
-@router.delete("/context/{user_id}")
-async def clear_user_context(user_id: str):
+@router.delete("/context/{bot_id}")
+async def clear_bot_context(bot_id: str):
     """
     Clear context (Not implemented in main.py, implementing stub or logic if possible).
     Usually context is derived from queue. If we clear queue, context clears. 
@@ -146,14 +146,14 @@ async def clear_user_context(user_id: str):
 # --- Incoming Buffer Endpoints ---
 # Placeholder implementation as discussed
 
-@router.get("/incoming-buffer/{user_id}")
-async def get_incoming_buffer(user_id: str):
+@router.get("/incoming-buffer/{bot_id}")
+async def get_incoming_buffer(bot_id: str):
     return JSONResponse(content={"message": "Not implemented yet. Placeholder for incoming buffer."})
 
-@router.delete("/incoming-buffer/{user_id}")
-async def clear_incoming_buffer(user_id: str):
+@router.delete("/incoming-buffer/{bot_id}")
+async def clear_incoming_buffer(bot_id: str):
     return Response(status_code=501)
 
-@router.delete("/incoming-buffer/{user_id}/{correspondent_id}")
-async def clear_incoming_buffer_correspondent(user_id: str, correspondent_id: str):
+@router.delete("/incoming-buffer/{bot_id}/{correspondent_id}")
+async def clear_incoming_buffer_correspondent(bot_id: str, correspondent_id: str):
     return Response(status_code=501)

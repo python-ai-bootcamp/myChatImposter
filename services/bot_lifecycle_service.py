@@ -50,7 +50,7 @@ class BotLifecycleService:
 
         # 1. Move items to Active Queue
         if self.global_state.async_message_delivery_queue_manager:
-            await self.global_state.async_message_delivery_queue_manager.move_user_to_active(bot_id)
+            await self.global_state.async_message_delivery_queue_manager.move_bot_to_active(bot_id)
             logging.info(f"LIFECYCLE: Bot {bot_id} connected. Moved items to ACTIVE queue.")
 
         # 2. Start Group Tracking (Late Binding)
@@ -152,7 +152,7 @@ class BotLifecycleService:
             
             # 3. Cleanup Queues (Move to Holding)
             if self.global_state.async_message_delivery_queue_manager:
-                 await self.global_state.async_message_delivery_queue_manager.move_user_to_holding(bot_id)
+                 await self.global_state.async_message_delivery_queue_manager.move_bot_to_holding(bot_id)
 
             # 4. Delete Configuration DO NOT DELETE CREDENTIALS HERE
             query = {"config_data.bot_id": bot_id}

@@ -16,9 +16,9 @@ class TestGroupTrackerRefactor(unittest.TestCase):
         # But GroupTracker.__init__ creates MongoClient INDIRECTLY via HistoryService.
         # We patch 'features.periodic_group_tracking.history_service.MongoClient' to avoid side effects.
         
-        with unittest.mock.patch('features.periodic_group_tracking.history_service.MongoClient') as mock_client_history:
+        with unittest.mock.patch('features.periodic_group_tracking.history_service.AsyncIOMotorDatabase') as mock_db:
              
-            tracker = GroupTracker(mongo_url, chatbot_instances, queue_manager)
+            tracker = GroupTracker(mock_db, chatbot_instances, MagicMock(), queue_manager)
             
             # Check Services
             self.assertIsInstance(tracker.history, GroupHistoryService)
@@ -39,8 +39,8 @@ class TestGroupTrackerRefactor(unittest.TestCase):
         # But wait, GroupTracker instantiation WILL create HistoryService.
         # So we must patch HistoryService MongoClient.
         
-        with unittest.mock.patch('features.periodic_group_tracking.history_service.MongoClient'):
-             tracker = GroupTracker("m", {}, MagicMock())
+        with unittest.mock.patch('features.periodic_group_tracking.history_service.AsyncIOMotorDatabase') as mock_db:
+             tracker = GroupTracker(mock_db, {}, MagicMock(), MagicMock())
              tracker.scheduler = MagicMock()
              
              tracker.start()

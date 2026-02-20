@@ -22,17 +22,18 @@ class TestTrackerDeduplication(unittest.IsolatedAsyncioTestCase):
         
         # Setup specific mock behavior
         # 1. History returns existing ID 'MSG_OLD_ID'
-        history.get_recent_message_ids.return_value = {'MSG_OLD_ID'}
-        history.get_last_run.return_value = 1000
+        history.get_recent_message_ids = AsyncMock(return_value={'MSG_OLD_ID'})
+        history.get_last_run = AsyncMock(return_value=1000)
+        history.save_tracking_result = AsyncMock()
         
         # 2. Setup Runner
-        runner = GroupTrackingRunner(instances, history, queue)
+        runner = GroupTrackingRunner(instances, history, queue, MagicMock(), MagicMock(), MagicMock())
         
         # 3. Use a fake chatbot instance
         fake_instance = MagicMock()
         fake_provider = AsyncMock()
         fake_instance.provider_instance = fake_provider
-        fake_instance.user_id = user_id
+        fake_instance.bot_id = user_id
         instances["inst_1"] = fake_instance
         
         # 4. Mock window calculator to return a fixed window
@@ -60,7 +61,7 @@ class TestTrackerDeduplication(unittest.IsolatedAsyncioTestCase):
                 "sender": "sender1"
             }
         ]
-        fake_provider.is_bot_message.return_value = False
+        fake_provider.is_bot_message = MagicMock(return_value=False)
         
         # Config
         config = PeriodicGroupTrackingConfig(
@@ -72,7 +73,7 @@ class TestTrackerDeduplication(unittest.IsolatedAsyncioTestCase):
         # EXECUTE
         # Patch sleep to avoid waiting for jitter
         with unittest.mock.patch('asyncio.sleep', new_callable=AsyncMock):
-            await runner.run_tracking_cycle(user_id, config)
+            await runner.run_tracking_cycle(user_id, "test_owner", config)
         
         # ASSERT
         history.save_tracking_result.assert_called_once()

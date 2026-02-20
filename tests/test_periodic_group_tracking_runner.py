@@ -16,13 +16,14 @@ class TestGroupTrackingRunner(unittest.IsolatedAsyncioTestCase):
         self.mock_queue_manager = AsyncMock()
         self.mock_extractor = AsyncMock()
         self.mock_window_calculator = MagicMock()
-        
+        self.mock_token_consumption = AsyncMock()
         self.runner = GroupTrackingRunner(
             chatbot_instances=self.mock_chatbot_instances,
             history_service=self.mock_history_service,
             queue_manager=self.mock_queue_manager,
             extractor=self.mock_extractor,
-            window_calculator=self.mock_window_calculator
+            window_calculator=self.mock_window_calculator,
+            token_consumption_collection=self.mock_token_consumption
         )
         
         # Patch sleep to avoid jitter delays
@@ -31,7 +32,7 @@ class TestGroupTrackingRunner(unittest.IsolatedAsyncioTestCase):
         self.addCleanup(self.sleep_patcher.stop)
         
         # Default Test Data
-        self.user_id = "user123"
+        self.bot_id = "test_bot_123"
         self.group_id = "group@g.us"
         self.config = PeriodicGroupTrackingConfig(
             groupIdentifier=self.group_id,
@@ -41,7 +42,7 @@ class TestGroupTrackingRunner(unittest.IsolatedAsyncioTestCase):
         
         # Setup Mock Session
         self.mock_session = MagicMock(spec=SessionManager)
-        self.mock_session.user_id = self.user_id
+        self.mock_session.bot_id = self.bot_id
         self.mock_session.provider_instance = AsyncMock()
         # FIX: is_bot_message is synchronous
         self.mock_session.provider_instance.is_bot_message = MagicMock(return_value=False)
@@ -60,7 +61,7 @@ class TestGroupTrackingRunner(unittest.IsolatedAsyncioTestCase):
         # Clear instances
         self.mock_chatbot_instances.clear()
         
-        await self.runner.run_tracking_cycle(self.user_id, self.config)
+        await self.runner.run_tracking_cycle(self.bot_id, "test_owner", self.config)
         
         # Should not fetch messages or calculate window
         self.mock_session.provider_instance.fetch_historic_messages.assert_not_called()
@@ -70,7 +71,7 @@ class TestGroupTrackingRunner(unittest.IsolatedAsyncioTestCase):
         """Test that the runner aborts if the provider is not connected."""
         self.mock_session.provider_instance.is_connected = False
         
-        await self.runner.run_tracking_cycle(self.user_id, self.config)
+        await self.runner.run_tracking_cycle(self.bot_id, "test_owner", self.config)
         
         self.mock_session.provider_instance.fetch_historic_messages.assert_not_called()
 
@@ -78,7 +79,7 @@ class TestGroupTrackingRunner(unittest.IsolatedAsyncioTestCase):
         """Test that the runner aborts if fetch_historic_messages returns None (error)."""
         self.mock_session.provider_instance.fetch_historic_messages.return_value = None
         
-        await self.runner.run_tracking_cycle(self.user_id, self.config)
+        await self.runner.run_tracking_cycle(self.bot_id, "test_owner", self.config)
         
         self.mock_window_calculator.calculate_window.assert_not_called()
 
@@ -104,7 +105,7 @@ class TestGroupTrackingRunner(unittest.IsolatedAsyncioTestCase):
         self.mock_extractor.extract.return_value = [{"task_title": "Test Task"}]
         
         # Run
-        await self.runner.run_tracking_cycle(self.user_id, self.config)
+        await self.runner.run_tracking_cycle(self.bot_id, "test_owner", self.config)
             
         # Verify
         # Should call window calculator
@@ -140,7 +141,7 @@ class TestGroupTrackingRunner(unittest.IsolatedAsyncioTestCase):
         end_dt = datetime.fromtimestamp(10, tz=ZoneInfo("UTC"))
         self.mock_window_calculator.calculate_window.return_value = (start_dt, end_dt)
         
-        await self.runner.run_tracking_cycle(self.user_id, self.config)
+        await self.runner.run_tracking_cycle(self.bot_id, "test_owner", self.config)
             
         # Verify saved messages (only m2)
         saved_messages = self.mock_history_service.save_tracking_result.call_args[1]['messages']

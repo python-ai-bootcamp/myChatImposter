@@ -1,9 +1,10 @@
 import time
 import threading
+import asyncio
 from typing import Dict, Optional, Any, Callable
 
 from .base import BaseChatProvider
-from queue_manager import UserQueuesManager, Sender, Group
+from queue_manager import BotQueuesManager, Sender, Group
 from config_models import ChatProviderConfig
 import logging
 
@@ -13,15 +14,15 @@ class DummyProvider(BaseChatProvider):
     A template and simulation provider. It demonstrates the required interface
     and simulates receiving messages for a user in a background thread.
     """
-    def __init__(self, user_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, **kwargs):
+    def __init__(self, bot_id: str, config: ChatProviderConfig, bot_queues: Dict[str, BotQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, **kwargs):
         """
         Initializes the provider.
-        - user_id: The specific user this provider instance is for.
+        - bot_id: The specific user this provider instance is for.
         - config: The 'provider_config' block from the JSON configuration.
-        - user_queues: A dictionary of all user queues, passed by the Orchestrator.
+        - bot_queues: A dictionary of all bot queues, passed by the Orchestrator.
         - on_session_end: A callback function to notify when a session ends.
         """
-        super().__init__(user_id, config, user_queues, on_session_end, **kwargs)
+        super().__init__(bot_id, config, bot_queues, on_session_end, **kwargs)
         self.is_listening = False
         self.thread = None
         logging.info("Initialized DummyProvider")
@@ -118,8 +119,9 @@ class DummyProvider(BaseChatProvider):
                 logging.info(f"Waiting for {sleep_duration_ms}ms...")
             time.sleep(sleep_duration_ms / 1000.0)
 
-            # CRITICAL: When a message is received, it's added to the user's
+            # CRITICAL: When a message is received, it's added to the bot's
             # queue. This is how the provider communicates with the main application.
+            queues_manager = self.bot_queues.get(self.bot_id)
             if queues_manager:
                 logging.info(f"Received a new message: '{item['message'][:30]}...' for correspondent {item['correspondent_id']}")
                 if self.main_loop:

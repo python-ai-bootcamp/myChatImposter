@@ -3,7 +3,7 @@ import unittest
 import os
 from unittest.mock import MagicMock, patch, AsyncMock
 from pymongo import DESCENDING
-from queue_manager import CorrespondentQueue, UserQueuesManager, Sender
+from queue_manager import CorrespondentQueue, BotQueuesManager, Sender
 from config_models import QueueConfig
 
 class TestCorrespondentQueue(unittest.TestCase):
@@ -196,12 +196,12 @@ class TestCorrespondentQueue(unittest.TestCase):
         self.assertTrue(any("RETENTION EVENT" in o for o in cm.output), "Retention event not logged")
         self.assertTrue(any("reason=message_count" in o for o in cm.output))
 
-class TestUserQueuesManager(unittest.TestCase):
+class TestBotQueuesManager(unittest.TestCase):
     def setUp(self):
         self.mock_queues_collection = MagicMock()
         self.queue_config = QueueConfig(max_messages=10, max_characters=1000, max_days=1, max_characters_single_message=100)
         self.mock_loop = MagicMock()
-        self.manager = UserQueuesManager(
+        self.manager = BotQueuesManager(
             bot_id='manager_user',
             provider_name='manager_vendor',
             queue_config=self.queue_config,

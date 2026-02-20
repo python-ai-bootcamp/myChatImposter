@@ -765,7 +765,7 @@ async def unlink_bot(bot_id: str, state: GlobalStateManager = Depends(ensure_db_
     if not instance:
         state.remove_active_bot(bot_id)
         if state.async_message_delivery_queue_manager:
-             await state.async_message_delivery_queue_manager.move_user_to_holding(bot_id)
+             await state.async_message_delivery_queue_manager.move_bot_to_holding(bot_id)
         if state.group_tracker:
              state.group_tracker.update_jobs(bot_id, [])
         raise HTTPException(status_code=500, detail="Instance not found.")
@@ -777,7 +777,7 @@ async def unlink_bot(bot_id: str, state: GlobalStateManager = Depends(ensure_db_
 
         await instance.stop(cleanup_session=True)
         if state.async_message_delivery_queue_manager:
-             await state.async_message_delivery_queue_manager.move_user_to_holding(bot_id)
+             await state.async_message_delivery_queue_manager.move_bot_to_holding(bot_id)
              
         return {"status": "success", "message": "Session unlinked"}
     except Exception as e:

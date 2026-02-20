@@ -218,7 +218,7 @@ class CorrespondentQueue:
         log_msg = f"RETENTION EVENT: [type=EVICT] [reason={reason}] [evicted_id={evicted_message.id}] [queue_size={len(self._messages)+1}]"
         logging.info(f"({self.bot_id}) {log_msg}")
 
-class UserQueuesManager:
+class BotQueuesManager:
     def __init__(self, bot_id: str, provider_name: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None, main_loop = None):
         self.bot_id = bot_id
         self.provider_name = provider_name

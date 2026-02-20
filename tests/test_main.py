@@ -8,7 +8,7 @@ import os
 # It's better to use a separate test database
 # For this example, we'll use the same DB but clean up after.
 # A more robust solution would use a dedicated test DB and mock the client.
-client = TestClient(app)
+# client = TestClient(app) # Removed global client
 mongo_client: MongoClient = None
 
 import time
@@ -42,28 +42,35 @@ def setup_and_teardown_function(monkeypatch):
 
     # This context manager will trigger the app's startup event.
     # The app should now be able to connect to the DB as we've waited for it.
-    with TestClient(app):
-        yield
+    with TestClient(app) as tc:
+        yield tc
 
-    # Teardown: clean up only TEST data (documents with user_id starting with "test_")
+    # Teardown: clean up only TEST data (documents with bot_id starting with "test_")
     # NEVER use delete_many({}) - it wipes all real user data!
     if mongo_client:
         db = mongo_client.get_database("chat_manager")
-        db.get_collection("configurations").delete_many({"user_id": {"$regex": "^test_"}})
-        db.get_collection("queues").delete_many({"user_id": {"$regex": "^test_"}})
+        db.get_collection("bot_configurations").delete_many({"config_data.bot_id": {"$regex": "^test_"}})
+        db.get_collection("queues").delete_many({"bot_id": {"$regex": "^test_"}})
         mongo_client.close()
 
 
-def test_save_and_get_single_configuration():
+def test_save_and_get_single_configuration(setup_and_teardown_function):
+    client = setup_and_teardown_function
     bot_id = "test_bot_single"
     config_data = {
         "bot_id": bot_id,
         "configurations": {
             "chat_provider_config": {"provider_name": "dummy", "provider_config": {}},
             "queue_config": {"max_messages": 5},
-            "llm_provider_config": {
-                "provider_name": "fakeLlm",
-                "provider_config": {"model": "fake", "temperature": 0.7}
+            "llm_configs": {
+                "high": {
+                    "provider_name": "fakeLlm",
+                    "provider_config": {"model": "fake", "temperature": 0.7}
+                },
+                "low": {
+                    "provider_name": "fakeLlm",
+                    "provider_config": {"model": "fake", "temperature": 0.7}
+                }
             }
         },
         "features": {
@@ -89,8 +96,9 @@ def test_save_and_get_single_configuration():
 
 
 
-def test_get_configuration_schema_api_key_logic():
-    response = client.get("/api/internal/bots/schema")
+def test_get_configuration_schema_api_key_logic(setup_and_teardown_function):
+    client = setup_and_teardown_function
+    response = client.get("/api/internal/bots/schema", headers={"X-User-Role": "admin"})
     assert response.status_code == 200
     schema = response.json()
 
@@ -125,16 +133,23 @@ def test_get_configuration_schema_api_key_logic():
     assert 'api_key' in explicit_schema['properties']
     assert 'api_key' in explicit_schema['required']
 
-def test_delete_configuration():
+def test_delete_configuration(setup_and_teardown_function):
+    client = setup_and_teardown_function
     bot_id = "test_bot_to_delete"
     config_data = {
         "bot_id": bot_id,
         "configurations": {
             "chat_provider_config": {"provider_name": "dummy", "provider_config": {}},
             "queue_config": {},
-            "llm_provider_config": {
-                "provider_name": "fakeLlm",
-                "provider_config": {"model": "fake", "temperature": 0.7}
+            "llm_configs": {
+                "high": {
+                    "provider_name": "fakeLlm",
+                    "provider_config": {"model": "fake", "temperature": 0.7}
+                },
+                "low": {
+                    "provider_name": "fakeLlm",
+                    "provider_config": {"model": "fake", "temperature": 0.7}
+                }
             }
         },
         "features": {
@@ -162,27 +177,29 @@ def test_delete_configuration():
 
 from unittest.mock import patch, MagicMock
 
-def test_get_user_queue_empty():
+def test_get_user_queue_empty(setup_and_teardown_function):
+    client = setup_and_teardown_function
     """ Test getting a queue for a user with no messages, should return 200 OK and an empty object. """
-    response = client.get("/api/features/automatic_bot_reply/queue/non_existent_user")
+    response = client.get("/api/internal/features/automatic_bot_reply/queue/non_existent_user")
     assert response.status_code == 200
     assert response.json() == {}
 
-def test_get_user_queue_success():
+def test_get_user_queue_success(setup_and_teardown_function):
+    client = setup_and_teardown_function
     """ Test getting queues for a user, which should be grouped by correspondent ID. """
-    user_id = "test_user_queue_success"
+    bot_id = "test_bot_queue_success"
     db = mongo_client.get_database("chat_manager")
     queues_collection = db.get_collection("queues")
 
-    # Insert some mock messages for the test user from different correspondents
+    # Insert some mock messages for the test bot from different correspondents
     mock_messages = [
-        {"id": 1, "content": "Hello from cor1", "sender": {"identifier": "user1", "display_name": "User 1"}, "source": "user", "user_id": user_id, "provider_name": "test", "correspondent_id": "cor1"},
-        {"id": 1, "content": "Hello from cor2", "sender": {"identifier": "user2", "display_name": "User 2"}, "source": "user", "user_id": user_id, "provider_name": "test", "correspondent_id": "cor2"},
-        {"id": 2, "content": "Hi there from cor1", "sender": {"identifier": "bot", "display_name": "Bot"}, "source": "bot", "user_id": user_id, "provider_name": "test", "correspondent_id": "cor1"}
+        {"id": 1, "content": "Hello from cor1", "sender": {"identifier": "user1", "display_name": "User 1"}, "source": "user", "bot_id": bot_id, "provider_name": "test", "correspondent_id": "cor1"},
+        {"id": 1, "content": "Hello from cor2", "sender": {"identifier": "user2", "display_name": "User 2"}, "source": "user", "bot_id": bot_id, "provider_name": "test", "correspondent_id": "cor2"},
+        {"id": 2, "content": "Hi there from cor1", "sender": {"identifier": "bot", "display_name": "Bot"}, "source": "bot", "bot_id": bot_id, "provider_name": "test", "correspondent_id": "cor1"}
     ]
     queues_collection.insert_many(mock_messages)
 
-    response = client.get(f"/api/features/automatic_bot_reply/queue/{user_id}")
+    response = client.get(f"/api/internal/features/automatic_bot_reply/queue/{bot_id}")
     assert response.status_code == 200
 
     data = response.json()
@@ -200,13 +217,14 @@ def test_get_user_queue_success():
     assert data["cor2"][0]["content"] == "Hello from cor2"
 
     # The API should not return the internal DB fields
-    assert "user_id" not in data["cor1"][0]
+    assert "bot_id" not in data["cor1"][0]
     assert "provider_name" not in data["cor1"][0]
     assert "correspondent_id" not in data["cor1"][0]
     assert "_id" not in data["cor1"][0]
 
-def test_get_user_context():
-    user_id = "test_user_context"
+def test_get_user_context(setup_and_teardown_function):
+    client = setup_and_teardown_function
+    bot_id = "test_bot_context"
     
     # We need to mock instance and its model
     mock_instance = MagicMock()
@@ -225,9 +243,9 @@ def test_get_user_context():
     mock_model.get_all_histories.return_value = {"corr1": mock_history}
     
     # Patch global state
-    with patch.dict(global_state.active_users, {user_id: "instance_id"}, clear=True), \
+    with patch.dict(global_state.active_bots, {bot_id: "instance_id"}, clear=True), \
          patch.dict(global_state.chatbot_instances, {"instance_id": mock_instance}, clear=True):
 
-        response = client.get(f"/api/features/automatic_bot_reply/context/{user_id}")
+        response = client.get(f"/api/internal/features/automatic_bot_reply/context/{bot_id}")
         assert response.status_code == 200
         assert response.json() == {"corr1": ["Hello", "Bot: Hi"]}

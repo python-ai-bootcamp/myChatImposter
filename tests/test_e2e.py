@@ -34,11 +34,11 @@ def client(monkeypatch):
     if mongo_client:
         db = mongo_client.get_database("chat_manager")
         # Cleanup
-        db.get_collection("configurations").delete_many({"config_data.user_id": {"$regex": "^test_user_"}})
-        db.get_collection("queues").delete_many({"user_id": {"$regex": "^test_user_"}})
-        db.get_collection("async_message_delivery_queue_active").delete_many({"message_metadata.message_destination.user_id": {"$regex": "^test_user_"}})
-        db.get_collection("async_message_delivery_queue_failed").delete_many({"message_metadata.message_destination.user_id": {"$regex": "^test_user_"}})
-        db.get_collection("async_message_delivery_queue_holding").delete_many({"message_metadata.message_destination.user_id": {"$regex": "^test_user_"}})
+        db.get_collection("bot_configurations").delete_many({"config_data.bot_id": {"$regex": "^test_bot_"}})
+        db.get_collection("queues").delete_many({"bot_id": {"$regex": "^test_bot_"}})
+        db.get_collection("async_message_delivery_queue_active").delete_many({"message_metadata.message_destination.bot_id": {"$regex": "^test_bot_"}})
+        db.get_collection("async_message_delivery_queue_failed").delete_many({"message_metadata.message_destination.bot_id": {"$regex": "^test_bot_"}})
+        db.get_collection("async_message_delivery_queue_holding").delete_many({"message_metadata.message_destination.bot_id": {"$regex": "^test_bot_"}})
         mongo_client.close()
 
 # @pytest.mark.skip(reason="Flaky: TestClient async lifecycle issues cause teardown failures. See technical debt.")
@@ -59,13 +59,24 @@ def test_group_and_direct_message_queues(client):
                     "sync_full_history": True
                 }
             },
-            "llm_provider_config": {
-                "provider_name": "openAi", # Matches openAi.py
-                "provider_config": {
-                    "api_key_source": "explicit",
-                    "api_key": "sk-dummy",
-                    "model": "gpt-4o",
-                    "record_llm_interactions": False
+            "llm_configs": {
+                "high": {
+                    "provider_name": "openAi",
+                    "provider_config": {
+                        "api_key_source": "explicit",
+                        "api_key": "sk-dummy",
+                        "model": "gpt-4o",
+                        "record_llm_interactions": False
+                    }
+                },
+                "low": {
+                    "provider_name": "openAi",
+                    "provider_config": {
+                        "api_key_source": "explicit",
+                        "api_key": "sk-dummy",
+                        "model": "gpt-4o-mini",
+                        "record_llm_interactions": False
+                    }
                 }
             },
             "queue_config": {"max_messages": 5},
@@ -112,8 +123,8 @@ def test_group_and_direct_message_queues(client):
     # If we insert raw, it might work if the API reads raw.
     
     mock_messages = [
-        {"id": "msg1", "content": "Direct message", "sender": {"identifier": direct_correspondent_id, "display_name": "Direct User"}, "source": "user", "user_id": bot_id, "provider_name": "dummy", "correspondent_id": direct_correspondent_id, "originating_time": 1234567890},
-        {"id": "msg2", "content": "Group message", "sender": {"identifier": "another_user@s.whatsapp.net", "display_name": "Group User"}, "source": "user", "user_id": bot_id, "provider_name": "dummy", "correspondent_id": group_correspondent_id, "group": {"identifier": group_correspondent_id, "display_name": "Test Group"}, "originating_time": 1234567891}
+        {"id": "msg1", "content": "Direct message", "sender": {"identifier": direct_correspondent_id, "display_name": "Direct User"}, "source": "user", "bot_id": bot_id, "provider_name": "dummy", "correspondent_id": direct_correspondent_id, "originating_time": 1234567890},
+        {"id": "msg2", "content": "Group message", "sender": {"identifier": "another_user@s.whatsapp.net", "display_name": "Group User"}, "source": "user", "bot_id": bot_id, "provider_name": "dummy", "correspondent_id": group_correspondent_id, "group": {"identifier": group_correspondent_id, "display_name": "Test Group"}, "originating_time": 1234567891}
     ]
     queues_collection.insert_many(mock_messages)
 

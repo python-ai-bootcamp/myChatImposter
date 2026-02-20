@@ -11,7 +11,7 @@ import time
 import httpx
 import websockets
 
-from queue_manager import UserQueuesManager, Sender, Group, Message
+from queue_manager import BotQueuesManager, Sender, Group, Message
 import logging
 
 from .base import BaseChatProvider
@@ -25,9 +25,9 @@ from infrastructure.exceptions import (
 
 
 class WhatsAppBaileysProvider(BaseChatProvider):
-    def __init__(self, bot_id: str, config: ChatProviderConfig, user_queues: Dict[str, UserQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, on_status_change: Optional[Callable[[str, str], None]] = None, main_loop=None, **kwargs):
+    def __init__(self, bot_id: str, config: ChatProviderConfig, bot_queues: Dict[str, BotQueuesManager], on_session_end: Optional[Callable[[str], None]] = None, on_status_change: Optional[Callable[[str, str], None]] = None, main_loop=None, **kwargs):
         # Pass unknown kwargs up to ensure compatibility
-        super().__init__(bot_id, config, user_queues, on_session_end, on_status_change, main_loop=main_loop, **kwargs)
+        super().__init__(bot_id, config, bot_queues, on_session_end, on_status_change, main_loop=main_loop, **kwargs)
 
         self.user_jid = None
         self.sock = None
@@ -277,7 +277,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             logging.error(f"ERROR: Could not decode JSON from WebSocket: {message}")
 
     async def _process_messages(self, messages):
-        queues_manager = self.user_queues.get(self.bot_id)
+        queues_manager = self.bot_queues.get(self.bot_id)
         if not queues_manager:
             logging.error("ERROR: Could not find a queues manager for myself.")
             return

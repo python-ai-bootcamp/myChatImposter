@@ -4,7 +4,7 @@ import time
 import asyncio
 from features.automatic_bot_reply.service import ChatbotModel
 from services.ingestion_service import IngestionService
-from queue_manager import UserQueuesManager, Sender
+from queue_manager import BotQueuesManager, Sender
 from config_models import QueueConfig, ContextConfig
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_core.runnables import Runnable
@@ -139,7 +139,7 @@ class TestIngestService(unittest.IsolatedAsyncioTestCase):
         self.mock_queues_collection.insert_one = MagicMock()
 
         self.queue_config = QueueConfig(max_messages=10, max_characters=1000, max_days=1)
-        self.user_queues_manager = UserQueuesManager(
+        self.bot_queues_manager = BotQueuesManager(
             bot_id='test_ingester_user',
             provider_name='test_vendor',
             queue_config=self.queue_config,
@@ -151,7 +151,7 @@ class TestIngestService(unittest.IsolatedAsyncioTestCase):
         self.mock_session_manager.bot_id = 'test_ingester_user'
         # Nested magic mocks for config
         self.mock_session_manager.config.configurations.chat_provider_config.provider_name = 'test_vendor'
-        self.mock_session_manager.user_queues_manager = self.user_queues_manager
+        self.mock_session_manager.bot_queues_manager = self.bot_queues_manager
         self.mock_session_manager.main_loop = asyncio.get_running_loop()
 
         self.ingester = IngestionService(
@@ -166,7 +166,7 @@ class TestIngestService(unittest.IsolatedAsyncioTestCase):
         # Add a message to a correspondent's queue
         correspondent_id = 'cor1'
         sender = Sender(identifier='test_sender', display_name='Test Sender')
-        await self.user_queues_manager.add_message(correspondent_id, "Test message", sender, 'user')
+        await self.bot_queues_manager.add_message(correspondent_id, "Test message", sender, 'user')
 
         # Start the ingester
         self.ingester.start()
@@ -183,12 +183,12 @@ class TestIngestService(unittest.IsolatedAsyncioTestCase):
         # Check the content of the inserted document
         inserted_doc = self.mock_queues_collection.insert_one.call_args[0][0]
         self.assertEqual(inserted_doc['content'], "Test message")
-        self.assertEqual(inserted_doc['user_id'], 'test_ingester_user')
+        self.assertEqual(inserted_doc['bot_id'], 'test_ingester_user')
         self.assertEqual(inserted_doc['provider_name'], 'test_vendor')
         self.assertEqual(inserted_doc['correspondent_id'], correspondent_id)
 
         # Verify that the message was removed from the in-memory queue
-        cor_queue = self.user_queues_manager.get_queue(correspondent_id)
+        cor_queue = self.bot_queues_manager.get_queue(correspondent_id)
         self.assertEqual(len(cor_queue.get_messages()), 0)
 
 if __name__ == '__main__':
