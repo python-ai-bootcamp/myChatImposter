@@ -1380,12 +1380,12 @@ app.use(express.json({ limit: '50mb' }));
 
 
 app.post('/initialize', async (req, res) => {
-    const { userId, config } = req.body;
+    const { userId, config, forceReinit } = req.body;
     if (!userId || !config) {
         return res.status(400).json({ error: 'userId and config are required.' });
     }
     try {
-        await connectToWhatsApp(userId, config);
+        await connectToWhatsApp(userId, config, forceReinit);
         res.status(200).json({ status: 'Session initialization started.' });
     } catch (error) {
         console.error(`[${userId}] Failed to initialize session:`, error);
