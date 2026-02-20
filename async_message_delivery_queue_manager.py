@@ -161,8 +161,8 @@ class AsyncMessageDeliveryQueueManager:
         logging.info("ACTIONABLE_QUEUE: ActionableItemsDeliveryQueueManager loop running.")
         while self.running:
             try:
-                # Jitter: Sleep random time between 1 and 12 seconds
-                sleep_time = random.uniform(1, 12)
+                # Jitter: Sleep random time between 6 and 12 seconds (Median 9s)
+                sleep_time = random.uniform(6, 12)
                 await asyncio.sleep(sleep_time)
 
                 # Random Selection Pipeline (Size 1)
