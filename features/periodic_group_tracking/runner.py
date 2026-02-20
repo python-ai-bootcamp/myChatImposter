@@ -201,7 +201,7 @@ class GroupTrackingRunner:
                         await self.queue_manager.add_item(
                             content=item,
                             message_type=QueueMessageType.ICS_ACTIONABLE_ITEM,
-                            user_id=bot_id, # Queue manager expects bot_id here for routing
+                            bot_id=bot_id, # Queue manager expects bot_id here for routing
                             provider_name="whatsAppBaileys" 
                         )
                 else:

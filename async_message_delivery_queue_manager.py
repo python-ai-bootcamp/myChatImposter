@@ -73,7 +73,11 @@ class AsyncMessageDeliveryQueueManager:
         
         try:
             # Check if the bot is currently connected
-            target_instance = self.chatbot_instances.get(bot_id)
+            target_instance = None
+            for inst in self.chatbot_instances.values():
+                if inst.bot_id == bot_id:
+                    target_instance = inst
+                    break
             is_connected = False
             if target_instance and target_instance.provider_instance:
                 if target_instance.provider_instance.is_connected:
@@ -189,7 +193,11 @@ class AsyncMessageDeliveryQueueManager:
 
                 # 2. Check Bot Connection (Presend Check)
                 # Find Chatbot Instance
-                target_instance = self.chatbot_instances.get(bot_id)
+                target_instance = None
+                for inst in self.chatbot_instances.values():
+                    if inst.bot_id == bot_id:
+                        target_instance = inst
+                        break
                 
                 # Logic: If instance missing OR (instance exists but provider not ready/connected)
                 # Note: `get_status` or direct attribute check. 
