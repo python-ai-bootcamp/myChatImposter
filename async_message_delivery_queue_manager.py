@@ -182,13 +182,12 @@ class AsyncMessageDeliveryQueueManager:
 
                 # 1. Check Attempts Limit
                 if attempts >= 3:
-                    logging.info(f"ACTIONABLE_QUEUE: Msg {message_id} - Bot {bot_id} offline. Moving to holding queue.")
+                    logging.warning(f"ACTIONABLE_QUEUE: Item {message_id} reached max attempts (3). Moving to FAILED queue.")
                     try:
-                        # Move to holding queue
-                        await self.unconnected_collection.insert_one(candidate)
+                        await self.failed_collection.insert_one(candidate)
                         await self.queue_collection.delete_one({"_id": candidate["_id"]})
                     except Exception as e:
-                        logging.error(f"ACTIONABLE_QUEUE: Failed to move item {message_id} to holding queue after max attempts: {e}")
+                        logging.error(f"ACTIONABLE_QUEUE: Failed to move item {message_id} to failed queue: {e}")
                     continue
 
                 # 2. Check Bot Connection (Presend Check)
