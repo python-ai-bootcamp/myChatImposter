@@ -28,7 +28,7 @@ class TestCorrespondentQueue(unittest.TestCase):
         queue_config = QueueConfig(max_messages=5, max_characters=200, max_days=1, max_characters_single_message=50)
 
         cor_queue = CorrespondentQueue(
-            user_id='test_user_db',
+            bot_id='test_user_db',
             provider_name='test_vendor',
             correspondent_id='cor1',
             queue_config=queue_config,
@@ -38,7 +38,7 @@ class TestCorrespondentQueue(unittest.TestCase):
 
         # Verify it queried the database with the correct correspondent_id
         self.mock_queues_collection.find_one.assert_called_with(
-            {"user_id": "test_user_db", "provider_name": "test_vendor", "correspondent_id": "cor1"},
+            {"bot_id": "test_user_db", "provider_name": "test_vendor", "correspondent_id": "cor1"},
             sort=[("id", DESCENDING)]
         )
         self.assertEqual(cor_queue._next_message_id, 101, "Next message ID should be initialized to 101")
@@ -48,7 +48,7 @@ class TestCorrespondentQueue(unittest.TestCase):
         self.mock_queues_collection.find_one.return_value = None
 
         cor_queue_empty = CorrespondentQueue(
-            user_id='test_user_db_empty',
+            bot_id='test_user_db_empty',
             provider_name='test_vendor',
             correspondent_id='cor2',
             queue_config=queue_config,
@@ -67,7 +67,7 @@ class TestCorrespondentQueue(unittest.TestCase):
             max_characters_single_message=50
         )
         user_queue = CorrespondentQueue(
-            user_id='test_user_truncate',
+            bot_id='test_user_truncate',
             provider_name='test_vendor',
             correspondent_id='cor_truncate',
             queue_config=queue_config,
@@ -94,7 +94,7 @@ class TestCorrespondentQueue(unittest.TestCase):
             max_characters_single_message=100
         )
         user_queue = CorrespondentQueue(
-            user_id='test_user_char_limit',
+            bot_id='test_user_char_limit',
             provider_name='test_vendor',
             correspondent_id='cor_char_limit',
             queue_config=queue_config,
@@ -131,7 +131,7 @@ class TestCorrespondentQueue(unittest.TestCase):
             max_characters_single_message=1000
         )
         user_queue = CorrespondentQueue(
-            user_id='test_user_msg_limit',
+            bot_id='test_user_msg_limit',
             provider_name='test_vendor',
             correspondent_id='cor_msg_limit',
             queue_config=queue_config,
@@ -173,7 +173,7 @@ class TestCorrespondentQueue(unittest.TestCase):
             max_characters_single_message=100
         )
         user_queue = CorrespondentQueue(
-            user_id=user_id,
+            bot_id=user_id,
             provider_name=provider_name,
             correspondent_id=correspondent_id,
             queue_config=queue_config,
@@ -202,7 +202,7 @@ class TestUserQueuesManager(unittest.TestCase):
         self.queue_config = QueueConfig(max_messages=10, max_characters=1000, max_days=1, max_characters_single_message=100)
         self.mock_loop = MagicMock()
         self.manager = UserQueuesManager(
-            user_id='manager_user',
+            bot_id='manager_user',
             provider_name='manager_vendor',
             queue_config=self.queue_config,
             queues_collection=self.mock_queues_collection,
@@ -215,7 +215,7 @@ class TestUserQueuesManager(unittest.TestCase):
         queue1 = asyncio.run(self.manager.get_or_create_queue('cor1'))
         self.assertIsInstance(queue1, CorrespondentQueue)
         self.assertEqual(queue1.correspondent_id, 'cor1')
-        self.assertEqual(queue1.user_id, 'manager_user')
+        self.assertEqual(queue1.bot_id, 'manager_user')
 
         # Second request for the same ID should return the same instance
         queue2 = asyncio.run(self.manager.get_or_create_queue('cor1'))

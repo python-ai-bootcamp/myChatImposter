@@ -51,7 +51,7 @@ class TestSessionManager(unittest.IsolatedAsyncioTestCase):
             
             # Verify queue manager initialized
             self.assertIsNotNone(manager.user_queues_manager)
-            self.assertEqual(manager.user_queues_manager.user_id, self.bot_id)
+            self.assertEqual(manager.user_queues_manager.bot_id, self.bot_id)
 
     async def test_initialization_failure_no_provider(self):
         """Test that SessionManager raises ImportError if provider class not found."""

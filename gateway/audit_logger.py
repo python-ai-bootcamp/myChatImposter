@@ -110,7 +110,7 @@ class AuditLogger:
         user_id: str,
         role: str,
         requested_path: str,
-        extracted_user_id: Optional[str] = None,
+        extracted_bot_id: Optional[str] = None,
         ip_address: Optional[str] = None,
         user_agent: Optional[str] = None,
     ):
@@ -123,7 +123,7 @@ class AuditLogger:
             details={
                 "role": role,
                 "requested_path": requested_path,
-                "extracted_user_id": extracted_user_id,
+                "extracted_bot_id": extracted_bot_id,
             },
         )
 

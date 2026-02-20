@@ -63,7 +63,7 @@ class SessionManager:
         provider_name = chat_provider_config.provider_name
         
         self.user_queues_manager = UserQueuesManager(
-            user_id=self.bot_id, # QueueManager might still expect 'user_id' param name, or needs refactoring too. Keeping param name if it's external, but value is bot_id.
+            bot_id=self.bot_id, # QueueManager might still expect 'user_id' param name, or needs refactoring too. Keeping param name if it's external, but value is bot_id.
             provider_name=provider_name,
             queue_config=self.config.configurations.queue_config,
             queues_collection=self._queues_collection,

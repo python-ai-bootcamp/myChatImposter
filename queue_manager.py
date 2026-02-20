@@ -41,8 +41,8 @@ class Message:
         self.message_size = len(self.content)
 
 class CorrespondentQueue:
-    def __init__(self, user_id: str, provider_name: str, correspondent_id: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None, main_loop = None):
-        self.user_id = user_id
+    def __init__(self, bot_id: str, provider_name: str, correspondent_id: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None, main_loop = None):
+        self.bot_id = bot_id
         self.provider_name = provider_name
         self.correspondent_id = correspondent_id
         self.main_loop = main_loop
@@ -70,14 +70,14 @@ class CorrespondentQueue:
         try:
             # Async Find One
             last_message = await self._queues_collection.find_one(
-                {"user_id": self.user_id, "provider_name": self.provider_name, "correspondent_id": self.correspondent_id},
+                {"bot_id": self.bot_id, "provider_name": self.provider_name, "correspondent_id": self.correspondent_id},
                 sort=[("id", DESCENDING)]
             )
             if last_message and 'id' in last_message:
                 self._next_message_id = last_message['id'] + 1
-                logging.info(f"QUEUE INIT ({self.user_id}/{self.correspondent_id}): Initialized next message ID to {self._next_message_id} from database.")
+                logging.info(f"QUEUE INIT ({self.bot_id}/{self.correspondent_id}): Initialized next message ID to {self._next_message_id} from database.")
             else:
-                logging.info(f"QUEUE INIT ({self.user_id}/{self.correspondent_id}): No previous messages found in DB. Starting message ID at 1.")
+                logging.info(f"QUEUE INIT ({self.bot_id}/{self.correspondent_id}): No previous messages found in DB. Starting message ID at 1.")
         except Exception as e:
             logging.error(f"QUEUE: Could not initialize next message ID from DB: {e}")
 
@@ -89,7 +89,7 @@ class CorrespondentQueue:
         """Trigger all registered callbacks with the new message."""
         for callback in self._callbacks:
             if self.main_loop:
-                asyncio.run_coroutine_threadsafe(callback(self.user_id, self.correspondent_id, message), self.main_loop)
+                asyncio.run_coroutine_threadsafe(callback(self.bot_id, self.correspondent_id, message), self.main_loop)
             else:
                 logging.error(f"QUEUE: No main event loop provided to run async callback.")
 
@@ -102,7 +102,7 @@ class CorrespondentQueue:
             evicted_msg = self._messages.popleft()
             self._total_chars -= evicted_msg.message_size
             self._log_retention_event(evicted_msg, reason, new_message_size)
-            logging.info(f"QUEUE EVICT ({self.user_id}): Message {evicted_msg.id} evicted due to {reason}.")
+            logging.info(f"QUEUE EVICT ({self.bot_id}): Message {evicted_msg.id} evicted due to {reason}.")
 
     def _enforce_limits(self, new_message_size: int):
         """Evict old messages until the new message can be added."""
@@ -130,13 +130,13 @@ class CorrespondentQueue:
         """Create, add, and process a new message for the queue."""
         if provider_message_id:
             if provider_message_id in self._recent_provider_message_ids:
-                logging.info(f"QUEUE DUPE ({self.user_id}): Duplicate message ID {provider_message_id} received, ignoring.")
+                logging.info(f"QUEUE DUPE ({self.bot_id}): Duplicate message ID {provider_message_id} received, ignoring.")
                 return
             self._recent_provider_message_ids.append(provider_message_id)
 
         # Truncate the message if it exceeds the single message character limit.
         if len(content) > self.max_characters_single_message:
-            logging.warning(f"QUEUE TRUNCATE ({self.user_id}): Message from {sender.display_name} is larger than the single message character limit ({self.max_characters_single_message}), truncating.")
+            logging.warning(f"QUEUE TRUNCATE ({self.bot_id}): Message from {sender.display_name} is larger than the single message character limit ({self.max_characters_single_message}), truncating.")
             content = content[:self.max_characters_single_message]
 
         new_message_size = len(content)
@@ -160,7 +160,7 @@ class CorrespondentQueue:
         # Log the message
         self._log_message(message)
 
-        logging.info(f"QUEUE ADD ({self.user_id}): Added message {message.id} from {message.sender.display_name}. Queue stats: {len(self._messages)} msgs, {self._total_chars} chars.")
+        logging.info(f"QUEUE ADD ({self.bot_id}): Added message {message.id} from {message.sender.display_name}. Queue stats: {len(self._messages)} msgs, {self._total_chars} chars.")
 
         self._new_message_event.set()
         self._trigger_callbacks(message)
@@ -199,7 +199,7 @@ class CorrespondentQueue:
         log_msg = f"MESSAGE: [originating={originating_time_str}] [accepted={message.accepted_time}] [id={message.id}] [sender={sender_str}] {group_str} :: {message.content}"
         
         # Log to standard logger
-        logging.info(f"({self.provider_name}/{self.user_id}/{self.correspondent_id}) {log_msg}")
+        logging.info(f"({self.provider_name}/{self.bot_id}/{self.correspondent_id}) {log_msg}")
 
     def get_messages(self) -> List[Message]:
         return list(self._messages)
@@ -209,18 +209,18 @@ class CorrespondentQueue:
         self._messages.clear()
         self._total_chars = 0
         self._next_message_id = 1
-        logging.info(f"QUEUE CLEAR ({self.user_id}/{self.correspondent_id}): In-memory queue cleared and message ID reset.")
+        logging.info(f"QUEUE CLEAR ({self.bot_id}/{self.correspondent_id}): In-memory queue cleared and message ID reset.")
 
     def _log_retention_event(self, evicted_message: Message, reason: str, new_message_size: int = 0):
         """
         Logs a retention event using standard logging.
         """
         log_msg = f"RETENTION EVENT: [type=EVICT] [reason={reason}] [evicted_id={evicted_message.id}] [queue_size={len(self._messages)+1}]"
-        logging.info(f"({self.user_id}) {log_msg}")
+        logging.info(f"({self.bot_id}) {log_msg}")
 
 class UserQueuesManager:
-    def __init__(self, user_id: str, provider_name: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None, main_loop = None):
-        self.user_id = user_id
+    def __init__(self, bot_id: str, provider_name: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None, main_loop = None):
+        self.bot_id = bot_id
         self.provider_name = provider_name
         self.queue_config = queue_config
         self.main_loop = main_loop
@@ -239,9 +239,9 @@ class UserQueuesManager:
         
         if correspondent_id not in self._queues:
             # Double check pattern not easy without lock, but standard dict check is usually fine in single loop.
-            logging.info(f"QUEUE_MANAGER ({self.user_id}): Creating new queue for correspondent '{correspondent_id}'.")
+            logging.info(f"QUEUE_MANAGER ({self.bot_id}): Creating new queue for correspondent '{correspondent_id}'.")
             queue = CorrespondentQueue(
-                user_id=self.user_id,
+                bot_id=self.bot_id,
                 provider_name=self.provider_name,
                 correspondent_id=correspondent_id,
                 queue_config=self.queue_config,

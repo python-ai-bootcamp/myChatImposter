@@ -207,7 +207,7 @@ class AutomaticBotReplyService:
             
             self.llm = llm_instance
             logging.info(f"Initialized LLM provider '{self.config.configurations.llm_configs.high.provider_name}' with token tracking.")
-            system_prompt = self.config.features.automatic_bot_reply.chat_system_prompt.format(user_id=self.bot_id)
+            system_prompt = self.config.features.automatic_bot_reply.chat_system_prompt.format(bot_id=self.bot_id)
             
             self.chatbot_model = ChatbotModel(
                 self.bot_id,

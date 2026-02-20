@@ -92,7 +92,7 @@ class AuthenticationMiddleware(BaseHTTPMiddleware):
                 user_id=session.user_id,
                 role=session.role,
                 requested_path=path,
-                extracted_user_id=extracted_bot_id,
+                extracted_bot_id=extracted_bot_id,
                 ip_address=request.client.host if request.client else None,
                 user_agent=request.headers.get("user-agent"),
             )

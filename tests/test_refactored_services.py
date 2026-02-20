@@ -140,7 +140,7 @@ class TestIngestService(unittest.IsolatedAsyncioTestCase):
 
         self.queue_config = QueueConfig(max_messages=10, max_characters=1000, max_days=1)
         self.user_queues_manager = UserQueuesManager(
-            user_id='test_ingester_user',
+            bot_id='test_ingester_user',
             provider_name='test_vendor',
             queue_config=self.queue_config,
             queues_collection=self.mock_queues_collection
@@ -148,7 +148,7 @@ class TestIngestService(unittest.IsolatedAsyncioTestCase):
         
         # Mock Session Manager
         self.mock_session_manager = MagicMock()
-        self.mock_session_manager.user_id = 'test_ingester_user'
+        self.mock_session_manager.bot_id = 'test_ingester_user'
         # Nested magic mocks for config
         self.mock_session_manager.config.configurations.chat_provider_config.provider_name = 'test_vendor'
         self.mock_session_manager.user_queues_manager = self.user_queues_manager
