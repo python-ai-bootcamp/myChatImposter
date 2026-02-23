@@ -24,9 +24,11 @@ Add `media_processing_id: Optional[str]` to the `Message` dataclass (alongside e
 
 ---
 
-## Shared Media Volume
+## Shared Media Volume & Storage Quota
 
 A shared Docker volume (`media_staging`) is mounted into both the Baileys Node.js server and the Python backend at `media_store/pending_media/`. This allows the Node.js server to stream media files directly to disk, and the Python backend to read and delete them — **zero media bytes are exchanged between containers over the network**.
+
+To prevent media downloads from exhausting the host's primary disk, an application-level quota is enforced. The limit is defined by the `media_storage_quota_gb` property in the configuration collection.
 
 ```yaml
 # docker-compose.yml
@@ -51,12 +53,14 @@ volumes:
 2. **Node.js sends metadata to Python** via WebSocket — only the GUID, mime type, caption, and original filename. No media bytes cross the wire.
 3. **Python provider receives metadata** → calls `BotQueuesManager.add_message()` with the media params (GUID, mime type, caption, filename).
 4. **Placeholder insertion**: `BotQueuesManager` adds a `Message` to the `CorrespondentQueue` with `content=<caption>` (or `""`) and `media_processing_id=<guid>`. No file validation is performed — if the file is missing or corrupt, the processor handles the implications.
-5. **Non-blocking processing trigger**: A job record is written to the **`media_processing_jobs`** MongoDB collection. This IS the job submission — the `MediaProcessingService` worker pools  (each one consumed by their dedicated mediaProcessor for mimetype) poll this collection for work. Each job record contains:
-   - `placeholder_message` — the full serialized `Message` placeholder dict (all fields including `bot_id`, `correspondent_id`, `media_processing_id`, etc.)
+5. **Non-blocking processing trigger**: `BotQueuesManager.add_message()` writes a job record to the **`media_processing_jobs`** MongoDB collection. This IS the job submission — the `MediaProcessingService` worker pools (each one consumed by their dedicated mediaProcessor for mimetype) poll this collection for work. Each job record contains:
+   - `bot_id` — **top-level field** injected alongside the message, identifying which bot owns this job (used for lifecycle transitions and routing back to the correct `BotQueuesManager`)
+   - `correspondent_id` — **top-level field** injected alongside the message, identifying which `CorrespondentQueue` holds the placeholder
+   - `placeholder_message` — the full serialized `Message` placeholder dict (which contains message-oriented fields like `id`, `content`, `media_processing_id`, `sender`, etc., but **does not** contain routing IDs like `bot_id` or `correspondent_id` since those do not exist on the `Message` dataclass)
    - `guid` — used to locate the raw media file at `media_store/pending_media/<guid>`
    - `original_filename` *(optional)* — provided by the provider if available; used to assist processing (e.g. file extension hints)
-   - `mime_type` — determines which processing path to use (transcription vs. vision)
-6. **Processing completes**: The worker calls `BotQueuesManager.update_message_by_media_id(correspondent_id, guid, transcript)`. Using the `correspondent_id` from the job metadata, it goes directly to the correct `CorrespondentQueue` and updates its `content` and `message_size`, then fires `_trigger_callbacks`. The job record is then **deleted from `media_processing_jobs`** and the raw media file is **deleted from disk**.
+   - `mime_type` — determines which processing pool to route the job to
+6. **Processing completes**: The worker uses `bot_id` from the job to look up the correct `BotQueuesManager`, then calls `update_message_by_media_id(correspondent_id, guid, transcript)` on it. This locates the correct `CorrespondentQueue` and updates its `content` and `message_size`, then fires `_trigger_callbacks`. The job record is then **deleted from `media_processing_jobs`** and the raw media file is **deleted from disk**.
 
 ---
 
@@ -95,7 +99,16 @@ Used exclusively by:
 
 ### Required Change in `server.js` (Baileys Node.js Server)
 
-The current `processMessage` function discards media and captions:
+First, add `downloadMediaMessage` to the Baileys imports at the top of the file:
+
+```javascript
+const {
+    // ... existing imports ...
+    downloadMediaMessage
+} = require('@whiskeysockets/baileys');
+```
+
+Then, the current `processMessage` function discards media and captions:
 
 ```javascript
 // CURRENT — media is lost, caption is lost
@@ -110,9 +123,11 @@ This must be updated to detect media types, extract the caption, stream the medi
 ```javascript
 // NEW — stream media to shared volume, return only metadata
 const mediaTypes = {
-    imageMessage:  { caption: msg.message.imageMessage?.caption },
-    videoMessage:  { caption: msg.message.videoMessage?.caption },
-    audioMessage:  { caption: null },  // audio has no caption
+    imageMessage:    { caption: msg.message.imageMessage?.caption },
+    videoMessage:    { caption: msg.message.videoMessage?.caption },
+    audioMessage:    { caption: null },  // audio has no caption
+    documentMessage: { caption: msg.message.documentMessage?.caption },
+    stickerMessage:  { caption: null },  // stickers have no caption
 };
 
 const mediaInfo = mediaTypes[messageType];  // messageType already resolved above (line 387)
@@ -124,8 +139,46 @@ if (mediaInfo !== undefined) {
     const caption = mediaInfo.caption || '';
     const writePath = path.join('/app/media_store/pending_media', guid);
 
+    // Enforce configurable application-level quota before downloading
+    // `media_storage_quota_gb` is retrieved from the configuration collection in DB
+    const configuredLimitGb = botConfig?.media_storage_quota_gb || 25; // fallback
+    // Calculate threshold: limit - 2 GB, but ensure at least 1 GB is available for operations
+    const stopWritingThresholdGb = Math.max(configuredLimitGb - 2, 1);
+    const stopWritingThresholdMb = stopWritingThresholdGb * 1024;
+
+    const { execSync } = require('child_process');
+    try {
+        const sizeOutput = execSync('du -sm /app/media_store/pending_media').toString().split('\t')[0];
+        const currentSizeMb = parseInt(sizeOutput);
+        
+        if (currentSizeMb > stopWritingThresholdMb) {
+            console.error(`Media quota exceeded (Current Size: ${currentSizeMb}MB, Threshold: ${stopWritingThresholdMb}MB). Rejecting download for ${guid}`);
+            
+            // Treat quota exhaustion exactly like a corrupt/failed download
+            const baseType = messageType.replace('Message', ''); // e.g. 'image'
+            const corruptMimetype = `media_corrupt_${baseType}`;
+            
+            // Send metadata back to Python, which routes it to CorruptMediaProcessor
+            pushStatusToPython(userId, {
+                type: 'new_message',
+                message: {
+                    guid: guid,
+                    mime_type: corruptMimetype,
+                    caption: caption,
+                    original_filename: filename
+                },
+                // ... other message metadata ...
+            });
+            return; 
+        }
+    } catch (e) {
+        console.warn(`Failed to check media directory size: ${e.message}`);
+        // Let it proceed if du fails for some odd reason (fallback protection)
+    }
+
     // Retry up to 3 times with exponential back-off (2s, 4s, 8s)
     let downloaded = false;
+    let quotaExceeded = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
         try {
             const stream = await downloadMediaMessage(msg, 'stream', {});
@@ -138,8 +191,16 @@ if (mediaInfo !== undefined) {
             downloaded = true;
             break;
         } catch (err) {
-            // Delete any partially-written file before retrying
+            // Delete any partially-written file before retrying/aborting
             try { fs.unlinkSync(writePath); } catch (_) {}
+            
+            // Optional: fallback if disk physically fills completely
+            if (err.code === 'ENOSPC') {
+                console.error(`Media quota exceeded (ENOSPC). Rejecting download for ${guid}`);
+                quotaExceeded = true;
+                break; // Do not retry if disk is physically full
+            }
+
             if (attempt < 3) {
                 await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt - 1)));
             } else {
@@ -158,7 +219,7 @@ if (mediaInfo !== undefined) {
             original_filename: filename,
         };
     } else {
-        // All retries failed — send as corrupted media
+        // All retries failed OR quota exceeded — send as corrupted media
         // mediaType is e.g. "image", "video", "audio" (strip "Message" suffix)
         const shortType = messageType.replace('Message', '');
         return {
@@ -167,6 +228,7 @@ if (mediaInfo !== undefined) {
             media_processing_id: guid,
             mime_type: `media_corrupt_${shortType}`,       // e.g. "media_corrupt_image"
             original_filename: filename,
+            _quota_exceeded: quotaExceeded                 // Optional marker for deeper logging upstream
         };
     }
 }
@@ -185,12 +247,14 @@ A fixed-concurrency pool to avoid memory bloat and starvation across bots. **All
 | `audio/ogg`, `audio/mpeg` | Audio pool | speech-to-text API → transcript |
 | `video/mp4`, `video/webm` | Video pool | vision/transcription API → description |
 | `image/jpeg`, `image/png`, `image/webp` | Image pool | vision API → text description |
-| `media_corrupt_image`, `media_corrupt_audio`, `media_corrupt_video` | `CorruptMediaProcessor` | error handling (see below) |
-| *anything else* | `UnsupportedMediaProcessor` (default catch-all) | error handling (see below) |
+| `application/pdf`, `text/plain`, etc. | Document pool | text extraction API → plain text |
+| `image/webp` (stickers) | Sticker pool | vision/metadata extraction → description |
+| `media_corrupt_image`, `media_corrupt_audio`, `media_corrupt_video`, `media_corrupt_document`, `media_corrupt_sticker` | `CorruptMediaProcessor` | error handling (see below) |
+| *anything else* (e.g. `text/calendar`)| `UnsupportedMediaProcessor` (default catch-all) | error handling (see below) |
 
 ### Corrupted Media Handling (`CorruptMediaProcessor`)
 
-When `server.js` fails to download media after **3 retry attempts** (exponential back-off: 500 ms → 1 s → 2 s), it deletes any partially-written file and sends metadata to Python with `mime_type = "media_corrupt_<type>"` (e.g. `media_corrupt_image`, `media_corrupt_audio`, `media_corrupt_video`). The `content` field carries the original caption if one exists, otherwise an empty string. The message enters the queue as a placeholder like any other media message.
+When `server.js` fails to download media after **3 retry attempts** (exponential back-off: 2s → 4s → 8s), it deletes any partially-written file and sends metadata to Python with `mime_type = "media_corrupt_<type>"` (e.g. `media_corrupt_image`, `media_corrupt_audio`, `media_corrupt_document`). The `content` field carries the original caption if one exists, otherwise an empty string. The message enters the queue as a placeholder like any other media message.
 
 The `CorruptMediaProcessor` handles these jobs:
 1. Deletes the media file from the shared volume (if one exists).
@@ -203,7 +267,7 @@ The `CorruptMediaProcessor` handles these jobs:
 
 ### Unsupported Media Handling (`UnsupportedMediaProcessor`)
 
-The `UnsupportedMediaProcessor` is the **default catch-all** — it handles any mime type that no other pool is configured to process. Since `server.js` sends the original mime type as-is (e.g. `application/pdf`, `audio/wav`), it has no knowledge of what the backend supports. The unsupported type detection happens naturally at the processor routing level: if no pool matches the mime type, it falls to the default.
+The `UnsupportedMediaProcessor` is the **default catch-all** — it handles any mime type that no other pool is configured to process. Since `server.js` sends the original mime type as-is (e.g. `text/calendar` (ICS files), `application/x-zip`), it has no knowledge of what the backend supports. The unsupported type detection happens naturally at the processor routing level: if no pool matches the mime type, it falls to the default.
 
 The `UnsupportedMediaProcessor` follows the same pattern as `CorruptMediaProcessor`:
 1. Deletes the media file from the shared volume.
@@ -224,8 +288,10 @@ Pool definitions are loaded from the `bot_configurations` MongoDB collection, do
 [
   { "mimeTypes": ["audio/ogg", "audio/mpeg"], "processorClass": "AudioTranscriptionProcessor", "concurrentProcessingPoolSize": 2 },
   { "mimeTypes": ["video/mp4", "video/webm"], "processorClass": "VideoDescriptionProcessor", "concurrentProcessingPoolSize": 1 },
-  { "mimeTypes": ["image/jpeg", "image/png", "image/webp"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3 },
-  { "mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1 },
+  { "mimeTypes": ["image/jpeg", "image/png"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3 },
+  { "mimeTypes": ["application/pdf", "text/plain"], "processorClass": "DocumentProcessor", "concurrentProcessingPoolSize": 2 },
+  { "mimeTypes": ["image/webp"], "processorClass": "StickerProcessor", "concurrentProcessingPoolSize": 2 },
+  { "mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video", "media_corrupt_document", "media_corrupt_sticker"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1 },
   { "mimeTypes": [], "processorClass": "UnsupportedMediaProcessor", "concurrentProcessingPoolSize": 1 }
 ]
 ```
@@ -234,6 +300,10 @@ Pool definitions are loaded from the `bot_configurations` MongoDB collection, do
 - `mimeTypes: []` — the **catch-all** entry. Any mime type not matched by any other pool is routed here. There must be exactly one catch-all entry.
 
 On startup, `MediaProcessingService` creates one worker pool per array entry, sized to `concurrentProcessingPoolSize`, instantiating the specified `processorClass`. Round-robin is applied **per pool** across bots to prevent starvation.
+
+### Observability
+
+To help diagnose backpressure and pipeline health, the `MediaProcessingService` logs the **queue depth per pool** on each poll cycle. By counting the number of pending jobs in `media_processing_jobs` grouped by `mime_type` (or mapped to their respective processor pool), operators can monitor if a specific pool (e.g., video processing) is falling behind.
 
 ### Memory Behavior During Processing
 
@@ -261,14 +331,21 @@ class ProcessingResult:
 ```python
 class BaseMediaProcessor(ABC):
 
-    async def process_job(self, job: dict, bot_queues: BotQueuesManager, db: AsyncIOMotorDatabase):
+    async def process_job(self, job: dict, all_bot_queues: Dict[str, BotQueuesManager], db: AsyncIOMotorDatabase):
         """Full shared lifecycle — called by the worker pool for each job."""
+        bot_id = job["bot_id"]
         guid = job["guid"]
         mime_type = job["mime_type"]
-        placeholder = job["placeholder_message"]
-        correspondent_id = placeholder["correspondent_id"]
-        caption = placeholder.get("content", "")
+        correspondent_id = job["correspondent_id"]
+        caption = job["placeholder_message"].get("content", "")
         file_path = f"media_store/pending_media/{guid}"
+
+        # Locate the correct BotQueuesManager for this bot
+        bot_queues = all_bot_queues.get(bot_id)
+        if not bot_queues:
+            # Bot was stopped — queue no longer exists, leave for cleanup job
+            logging.warning(f"BotQueuesManager not found for bot_id={bot_id}. Job left for cleanup.")
+            return
 
         try:
             result = await self.process_media(file_path, mime_type, caption)
@@ -389,10 +466,14 @@ And `update_message_by_media_id` fires `_trigger_callbacks` after setting `conte
 
 ## Update Path After Processing
 
-1. `BotQueuesManager.update_message_by_media_id(correspondent_id, guid, transcript)` — uses `correspondent_id` to go directly to the correct `CorrespondentQueue`, then searches its deque for the message by `guid`.
-2. Updates `content`, `message_size`, clears `media_processing_id`, adjusts `_total_chars`, fires callbacks.
-3. **The media processor never touches the message collections managed by `BotQueuesManager` or `IngestionService`** — it only operates on its own job lifecycle collections (`media_processing_jobs`, `media_processing_jobs_holding`, `media_processing_jobs_failed`).
-4. If the message is **not found** in the deque (e.g. the bot was stopped and the queue was destroyed while the worker was in-flight), the update call is wrapped in a try/except — the error is logged, and the job is left for the cleanup job to handle.
+The full routing chain uses three keys to locate the exact placeholder:
+
+1. **`bot_id`** (from job) → look up the correct `BotQueuesManager` from the `Dict[str, BotQueuesManager]`.
+2. **`correspondent_id`** (from job) → go directly to the correct `CorrespondentQueue` within that `BotQueuesManager`.
+3. **`guid`** (from job) → search the `CorrespondentQueue`'s deque for the message matching `media_processing_id == guid`.
+4. Updates `content`, `message_size`, clears `media_processing_id`, adjusts `_total_chars`, fires callbacks.
+5. **The media processor never touches the message collections managed by `BotQueuesManager` or `IngestionService`** — it only operates on its own job lifecycle collections (`media_processing_jobs`, `media_processing_jobs_holding`, `media_processing_jobs_failed`).
+6. If the `BotQueuesManager` is not found (bot was stopped) or the message is **not found** in the deque (queue was destroyed while the worker was in-flight), the update call is wrapped in a try/except — the error is logged, and the job is left for the cleanup job to handle.
 
 ### Placeholder Eviction Protection
 
