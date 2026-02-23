@@ -50,8 +50,8 @@ volumes:
 1. **Node.js receives media** → generates a GUID, streams the media to disk at `media_store/pending_media/<guid>` using Baileys' streaming API (`downloadMediaMessage(msg, 'stream')`). Media bytes never fully load into Node.js memory.
 2. **Node.js sends metadata to Python** via WebSocket — only the GUID, mime type, caption, and original filename. No media bytes cross the wire.
 3. **Python provider receives metadata** → calls `BotQueuesManager.add_message()` with the media params (GUID, mime type, caption, filename).
-4. **Placeholder insertion**: `BotQueuesManager` verifies the media file exists on the shared volume, then adds a `Message` to the `CorrespondentQueue` with `content=<caption>` (or `""`) and `media_processing_id=<guid>`.
-5. **Non-blocking processing trigger**: A job record is written to the **`media_processing_jobs`** MongoDB collection. This IS the job submission — the `MediaProcessingService` worker pools poll this collection for work. Each job record contains:
+4. **Placeholder insertion**: `BotQueuesManager` adds a `Message` to the `CorrespondentQueue` with `content=<caption>` (or `""`) and `media_processing_id=<guid>`. No file validation is performed — if the file is missing or corrupt, the processor handles the implications.
+5. **Non-blocking processing trigger**: A job record is written to the **`media_processing_jobs`** MongoDB collection. This IS the job submission — the `MediaProcessingService` worker pools  (each one consumed by their dedicated mediaProcessor for mimetype) poll this collection for work. Each job record contains:
    - `placeholder_message` — the full serialized `Message` placeholder dict (all fields including `bot_id`, `correspondent_id`, `media_processing_id`, etc.)
    - `guid` — used to locate the raw media file at `media_store/pending_media/<guid>`
    - `original_filename` *(optional)* — provided by the provider if available; used to assist processing (e.g. file extension hints)
@@ -82,6 +82,17 @@ async def add_message(
 
 If `media_processing_id` and `mime_type` are provided, the media pipeline kicks in (placeholder → job). If not, the message is treated as plain text. This is the **single entry point** for all providers — the provider's job ends after calling this method.
 
+### `inject_placeholder(message: Message)`
+
+A separate low-level method on `CorrespondentQueue` that directly inserts a pre-constructed `Message` object. Unlike `add_message()`, it:
+- Does **not** generate a new message ID — uses the ID from the provided `Message`.
+- Does **not** truncate content.
+- Does **not** fire `_trigger_callbacks`.
+- Does **not** re-enter the media pipeline.
+
+Used exclusively by:
+- **Crash recovery / bot startup** — re-injecting deserialized placeholders from `media_processing_jobs_holding` into the in-memory `CorrespondentQueue` when a bot connects and its jobs are moved back to `media_processing_jobs`.
+
 ### Required Change in `server.js` (Baileys Node.js Server)
 
 The current `processMessage` function discards media and captions:
@@ -111,25 +122,53 @@ if (mediaInfo !== undefined) {
     const mimetype = msg.message[messageType]?.mimetype;
     const filename = msg.message[messageType]?.fileName || null;
     const caption = mediaInfo.caption || '';
-
-    // Stream media directly to shared volume — never fully loaded into memory
-    const stream = await downloadMediaMessage(msg, 'stream', {});
     const writePath = path.join('/app/media_store/pending_media', guid);
-    const writeStream = fs.createWriteStream(writePath);
-    await new Promise((resolve, reject) => {
-        stream.pipe(writeStream);
-        writeStream.on('finish', resolve);
-        writeStream.on('error', reject);
-    });
 
-    // Return only metadata — no bytes cross the wire to Python
-    return {
-        ...existingFields,
-        message: caption,
-        media_processing_id: guid,
-        mime_type: mimetype,
-        original_filename: filename,
-    };
+    // Retry up to 3 times with exponential back-off (2s, 4s, 8s)
+    let downloaded = false;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+        try {
+            const stream = await downloadMediaMessage(msg, 'stream', {});
+            const writeStream = fs.createWriteStream(writePath);
+            await new Promise((resolve, reject) => {
+                stream.pipe(writeStream);
+                writeStream.on('finish', resolve);
+                writeStream.on('error', reject);
+            });
+            downloaded = true;
+            break;
+        } catch (err) {
+            // Delete any partially-written file before retrying
+            try { fs.unlinkSync(writePath); } catch (_) {}
+            if (attempt < 3) {
+                await new Promise(r => setTimeout(r, 2000 * Math.pow(2, attempt - 1)));
+            } else {
+                console.error(`Media download failed after 3 attempts for ${guid}: ${err.message}`);
+            }
+        }
+    }
+
+    if (downloaded) {
+        // Return only metadata — no bytes cross the wire to Python
+        return {
+            ...existingFields,
+            message: caption,
+            media_processing_id: guid,
+            mime_type: mimetype,
+            original_filename: filename,
+        };
+    } else {
+        // All retries failed — send as corrupted media
+        // mediaType is e.g. "image", "video", "audio" (strip "Message" suffix)
+        const shortType = messageType.replace('Message', '');
+        return {
+            ...existingFields,
+            message: caption,                              // caption if exists, else ''
+            media_processing_id: guid,
+            mime_type: `media_corrupt_${shortType}`,       // e.g. "media_corrupt_image"
+            original_filename: filename,
+        };
+    }
 }
 ```
 
@@ -137,43 +176,150 @@ The Python `whatsAppBaileys.py` provider passes the metadata (GUID, mime type, f
 
 ## MediaProcessingService (Background Worker Pool)
 
-A fixed-concurrency pool to avoid memory bloat and starvation across bots. Only invoked for non-text media — the routing decision is made by `BotQueuesManager` before submission. Text messages bypass this service entirely and go straight to the queue.
+A fixed-concurrency pool to avoid memory bloat and starvation across bots. **All media messages enter the pipeline identically** — every media message becomes a placeholder in the queue and a job in `media_processing_jobs`. The processor pool routing determines what happens next. Text messages bypass this service entirely and go straight to the queue.
 
-- **Audio** → speech-to-text API → transcript
-- **Video** → vision/transcription API → description or transcript
-- **Image** → vision API → text description
+### Processor Routing
 
-### Unsupported Mime Type Handling
+| Mime type | Processor | Action |
+|---|---|---|
+| `audio/ogg`, `audio/mpeg` | Audio pool | speech-to-text API → transcript |
+| `video/mp4`, `video/webm` | Video pool | vision/transcription API → description |
+| `image/jpeg`, `image/png`, `image/webp` | Image pool | vision API → text description |
+| `media_corrupt_image`, `media_corrupt_audio`, `media_corrupt_video` | `CorruptMediaProcessor` | error handling (see below) |
+| *anything else* | `UnsupportedMediaProcessor` (default catch-all) | error handling (see below) |
 
-If `BotQueuesManager` receives a mime type that does not match any pool definition in `_mediaProcessorDefinitions`, it **fails immediately at the routing point** — before inserting a placeholder into the queue:
+### Corrupted Media Handling (`CorruptMediaProcessor`)
 
-1. The media file is deleted from the shared volume.
-2. A record is written directly to `media_processing_jobs_failed` with `error: "unsupported mime type: <mime_type> — no processing pool defined"`.
-3. A warning is logged so the operator knows to update `_mediaProcessorDefinitions`.
-4. **If the message has a caption**: the `media_processing_id`, `mime_type`, and `original_filename` fields are stripped, and the message is **also** added to the `CorrespondentQueue` as a **regular text message** with the caption as its `content`. The `media_processing_jobs_failed` record exists in parallel for investigation.
-5. **If no caption**: no message is added to the queue. The `media_processing_jobs_failed` record is the only trace.
+When `server.js` fails to download media after **3 retry attempts** (exponential back-off: 500 ms → 1 s → 2 s), it deletes any partially-written file and sends metadata to Python with `mime_type = "media_corrupt_<type>"` (e.g. `media_corrupt_image`, `media_corrupt_audio`, `media_corrupt_video`). The `content` field carries the original caption if one exists, otherwise an empty string. The message enters the queue as a placeholder like any other media message.
 
-**Fail fast at the door — do not let unsupported types enter the pipeline, but never lose a caption.**
+The `CorruptMediaProcessor` handles these jobs:
+1. Deletes the media file from the shared volume (if one exists).
+2. Moves the job to `media_processing_jobs_failed` with `error: "download failed — <type> corrupted"` for operator investigation.
+3. Constructs the final message content:
+   - If the placeholder has a caption: prepend `"[Corrupted <type> media could not be downloaded] "` to the existing caption.
+   - If no caption: set `content = "[Corrupted <type> media could not be downloaded]"`.
+4. Updates the placeholder in the `CorrespondentQueue` via `update_message_by_media_id` — sets the final `content`, clears `media_processing_id`, adjusts `message_size`, and fires `_trigger_callbacks` so the bot can acknowledge and respond to the failure.
+5. Job is removed from `media_processing_jobs`.
+
+### Unsupported Media Handling (`UnsupportedMediaProcessor`)
+
+The `UnsupportedMediaProcessor` is the **default catch-all** — it handles any mime type that no other pool is configured to process. Since `server.js` sends the original mime type as-is (e.g. `application/pdf`, `audio/wav`), it has no knowledge of what the backend supports. The unsupported type detection happens naturally at the processor routing level: if no pool matches the mime type, it falls to the default.
+
+The `UnsupportedMediaProcessor` follows the same pattern as `CorruptMediaProcessor`:
+1. Deletes the media file from the shared volume.
+2. Moves the job to `media_processing_jobs_failed` with `error: "unsupported mime type: <mime_type>"` for operator investigation.
+3. Constructs the final message content:
+   - If the placeholder has a caption: prepend `"[Unsupported <mime_type> media] "` to the existing caption.
+   - If no caption: set `content = "[Unsupported <mime_type> media]"`.
+4. Updates the placeholder in the `CorrespondentQueue` via `update_message_by_media_id` — sets the final `content`, clears `media_processing_id`, adjusts `message_size`, and fires `_trigger_callbacks`.
+5. Job is removed from `media_processing_jobs`.
+
+This keeps backend and provider fully decoupled — `server.js` never needs to know what mime types the backend supports.
 
 ### Concurrency Configuration
 
-Pool definitions are loaded from the `bot_configurations` MongoDB collection, document `_id: "_mediaProcessorDefinitions"`. The document contains an array:
+Pool definitions are loaded from the `bot_configurations` MongoDB collection, document `_id: "_mediaProcessorDefinitions"`. The document contains an array. Each entry specifies which `processorClass` handles the pool's messages and at what concurrency level, and also which mimeTypes are routed to that pool:
 
 ```json
 [
-  { "mimeTypes": ["audio/ogg", "audio/mpeg"], "concurrentProcessingPoolSize": 2 },
-  { "mimeTypes": ["video/mp4", "video/webm"], "concurrentProcessingPoolSize": 1 },
-  { "mimeTypes": ["image/jpeg", "image/png", "image/webp"], "concurrentProcessingPoolSize": 3 }
+  { "mimeTypes": ["audio/ogg", "audio/mpeg"], "processorClass": "AudioTranscriptionProcessor", "concurrentProcessingPoolSize": 2 },
+  { "mimeTypes": ["video/mp4", "video/webm"], "processorClass": "VideoDescriptionProcessor", "concurrentProcessingPoolSize": 1 },
+  { "mimeTypes": ["image/jpeg", "image/png", "image/webp"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3 },
+  { "mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1 },
+  { "mimeTypes": [], "processorClass": "UnsupportedMediaProcessor", "concurrentProcessingPoolSize": 1 }
 ]
 ```
 
-On startup, `MediaProcessingService` creates one worker pool per array entry, sized to `concurrentProcessingPoolSize`, handling only the listed mime types. Round-robin is applied **per pool** across bots to prevent starvation.
+- `processorClass` — the Python class name that the service instantiates to handle messages in this pool.
+- `mimeTypes: []` — the **catch-all** entry. Any mime type not matched by any other pool is routed here. There must be exactly one catch-all entry.
+
+On startup, `MediaProcessingService` creates one worker pool per array entry, sized to `concurrentProcessingPoolSize`, instantiating the specified `processorClass`. Round-robin is applied **per pool** across bots to prevent starvation.
 
 ### Memory Behavior During Processing
 
 - **Audio**: Streamed from disk using a file handle (`open(file, 'rb')`). `httpx` uploads in chunks — the full audio is never loaded into Python heap. Genuinely low-memory.
 - **Video**: Gemini's File API accepts a streaming upload (disk → network), returning a URI used for subsequent LLM calls — low-memory.
 - **Image**: Base64-encoded before sending to vision APIs (full image bytes in memory). Acceptable given typical image sizes.
+
+---
+
+## Media Processor Interface
+
+All processors inherit from `BaseMediaProcessor`, which encapsulates the full job lifecycle. Subclasses only implement the actual media-to-text conversion.
+
+### `ProcessingResult` (Return Type)
+
+```python
+@dataclass
+class ProcessingResult:
+    content: str                          # Final message content for the queue
+    failed_reason: Optional[str] = None   # If set, job is moved to _failed with this reason
+```
+
+### `BaseMediaProcessor` (Abstract Base Class)
+
+```python
+class BaseMediaProcessor(ABC):
+
+    async def process_job(self, job: dict, bot_queues: BotQueuesManager, db: AsyncIOMotorDatabase):
+        """Full shared lifecycle — called by the worker pool for each job."""
+        guid = job["guid"]
+        mime_type = job["mime_type"]
+        placeholder = job["placeholder_message"]
+        correspondent_id = placeholder["correspondent_id"]
+        caption = placeholder.get("content", "")
+        file_path = f"media_store/pending_media/{guid}"
+
+        try:
+            result = await self.process_media(file_path, mime_type, caption)
+        except Exception as e:
+            await self._handle_unhandled_exception(job, bot_queues, db, error=str(e))
+            return
+
+        # Always update the queue with the content and fire callbacks
+        await bot_queues.update_message_by_media_id(correspondent_id, guid, result.content)
+
+        if result.failed_reason:
+            # Move job to _failed for investigation, delete media file
+            await self._move_to_failed(job, db, error=result.failed_reason)
+        else:
+            # Normal success — remove the job, delete media file
+            await self._remove_job(job, db)
+
+        self._delete_media_file(file_path)
+
+    @abstractmethod
+    async def process_media(self, file_path: str, mime_type: str, caption: str) -> ProcessingResult:
+        """Subclass implements actual processing. Returns a ProcessingResult."""
+        ...
+```
+
+### Shared Lifecycle (`process_job`)
+
+The base class handles all common operations in `process_job`:
+
+1. **Extract job metadata** — `guid`, `mime_type`, `correspondent_id`, `caption` from the job record.
+2. **Call `process_media()`** — the abstract method implemented by the subclass.
+3. **Always update the queue** — call `update_message_by_media_id(correspondent_id, guid, result.content)` to set the final content, clear `media_processing_id`, adjust `message_size`, and fire `_trigger_callbacks`.
+4. **Route the job based on `result.failed_reason`**:
+   - **`None`** (normal success) → remove the job from `media_processing_jobs`.
+   - **Set** (controlled failure) → move the job to `media_processing_jobs_failed` with the `failed_reason` as the `error` field.
+5. **Delete the media file** from disk — always, regardless of success or failure.
+6. **Unhandled exceptions** (`_handle_unhandled_exception`) — if `process_media()` raises, the job is moved to `media_processing_jobs_failed` with an `error` field containing the processor class name, the exception message, and the full stack trace (e.g. `"AudioTranscriptionProcessor raised ValueError: invalid audio format\n<traceback>"`). A generic error content is set on the queue (preserving caption if present), and the media file is deleted.
+
+### Subclass Responsibilities
+
+Each subclass only implements `process_media()` and returns a `ProcessingResult`:
+
+| Processor Class | `process_media()` returns |
+|---|---|
+| `AudioTranscriptionProcessor` | `ProcessingResult(content=transcript)` |
+| `VideoDescriptionProcessor` | `ProcessingResult(content=description)` |
+| `ImageVisionProcessor` | `ProcessingResult(content=description)` |
+| `CorruptMediaProcessor` | `ProcessingResult(content="[Corrupted <type>...] <caption>", failed_reason="download failed — <type> corrupted")` |
+| `UnsupportedMediaProcessor` | `ProcessingResult(content="[Unsupported <mime_type>...] <caption>", failed_reason="unsupported mime type: <mime_type>")` |
+
+> **Note**: Phase 1 stub processors also inherit from `BaseMediaProcessor` — they sleep for a configured duration and return `ProcessingResult(content="[Transcripted ...]")`. The base class handles everything else.
 
 ---
 
@@ -186,11 +332,12 @@ For each stale placeholder found:
 2. **Locate the matching job** and move it to `media_processing_jobs_failed`:
    - Found in `media_processing_jobs` → move and set `error`: `"message was transferred from media_processing_jobs to media_processing_jobs_failed by cleanup job"`
    - Found in `media_processing_jobs_holding` → move and set `error`: `"message was transferred from media_processing_jobs_holding to media_processing_jobs_failed by cleanup job"`
-   - Found in neither → create a new record in `media_processing_jobs_failed` with `error`: `"message was missing and created from scratch in media_processing_jobs_failed by cleanup job"`
+   - Found in neither → create a new record in `media_processing_jobs_failed` based on the placeholder message from `CorrespondentQueue` with added `error`: `"message was missing and created from scratch in media_processing_jobs_failed by cleanup job"`
 
 **Additionally**, the cleanup job directly queries `media_processing_jobs_holding` for any job records older than **3 hours** — regardless of whether an in-memory queue placeholder exists. This catches stale jobs for bots that are currently **disconnected** (their in-memory queues are not active, so the queue scan above would never find them). For each such record found:
-- Move it to `media_processing_jobs_failed` with `error`: `"job in holding exceeded 3-hour threshold and was moved to media_processing_jobs_failed by cleanup job"`
-- Delete the raw media file from disk.
+- Move it to `media_processing_jobs_failed` with `error`: `"job in media_processing_jobs_holding for stopped bot exceeded 3-hour threshold and was moved to media_processing_jobs_failed by cleanup job"`
+
+- on any case, cleanup job attempts to delete the raw media file from disk.
 
 ---
 
@@ -206,7 +353,7 @@ Three MongoDB collections manage job state, mirroring the `async_message_deliver
 
 ### Lifecycle Transitions
 - **App startup (init phase)**: All records in `media_processing_jobs` are moved to `media_processing_jobs_holding`. No bot is running yet.
-- **Bot starts**: All holding jobs for that `bot_id` are moved from `media_processing_jobs_holding` → `media_processing_jobs`. The `placeholder_message` from each job is re-injected into the correct `CorrespondentQueue` and processing resumes.
+- **Bot starts**: All holding jobs for that `bot_id` are moved from `media_processing_jobs_holding` → `media_processing_jobs`. The `placeholder_message` from each job is deserialized and re-injected into the correct `CorrespondentQueue` using `inject_placeholder(message)` — bypassing ID generation, content truncation, callback firing, and media pipeline re-entry. Processing then resumes.
 - **Bot stops**: All active jobs for that `bot_id` are moved from `media_processing_jobs` → `media_processing_jobs_holding`.
   > **Note on in-flight jobs**: If a job is currently being processed at the moment the bot stops, the worker will attempt to call `update_message_by_media_id` on a `CorrespondentQueue` that no longer exists. This call is wrapped in a try/except — the error is logged and the job is left to be handled by the cleanup job.
 - **Processing fails** (single attempt, no retries): Job is moved immediately to `media_processing_jobs_failed` for inspection with an added `error` property containing a text message describing the fail reason, and the raw media file is deleted from disk. No retries — each attempt consumes expensive tokens and resources, we don't want to retry error-prone messages.
@@ -215,7 +362,7 @@ Three MongoDB collections manage job state, mirroring the `async_message_deliver
 > **Required fix — `IngestionService` final drain pass on bot stop**
 > Currently `IngestionService.stop()` sets the stop event and exits immediately — if the ingester is in its 1-second sleep, it wakes up, sees the stop flag, and exits without draining remaining messages. Any messages that arrived since the last ingestion cycle are lost.
 >
-> **Fix**: After the background task finishes, run one final drain pass (`_drain_once()`) before returning from `stop()`.
+> **Fix**: After the background task finishes, run one final drain pass using `pop_ready_message()` before returning from `stop()`. This ensures only fully-processed messages are persisted — placeholders with `media_processing_id` still set are left untouched and will be handled by the job lifecycle (moved to holding on bot stop, cleaned up by the hourly cleanup job if stale).
 
 ---
 
@@ -244,13 +391,26 @@ And `update_message_by_media_id` fires `_trigger_callbacks` after setting `conte
 
 1. `BotQueuesManager.update_message_by_media_id(correspondent_id, guid, transcript)` — uses `correspondent_id` to go directly to the correct `CorrespondentQueue`, then searches its deque for the message by `guid`.
 2. Updates `content`, `message_size`, clears `media_processing_id`, adjusts `_total_chars`, fires callbacks.
-3. **The media processor never touches the database directly.**
+3. **The media processor never touches the message collections managed by `BotQueuesManager` or `IngestionService`** — it only operates on its own job lifecycle collections (`media_processing_jobs`, `media_processing_jobs_holding`, `media_processing_jobs_failed`).
+4. If the message is **not found** in the deque (e.g. the bot was stopped and the queue was destroyed while the worker was in-flight), the update call is wrapped in a try/except — the error is logged, and the job is left for the cleanup job to handle.
+
+### Placeholder Eviction Protection
+
+The `CorrespondentQueue._enforce_limits()` method must **skip eviction of any message where `media_processing_id` is not `None`**. Placeholders are protected from being evicted by age, character count, or message count limits. They will only be removed by:
+- Successful processing (via `update_message_by_media_id`).
+- The hourly cleanup job (3-hour TTL — see Cleanup Job section).
+
+This prevents a race condition where a flood of new messages could evict a placeholder before its transcript arrives.
 
 ---
 
 ## Ingestion Coordination: Skip-Pop Approach
 
-The `IngestionService` **skips** (does not pop) any message where `media_processing_id` is not `None`. The message stays in the deque until processing completes and clears the field. On the next ingestion cycle, the message is "ready" and is popped and persisted normally — fully processed, in one clean `insert_one`.
+The `IngestionService` uses a new `pop_ready_message()` method (replaces the old `pop_message()`) that iterates the internal `collections.deque` and returns the first message **without** a `media_processing_id`, leaving placeholders untouched. The underlying container remains a `deque` for O(1) appends/pops at both ends — the selective scan only adds a walk over the small number of in-flight placeholders, which is negligible.
+
+Both the **regular ingestion cycle** and the **final drain on shutdown** use `pop_ready_message()`. This guarantees that:
+- Only fully-processed messages are ever persisted to the database.
+- Placeholders are never accidentally persisted as incomplete records.
 
 **Benefits:**
 - No locks, no coordination between services.
@@ -270,7 +430,7 @@ Because the full placeholder `Message` is stored in the `media_processing_jobs_h
 
 1. On startup, all records in `media_processing_jobs` are moved to `media_processing_jobs_holding`.
 2. As each bot connects, its jobs are moved to `media_processing_jobs` and the `MediaProcessingService` picks them up.
-3. For each job, it deserializes the `placeholder_message` and re-injects it into the correct `CorrespondentQueue`.
+3. For each job, it deserializes the `placeholder_message` and re-injects it into the correct `CorrespondentQueue` using `inject_placeholder(message)` — this bypasses ID generation, content truncation, callback firing, and media pipeline re-entry.
 4. It then resumes processing the media file from disk and updates the queue as normal when done.
 5. The job record is deleted and the media file is removed from disk once processing completes successfully.
 
