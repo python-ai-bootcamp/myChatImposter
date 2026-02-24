@@ -1462,38 +1462,19 @@ app.post('/sessions/:userId/send', async (req, res) => {
     }
 
     try {
-        // --- JID Normalization & LID Resolution ---
+        // --- JID Normalization Strategy ---
         // 1. Normalize Self ID (Sender) to remove device suffixes like :84
         const selfId = jidNormalizedUser(session.sock.user.id);
 
-        // 2. Resolve Recipient PN to LID if possible
+        // 2. Normalize Recipient JID
+        // We revert to using the Phone Number JID (@s.whatsapp.net) as primary target,
+        // but strictly normalized to ensure cryptographic stability.
         let targetJid = recipient;
         if (!recipient.endsWith('@g.us') && !recipient.endsWith('@lid') && recipient.endsWith('@s.whatsapp.net')) {
-            const pn = jidNormalizedUser(recipient); // Strip any device suffixes from recipient too
-
-            // Check cache first
-            const cachedLid = Object.keys(session.lidCache || {}).find(lid => session.lidCache[lid] === pn);
-            if (cachedLid) {
-                console.log(`[${userId}] Using cached LID for ${pn}: ${cachedLid}`);
-                targetJid = cachedLid;
-            } else {
-                console.log(`[${userId}] Resolving LID for ${pn} via onWhatsApp...`);
-                const [result] = await session.sock.onWhatsApp(pn);
-                if (result?.exists && result?.lid) {
-                    targetJid = result.lid;
-                    const normalizedLid = jidNormalizedUser(targetJid);
-                    console.log(`[${userId}] Resolved LID for ${pn}: ${normalizedLid}`);
-                    session.lidCache[normalizedLid] = pn;
-                    saveLidMapping(userId, normalizedLid, pn);
-                    targetJid = normalizedLid;
-                } else {
-                    console.log(`[${userId}] Could not resolve LID for ${pn}, falling back to PN.`);
-                    targetJid = pn;
-                }
-            }
+            targetJid = jidNormalizedUser(recipient); // Strip any device suffixes from recipient
+            console.log(`[${userId}] Normalized recipient JID: ${targetJid}`);
         }
 
-        // Use normalized targetJid for all subsequent operations
         recipient = targetJid;
 
         if (!recipient.endsWith('@g.us') && !recipient.endsWith('@s.whatsapp.net') && !recipient.endsWith('@lid')) {
