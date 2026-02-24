@@ -34,16 +34,31 @@ To prevent media downloads from exhausting the host's primary disk, an applicati
 # docker-compose.yml
 services:
   whatsapp_baileys_server:
+    user: "1000:1000"  # Match UID/GID to avoid permission skirmishes
     volumes:
       - media_staging:/app/media_store/pending_media
 
   backend:
+    user: "1000:1000"  # Same user ensures Python can read/delete Node files
     volumes:
       - media_staging:/app/media_store/pending_media
 
 volumes:
   media_staging:
 ```
+
+### Permissions & Ownership
+To avoid "Permission Denied" errors (EACCES) when sharing volumes, both containers must agree on who owns the files. 
+- **The Strategy**: Run both services using the same `user: "1000:1000"`.
+- **The Rationale**: This matches the default internal UID/GID for the `node` user in the official Node.js Docker images. By forcing the Python backend to use the same ID, both services become part of the same "identity" at the OS level.
+- **The Result**: Files written by the Node.js server are immediately readable and deletable by the Python `MediaProcessingService` without needing `sudo` or risky `chmod` commands during the heat of battle.
+
+> [!NOTE]
+> If your host OS user uses a different UID (e.g., 1001), you should adjust these values accordingly in `docker-compose.yml`. For Oracle VM `ubuntu` users, `1000:1000` is almost always the correct standard.
+
+---
+
+---
 
 ---
 
@@ -99,9 +114,10 @@ Used exclusively by:
 
 ### Required Change in `server.js` (Baileys Node.js Server)
 
-First, add `downloadMediaMessage` to the Baileys imports at the top of the file:
+First, add `crypto` and `downloadMediaMessage` to the imports at the top of the file:
 
 ```javascript
+const crypto = require('crypto');
 const {
     // ... existing imports ...
     downloadMediaMessage
