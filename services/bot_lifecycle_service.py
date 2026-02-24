@@ -270,15 +270,21 @@ class BotLifecycleService:
         instance = self.global_state.chatbot_instances.get(instance_id)
 
         try:
+            # 1. Stop background tracking jobs FIRST to prevent race conditions during instance stopping
+            if self.global_state.group_tracker:
+                logging.info(f"LIFECYCLE: Stopping tracking jobs for {bot_id}")
+                self.global_state.group_tracker.stop_tracking_jobs(bot_id)
+                 
+            # 2. Re-route pending message queues to holding area
+            if self.global_state.async_message_delivery_queue_manager:
+                await self.global_state.async_message_delivery_queue_manager.move_bot_to_holding(bot_id)
+                 
+            # 3. Disconnect provider instance and clear its cache
             if instance:
                 await instance.stop(cleanup_session=cleanup_session)
             
+            # 4. Evict from memory
             self.global_state.remove_active_bot(bot_id)
             
-            if self.global_state.async_message_delivery_queue_manager:
-                 await self.global_state.async_message_delivery_queue_manager.move_user_to_holding(bot_id)
-            if self.global_state.group_tracker:
-                 self.global_state.group_tracker.stop_tracking_jobs(bot_id)
-                 
         except Exception as e:
             logging.error(f"LIFECYCLE: Error stopping bot {bot_id}: {e}")

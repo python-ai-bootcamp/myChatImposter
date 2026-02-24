@@ -271,7 +271,7 @@ async def delete_bot_ui(
                 state.remove_active_bot(bot_id)
         
         if state.async_message_delivery_queue_manager:
-             await state.async_message_delivery_queue_manager.move_user_to_holding(bot_id)
+             await state.async_message_delivery_queue_manager.move_bot_to_holding(bot_id)
 
         query = {"config_data.bot_id": bot_id}
         

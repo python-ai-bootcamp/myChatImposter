@@ -142,7 +142,7 @@ class GroupTrackingRunner:
 
         # Save to History Service
         await self.history.save_tracking_result(
-            user_id=bot_id,
+            bot_id=bot_id,
             config_group_id=config.groupIdentifier,
             config_display_name=config.displayName,
             config_schedule=config.cronTrackingSchedule,

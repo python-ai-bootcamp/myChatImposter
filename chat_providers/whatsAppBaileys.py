@@ -167,7 +167,6 @@ class WhatsAppBaileysProvider(BaseChatProvider):
         if self.is_listening:
             logging.warning("Already listening.")
             return
-        await self._send_config_to_server()
         self.is_listening = True
         self.listen_task = self.main_loop.create_task(self._listen())
         logging.info("Started WebSocket listener for messages.")
@@ -264,7 +263,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                      except Exception as e:
                          logging.error(f"ERROR: Failed to invoke on_status_change callback: {e}")
 
-                # Store user JID for sending messages to self
+                # Store user JID and LID for sending messages to self
                 if data.get('user_jid'):
                     self.user_jid = data.get('user_jid')
                     logging.info(f"User JID received: {self.user_jid}")

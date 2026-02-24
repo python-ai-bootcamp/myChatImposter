@@ -36,6 +36,7 @@ const {
 
 // --- Globals ---
 const sessions = {}; // Holds all active user sessions, keyed by userId
+const pendingInits = new Map(); // Global lock to prevent concurrent initialization for the same userId
 const wsConnections = {}; // Holds all active WebSocket connections, keyed by userId
 const serverStartTime = Date.now();
 const DEFAULT_BROWSER = ['Ubuntu', 'Chrome', '22.04.4'];
@@ -558,7 +559,12 @@ const useMongoDBAuthState = async (userId, collection) => {
 
     const writeData = (key, data) => {
         const jsonData = JSON.stringify(data, serializeBuffers);
-        return collection.updateOne({ _id: key }, { $set: { value: jsonData } }, { upsert: true });
+        return collection.updateOne({ _id: key }, { $set: { value: jsonData } }, { upsert: true }).catch(err => {
+            if (err.code === 11000) {
+                console.warn(`[${userId}] Potential MongoDB race: DuplicateKey (E11000) on update/upsert for key '${key}'. This is typically handled by Baileys retry logic, but indicates high-concurrency for this bot.`);
+            }
+            throw err;
+        });
     };
 
     const readData = async (key) => {
@@ -758,615 +764,650 @@ const performHardResetAction = async (userId, session) => {
 };
 
 async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
-    const waVersion = await getLatestWaVersion();
-
-    if (forceReinit && sessions[userId]) {
-        console.log(`[${userId}] Force Reinit requested. Destroying existing ghost session.`);
-        try {
-            if (sessions[userId].sock) {
-                sessions[userId].sock.end(undefined);
-            }
-        } catch (e) {
-            console.log(`[${userId}] Failed to close socket during force reinit:`, e);
-        }
-        delete sessions[userId];
+    if (pendingInits.has(userId)) {
+        console.log(`[${userId}] Initialization already in progress (Internal/HTTP). Awaiting existing promise...`);
+        return pendingInits.get(userId);
     }
 
-    if (sessions[userId] && sessions[userId].sock) {
-        console.log(`[${userId}] Session already exists. Re-initializing.`);
-        try {
-            // Mark socket as manually closed so the handler ignores the event
-            sessions[userId].sock.isManualClose = true;
-
-            // End the old socket connection without logging out
-            await sessions[userId].sock.end(undefined);
-            console.log(`[${userId}] Old socket connection ended.`);
-
-            // Close the WebSocket connection to force the client to reconnect
-            // wsConnections[userId]?.close();
-            // console.log(`[${userId}] Old WebSocket connection closed.`);
-
-        } catch (e) {
-            console.log(`[${userId}] Old socket cleanup failed:`, e);
-        }
-        // We don't delete the session object. We will re-use and update it.
-        // This prevents a race condition where the client reconnects before the new session is ready.
-    }
-
-    console.log(`[${userId}] Starting new session connection...`);
-
-    // Pre-load LID mappings to ensure consistent state for auth/socket initialization
-    const lidMappings = await loadLidMappings(userId);
-
-    // Initialize session placeholder if needed, or update cache immediately
-    // This ensures resolveId has the correct state during useMongoDBAuthState initialization
-    if (!sessions[userId]) {
-        console.log(`[${userId}] Creating new session object (pre-init).`);
-        sessions[userId] = {
-            contactsCache: {},
-            lidCache: lidMappings,
-            pushNameCache: {},
-            vendorConfig: vendorConfig,
-            retryCount: 0,
-            http405Tracker: createHttp405Tracker(),
-            store: { messages: {} }, // Initialize in-memory message store
-            authState: null, // Placeholder for auth state
-            lastHeartbeat: Date.now() // Initialize heartbeat
-            // sock etc will be set later
-        };
-    } else {
-        console.log(`[${userId}] Updating existing session object (pre-init).`);
-        sessions[userId].lidCache = lidMappings;
-        if (!sessions[userId].store) {
-            sessions[userId].store = { messages: {} }; // Initialize in-memory message store if missing
-        }
-    }
-
-    // Reuse existing auth state if available (preserves in-memory keys during restarts)
-    // Otherwise, initialize from MongoDB
-    let authState = sessions[userId].authState;
-    if (!authState) {
-        console.log(`[${userId}] Initializing new MongoDB auth state.`);
-        authState = await useMongoDBAuthState(userId, baileysSessionsCollection);
-        sessions[userId].authState = authState;
-    } else {
-        console.log(`[${userId}] Reusing existing in-memory auth state (preserving keys).`);
-    }
-
-    const { state, saveCreds } = authState;
-
-    // Custom logger to intercept decryption errors
-    const logger = pino({
-        level: 'warn', // Changed to warn to suppress verbose key dumping
-        transport: {
-            target: 'pino-pretty',
-            options: {
-                colorize: true
-            }
-        },
-        // We can't easily hook pino instances directly in v7+ without a stream, 
-        // but we can wrap the generic logger or use a mixin.
-        // However, Baileys uses the logger highly specifically.
-        // Easiest is to wrap the object we pass to Baileys.
+    // ATOMIC ENTRY: Set a placeholder promise synchronously to block any parallel attempts immediately
+    let resolveLock, rejectLock;
+    const lockPromise = new Promise((res, rej) => {
+        resolveLock = res;
+        rejectLock = rej;
     });
+    pendingInits.set(userId, lockPromise);
 
-    const errorInterceptor = new Proxy(logger, {
-        get(target, prop) {
-            if (prop === 'error') {
-                return (...args) => {
-                    // Check for verbose "error in handling message" which dumps buffers
-                    const arg0 = args[0];
-                    if (arg0 && typeof arg0 === 'object' && arg0.err && arg0.err.message === 'error in handling message') {
-                        // This is the noisy one. We want to log it but WITHOUT the massive buffer dump.
-                        // The structure is usually { trace: '...', err: { message: ... }, node: { ... HUGE BUFFER ... } }
-                        // We can sanitize 'node' or just log a summary.
-                        console.log(`[${userId}] Suppressed verbose Baileys error: ${arg0.err.message}`);
-                        return;
+    const initPromise = (async () => {
+        try {
+            const waVersion = await getLatestWaVersion();
+
+            if (forceReinit && sessions[userId]) {
+                console.log(`[${userId}] Force Reinit requested. Destroying existing ghost session.`);
+                try {
+                    if (sessions[userId].sock) {
+                        sessions[userId].sock.isManualClose = true;
+                        sessions[userId].sock.end(undefined);
                     }
+                } catch (e) {
+                    console.log(`[${userId}] Failed to close socket during force reinit:`, e);
+                }
+                delete sessions[userId];
+            }
 
-                    // Also check string variant
-                    if (typeof arg0 === 'string' && arg0.includes('error in handling message')) {
-                        console.log(`[${userId}] Suppressed verbose Baileys error string: ${arg0.substring(0, 100)}...`);
-                        return;
+            if (sessions[userId] && sessions[userId].sock) {
+                console.log(`[${userId}] Session already exists. Re-initializing.`);
+                try {
+                    // Mark socket as manually closed so the handler ignores the event
+                    sessions[userId].sock.isManualClose = true;
+
+                    // End the old socket connection without logging out
+                    await sessions[userId].sock.end(undefined);
+                    console.log(`[${userId}] Old socket connection ended.`);
+
+                } catch (e) {
+                    console.log(`[${userId}] Old socket cleanup failed:`, e);
+                }
+            }
+
+            console.log(`[${userId}] Starting new session connection...`);
+
+            // Pre-load LID mappings to ensure consistent state for auth/socket initialization
+            const lidMappings = await loadLidMappings(userId);
+
+            // Initialize session placeholder if needed, or update cache immediately
+            // This ensures resolveId has the correct state during useMongoDBAuthState initialization
+            if (!sessions[userId]) {
+                console.log(`[${userId}] Creating new session object (pre-init).`);
+                sessions[userId] = {
+                    contactsCache: {},
+                    lidCache: lidMappings,
+                    pushNameCache: {},
+                    vendorConfig: vendorConfig,
+                    retryCount: 0,
+                    http405Tracker: createHttp405Tracker(),
+                    store: { messages: {} }, // Initialize in-memory message store
+                    authState: null, // Placeholder for auth state
+                    lastHeartbeat: Date.now() // Initialize heartbeat
+                    // sock etc will be set later
+                };
+            } else {
+                console.log(`[${userId}] Updating existing session object (pre-init).`);
+                sessions[userId].lidCache = lidMappings;
+                if (!sessions[userId].store) {
+                    sessions[userId].store = { messages: {} }; // Initialize in-memory message store if missing
+                }
+            }
+
+            // Reuse existing auth state if available (preserves in-memory keys during restarts)
+            // Otherwise, initialize from MongoDB
+            let authState = sessions[userId].authState;
+            if (!authState) {
+                console.log(`[${userId}] Initializing new MongoDB auth state.`);
+                authState = await useMongoDBAuthState(userId, baileysSessionsCollection);
+                sessions[userId].authState = authState;
+            } else {
+                console.log(`[${userId}] Reusing existing in-memory auth state (preserving keys).`);
+            }
+
+            const { state, saveCreds } = authState;
+
+            // Custom logger to intercept decryption errors
+            const logger = pino({
+                level: 'warn', // Changed to warn to suppress verbose key dumping
+                transport: {
+                    target: 'pino-pretty',
+                    options: {
+                        colorize: true
                     }
+                },
+                // We can't easily hook pino instances directly in v7+ without a stream, 
+                // but we can wrap the generic logger or use a mixin.
+                // However, Baileys uses the logger highly specifically.
+                // Easiest is to wrap the object we pass to Baileys.
+            });
 
-                    // Log originally (but maybe with a sanitizer for other large buffers?)
-                    // Simple sanitizer for arguments
-                    const sanitizedArgs = args.map(arg => {
-                        if (arg && typeof arg === 'object' && arg.node && arg.node.content) {
-                            // Clone to avoid mutating original if used elsewhere (unlikely)
-                            // But usually it's just for logging.
-                            // If we see a huge array in content, replace it.
-                            try {
-                                const str = JSON.stringify(arg);
-                                if (str.length > 2000) {
-                                    return { ...arg, node: { ...arg.node, content: '[Large Buffer Suppressed]' } };
+            const errorInterceptor = new Proxy(logger, {
+                get(target, prop) {
+                    if (prop === 'error') {
+                        return (...args) => {
+                            // Check for verbose "error in handling message" which dumps buffers
+                            const arg0 = args[0];
+                            if (arg0 && typeof arg0 === 'object' && arg0.err && arg0.err.message === 'error in handling message') {
+                                // This is the noisy one. We want to log it but WITHOUT the massive buffer dump.
+                                // The structure is usually { trace: '...', err: { message: ... }, node: { ... HUGE BUFFER ... } }
+                                // We can sanitize 'node' or just log a summary.
+                                console.log(`[${userId}] Suppressed verbose Baileys error: ${arg0.err.message}`);
+                                return;
+                            }
+
+                            // Also check string variant
+                            if (typeof arg0 === 'string' && arg0.includes('error in handling message')) {
+                                console.log(`[${userId}] Suppressed verbose Baileys error string: ${arg0.substring(0, 100)}...`);
+                                return;
+                            }
+
+                            // Log originally (but maybe with a sanitizer for other large buffers?)
+                            // Simple sanitizer for arguments
+                            const sanitizedArgs = args.map(arg => {
+                                if (arg && typeof arg === 'object' && arg.node && arg.node.content) {
+                                    // Clone to avoid mutating original if used elsewhere (unlikely)
+                                    // But usually it's just for logging.
+                                    // If we see a huge array in content, replace it.
+                                    try {
+                                        const str = JSON.stringify(arg);
+                                        if (str.length > 2000) {
+                                            return { ...arg, node: { ...arg.node, content: '[Large Buffer Suppressed]' } };
+                                        }
+                                    } catch (e) { }
                                 }
-                            } catch (e) { }
-                        }
-                        return arg;
-                    });
+                                return arg;
+                            });
 
-                    target.error(...sanitizedArgs);
+                            target.error(...sanitizedArgs);
 
-                    // Check for crypto errors
-                    // Args can be [obj, msg] or [msg] or [obj]
-                    // const arg0 = args[0]; // Already defined above
-                    const arg1 = args[1];
+                            // Check for crypto errors
+                            // Args can be [obj, msg] or [msg] or [obj]
+                            // const arg0 = args[0]; // Already defined above
+                            const arg1 = args[1];
 
-                    let isCryptoError = false;
-                    let errorMessage = '';
+                            let isCryptoError = false;
+                            let errorMessage = '';
 
-                    if (arg0 && typeof arg0 === 'object') {
-                        errorMessage = arg0.message || arg0.err?.message || '';
-                        if (errorMessage.includes('Bad MAC') || errorMessage.includes('SessionError') || errorMessage.includes('bad decrypt')) {
-                            isCryptoError = true;
-                        }
-                        // check child err property
-                        if (arg0.err && (arg0.err && arg0.err.message && (arg0.err.message.includes('Bad MAC') || arg0.err.message.includes('SessionError')))) {
-                            isCryptoError = true;
-                        }
-                    } else if (typeof arg0 === 'string') {
-                        if (arg0.includes('Bad MAC') || arg0.includes('SessionError')) isCryptoError = true;
+                            if (arg0 && typeof arg0 === 'object') {
+                                errorMessage = arg0.message || arg0.err?.message || '';
+                                if (errorMessage.includes('Bad MAC') || errorMessage.includes('SessionError') || errorMessage.includes('bad decrypt')) {
+                                    isCryptoError = true;
+                                }
+                                // check child err property
+                                if (arg0.err && (arg0.err && arg0.err.message && (arg0.err.message.includes('Bad MAC') || arg0.err.message.includes('SessionError')))) {
+                                    isCryptoError = true;
+                                }
+                            } else if (typeof arg0 === 'string') {
+                                if (arg0.includes('Bad MAC') || arg0.includes('SessionError')) isCryptoError = true;
+                            }
+
+                            if (arg1 && typeof arg1 === 'string') {
+                                if (arg1.includes('Bad MAC') || arg1.includes('SessionError') || arg1.includes('failed to decrypt')) isCryptoError = true;
+                            }
+
+                            if (isCryptoError) {
+                                console.log(`[${userId}] Intercepted Crypto Error via Logger: ${errorMessage}`);
+                                handleCryptoError(userId, sessions[userId]);
+                            }
+                        };
                     }
+                    return target[prop];
+                }
+            });
 
-                    if (arg1 && typeof arg1 === 'string') {
-                        if (arg1.includes('Bad MAC') || arg1.includes('SessionError') || arg1.includes('failed to decrypt')) isCryptoError = true;
+            // Helper to handle crypto error logic (debounced)
+            const handleCryptoError = (uId, sess) => {
+                if (!sess) return;
+                const now = Date.now();
+                if (!sess.cryptoTracker) {
+                    sess.cryptoTracker = { count: 1, firstTimestamp: now };
+                } else {
+                    // 5-minute window (300,000ms)
+                    if (now - sess.cryptoTracker.firstTimestamp > 300000) {
+                        sess.cryptoTracker = { count: 1, firstTimestamp: now };
+                    } else {
+                        sess.cryptoTracker.count += 1;
                     }
+                }
 
-                    if (isCryptoError) {
-                        console.log(`[${userId}] Intercepted Crypto Error via Logger: ${errorMessage}`);
-                        handleCryptoError(userId, sessions[userId]);
+                console.log(`[${uId}] Crypto error count: ${sess.cryptoTracker.count}/10`);
+
+                if (sess.cryptoTracker.count >= 10) {
+                    const softResetCount = sess.softResetCount || 0;
+                    if (softResetCount >= 3) {
+                        console.log(`[${uId}] Soft Reset limit reached (${softResetCount}) for Crypto Errors. Escalating to Hard Reset.`);
+                        performHardResetAction(uId, sess);
+                    } else {
+                        sess.softResetCount = softResetCount + 1;
+                        console.log(`[${uId}] Crypto error threshold reached. Triggering SOFT RESET (Attempt ${sess.softResetCount}/3).`);
+                        sess.cryptoTracker = null; // Reset tracker
+                        performSoftResetAction(uId, sess);
                     }
+                }
+            };
+
+            // Define cleanup function if not exists (we'll need to move this scope or duplicate logic)
+            // Actually, let's just define a helper function outside `connectToWhatsApp` to do the reset 
+            // and call it here. But `baileysSessionsCollection` needs to be in scope.
+            // We can define `performSoftResetAction` inside `connectToWhatsApp` or pass dependencies.
+
+
+            // Ensure 'me' has the correct LID if available in our cache
+            if (state.creds.me) {
+                if (!state.creds.me.lid) {
+                    const selfJid = jidNormalizedUser(state.creds.me.id);
+                    const lid = Object.keys(lidMappings).find(k => lidMappings[k] === selfJid);
+                    if (lid) {
+                        console.log(`[${userId}] Restoring Self LID from cache to authState.me: ${lid}`);
+                        state.creds.me.lid = lid;
+                    } else {
+                        console.log(`[${userId}] Auth State 'me' exists but has no LID. ID: ${state.creds.me.id}`);
+                    }
+                } else {
+                    console.log(`[${userId}] Auth State 'me': ${JSON.stringify(state.creds.me)}`);
+                }
+            } else {
+                console.log(`[${userId}] Auth State 'me' is empty or missing (Bot not yet linked).`);
+            }
+
+            const sock = makeWASocket({
+                auth: state,
+                logger: errorInterceptor,
+                version: waVersion,
+                browser: DEFAULT_BROWSER,
+                syncFullHistory: vendorConfig.sync_full_history === true,
+                printQRInTerminal: false, // We handle QR code generation manually
+                connectTimeoutMs: 60000, // Increase timeout to 60s for slow DNS
+                defaultQueryTimeoutMs: 60000, // Increase query timeout to 60s
+            });
+
+
+            // If a session object already exists, update it. Otherwise, create a new one.
+            // This preserves the object reference and prevents race conditions.
+            if (sessions[userId]) {
+                console.log(`[${userId}] Updating existing session object.`);
+                sessions[userId].sock = sock;
+                sessions[userId].currentQR = null;
+                sessions[userId].connectionStatus = 'connecting';
+                sessions[userId].retryCount = 0;
+                sessions[userId].lidCache = {}; // Reset cache on reconnect (will load from DB below)
+                sessions[userId].pushNameCache = {}; // Reset pushName cache
+                sessions[userId].lastHeartbeat = Date.now(); // Reset heartbeat to prevent zombie detection during reload
+                sessions[userId].isGracefulDisconnect = false; // Reset flags
+                sessions[userId].isZombie = false;
+                // resetHttp405Tracker(sessions[userId]); // REMOVED: Preserve 405 tracker across reconnections so we can detect persistent loops
+                // Do not reset store here, preserve what we have?
+                // Or reset if it's a new connection?
+                // If we restart the connection logic, likely we should keep the store as long as the process lives.
+                if (!sessions[userId].store) {
+                    sessions[userId].store = { messages: {} };
+                }
+            } else {
+                console.log(`[${userId}] Creating new session object.`);
+                sessions[userId] = {
+                    sock: sock,
+                    currentQR: null,
+                    connectionStatus: 'connecting',
+                    contactsCache: {},
+                    lidCache: {}, // Initialize empty (will load from DB below)
+                    pushNameCache: {},
+                    vendorConfig: vendorConfig,
+                    retryCount: 0,
+                    http405Tracker: createHttp405Tracker(),
+                    store: { messages: {} }, // Initialize in-memory message store
+                    authState: authState, // Store auth state
+                    lastHeartbeat: Date.now(), // Initialize heartbeat
+                    isGracefulDisconnect: false,
+                    isZombie: false
                 };
             }
-            return target[prop];
-        }
-    });
 
-    // Helper to handle crypto error logic (debounced)
-    const handleCryptoError = (uId, sess) => {
-        if (!sess) return;
-        const now = Date.now();
-        if (!sess.cryptoTracker) {
-            sess.cryptoTracker = { count: 1, firstTimestamp: now };
-        } else {
-            // 5-minute window (300,000ms)
-            if (now - sess.cryptoTracker.firstTimestamp > 300000) {
-                sess.cryptoTracker = { count: 1, firstTimestamp: now };
-            } else {
-                sess.cryptoTracker.count += 1;
-            }
-        }
-
-        console.log(`[${uId}] Crypto error count: ${sess.cryptoTracker.count}/10`);
-
-        if (sess.cryptoTracker.count >= 10) {
-            const softResetCount = sess.softResetCount || 0;
-            if (softResetCount >= 3) {
-                console.log(`[${uId}] Soft Reset limit reached (${softResetCount}) for Crypto Errors. Escalating to Hard Reset.`);
-                performHardResetAction(uId, sess);
-            } else {
-                sess.softResetCount = softResetCount + 1;
-                console.log(`[${uId}] Crypto error threshold reached. Triggering SOFT RESET (Attempt ${sess.softResetCount}/3).`);
-                sess.cryptoTracker = null; // Reset tracker
-                performSoftResetAction(uId, sess);
-            }
-        }
-    };
-
-    // Define cleanup function if not exists (we'll need to move this scope or duplicate logic)
-    // Actually, let's just define a helper function outside `connectToWhatsApp` to do the reset 
-    // and call it here. But `baileysSessionsCollection` needs to be in scope.
-    // We can define `performSoftResetAction` inside `connectToWhatsApp` or pass dependencies.
+            // Load persisted LID mappings asynchronously to avoid blocking session creation
+            // This resolves a race condition where the WebSocket connects before this function returns
+            loadLidMappings(userId).then(mappings => {
+                if (sessions[userId]) {
+                    sessions[userId].lidCache = mappings;
+                    console.log(`[${userId}] Loaded ${Object.keys(mappings).length} LID mappings from DB into session.`);
+                }
+            });
 
 
-    // DEBUG: Check Auth State 'me'
-    if (state && state.creds && state.creds.me) {
-        console.log(`[${userId}] Auth State 'me': ${JSON.stringify(state.creds.me)}`);
-    } else {
-        console.log(`[${userId}] Auth State 'me' is empty or missing.`);
-    }
+            // Register credentials update listener to persist session state
+            sock.ev.on('creds.update', saveCreds);
 
-    const sock = makeWASocket({
-        auth: state,
-        logger: errorInterceptor,
-        version: waVersion,
-        browser: DEFAULT_BROWSER,
-        syncFullHistory: vendorConfig.sync_full_history === true,
-        printQRInTerminal: false, // We handle QR code generation manually
-        connectTimeoutMs: 60000, // Increase timeout to 60s for slow DNS
-        defaultQueryTimeoutMs: 60000, // Increase query timeout to 60s
-    });
+            sock.ev.on('connection.update', async (update) => {
+                const { connection, lastDisconnect, qr } = update;
+                const session = sessions[userId];
+                if (!session || session.isUnlinking) return;
+
+                // Ignore events from stale sockets (race condition protection)
+                if (session.sock && session.sock !== sock) {
+                    return;
+                }
+
+                // Ignore events from manually closed sockets, UNLESS it's a soft reset trigger
+                // We can check a flag on the session
+                if (sock.isManualClose && !session.isPerformingSoftReset) {
+                    console.log(`[${userId}] Ignoring event from manually closed socket.`);
+                    return;
+                }
+                if (session.isPerformingSoftReset) {
+                    session.isPerformingSoftReset = false; // Reset flag after handling
+                    console.log(`[${userId}] Soft Reset triggered close event handled.`);
+                    setTimeout(() => connectToWhatsApp(userId, vendorConfig), 500);
+                    return;
+                }
+
+                session.connectionStatus = connection;
+
+                if (connection === 'open') {
+                    console.log(`[${userId}] WhatsApp connection opened.`);
+                    session.sessionOpenTime = Date.now(); // Track when this session actually connected
+                    session.currentQR = null;
+                    session.retryCount = 0; // Reset retry count
+                    resetHttp405Tracker(session);
+                    session.softResetCount = 0; // Reset Soft Reset counter on success
+                    // Log user info to help debug LID issues
+                    if (session.sock?.user) {
+                        console.log(`[${userId}] Session user info: ${JSON.stringify(session.sock.user)}`);
+
+                        // Active Self-LID Resolution
+                        const selfId = jidNormalizedUser(session.sock.user.id);
+                        if (selfId && !session.sock.user.lid) {
+                            console.log(`[${userId}] Self LID missing in session. Actively querying onWhatsApp for ${selfId}...`);
+                            session.sock.onWhatsApp(selfId).then(results => {
+                                if (results && results[0]) {
+                                    const data = results[0];
+                                    if (data.exists && data.jid) {
+                                        // onWhatsApp returns the JID you queried (PN).
+                                        // We need the LID. Does it return LID? 
+                                        // Actually onWhatsApp usually confirms existence. 
+                                        // Let's try to 'get' the contact/profile which might resolve it?
+                                        // Or check if result has 'lid' property (some versions do).
+                                        // If not, we might need another method, but let's log what we get.
+                                        console.log(`[${userId}] onWhatsApp result: ${JSON.stringify(data)}`);
+
+                                        // If result has lid, save it.
+                                        if (data.lid) {
+                                            const foundLid = jidNormalizedUser(data.lid);
+                                            saveLidMapping(userId, foundLid, selfId);
+                                            session.lidCache[foundLid] = selfId;
+                                            console.log(`[${userId}] Resolved Self LID via onWhatsApp: ${foundLid} -> ${selfId}`);
+                                        }
+                                    }
+                                }
+                            }).catch(err => {
+                                console.error(`[${userId}] Failed to query onWhatsApp for self:`, err);
+                            });
+                        }
+                    }
+                    // Push status to Python
+                    pushStatusToPython(userId);
+                }
 
 
-    // If a session object already exists, update it. Otherwise, create a new one.
-    // This preserves the object reference and prevents race conditions.
-    if (sessions[userId]) {
-        console.log(`[${userId}] Updating existing session object.`);
-        sessions[userId].sock = sock;
-        sessions[userId].currentQR = null;
-        sessions[userId].connectionStatus = 'connecting';
-        sessions[userId].retryCount = 0;
-        sessions[userId].lidCache = {}; // Reset cache on reconnect (will load from DB below)
-        sessions[userId].pushNameCache = {}; // Reset pushName cache
-        sessions[userId].lastHeartbeat = Date.now(); // Reset heartbeat to prevent zombie detection during reload
-        sessions[userId].isGracefulDisconnect = false; // Reset flags
-        sessions[userId].isZombie = false;
-        // resetHttp405Tracker(sessions[userId]); // REMOVED: Preserve 405 tracker across reconnections so we can detect persistent loops
-        // Do not reset store here, preserve what we have?
-        // Or reset if it's a new connection?
-        // If we restart the connection logic, likely we should keep the store as long as the process lives.
-        if (!sessions[userId].store) {
-            sessions[userId].store = { messages: {} };
-        }
-    } else {
-        console.log(`[${userId}] Creating new session object.`);
-        sessions[userId] = {
-            sock: sock,
-            currentQR: null,
-            connectionStatus: 'connecting',
-            contactsCache: {},
-            lidCache: {}, // Initialize empty (will load from DB below)
-            pushNameCache: {},
-            vendorConfig: vendorConfig,
-            retryCount: 0,
-            http405Tracker: createHttp405Tracker(),
-            store: { messages: {} }, // Initialize in-memory message store
-            authState: authState, // Store auth state
-            lastHeartbeat: Date.now(), // Initialize heartbeat
-            isGracefulDisconnect: false,
-            isZombie: false
-        };
-    }
+                if (qr) {
+                    // Heartbeat check is now handled by the active monitor interval
+                    console.log(`[${userId}] QR code received, generating data URL...`);
+                    QRCode.toDataURL(qr, (err, url) => {
+                        if (err) {
+                            console.error(`[${userId}] Error generating QR data URL:`, err);
+                            return;
+                        }
+                        session.currentQR = url;
+                        // Push QR to Python
+                        pushStatusToPython(userId);
+                    });
+                }
 
-    // Load persisted LID mappings asynchronously to avoid blocking session creation
-    // This resolves a race condition where the WebSocket connects before this function returns
-    loadLidMappings(userId).then(mappings => {
-        if (sessions[userId]) {
-            sessions[userId].lidCache = mappings;
-            console.log(`[${userId}] Loaded ${Object.keys(mappings).length} LID mappings from DB into session.`);
-        }
-    });
+                if (connection === 'close') {
+                    session.currentQR = null;
+                    const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
 
+                    if (session.isGracefulDisconnect) {
+                        console.log(`[${userId}] Graceful disconnect detected. Skipping reconnect logic.`);
+                        session.isGracefulDisconnect = false; // Reset the flag
+                        pushStatusToPython(userId); // Push disconnected status
+                        return;
+                    }
 
-    // Register credentials update listener to persist session state
-    sock.ev.on('creds.update', saveCreds);
+                    if (session.isZombie) {
+                        console.log(`[${userId}] Zombie session killed. Skipping reconnect logic.`);
+                        session.isZombie = false; // Reset flag (though session effectively dead)
+                        return;
+                    }
 
-    sock.ev.on('connection.update', async (update) => {
-        const { connection, lastDisconnect, qr } = update;
-        const session = sessions[userId];
-        if (!session || session.isUnlinking) return;
+                    const isPermanentDisconnection =
+                        statusCode === DisconnectReason.loggedOut ||
+                        statusCode === DisconnectReason.connectionReplaced;
+                    // statusCode === DisconnectReason.badSession; // Treated as transient initially
 
-        // Ignore events from stale sockets (race condition protection)
-        if (session.sock && session.sock !== sock) {
-            return;
-        }
+                    const maxRetriesReached = (session.retryCount || 0) >= 3;
 
-        // Ignore events from manually closed sockets, UNLESS it's a soft reset trigger
-        // We can check a flag on the session
-        if (sock.isManualClose && !session.isPerformingSoftReset) {
-            console.log(`[${userId}] Ignoring event from manually closed socket.`);
-            return;
-        }
-        if (session.isPerformingSoftReset) {
-            session.isPerformingSoftReset = false; // Reset flag after handling
-            console.log(`[${userId}] Soft Reset triggered close event handled.`);
-            setTimeout(() => connectToWhatsApp(userId, vendorConfig), 500);
-            return;
-        }
+                    // If badSession (500) persists, treat as permanent
+                    // If badSession (500) persists, treat as permanent
+                    const isPersistentBadSession = statusCode === DisconnectReason.badSession && maxRetriesReached;
 
-        session.connectionStatus = connection;
+                    // CRITICAL FIX: Smart Recovery for Crypto/Sync Errors
+                    const errorMessage = lastDisconnect?.error?.toString() || '';
+                    const isInvalidPatchMac = errorMessage.includes('Invalid patch mac');
+                    const isBadDecrypt = errorMessage.includes('bad decrypt');
+                    const isSessionError = errorMessage.includes('SessionError') || errorMessage.includes('No matching sessions found');
+                    const isCryptoError = isInvalidPatchMac || isBadDecrypt || isSessionError;
 
-        if (connection === 'open') {
-            console.log(`[${userId}] WhatsApp connection opened.`);
-            session.sessionOpenTime = Date.now(); // Track when this session actually connected
-            session.currentQR = null;
-            session.retryCount = 0; // Reset retry count
-            resetHttp405Tracker(session);
-            session.softResetCount = 0; // Reset Soft Reset counter on success
-            // Log user info to help debug LID issues
-            if (session.sock?.user) {
-                console.log(`[${userId}] Session user info: ${JSON.stringify(session.sock.user)}`);
+                    let performSoftReset = false;
+                    let forceHardReset = false;
 
-                // Active Self-LID Resolution
-                const selfId = jidNormalizedUser(session.sock.user.id);
-                if (selfId && !session.sock.user.lid) {
-                    console.log(`[${userId}] Self LID missing in session. Actively querying onWhatsApp for ${selfId}...`);
-                    session.sock.onWhatsApp(selfId).then(results => {
-                        if (results && results[0]) {
-                            const data = results[0];
-                            if (data.exists && data.jid) {
-                                // onWhatsApp returns the JID you queried (PN).
-                                // We need the LID. Does it return LID? 
-                                // Actually onWhatsApp usually confirms existence. 
-                                // Let's try to 'get' the contact/profile which might resolve it?
-                                // Or check if result has 'lid' property (some versions do).
-                                // If not, we might need another method, but let's log what we get.
-                                console.log(`[${userId}] onWhatsApp result: ${JSON.stringify(data)}`);
-
-                                // If result has lid, save it.
-                                if (data.lid) {
-                                    const foundLid = jidNormalizedUser(data.lid);
-                                    saveLidMapping(userId, foundLid, selfId);
-                                    session.lidCache[foundLid] = selfId;
-                                    console.log(`[${userId}] Resolved Self LID via onWhatsApp: ${foundLid} -> ${selfId}`);
+                    if (isCryptoError) {
+                        if (isInvalidPatchMac) {
+                            // Invalid Patch Mac is a sync error, usually recoverable by clearing app-state-sync keys
+                            console.log(`[${userId}] 'Invalid patch mac' detected. Attempting SOFT RESET (clearing app-state-sync keys) instead of full unlink.`);
+                            performSoftReset = true;
+                        } else {
+                            // Bad Decrypt (Noise/Signal) - track occurrences and do SOFT RESET after threshold
+                            const now = Date.now();
+                            if (!session.cryptoTracker) {
+                                session.cryptoTracker = { count: 1, firstTimestamp: now };
+                            } else {
+                                // Reset if window expired (2 minutes)
+                                if (now - session.cryptoTracker.firstTimestamp > 120000) {
+                                    session.cryptoTracker = { count: 1, firstTimestamp: now };
+                                } else {
+                                    session.cryptoTracker.count += 1;
+                                }
+                            }
+                            console.log(`[${userId}] Crypto error (${errorMessage}). Count: ${session.cryptoTracker.count}/3 in 2m window.`);
+                            if (session.cryptoTracker.count >= 3) {
+                                // CRITICAL FIX: Escalation Logic
+                                const softResetCount = session.softResetCount || 0;
+                                if (softResetCount >= 3) {
+                                    console.log(`[${userId}] Soft Reset limit reached (${softResetCount}) for Crypto Errors. Escalating to Hard Reset.`);
+                                    performSoftReset = false;
+                                    forceHardReset = true;
+                                } else {
+                                    session.softResetCount = softResetCount + 1;
+                                    console.log(`[${userId}] 'Bad decrypt' threshold reached. Attempting SOFT RESET (Attempt ${session.softResetCount}/3) (preserving credentials).`);
+                                    performSoftReset = true;
+                                    session.cryptoTracker = null; // Reset tracker after attempting recovery
                                 }
                             }
                         }
-                    }).catch(err => {
-                        console.error(`[${userId}] Failed to query onWhatsApp for self:`, err);
-                    });
-                }
-            }
-            // Push status to Python
-            pushStatusToPython(userId);
-        }
+                    }
 
+                    // Track 405/408 errors (Method Not Allowed / Timeout) which often indicate sync issues or protocol mismatches
+                    if (statusCode === 405 || statusCode === 408) {
+                        trackHttp405(session, lastDisconnect);
+                        if (session.http405Tracker.count >= MAX_HTTP405_RETRIES) {
+                            const softResetCount = session.softResetCount || 0;
+                            if (softResetCount >= 3) {
+                                console.log(`[${userId}] Soft Reset limit reached (${softResetCount}). Escalating to Hard Reset.`);
+                                performSoftReset = false; // Allow fallthrough to Hard Reset (shouldForceRelink logic)
+                                forceHardReset = true;
+                            } else {
+                                session.softResetCount = softResetCount + 1;
+                                console.log(`[${userId}] Persistent 405 errors (Count: ${session.http405Tracker.count}). Attempting SOFT RESET (Attempt ${session.softResetCount}/3).`);
+                                performSoftReset = true;
+                                session.http405Tracker = createHttp405Tracker(); // Reset counter to give Soft Reset a full try cycle
+                            }
+                        }
+                    }
 
-        if (qr) {
-            // Heartbeat check is now handled by the active monitor interval
-            console.log(`[${userId}] QR code received, generating data URL...`);
-            QRCode.toDataURL(qr, (err, url) => {
-                if (err) {
-                    console.error(`[${userId}] Error generating QR data URL:`, err);
-                    return;
-                }
-                session.currentQR = url;
-                // Push QR to Python
-                pushStatusToPython(userId);
-            });
-        }
-
-        if (connection === 'close') {
-            session.currentQR = null;
-            const statusCode = (lastDisconnect.error instanceof Boom) ? lastDisconnect.error.output.statusCode : 500;
-
-            if (session.isGracefulDisconnect) {
-                console.log(`[${userId}] Graceful disconnect detected. Skipping reconnect logic.`);
-                session.isGracefulDisconnect = false; // Reset the flag
-                pushStatusToPython(userId); // Push disconnected status
-                return;
-            }
-
-            if (session.isZombie) {
-                console.log(`[${userId}] Zombie session killed. Skipping reconnect logic.`);
-                session.isZombie = false; // Reset flag (though session effectively dead)
-                return;
-            }
-
-            const isPermanentDisconnection =
-                statusCode === DisconnectReason.loggedOut ||
-                statusCode === DisconnectReason.connectionReplaced;
-            // statusCode === DisconnectReason.badSession; // Treated as transient initially
-
-            const maxRetriesReached = (session.retryCount || 0) >= 3;
-
-            // If badSession (500) persists, treat as permanent
-            // If badSession (500) persists, treat as permanent
-            const isPersistentBadSession = statusCode === DisconnectReason.badSession && maxRetriesReached;
-
-            // CRITICAL FIX: Smart Recovery for Crypto/Sync Errors
-            const errorMessage = lastDisconnect?.error?.toString() || '';
-            const isInvalidPatchMac = errorMessage.includes('Invalid patch mac');
-            const isBadDecrypt = errorMessage.includes('bad decrypt');
-            const isSessionError = errorMessage.includes('SessionError') || errorMessage.includes('No matching sessions found');
-            const isCryptoError = isInvalidPatchMac || isBadDecrypt || isSessionError;
-
-            let performSoftReset = false;
-            let forceHardReset = false;
-
-            if (isCryptoError) {
-                if (isInvalidPatchMac) {
-                    // Invalid Patch Mac is a sync error, usually recoverable by clearing app-state-sync keys
-                    console.log(`[${userId}] 'Invalid patch mac' detected. Attempting SOFT RESET (clearing app-state-sync keys) instead of full unlink.`);
-                    performSoftReset = true;
-                } else {
-                    // Bad Decrypt (Noise/Signal) - track occurrences and do SOFT RESET after threshold
-                    const now = Date.now();
-                    if (!session.cryptoTracker) {
-                        session.cryptoTracker = { count: 1, firstTimestamp: now };
-                    } else {
-                        // Reset if window expired (2 minutes)
-                        if (now - session.cryptoTracker.firstTimestamp > 120000) {
-                            session.cryptoTracker = { count: 1, firstTimestamp: now };
+                    if (statusCode === DisconnectReason.restartRequired || performSoftReset) {
+                        if (performSoftReset) {
+                            await performSoftResetAction(userId, session);
+                            // Reconnect after a brief delay to allow cleanup
+                            setTimeout(() => connectToWhatsApp(userId, vendorConfig), 500);
                         } else {
-                            session.cryptoTracker.count += 1;
+                            console.log(`[${userId}] Connection requires a restart. Reconnecting immediately.`);
+                            connectToWhatsApp(userId, vendorConfig);
                         }
-                    }
-                    console.log(`[${userId}] Crypto error (${errorMessage}). Count: ${session.cryptoTracker.count}/3 in 2m window.`);
-                    if (session.cryptoTracker.count >= 3) {
-                        // CRITICAL FIX: Escalation Logic
-                        const softResetCount = session.softResetCount || 0;
-                        if (softResetCount >= 3) {
-                            console.log(`[${userId}] Soft Reset limit reached (${softResetCount}) for Crypto Errors. Escalating to Hard Reset.`);
-                            performSoftReset = false;
-                            forceHardReset = true;
-                        } else {
-                            session.softResetCount = softResetCount + 1;
-                            console.log(`[${userId}] 'Bad decrypt' threshold reached. Attempting SOFT RESET (Attempt ${session.softResetCount}/3) (preserving credentials).`);
-                            performSoftReset = true;
-                            session.cryptoTracker = null; // Reset tracker after attempting recovery
+
+                    } else if (isPermanentDisconnection || isPersistentBadSession || forceHardReset || shouldForceRelink(statusCode, session)) {
+                        if (!isPermanentDisconnection && !isPersistentBadSession) {
+                            logPersistent405(userId, session);
                         }
+                        const reason = isPermanentDisconnection ? `permanent disconnect (code: ${statusCode})` :
+                            isPersistentBadSession ? `persistent bad session (code: ${statusCode})` : 'persistent 405 errors';
+                        console.log(`[${userId}] Connection closed permanently due to ${reason}. Cleaning up and forcing re-link.`);
+
+                        wsConnections[userId]?.close();
+
+                        baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } })
+                            .then(() => {
+                                console.log(`[${userId}] Auth info deleted. Re-initializing to generate new QR code.`);
+                                // CRITICAL FIX: Clear the in-memory auth state so we don't reuse the old keys!
+                                if (sessions[userId]) {
+                                    sessions[userId].authState = null;
+                                }
+                                setTimeout(() => connectToWhatsApp(userId, vendorConfig), 1000);
+                            })
+                            .catch(err => {
+                                console.error(`[${userId}] Failed to delete auth info from DB:`, err);
+                            });
+
+                    } else { // Handle other transient errors with retry logic
+                        session.retryCount = (session.retryCount || 0) + 1;
+                        // statusCode === 405 handled above
+                        console.log(`[${userId}] Connection closed transiently (code: ${statusCode}). Retry #${session.retryCount}.`);
+                        console.log(`[${userId}] Underlying error:`, lastDisconnect.error);
+                        console.log(`[${userId}] Attempting to reconnect in 5s...`);
+                        setTimeout(() => connectToWhatsApp(userId, vendorConfig), RETRY_DELAY_MS);
                     }
                 }
-            }
-
-            // Track 405/408 errors (Method Not Allowed / Timeout) which often indicate sync issues or protocol mismatches
-            if (statusCode === 405 || statusCode === 408) {
-                trackHttp405(session, lastDisconnect);
-                if (session.http405Tracker.count >= MAX_HTTP405_RETRIES) {
-                    const softResetCount = session.softResetCount || 0;
-                    if (softResetCount >= 3) {
-                        console.log(`[${userId}] Soft Reset limit reached (${softResetCount}). Escalating to Hard Reset.`);
-                        performSoftReset = false; // Allow fallthrough to Hard Reset (shouldForceRelink logic)
-                        forceHardReset = true;
-                    } else {
-                        session.softResetCount = softResetCount + 1;
-                        console.log(`[${userId}] Persistent 405 errors (Count: ${session.http405Tracker.count}). Attempting SOFT RESET (Attempt ${session.softResetCount}/3).`);
-                        performSoftReset = true;
-                        session.http405Tracker = createHttp405Tracker(); // Reset counter to give Soft Reset a full try cycle
-                    }
-                }
-            }
-
-            if (statusCode === DisconnectReason.restartRequired || performSoftReset) {
-                if (performSoftReset) {
-                    await performSoftResetAction(userId, session);
-                    // Reconnect after a brief delay to allow cleanup
-                    setTimeout(() => connectToWhatsApp(userId, vendorConfig), 500);
-                } else {
-                    console.log(`[${userId}] Connection requires a restart. Reconnecting immediately.`);
-                    connectToWhatsApp(userId, vendorConfig);
-                }
-
-            } else if (isPermanentDisconnection || isPersistentBadSession || forceHardReset || shouldForceRelink(statusCode, session)) {
-                if (!isPermanentDisconnection && !isPersistentBadSession) {
-                    logPersistent405(userId, session);
-                }
-                const reason = isPermanentDisconnection ? `permanent disconnect (code: ${statusCode})` :
-                    isPersistentBadSession ? `persistent bad session (code: ${statusCode})` : 'persistent 405 errors';
-                console.log(`[${userId}] Connection closed permanently due to ${reason}. Cleaning up and forcing re-link.`);
-
-                wsConnections[userId]?.close();
-
-                baileysSessionsCollection.deleteMany({ _id: { $regex: `^${userId}-` } })
-                    .then(() => {
-                        console.log(`[${userId}] Auth info deleted. Re-initializing to generate new QR code.`);
-                        // CRITICAL FIX: Clear the in-memory auth state so we don't reuse the old keys!
-                        if (sessions[userId]) {
-                            sessions[userId].authState = null;
-                        }
-                        setTimeout(() => connectToWhatsApp(userId, vendorConfig), 1000);
-                    })
-                    .catch(err => {
-                        console.error(`[${userId}] Failed to delete auth info from DB:`, err);
-                    });
-
-            } else { // Handle other transient errors with retry logic
-                session.retryCount = (session.retryCount || 0) + 1;
-                // statusCode === 405 handled above
-                console.log(`[${userId}] Connection closed transiently (code: ${statusCode}). Retry #${session.retryCount}.`);
-                console.log(`[${userId}] Underlying error:`, lastDisconnect.error);
-                console.log(`[${userId}] Attempting to reconnect in 5s...`);
-                setTimeout(() => connectToWhatsApp(userId, vendorConfig), RETRY_DELAY_MS);
-            }
-        }
-    });
-
-    sock.ev.on('creds.update', async () => {
-        try {
-            await saveCreds();
-        } catch (e) {
-            console.error(`[${userId}] Error saving credentials:`, e);
-        }
-    });
-
-    sock.ev.on('contacts.update', (updates) => {
-        const session = sessions[userId];
-        if (!session) return;
-        processContacts(session, userId, updates);
-    });
-
-    sock.ev.on('contacts.upsert', (updates) => {
-        const session = sessions[userId];
-        if (!session) return;
-        processContacts(session, userId, updates);
-    });
-
-    sock.ev.on('messaging-history.set', async ({ messages, contacts, isLatest }) => {
-        try {
-            const session = sessions[userId];
-            if (!session) return;
-
-            console.log(`[${userId}] messaging-history.set received. Msgs: ${messages?.length}, Contacts: ${contacts?.length}, isLatest: ${isLatest}`);
-
-            if (contacts) {
-                processContacts(session, userId, contacts);
-                console.log(`[${userId}] messaging-history.set: Cached ${contacts.length} contacts.`);
-            }
-
-            if (session.store && messages) {
-                let addedCount = 0;
-                // messages in history.set can be an array of WAMessage directly
-                // or sometimes an array of Chat objects with messages.
-                // We handle the direct WAMessage array case primarily.
-                for (const item of messages) {
-                    // Check if item is a message (has key)
-                    if (item.key && item.message) {
-                        const msg = item;
-                        const jid = msg.key.remoteJid;
-                        if (!session.store.messages[jid]) {
-                            session.store.messages[jid] = [];
-                        }
-                        session.store.messages[jid].push(msg);
-                        if (session.store.messages[jid].length > 1000) {
-                            session.store.messages[jid].shift();
-                        }
-                        addedCount++;
-                    }
-                }
-                console.log(`[${userId}] messaging-history.set: Added ${addedCount} messages to store.`);
-            }
-        } catch (e) {
-            console.error(`[${userId}] Error in messaging-history.set handler:`, e);
-        }
-    });
-
-    sock.ev.on('messages.upsert', async (m) => {
-        try {
-            const session = sessions[userId];
-            if (!session) return;
-
-            console.log(`[${userId}] messages.upsert type: ${m.type}, count: ${m.messages.length}`);
-
-            // Populate internal store with RAW messages, irrespective of processing logic
-            if (session.store && m.messages) {
-                for (const msg of m.messages) {
-                    const jid = msg.key.remoteJid;
-                    if (!session.store.messages[jid]) {
-                        session.store.messages[jid] = [];
-                    }
-                    // Simple buffer: append and slice
-                    session.store.messages[jid].push(msg);
-                    if (session.store.messages[jid].length > 1000) {
-                        session.store.messages[jid].shift();
-                    }
-                    if (m.type === 'append' || m.type === 'notify') {
-                        // Log first message of batch for debug
-                        if (m.messages.indexOf(msg) === 0) {
-                            // console.log(`[${userId}] Stored message in buffer for ${jid}. ID: ${msg.key.id}`);
-                        }
-                    }
-                }
-            }
-
-            // If we are receiving messages, we can consider the connection open
-            if (session.connectionStatus !== 'open') {
-                console.log(`[${userId}] Received messages while not in 'open' state, updating status.`);
-                session.connectionStatus = 'open';
-            }
-
-            const processOffline = session.vendorConfig.process_offline_messages === true;
-            const allowGroups = session.vendorConfig.allow_group_messages === true;
-
-            const newMessagesPromises = m.messages.map(async (msg) => {
-                return await processMessage(session, userId, msg, processOffline, allowGroups);
             });
 
-            const newMessages = (await Promise.all(newMessagesPromises)).filter(Boolean);
-            if (newMessages.length > 0) {
-                const ws = wsConnections[userId];
-                if (ws && ws.readyState === ws.OPEN) {
-                    ws.send(JSON.stringify(newMessages));
-                } else {
-                    console.log(`[${userId}] WebSocket not open, cannot send messages.`);
+            sock.ev.on('creds.update', async () => {
+                try {
+                    await saveCreds();
+                } catch (e) {
+                    console.error(`[${userId}] Error saving credentials:`, e);
                 }
-            }
-        } catch (e) {
-            console.error(`[${userId}] Error in messages.upsert handler:`, e);
+            });
+
+            sock.ev.on('contacts.update', (updates) => {
+                const session = sessions[userId];
+                if (!session) return;
+                processContacts(session, userId, updates);
+            });
+
+            sock.ev.on('contacts.upsert', (updates) => {
+                const session = sessions[userId];
+                if (!session) return;
+                processContacts(session, userId, updates);
+            });
+
+            sock.ev.on('messaging-history.set', async ({ messages, contacts, isLatest }) => {
+                try {
+                    const session = sessions[userId];
+                    if (!session) return;
+
+                    console.log(`[${userId}] messaging-history.set received. Msgs: ${messages?.length}, Contacts: ${contacts?.length}, isLatest: ${isLatest}`);
+
+                    if (contacts) {
+                        processContacts(session, userId, contacts);
+                        console.log(`[${userId}] messaging-history.set: Cached ${contacts.length} contacts.`);
+                    }
+
+                    if (session.store && messages) {
+                        let addedCount = 0;
+                        // messages in history.set can be an array of WAMessage directly
+                        // or sometimes an array of Chat objects with messages.
+                        // We handle the direct WAMessage array case primarily.
+                        for (const item of messages) {
+                            // Check if item is a message (has key)
+                            if (item.key && item.message) {
+                                const msg = item;
+                                const jid = msg.key.remoteJid;
+                                if (!session.store.messages[jid]) {
+                                    session.store.messages[jid] = [];
+                                }
+                                session.store.messages[jid].push(msg);
+                                if (session.store.messages[jid].length > 1000) {
+                                    session.store.messages[jid].shift();
+                                }
+                                addedCount++;
+                            }
+                        }
+                        console.log(`[${userId}] messaging-history.set: Added ${addedCount} messages to store.`);
+                    }
+                } catch (e) {
+                    console.error(`[${userId}] Error in messaging-history.set handler:`, e);
+                }
+            });
+
+            sock.ev.on('messages.upsert', async (m) => {
+                try {
+                    const session = sessions[userId];
+                    if (!session) return;
+
+                    console.log(`[${userId}] messages.upsert type: ${m.type}, count: ${m.messages.length}`);
+
+                    // Populate internal store with RAW messages, irrespective of processing logic
+                    if (session.store && m.messages) {
+                        for (const msg of m.messages) {
+                            const jid = msg.key.remoteJid;
+                            if (!session.store.messages[jid]) {
+                                session.store.messages[jid] = [];
+                            }
+                            // Simple buffer: append and slice
+                            session.store.messages[jid].push(msg);
+                            if (session.store.messages[jid].length > 1000) {
+                                session.store.messages[jid].shift();
+                            }
+                            if (m.type === 'append' || m.type === 'notify') {
+                                // Log first message of batch for debug
+                                if (m.messages.indexOf(msg) === 0) {
+                                    // console.log(`[${userId}] Stored message in buffer for ${jid}. ID: ${msg.key.id}`);
+                                }
+                            }
+                        }
+                    }
+
+                    // If we are receiving messages, we can consider the connection open
+                    if (session.connectionStatus !== 'open') {
+                        console.log(`[${userId}] Received messages while not in 'open' state, updating status.`);
+                        session.connectionStatus = 'open';
+                    }
+
+                    const processOffline = session.vendorConfig.process_offline_messages === true;
+                    const allowGroups = session.vendorConfig.allow_group_messages === true;
+
+                    const newMessagesPromises = m.messages.map(async (msg) => {
+                        return await processMessage(session, userId, msg, processOffline, allowGroups);
+                    });
+
+                    const newMessages = (await Promise.all(newMessagesPromises)).filter(Boolean);
+                    if (newMessages.length > 0) {
+                        const ws = wsConnections[userId];
+                        if (ws && ws.readyState === ws.OPEN) {
+                            ws.send(JSON.stringify(newMessages));
+                        } else {
+                            console.log(`[${userId}] WebSocket not open, cannot send messages.`);
+                        }
+                    }
+                } catch (e) {
+                    console.error(`[${userId}] Error in messages.upsert handler:`, e);
+                }
+            });
+        } catch (error) {
+            console.error(`[${userId}] Failed in connectToWhatsApp core:`, error);
+            throw error;
         }
-    });
+    })();
+
+    // Link the core init promise to our lock promise
+    initPromise.then(resolveLock).catch(rejectLock);
+
+    try {
+        return await lockPromise;
+    } finally {
+        pendingInits.delete(userId);
+    }
 }
 
 
@@ -1381,10 +1422,13 @@ app.use(express.json({ limit: '50mb' }));
 
 app.post('/initialize', async (req, res) => {
     const { userId, config, forceReinit } = req.body;
+
     if (!userId || !config) {
-        return res.status(400).json({ error: 'userId and config are required.' });
+        return res.status(400).json({ error: 'Missing userId or config.' });
     }
+
     try {
+        // connectToWhatsApp now handles internal locking via pendingInits
         await connectToWhatsApp(userId, config, forceReinit);
         res.status(200).json({ status: 'Session initialization started.' });
     } catch (error) {
@@ -1418,9 +1462,20 @@ app.post('/sessions/:userId/send', async (req, res) => {
     }
 
     try {
-        // Do NOT automatically convert LID to PN.
-        // Sending to the LID ensures we use the correct cryptographic session (LID session),
-        // preventing "Bad MAC" errors caused by state divergence when mixing PN/LID sessions.
+        // --- JID Normalization Strategy ---
+        // 1. Normalize Self ID (Sender) to remove device suffixes like :84
+        const selfId = jidNormalizedUser(session.sock.user.id);
+
+        // 2. Normalize Recipient JID
+        // We revert to using the Phone Number JID (@s.whatsapp.net) as primary target,
+        // but strictly normalized to ensure cryptographic stability.
+        let targetJid = recipient;
+        if (!recipient.endsWith('@g.us') && !recipient.endsWith('@lid') && recipient.endsWith('@s.whatsapp.net')) {
+            targetJid = jidNormalizedUser(recipient); // Strip any device suffixes from recipient
+            console.log(`[${userId}] Normalized recipient JID: ${targetJid}`);
+        }
+
+        recipient = targetJid;
 
         if (!recipient.endsWith('@g.us') && !recipient.endsWith('@s.whatsapp.net') && !recipient.endsWith('@lid')) {
             const [result] = await session.sock.onWhatsApp(recipient);
@@ -1456,7 +1511,7 @@ app.post('/sessions/:userId/send', async (req, res) => {
                     mimetype: mimetype,
                     caption: caption
                 });
-                console.log(`[${userId}] sendMessage SUCCESS. Result Key: ${JSON.stringify(sentMsgData.key)}`);
+                console.log(`[${userId}] sendMessage SUCCESS to ${recipient} (Self: ${session.sock?.user?.id || 'unknown'}). Result Key: ${JSON.stringify(sentMsgData?.key)}`);
             } catch (sendError) {
                 console.error(`[${userId}] sendMessage FAILED:`, sendError);
                 throw sendError; // Re-throw to be caught by outer catch
@@ -1464,7 +1519,7 @@ app.post('/sessions/:userId/send', async (req, res) => {
         } else {
             // Default to text
             sentMsgData = await session.sock.sendMessage(recipient, { text: message });
-            console.log(`[${userId}] sendMessage() invoked for ${recipient}`);
+            console.log(`[${userId}] sendMessage SUCCESS to ${recipient} (Self: ${session.sock?.user?.id || 'unknown'}). Result Key: ${JSON.stringify(sentMsgData?.key)}`);
         }
 
         // Learn self LID from sent message (especially for group messages)
@@ -1521,14 +1576,14 @@ app.delete('/sessions/:userId', async (req, res) => {
     const { userId } = req.params;
     const session = sessions[userId];
 
-    if (!session) {
-        return res.status(404).json({ error: 'Session not found.' });
-    }
-
     try {
-        console.log(`[${userId}] Logging out...`);
-        session.isUnlinking = true;
-        await session.sock.logout();
+        if (session && session.sock) {
+            console.log(`[${userId}] Logging out active session...`);
+            session.isUnlinking = true;
+            await session.sock.logout();
+        } else {
+            console.log(`[${userId}] No active session in memory, proceeding directly to MongoDB cleanup.`);
+        }
     } catch (error) {
         console.error(`[${userId}] Error during logout:`, error);
     } finally {
@@ -1538,11 +1593,13 @@ app.delete('/sessions/:userId', async (req, res) => {
         } catch (dbError) {
             console.error(`[${userId}] Error deleting auth data from MongoDB:`, dbError);
         }
-        if (session.heartbeatInterval) {
+        if (session && session.heartbeatInterval) {
             clearInterval(session.heartbeatInterval);
         }
-        delete sessions[userId];
-        console.log(`[${userId}] Session object deleted.`);
+        if (sessions[userId]) {
+            delete sessions[userId];
+            console.log(`[${userId}] Session object deleted.`);
+        }
     }
 
     res.status(200).json({ status: 'Session deleted successfully.' });
