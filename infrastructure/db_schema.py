@@ -71,15 +71,14 @@ async def create_indexes(db: AsyncIOMotorDatabase):
 
     # 3. Features
     try:
-        # Tracked Group Periods (Group Tracking)
-        periods = db[COLLECTION_TRACKED_GROUP_PERIODS]
-        # Common q: user_id + group_id + periodEnd (for sorting)
-        await periods.create_index([("user_id", ASCENDING), ("tracked_group_unique_identifier", ASCENDING), ("periodEnd", DESCENDING)])
+        # 5. Indexes for Tracked Group Periods
+        await ensure_index(db[COLLECTION_TRACKED_GROUP_PERIODS], "tracked_group_periods_bot_id_idx", [("bot_id", 1)])
+        await ensure_index(db[COLLECTION_TRACKED_GROUP_PERIODS], "tracked_group_periods_unique_identifier_idx", [("tracked_group_unique_identifier", 1)])
+        await ensure_index(db[COLLECTION_TRACKED_GROUP_PERIODS], "tracked_group_periods_periodEnd_idx", [("periodEnd", -1)])
         logger.info(f"Created indexes for {COLLECTION_TRACKED_GROUP_PERIODS}.")
-        
-        # Tracking State
-        state = db[COLLECTION_GROUP_TRACKING_STATE]
-        await state.create_index([("user_id", ASCENDING), ("group_id", ASCENDING)], unique=True)
+
+        # 6. Indexes for Group Tracking State
+        await ensure_index(db[COLLECTION_GROUP_TRACKING_STATE], "group_tracking_state_bot_group_idx", [("bot_id", 1), ("groupIdentifier", 1)], unique=True)
         logger.info(f"Created indexes for {COLLECTION_GROUP_TRACKING_STATE}.")
         
     except Exception as e:

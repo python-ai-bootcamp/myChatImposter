@@ -771,14 +771,13 @@ async def unlink_bot(bot_id: str, state: GlobalStateManager = Depends(ensure_db_
         raise HTTPException(status_code=500, detail="Instance not found.")
 
     try:
-        if state.group_tracker:
-             logging.info(f"API: Stopping tracking jobs for {bot_id}")
-             state.group_tracker.stop_tracking_jobs(bot_id)
+        logging.info(f"API: Unlinking bot {bot_id} (via Lifecycle Service)")
+        if state.bot_lifecycle_service:
+            await state.bot_lifecycle_service.stop_bot(bot_id, cleanup_session=True)
+        else:
+            # Fallback for tests if lifecycle service is not mocked
+            await instance.stop(cleanup_session=True)
 
-        await instance.stop(cleanup_session=True)
-        if state.async_message_delivery_queue_manager:
-             await state.async_message_delivery_queue_manager.move_bot_to_holding(bot_id)
-             
         return {"status": "success", "message": "Session unlinked"}
     except Exception as e:
         logging.error(f"API: Unlink failed for {bot_id}: {e}")

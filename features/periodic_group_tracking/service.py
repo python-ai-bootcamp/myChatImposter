@@ -77,19 +77,19 @@ class GroupTracker:
             return int(max_interval) + 900 # Add 15 minutes buffer
         return 0
 
-    def stop_tracking_jobs(self, user_id: str):
+    def stop_tracking_jobs(self, bot_id: str):
         """
         Stops all tracking jobs for a user WITHOUT deleting the data.
         Used for disconnects, reloads, and unlinks.
         """
         all_jobs = self.scheduler.get_jobs()
-        prefix = f"{user_id}_"
+        prefix = f"{bot_id}_"
         
         for job in all_jobs:
             if job.id.startswith(prefix):
                 try:
                     self.scheduler.remove_job(job.id)
-                    logger.info(f"Stopped tracking job {job.id} for user {user_id}")
+                    logger.info(f"Stopped tracking job {job.id} for bot {bot_id}")
                 except Exception as e:
                     logger.warning(f"Failed to remove job {job.id}: {e}")
         
