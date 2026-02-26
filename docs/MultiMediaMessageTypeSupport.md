@@ -278,7 +278,7 @@ if (mediaInfo !== undefined) {
             const corruptMimetype = `media_corrupt_${baseType}`;
             
             return {
-                ...existingFields,
+                ...existingFields, // spread common metadata: provider_message_id, sender, direction, time, etc.
                 message: caption,
                 media_processing_id: guid,
                 mime_type: corruptMimetype,
@@ -287,8 +287,17 @@ if (mediaInfo !== undefined) {
             };
         }
     } catch (error) {
-        console.error(`Failed to calculate media directory size: ${error.message}. Proceeding with download as fallback.`);
-        // Fail open: if 'du' fails for extreme reasons, we attempt download anyway rather than blocking all media.
+        console.error(`Failed to calculate media directory size for ${guid}: ${error.message}. Rejecting download.`);
+        const baseType = messageType.replace('Message', '');
+        const corruptMimetype = `media_corrupt_${baseType}`;
+        return {
+            ...existingFields, // spread common metadata
+            message: caption,
+            media_processing_id: guid,
+            mime_type: corruptMimetype,
+            original_filename: filename,
+            _quota_error: true // diagnostic marker for system error
+        };
     }
     // --- Proceed with Retry Logic ---    // Retry up to 3 times with exponential back-off (2s, 4s, 8s)
     let downloaded = false;
@@ -326,7 +335,7 @@ if (mediaInfo !== undefined) {
     if (downloaded) {
         // Return only metadata — no bytes cross the wire to Python
         return {
-            ...existingFields,
+            ...existingFields, // spread common metadata (sender, id, time, etc.)
             message: caption,
             media_processing_id: guid,
             mime_type: mimetype,
@@ -337,7 +346,7 @@ if (mediaInfo !== undefined) {
         // mediaType is e.g. "image", "video", "audio" (strip "Message" suffix)
         const shortType = messageType.replace('Message', '');
         return {
-            ...existingFields,
+            ...existingFields, // spread common metadata
             message: caption,                              // caption if exists, else ''
             media_processing_id: guid,
             mime_type: `media_corrupt_${shortType}`,       // e.g. "media_corrupt_image"
