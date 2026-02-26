@@ -34,12 +34,12 @@ To prevent media downloads from exhausting the host's primary disk, an applicati
 # docker-compose.yml
 services:
   whatsapp_baileys_server:
-    user: "1000:1000"  # Match UID/GID to avoid permission skirmishes
+    user: "${CURRENT_UID}:${CURRENT_GID}"  # Auto-detected by ./scripts/start.sh
     volumes:
       - media_staging:/app/media_store/pending_media
 
   backend:
-    user: "1000:1000"  # Same user ensures Python can read/delete Node files
+    user: "${CURRENT_UID}:${CURRENT_GID}"  # Same UID/GID as host user
     volumes:
       - media_staging:/app/media_store/pending_media
 
@@ -47,14 +47,16 @@ volumes:
   media_staging:
 ```
 
-### Permissions & Ownership
-To avoid "Permission Denied" errors (EACCES) when sharing volumes, both containers must agree on who owns the files. 
-- **The Strategy**: Run both services using the same `user: "1000:1000"`.
-- **The Rationale**: This matches the default internal UID/GID for the `node` user in the official Node.js Docker images. By forcing the Python backend to use the same ID, both services become part of the same "identity" at the OS level.
-- **The Result**: Files written by the Node.js server are immediately readable and deletable by the Python `MediaProcessingService` without needing `sudo` or risky `chmod` commands during the heat of battle.
+### Permissions & Ownership (The Deployment Sentry)
+To avoid "Permission Denied" errors (EACCES) on shared volumes, both containers must match the identity of the host user who owns the project files. 
 
-> [!NOTE]
-> If your host OS user uses a different UID (e.g., 1001), you should adjust these values accordingly in `docker-compose.yml`. For Oracle VM `ubuntu` users, `1000:1000` is almost always the correct standard.
+- **The Strategy**: Use dynamic environment variables `${CURRENT_UID}:${CURRENT_GID}` for the `user` field in `docker-compose.yml`.
+- **The Rationale**: Since bind mounts (like `baileys_store`) inherit the host's UID/GID, hardcoding `1000:1000` is risky if the host VM uses a different ID.
+- **The Implementation**: Our `./scripts/start.sh` script auto-detects the host's identity (`id -u` and `id -g`) and injects them into a local `.env` file before launching the containers.
+- **The Result**: Files written by the Node.js server are immediately reachable and manageable by the Python `MediaProcessingService` regardless of the host OS configuration.
+
+> [!TIP]
+> This pattern ensures "zero-touch" deployment security—the system auto-fortifies its permissions the moment you run the startup command. 🛡️
 
 ---
 
@@ -75,7 +77,17 @@ To avoid "Permission Denied" errors (EACCES) when sharing volumes, both containe
    - `guid` — used to locate the raw media file at `media_store/pending_media/<guid>`
    - `original_filename` *(optional)* — provided by the provider if available; used to assist processing (e.g. file extension hints)
    - `mime_type` — determines which processing pool to route the job to
-6. **Processing completes**: The worker uses `bot_id` from the job to look up the correct `BotQueuesManager`, then calls `update_message_by_media_id(correspondent_id, guid, transcript)` on it. This locates the correct `CorrespondentQueue` and updates its `content` and `message_size`, then fires `_trigger_callbacks`. The job record is then **deleted from `media_processing_jobs`** and the raw media file is **deleted from disk**.
+   - `status` — **"pending"** (default), **"processing"** (claimed by worker), or **"completed"** (result saved, awaiting delivery)
+   - `result` — *(optional)* The finalized transcript or description text, populated when `status == "completed"`
+
+6. **Worker claims job**: The `MediaProcessingService` uses an **atomic `find_one_and_update`** to claim a job where `status == "pending"`. It sets `status = "processing"` and assigns a `worker_id`. This atomic action ensures that even if 100 jobs move to the active queue at once, no two workers will ever pick up the same task. If a bot resets mid-job, the job remains in `"processing"` state, signaling other workers to stay away.
+
+7. **Processing completes (Result Persistence)**: The worker performs its AI mission, then **immortalizes the result** in the database. It attempts an atomic update on the job record to set `status = "completed"` and `result = transcript`. It tries the `media_processing_jobs` (active) collection first; if not found (bot stopped), it tries `media_processing_jobs_holding`.
+
+8. **Final Reporting (Delivery vs. Reaping)**: Once the result is safely persisted in the DB, the worker attempts to complete the mission:
+   - **Case A: Direct Worker Delivery** (Bot is Active): The worker locates the `BotQueuesManager`, calls `update_message_by_media_id(correspondent_id, guid, transcript)`, and **deletes the job**.
+   - **Case B: Recovery Bot Reaping** (Bot is Stopped): The worker finds no active bot and gracefully exits. The job remains in the DB as `"completed"`. When the bot eventually starts, it **reaps** the result from the DB, updates its own queue, and **deletes the job**.
+   - On completion (via either path), the raw media file is **deleted from disk**.
 
 ---
 
@@ -114,10 +126,12 @@ Used exclusively by:
 
 ### Required Change in `server.js` (Baileys Node.js Server)
 
-First, add `crypto` and `downloadMediaMessage` to the imports at the top of the file:
+First, add `crypto`, `exec` (from `child_process`), and `util` to the imports at the top of the file:
 
 ```javascript
 const crypto = require('crypto');
+const util = require('util');
+const execAsync = util.promisify(require('child_process').exec);
 const {
     // ... existing imports ...
     downloadMediaMessage
@@ -162,10 +176,11 @@ if (mediaInfo !== undefined) {
     const stopWritingThresholdGb = Math.max(configuredLimitGb - 2, 1);
     const stopWritingThresholdMb = stopWritingThresholdGb * 1024;
 
-    const { execSync } = require('child_process');
     try {
-        const sizeOutput = execSync('du -sm /app/media_store/pending_media').toString().split('\t')[0];
-        const currentSizeMb = parseInt(sizeOutput);
+        // ASYNC to prevent freezing the single-threaded event loop
+        const { stdout } = await execAsync('du -sm /app/media_store/pending_media');
+        const sizeOutput = stdout.toString().split('\t')[0];
+        const currentSizeMb = parseInt(sizeOutput, 10);
         
         if (currentSizeMb > stopWritingThresholdMb) {
             console.error(`Media quota exceeded (Current Size: ${currentSizeMb}MB, Threshold: ${stopWritingThresholdMb}MB). Rejecting download for ${guid}`);
@@ -174,25 +189,19 @@ if (mediaInfo !== undefined) {
             const baseType = messageType.replace('Message', ''); // e.g. 'image'
             const corruptMimetype = `media_corrupt_${baseType}`;
             
-            // Send metadata back to Python, which routes it to CorruptMediaProcessor
-            pushStatusToPython(userId, {
-                type: 'new_message',
-                message: {
-                    guid: guid,
-                    mime_type: corruptMimetype,
-                    caption: caption,
-                    original_filename: filename
-                },
-                // ... other message metadata ...
+            sendToPython({
+                media_processing_id: guid,
+                mime_type: corruptMimetype,
+                caption: caption,
+                original_filename: filename
             });
-            return; 
+            return; // Abort download
         }
-    } catch (e) {
-        console.warn(`Failed to check media directory size: ${e.message}`);
-        // Let it proceed if du fails for some odd reason (fallback protection)
+    } catch (error) {
+        console.error(`Failed to calculate media directory size: ${error.message}. Proceeding with download as fallback.`);
+        // Fail open: if 'du' fails for extreme reasons, we attempt download anyway rather than blocking all media.
     }
-
-    // Retry up to 3 times with exponential back-off (2s, 4s, 8s)
+    // --- Proceed with Retry Logic ---    // Retry up to 3 times with exponential back-off (2s, 4s, 8s)
     let downloaded = false;
     let quotaExceeded = false;
     for (let attempt = 1; attempt <= 3; attempt++) {
@@ -412,6 +421,27 @@ Each subclass only implements `process_media()` and returns a `ProcessingResult`
 | `CorruptMediaProcessor` | `ProcessingResult(content="[Corrupted <type>...] <caption>", failed_reason="download failed — <type> corrupted")` |
 | `UnsupportedMediaProcessor` | `ProcessingResult(content="[Unsupported <mime_type>...] <caption>", failed_reason="unsupported mime type: <mime_type>")` |
 
+#### Anti-Starvation Rule (Mandatory Timouts)
+To prevent workers from becoming permanently marooned by hanging external API calls (e.g., an OpenAI vision request that never returns), **every** external I/O operation inside `process_media()` must be wrapped in a strict `asyncio.wait_for()` timeout.
+
+```python
+import asyncio
+
+async def process_media(self, file_path: str, mime_type: str, caption: str) -> ProcessingResult:
+    try:
+        # Force the API call to complete or fail within 60 seconds
+        response = await asyncio.wait_for(api_client.process_image(encoded_image), timeout=60.0)
+        return ProcessingResult(content=response.text)
+    except asyncio.TimeoutError:
+        # The timeout breaks the hang. We catch it and return a controlled failure.
+        # The worker loop continues, capacity is preserved!
+        return ProcessingResult(
+            content="[Processing timed out]",
+            failed_reason="API_TIMEOUT: Vision processing exceeded 60 seconds"
+        )
+```
+If this rule is ignored, a hanging request permanently reduces the finite worker pool capacity by 1. Three such hangs would reduce a 3-worker pool to zero, freezing all media processing until the container is restarted.
+
 > **Note**: Phase 1 stub processors also inherit from `BaseMediaProcessor` — they sleep for a configured duration and return `ProcessingResult(content="[Transcripted ...]")`. The base class handles everything else.
 
 ---
@@ -427,10 +457,14 @@ For each stale placeholder found:
    - Found in `media_processing_jobs_holding` → move and set `error`: `"message was transferred from media_processing_jobs_holding to media_processing_jobs_failed by cleanup job"`
    - Found in neither → create a new record in `media_processing_jobs_failed` based on the placeholder message from `CorrespondentQueue` with added `error`: `"message was missing and created from scratch in media_processing_jobs_failed by cleanup job"`
 
-**Additionally**, the cleanup job directly queries `media_processing_jobs_holding` for any job records older than **3 hours** — regardless of whether an in-memory queue placeholder exists. This catches stale jobs for bots that are currently **disconnected** (their in-memory queues are not active, so the queue scan above would never find them). For each such record found:
-- Move it to `media_processing_jobs_failed` with `error`: `"job in media_processing_jobs_holding for stopped bot exceeded 3-hour threshold and was moved to media_processing_jobs_failed by cleanup job"`
+**Additionally**, the cleanup job directly queries `media_processing_jobs` and `media_processing_jobs_holding` for any job records older than **3 hours**. This catches:
+- Stale jobs for bots that are currently **disconnected** (in `_holding`).
+- "Zombie" jobs stuck in `processing` state due to a worker crash.
 
-- on any case, cleanup job attempts to delete the raw media file from disk.
+For each such record found:
+- Move it to `media_processing_jobs_failed` with `error`: `"TIMED_OUT: Job exceeded 3-hour threshold and was moved to failed by cleanup job"`.
+- Attempt to delete the raw media file from disk.
+- If an in-memory placeholder exists, remove it from the `CorrespondentQueue`.
 
 ---
 
@@ -445,11 +479,17 @@ Three MongoDB collections manage job state, mirroring the `async_message_deliver
 | `media_processing_jobs_failed` | Failed jobs — processing failed on single attempt |
 
 ### Lifecycle Transitions
-- **App startup (init phase)**: All records in `media_processing_jobs` are moved to `media_processing_jobs_holding`. No bot is running yet.
-- **Bot starts**: All holding jobs for that `bot_id` are moved from `media_processing_jobs_holding` → `media_processing_jobs`. The `placeholder_message` from each job is deserialized and re-injected into the correct `CorrespondentQueue` using `inject_placeholder(message)` — bypassing ID generation, content truncation, callback firing, and media pipeline re-entry. Processing then resumes.
+- **App startup (init phase)**: A global sweep performs a two-stage recovery:
+  1. Moves **all** records from `media_processing_jobs` to `media_processing_jobs_holding`.
+  2. Perform an `update_many` on `media_processing_jobs_holding` to set any record with `status: "processing"` back to `status: "pending"`.
+  This ensures no orphaned jobs remain stuck in an unclaimable state due to a previous system crash.
+- **Bot starts (Recovery Bot Reaping)**: When a `BotQueuesManager` initializes, it queries `media_processing_jobs_holding` for its `bot_id`. For every job found, it must **first call `inject_placeholder(message)`** using the job's `placeholder_message` to seed the empty queue. Only *after* injecting the placeholder does the bot evaluate the job's `status`:
+  - **`status == "completed"`**: The bot **reaps** the result from the job, updates the newly-injected placeholder instantly via `update_message_by_media_id`, fires callbacks (triggering the AI), and **deletes the job**.
+  - **`status == "processing"`**: The job is moved back to `media_processing_jobs`. An orphaned worker is still working on it. The bot waits for **Direct Worker Delivery**.
+  - **`status == "pending"`**: The job is moved to `media_processing_jobs` to await a worker claim.
 - **Bot stops**: All active jobs for that `bot_id` are moved from `media_processing_jobs` → `media_processing_jobs_holding`.
-  > **Note on in-flight jobs**: If a job is currently being processed at the moment the bot stops, the worker will attempt to call `update_message_by_media_id` on a `CorrespondentQueue` that no longer exists. This call is wrapped in a try/except — the error is logged and the job is left to be handled by the cleanup job.
-- **Processing fails** (single attempt, no retries): Job is moved immediately to `media_processing_jobs_failed` for inspection with an added `error` property containing a text message describing the fail reason, and the raw media file is deleted from disk. No retries — each attempt consumes expensive tokens and resources, we don't want to retry error-prone messages.
+  - > **Note on in-flight jobs**: If a job is currently being processed at the moment the bot stops, the worker will finish and follow the **Persistence-First path**, saving the result into `_holding` for later reaping.
+- **Processing fails** (single attempt, no retries): Job is moved immediately to `media_processing_jobs_failed` for inspection with an added `error` property and the raw media file is deleted. No retries.
 
 > [!IMPORTANT]
 > **Required fix — `IngestionService` final drain pass on bot stop**
@@ -488,16 +528,33 @@ The full routing chain uses three keys to locate the exact placeholder:
 2. **`correspondent_id`** (from job) → go directly to the correct `CorrespondentQueue` within that `BotQueuesManager`.
 3. **`guid`** (from job) → search the `CorrespondentQueue`'s deque for the message matching `media_processing_id == guid`.
 4. Updates `content`, `message_size`, clears `media_processing_id`, adjusts `_total_chars`, fires callbacks.
-5. **The media processor never touches the message collections managed by `BotQueuesManager` or `IngestionService`** — it only operates on its own job lifecycle collections (`media_processing_jobs`, `media_processing_jobs_holding`, `media_processing_jobs_failed`).
-6. If the `BotQueuesManager` is not found (bot was stopped) or the message is **not found** in the deque (queue was destroyed while the worker was in-flight), the update call is wrapped in a try/except — the error is logged, and the job is left for the cleanup job to handle.
+5. **The media processor follows the Persistence-First path**:
+   - Every result is saved to the Job Document (status set to `"completed"`) *before* attempting in-memory queue updates.
+   - The worker attempts to update the job record in the `media_processing_jobs` collection; if 0 documents were updated, it attempts the same update in `media_processing_jobs_holding`.
+6. **Handling Job Abandonment (The "Late-Returning Hero")**: If both the `active` and `holding` job updates modify 0 documents (likely because the cleanup job dead-lettered the job due to a timeout):
+   - The worker logs a `WARNING`: `"Job record missing for GUID <guid>. Task result abandoned — likely timed out."`
+   - The worker deletes the raw media file and exits. No further action is taken.
+7. If the `BotQueuesManager` is not found (bot was stopped), the worker logs the success and terminates. The result is already safe in MongoDB.
+8. If the `BotQueuesManager` is found but the message is **not found** in the deque (e.g. queue was reset), the update call is wrapped in a try/except — the worker logs the issue and deletes the job (as it's unrecoverable without a placeholder).
 
-### Placeholder Eviction Protection
+### Placeholder Eviction Protection (The Eviction Rewrite)
 
-The `CorrespondentQueue._enforce_limits()` method must **skip eviction of any message where `media_processing_id` is not `None`**. Placeholders are protected from being evicted by age, character count, or message count limits. They will only be removed by:
-- Successful processing (via `update_message_by_media_id`).
-- The hourly cleanup job (3-hour TTL — see Cleanup Job section).
+The `CorrespondentQueue` enforces memory limits (max messages, max characters) by popping the oldest messages. However, placeholders with active `media_processing_id`s represent pending work and **must be protected** from routine eviction.
 
-This prevents a race condition where a flood of new messages could evict a placeholder before its transcript arrives.
+**The Flaw in `popleft()`:**
+The current `_evict_while` helper blindly uses `self._messages.popleft()`. If a protected placeholder sits at index `0`, the eviction loop would either break immediately (allowing the queue to grow infinitely past its limits) or enter an infinite loop trying to evict an unevictable message.
+
+**The Fix:**
+The `_evict_while` logic must be rewritten into a smarter `_evict_eligible` loop:
+- Instead of just checking `self._messages[0]`, the loop must scan the deque from left to right (oldest to newest).
+- It must **skip** any message where `media_processing_id is not None`.
+- It finds the oldest *unprotected* message and removes it (e.g., using `del self._messages[index]`).
+- This ensures the queue size limits are strictly respected without destroying pending media jobs.
+
+Placeholders will only ever be removed by:
+1. Successful worker delivery (replaced by final content).
+2. The 3-hour background `cleanup` job (expired/stale).
+3. The `CorruptMediaProcessor` or `UnsupportedMediaProcessor` (failed).
 
 ---
 
@@ -526,10 +583,12 @@ Both the **regular ingestion cycle** and the **final drain on shutdown** use `po
 Because the full placeholder `Message` is stored in the `media_processing_jobs_holding` collection (all jobs are moved there on startup init), recovery is straightforward:
 
 1. On startup, all records in `media_processing_jobs` are moved to `media_processing_jobs_holding`.
-2. As each bot connects, its jobs are moved to `media_processing_jobs` and the `MediaProcessingService` picks them up.
-3. For each job, it deserializes the `placeholder_message` and re-injects it into the correct `CorrespondentQueue` using `inject_placeholder(message)` — this bypasses ID generation, content truncation, callback firing, and media pipeline re-entry.
-4. It then resumes processing the media file from disk and updates the queue as normal when done.
-5. The job record is deleted and the media file is removed from disk once processing completes successfully.
+2. As each bot connects, its `BotQueuesManager` queries the holding collection. 
+3. **Crucial Seeding Step:** For *every* job found (regardless of status), the bot deserializes the `placeholder_message` and re-injects it into the `CorrespondentQueue` using `inject_placeholder(message)`. This bypasses ID generation and callbacks, securely seeding the empty queue.
+4. The bot then evaluates the status:
+   - **`completed`**: Reaps the result immediately using `update_message_by_media_id` and fires callbacks.
+   - **`pending` / `processing`**: Moves them back to the active collection for worker pools to (re)claim and process.
+5. The job record is deleted and the media file is removed from disk once processing and delivery complete successfully.
 
 **MongoDB is the source of truth for crash recovery — no data is lost.**
 
