@@ -83,8 +83,8 @@ To avoid "Permission Denied" errors (EACCES) on shared volumes, both containers 
 7. **Processing completes (Result Persistence)**: The worker performs its AI mission, then **immortalizes the result** in the database. It attempts an atomic update on the job record to set `status = "completed"` and `result = transcript`. It tries the `media_processing_jobs` (active) collection first; if not found (bot stopped), it tries `media_processing_jobs_holding`.
 
 8. **Final Reporting (Delivery vs. Reaping)**: Once the result is safely persisted in the DB, the worker attempts to complete the mission:
-   - **Case A: Direct Worker Delivery** (Bot is Active): The worker locates the `BotQueuesManager`, calls `update_message_by_media_id(correspondent_id, guid, transcript)`, and **deletes the job**.
-   - **Case B: Recovery Bot Reaping** (Bot is Stopped): The worker finds no active bot and gracefully exits. The job remains in the **`media_processing_jobs_holding`** collection with `status="completed"`. When the bot eventually restarts, it **reaps** the result from the holding collection, injects the placeholder, updates its queue, and **deletes the job**.
+   - **Case A: Direct Worker Delivery** (Bot is Active): The worker locates the `BotQueuesManager` and calls its `update_message_by_media_id(correspondent_id, guid, transcript)` method (which delegates the update to the specific `CorrespondentQueue` instance). The job is then **deleted**.
+   - **Case B: Recovery Bot Reaping** (Bot is Stopped): The worker finds no active bot and gracefully exits. The job remains in the **`media_processing_jobs_holding`** collection with `status="completed"`. When the bot eventually restarts, it **reaps** the result from the holding collection, injects the placeholder, updates its queue via `update_message_by_media_id`, and **deletes the job**.
    - On completion (via either path), the **worker** deletes the raw media file from the shared disk.
 
 ### Media Flow Sequence Diagram
@@ -361,7 +361,7 @@ The Python `whatsAppBaileys.py` provider passes the metadata (GUID, mime type, f
 
 ## MediaProcessingService (Background Worker Pool)
 
-A fixed-concurrency pool to avoid memory bloat and starvation across bots. **All media messages enter the pipeline identically** — every media message becomes a placeholder in the queue and a job in `media_processing_jobs`. The processor pool routing determines what happens next. Text messages bypass this service entirely and go straight to the queue.
+A fixed-concurrency pool to avoid memory bloat and starvation across bots. **All media messages enter the pipeline identically** — every media message becomes a placeholder in the relevant CorrespondentQueue and also a job in `media_processing_jobs`. Independent worker pools each populated with specific type of worker implementing BaseMediaProcessor subclass then **select and claim** jobs based on their configured mime-types at a concurrency configured per worker pool. Text messages bypass this service entirely and go straight to the queue.
 
 ### Service Ownership and Lifecycle Wiring
 
@@ -369,8 +369,8 @@ A fixed-concurrency pool to avoid memory bloat and starvation across bots. **All
 - On startup, it performs the same recovery phase described in this spec (`media_processing_jobs -> media_processing_jobs_holding`, then `processing -> pending`).
 - It is stopped during backend shutdown in lifespan teardown.
 - Bot lifecycle hooks are owned by `BotLifecycleService`:
-  - on bot connect: trigger holding->active media transition/reaping flow for that bot
-  - on bot disconnect: trigger active->holding media transition for that bot
+  - on bot connect: trigger holding->active media transition/reaping flow for that specific bot's jobs
+  - on bot disconnect: trigger active->holding media transition for that specific bot's jobs
 - Runtime resolver API for queue routing:
   - `get_bot_queues(bot_id) -> Optional[BotQueuesManager]`
   - implementation uses global state maps (`active_bots` and `chatbot_instances`) to resolve `bot_id -> SessionManager -> bot_queues_manager`
@@ -397,7 +397,7 @@ The `CorruptMediaProcessor` handles these jobs:
 3. Constructs the final message content:
    - If the placeholder has a caption: prepend `"[Corrupted <type> media could not be downloaded] "` to the existing caption.
    - If no caption: set `content = "[Corrupted <type> media could not be downloaded]"`.
-4. Updates the placeholder in the `CorrespondentQueue` via `update_message_by_media_id` — sets the final `content`, clears `media_processing_id`, adjusts `message_size`, and fires `_trigger_callbacks` so the bot can acknowledge and respond to the failure.
+4. Updates the placeholder in the `CorrespondentQueue` via `update_message_by_media_id` — (which is a method of `CorrespondentQueue` class that sets the final `content`, clears `media_processing_id`, adjusts `message_size`, and fires `_trigger_callbacks` so the bot can acknowledge and respond to the failure.)
 5. Job is removed from `media_processing_jobs`.
 
 ### Unsupported Media Handling (`UnsupportedMediaProcessor`)
@@ -410,14 +410,24 @@ The `UnsupportedMediaProcessor` follows the same pattern as `CorruptMediaProcess
 3. Constructs the final message content:
    - If the placeholder has a caption: prepend `"[Unsupported <mime_type> media] "` to the existing caption.
    - If no caption: set `content = "[Unsupported <mime_type> media]"`.
-4. Updates the placeholder in the `CorrespondentQueue` via `update_message_by_media_id` — sets the final `content`, clears `media_processing_id`, adjusts `message_size`, and fires `_trigger_callbacks`.
+4. Updates the placeholder in the `CorrespondentQueue` via `update_message_by_media_id` — (which is a method of `CorrespondentQueue` class that sets the final `content`, clears `media_processing_id`, adjusts `message_size`, and fires `_trigger_callbacks` so the bot can acknowledge and respond to the failure.)
 5. Job is removed from `media_processing_jobs`.
 
 This keeps backend and provider fully decoupled — `server.js` never needs to know what mime types the backend supports.
 
-### Concurrency Configuration
+### Concurrency Configuration & Pull-Based Selection
 
-Pool definitions are loaded from the `bot_configurations` MongoDB collection, document `_id: "_mediaProcessorDefinitions"`. The document contains an array. Each entry specifies which `processorClass` handles the pool's messages and at what concurrency level, and also which mimeTypes are routed to that pool:
+Pool definitions are loaded from the `bot_configurations` MongoDB collection, document `_id: "_mediaProcessorDefinitions"`. On startup, the `MediaProcessingService` creates one pool per entry.
+
+**Selection Logic (Last-Bot Skip)**: To ensure fairness across correspondents, each worker maintains a `self.last_bot_id` in its local memory. When polling for work:
+1. The worker fetches the **oldest pending job for each `bot_id`** matching its mime-type specialty.
+2. It selects the absolute oldest of these candidates whose `bot_id != self.last_bot_id`.
+3. If only one bot has messages (the one it just served), it selects that job.
+4. Using an atomic `find_one_and_update` on the chosen `_id`, it claims the job and updates its `self.last_bot_id`.
+
+This ensures that a single noisy bot cannot occupy more than its fair share of the pool unless the rest of the kingdom is silent.
+
+The configuration document contains an array of pool definitions:
 
 ```json
 [
@@ -434,7 +444,7 @@ Pool definitions are loaded from the `bot_configurations` MongoDB collection, do
 - `processorClass` — the Python class name that the service instantiates to handle messages in this pool.
 - `mimeTypes: []` — the **catch-all** entry. Any mime type not matched by any other pool is routed here. There must be exactly one catch-all entry.
 
-On startup, `MediaProcessingService` creates one worker pool per array entry, sized to `concurrentProcessingPoolSize`, instantiating the specified `processorClass`. Round-robin is applied **per pool** across bots to prevent starvation.
+On startup, `MediaProcessingService` creates one worker pool per array entry, sized to `concurrentProcessingPoolSize`, instantiating the specified `processorClass` and **passing the `mimeTypes` array to its constructor**. Fairness is enforced via the **Last-Bot Skip** selection mechanism described above.
 
 ### Observability
 
@@ -465,6 +475,9 @@ class ProcessingResult:
 
 ```python
 class BaseMediaProcessor(ABC):
+    def __init__(self, handled_mime_types: List[str]):
+        """Initialized once per pool with the set of types this processor handles."""
+        self.handled_mime_types = handled_mime_types
 
     async def process_job(self, job: dict, all_bot_queues: Dict[str, BotQueuesManager], db: AsyncIOMotorDatabase):
         """Full shared lifecycle — called by the worker pool for each job."""
@@ -634,8 +647,8 @@ The full routing chain uses three keys to locate the exact placeholder:
 1. **`bot_id`** (from job) → look up the correct `BotQueuesManager` from the `Dict[str, BotQueuesManager]`.
 2. **`correspondent_id`** (from job) → go directly to the correct `CorrespondentQueue` within that `BotQueuesManager`.
 3. **`guid`** (from job) → search the `CorrespondentQueue`'s deque for the message matching `media_processing_id == guid`.
-4. Updates `content`, `message_size`, clears `media_processing_id`, adjusts `_total_chars`, fires callbacks.
-   - `update_message_by_media_id` contract:
+4. Updates `content`, `message_size`, clears `media_processing_id`, adjusts `_total_chars`, and fires `_trigger_callbacks`.
+   - **`update_message_by_media_id` contract (CorrespondentQueue method):**
      - locate by `media_processing_id`
      - compute `old_size` / `new_size`
      - update `content`, `message_size`, clear `media_processing_id`
@@ -649,7 +662,7 @@ The full routing chain uses three keys to locate the exact placeholder:
    - The worker logs a `WARNING`: `"Job record missing for GUID <guid>. Task result abandoned — likely timed out."`
    - The worker deletes the raw media file and exits. No further action is taken.
 7. If the `BotQueuesManager` is not found (bot was stopped), the worker logs the success and terminates. The result is already safe in MongoDB.
-8. If the `BotQueuesManager` is found but the message is **not found** in the deque (e.g. queue was reset), the update call is wrapped in a try/except — the worker logs the issue and deletes the job (as it's unrecoverable without a placeholder).
+8. If the `BotQueuesManager` is found but the message is **not found** in the deque (e.g. queue was reset), the update call to `CorrespondentQueue.update_message_by_media_id` is wrapped in a try/except — the worker logs the issue and deletes the job (as it's unrecoverable without a placeholder).
 
 ### Placeholder Eviction Protection (The Eviction Rewrite)
 
@@ -688,7 +701,7 @@ Both the **regular ingestion cycle** and the **final drain on shutdown** use `po
 
 **Known side effect:** Messages that arrive after a media placeholder will be persisted first. DB insertion order may not match receive order, but queries by `id` or `originating_time` preserve the correct sequence.
 
-**Known limitation — message ordering is not guaranteed for media:** Since different mime types have separate pools and round-robin is applied per pool, the order in which transcripts arrive is non-deterministic. For example, if a user sends a video followed by a text message, the AI may respond to the text before the transcript is ready. This is an accepted and understood trade-off of the async processing design — not a bug to fix.
+**Known limitation — message ordering is not guaranteed for media:** Since different mime types have separate pools and the **Last-Bot Skip** selection is applied per pool, the order in which transcripts arrive is non-deterministic. For example, if a user sends a video followed by a text message, the AI may respond to the text before the transcript is ready. This is an accepted and understood trade-off of the async processing design — not a bug to fix.
 
 ---
 
