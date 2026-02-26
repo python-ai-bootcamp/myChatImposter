@@ -30,6 +30,8 @@ A shared Docker volume (`media_staging`) is mounted into both the Baileys Node.j
 
 To prevent media downloads from exhausting the host's primary disk, an application-level quota is enforced. The limit is defined by the `media_storage_quota_gb` property in the configuration collection.
 
+**Runtime retrieval path (mandatory):** the Python backend resolves `media_storage_quota_gb` from MongoDB and passes it to the Node.js Baileys service in the `/initialize` payload. Node.js does not read this value directly from MongoDB.
+
 ```yaml
 # docker-compose.yml
 services:
@@ -52,15 +54,11 @@ To avoid "Permission Denied" errors (EACCES) on shared volumes, both containers 
 
 - **The Strategy**: Use dynamic environment variables `${CURRENT_UID}:${CURRENT_GID}` for the `user` field in `docker-compose.yml`.
 - **The Rationale**: Since bind mounts (like `baileys_store`) inherit the host's UID/GID, hardcoding `1000:1000` is risky if the host VM uses a different ID.
-- **The Implementation**: Our `./scripts/start.sh` script auto-detects the host's identity (`id -u` and `id -g`) and injects them into a local `.env` file before launching the containers.
+- **The Implementation**: `./scripts/start.sh` must auto-detect the host identity (`id -u` and `id -g`) and export `CURRENT_UID` / `CURRENT_GID` into `.env` **before** `docker compose up`.
 - **The Result**: Files written by the Node.js server are immediately reachable and manageable by the Python `MediaProcessingService` regardless of the host OS configuration.
 
 > [!TIP]
 > This pattern ensures "zero-touch" deployment security—the system auto-fortifies its permissions the moment you run the startup command. 🛡️
-
----
-
----
 
 ---
 
@@ -70,7 +68,7 @@ To avoid "Permission Denied" errors (EACCES) on shared volumes, both containers 
 2. **Node.js sends metadata to Python** via WebSocket — only the GUID, mime type, caption, and original filename. No media bytes cross the wire.
 3. **Python provider receives metadata** → calls `BotQueuesManager.add_message()` with the media params (GUID, mime type, caption, filename).
 4. **Placeholder insertion**: `BotQueuesManager` adds a `Message` to the `CorrespondentQueue` with `content=<caption>` (or `""`) and `media_processing_id=<guid>`. No file validation is performed — if the file is missing or corrupt, the processor handles the implications.
-5. **Non-blocking processing trigger**: `BotQueuesManager.add_message()` writes a job record to the **`media_processing_jobs`** MongoDB collection. This IS the job submission — the `MediaProcessingService` worker pools (each one consumed by their dedicated mediaProcessor for mimetype) poll this collection for work. Each job record contains:
+5. **Non-blocking processing trigger**: `BotQueuesManager.add_message()` writes a job record to the **`media_processing_jobs`** MongoDB collection. This is the job submission — `MediaProcessingService` worker pools (each with a dedicated media processor per mime type) poll this collection for work. Each job record contains:
    - `bot_id` — **top-level field** injected alongside the message, identifying which bot owns this job (used for lifecycle transitions and routing back to the correct `BotQueuesManager`)
    - `correspondent_id` — **top-level field** injected alongside the message, identifying which `CorrespondentQueue` holds the placeholder
    - `placeholder_message` — the full serialized `Message` placeholder dict (which contains message-oriented fields like `id`, `content`, `media_processing_id`, `sender`, etc., but **does not** contain routing IDs like `bot_id` or `correspondent_id` since those do not exist on the `Message` dataclass)
@@ -91,6 +89,56 @@ To avoid "Permission Denied" errors (EACCES) on shared volumes, both containers 
 
 ---
 
+## Node -> Python WebSocket Payload Contract
+
+This is a wire-level contract (cross-runtime boundary): **Node.js -> WebSocket JSON -> Python**.
+
+### Text message payload
+
+Required fields:
+- `provider_message_id: str`
+- `sender: str`
+- `message: str`
+- `direction: "incoming" | "outgoing"`
+- `originating_time: int`
+
+Optional fields:
+- `display_name: str | null`
+- `group: object | null`
+- `alternate_identifiers: list[str]`
+- `recipient_id: str | null`
+- `actual_sender: object | null`
+- `media_processing_id: null`
+- `mime_type: null`
+- `original_filename: null`
+
+### Media message payload (download succeeded)
+
+Required fields:
+- All required text fields above
+- `message: str` (caption, or `""` if none)
+- `media_processing_id: str` (GUID)
+- `mime_type: str`
+
+Optional fields:
+- `original_filename: str | null`
+
+### Corrupt/failed-download media payload
+
+Required fields:
+- All required text fields above
+- `message: str` (caption, or `""`)
+- `media_processing_id: str` (GUID)
+- `mime_type: "media_corrupt_<type>"`
+
+Optional fields:
+- `original_filename: str | null`
+- `_quota_exceeded: bool` (diagnostic marker)
+
+Python should validate this WS payload contract (preferably via an internal typed model) before mapping to `BotQueuesManager.add_message(...)`.
+
+---
+
 ## Provider Interface for Media Messages
 
 The existing `add_message()` method on `BotQueuesManager` is extended with optional media parameters:
@@ -98,6 +146,7 @@ The existing `add_message()` method on `BotQueuesManager` is extended with optio
 ```python
 async def add_message(
     self,
+    correspondent_id: str,                  # Required routing key (queue owner)
     content: str,                          # if a regular text message, will contain the text. If a media message, will contain the caption text if provided, or empty string if no caption is provided
     sender: Sender,
     source: str,
@@ -169,9 +218,9 @@ if (mediaInfo !== undefined) {
     const caption = mediaInfo.caption || '';
     const writePath = path.join('/app/media_store/pending_media', guid);
 
-    // Enforce configurable application-level quota before downloading
-    // `media_storage_quota_gb` is retrieved from the configuration collection in DB
-    const configuredLimitGb = botConfig?.media_storage_quota_gb || 25; // fallback
+    // Enforce configurable application-level quota before downloading.
+    // `media_storage_quota_gb` is provided by backend in `/initialize` payload.
+    const configuredLimitGb = session.providerConfig?.media_storage_quota_gb || 25; // fallback
     // Calculate threshold: limit - 2 GB, but ensure at least 1 GB is available for operations
     const stopWritingThresholdGb = Math.max(configuredLimitGb - 2, 1);
     const stopWritingThresholdMb = stopWritingThresholdGb * 1024;
@@ -189,13 +238,14 @@ if (mediaInfo !== undefined) {
             const baseType = messageType.replace('Message', ''); // e.g. 'image'
             const corruptMimetype = `media_corrupt_${baseType}`;
             
-            sendToPython({
+            return {
+                ...existingFields,
+                message: caption,
                 media_processing_id: guid,
                 mime_type: corruptMimetype,
-                caption: caption,
-                original_filename: filename
-            });
-            return; // Abort download
+                original_filename: filename,
+                _quota_exceeded: true
+            };
         }
     } catch (error) {
         console.error(`Failed to calculate media directory size: ${error.message}. Proceeding with download as fallback.`);
@@ -264,6 +314,18 @@ The Python `whatsAppBaileys.py` provider passes the metadata (GUID, mime type, f
 ## MediaProcessingService (Background Worker Pool)
 
 A fixed-concurrency pool to avoid memory bloat and starvation across bots. **All media messages enter the pipeline identically** — every media message becomes a placeholder in the queue and a job in `media_processing_jobs`. The processor pool routing determines what happens next. Text messages bypass this service entirely and go straight to the queue.
+
+### Service Ownership and Lifecycle Wiring
+
+- `MediaProcessingService` is initialized in backend `main.py` lifespan during startup (after MongoDB init), stored on global state (e.g. `global_state.media_processing_service`), and started before active bots are launched.
+- On startup, it performs the same recovery phase described in this spec (`media_processing_jobs -> media_processing_jobs_holding`, then `processing -> pending`).
+- It is stopped during backend shutdown in lifespan teardown.
+- Bot lifecycle hooks are owned by `BotLifecycleService`:
+  - on bot connect: trigger holding->active media transition/reaping flow for that bot
+  - on bot disconnect: trigger active->holding media transition for that bot
+- Runtime resolver API for queue routing:
+  - `get_bot_queues(bot_id) -> Optional[BotQueuesManager]`
+  - implementation uses global state maps (`active_bots` and `chatbot_instances`) to resolve `bot_id -> SessionManager -> bot_queues_manager`
 
 ### Processor Routing
 
@@ -365,28 +427,26 @@ class BaseMediaProcessor(ABC):
         caption = job["placeholder_message"].get("content", "")
         file_path = f"media_store/pending_media/{guid}"
 
-        # Locate the correct BotQueuesManager for this bot
-        bot_queues = all_bot_queues.get(bot_id)
-        if not bot_queues:
-            # Bot was stopped — queue no longer exists, leave for cleanup job
-            logging.warning(f"BotQueuesManager not found for bot_id={bot_id}. Job left for cleanup.")
-            return
-
         try:
             result = await self.process_media(file_path, mime_type, caption)
         except Exception as e:
-            await self._handle_unhandled_exception(job, bot_queues, db, error=str(e))
+            await self._handle_unhandled_exception(job, db, error=str(e))
             return
 
-        # Always update the queue with the content and fire callbacks
-        await bot_queues.update_message_by_media_id(correspondent_id, guid, result.content)
+        # PERSISTENCE-FIRST: write durable state before touching in-memory queue
+        persisted = await self._persist_result_first(job, result, db)  # active first, then holding
+        if not persisted:
+            self._delete_media_file(file_path)
+            return
 
-        if result.failed_reason:
-            # Move job to _failed for investigation, delete media file
-            await self._move_to_failed(job, db, error=result.failed_reason)
-        else:
-            # Normal success — remove the job, delete media file
-            await self._remove_job(job, db)
+        # Best-effort direct delivery if bot is currently active
+        bot_queues = all_bot_queues.get(bot_id)
+        if bot_queues:
+            await bot_queues.update_message_by_media_id(correspondent_id, guid, result.content)
+
+            # Direct delivery path: remove completed job only after successful queue update
+            if not result.failed_reason:
+                await self._remove_job(job, db)
 
         self._delete_media_file(file_path)
 
@@ -402,12 +462,11 @@ The base class handles all common operations in `process_job`:
 
 1. **Extract job metadata** — `guid`, `mime_type`, `correspondent_id`, `caption` from the job record.
 2. **Call `process_media()`** — the abstract method implemented by the subclass.
-3. **Always update the queue** — call `update_message_by_media_id(correspondent_id, guid, result.content)` to set the final content, clear `media_processing_id`, adjust `message_size`, and fire `_trigger_callbacks`.
-4. **Route the job based on `result.failed_reason`**:
-   - **`None`** (normal success) → remove the job from `media_processing_jobs`.
-   - **Set** (controlled failure) → move the job to `media_processing_jobs_failed` with the `failed_reason` as the `error` field.
-5. **Delete the media file** from disk — always, regardless of success or failure.
-6. **Unhandled exceptions** (`_handle_unhandled_exception`) — if `process_media()` raises, the job is moved to `media_processing_jobs_failed` with an `error` field containing the processor class name, the exception message, and the full stack trace (e.g. `"AudioTranscriptionProcessor raised ValueError: invalid audio format\n<traceback>"`). A generic error content is set on the queue (preserving caption if present), and the media file is deleted.
+3. **Persist result first (durable state)** — write result to job document (active collection first, then holding fallback) before any in-memory queue update.
+4. **Best-effort in-memory delivery** — if bot queue exists, call `update_message_by_media_id(...)`; if bot queue does not exist, leave persisted result for recovery reaping on next bot startup.
+5. **Direct delivery cleanup** — if in-memory update succeeds on an active bot, remove the completed job.
+6. **Delete the media file** from disk — always, regardless of success/failure path.
+7. **Unhandled exceptions** (`_handle_unhandled_exception`) — if `process_media()` raises, move job to `media_processing_jobs_failed` with full error context; set generic queue error content only if queue is available; always delete media file.
 
 ### Subclass Responsibilities
 
@@ -421,7 +480,7 @@ Each subclass only implements `process_media()` and returns a `ProcessingResult`
 | `CorruptMediaProcessor` | `ProcessingResult(content="[Corrupted <type>...] <caption>", failed_reason="download failed — <type> corrupted")` |
 | `UnsupportedMediaProcessor` | `ProcessingResult(content="[Unsupported <mime_type>...] <caption>", failed_reason="unsupported mime type: <mime_type>")` |
 
-#### Anti-Starvation Rule (Mandatory Timouts)
+#### Anti-Starvation Rule (Mandatory Timeouts)
 To prevent workers from becoming permanently marooned by hanging external API calls (e.g., an OpenAI vision request that never returns), **every** external I/O operation inside `process_media()` must be wrapped in a strict `asyncio.wait_for()` timeout.
 
 ```python
@@ -528,6 +587,13 @@ The full routing chain uses three keys to locate the exact placeholder:
 2. **`correspondent_id`** (from job) → go directly to the correct `CorrespondentQueue` within that `BotQueuesManager`.
 3. **`guid`** (from job) → search the `CorrespondentQueue`'s deque for the message matching `media_processing_id == guid`.
 4. Updates `content`, `message_size`, clears `media_processing_id`, adjusts `_total_chars`, fires callbacks.
+   - `update_message_by_media_id` contract:
+     - locate by `media_processing_id`
+     - compute `old_size` / `new_size`
+     - update `content`, `message_size`, clear `media_processing_id`
+     - update `_total_chars = _total_chars - old_size + new_size`
+     - fire callbacks exactly once
+     - return structured result (e.g. `updated`, `not_found`)
 5. **The media processor follows the Persistence-First path**:
    - Every result is saved to the Job Document (status set to `"completed"`) *before* attempting in-memory queue updates.
    - The worker attempts to update the job record in the `media_processing_jobs` collection; if 0 documents were updated, it attempts the same update in `media_processing_jobs_holding`.
@@ -545,11 +611,11 @@ The `CorrespondentQueue` enforces memory limits (max messages, max characters) b
 The current `_evict_while` helper blindly uses `self._messages.popleft()`. If a protected placeholder sits at index `0`, the eviction loop would either break immediately (allowing the queue to grow infinitely past its limits) or enter an infinite loop trying to evict an unevictable message.
 
 **The Fix:**
-The `_evict_while` logic must be rewritten into a smarter `_evict_eligible` loop:
-- Instead of just checking `self._messages[0]`, the loop must scan the deque from left to right (oldest to newest).
-- It must **skip** any message where `media_processing_id is not None`.
-- It finds the oldest *unprotected* message and removes it (e.g., using `del self._messages[index]`).
-- This ensures the queue size limits are strictly respected without destroying pending media jobs.
+The eviction/limit logic must treat protected placeholders as fully excluded from limit arithmetic:
+- messages with `media_processing_id is not None` are **non-evictable**
+- and are **not counted** in effective limit evaluation (`max_messages`, `max_characters`, age retention)
+- effective limits are computed only on the unprotected subset
+- eviction removes only oldest eligible unprotected messages when the unprotected subset exceeds limits
 
 Placeholders will only ever be removed by:
 1. Successful worker delivery (replaced by final content).
@@ -585,12 +651,18 @@ Because the full placeholder `Message` is stored in the `media_processing_jobs_h
 1. On startup, all records in `media_processing_jobs` are moved to `media_processing_jobs_holding`.
 2. As each bot connects, its `BotQueuesManager` queries the holding collection. 
 3. **Crucial Seeding Step:** For *every* job found (regardless of status), the bot deserializes the `placeholder_message` and re-injects it into the `CorrespondentQueue` using `inject_placeholder(message)`. This bypasses ID generation and callbacks, securely seeding the empty queue.
+   - After all placeholders are injected for a correspondent, force monotonic IDs:
+     - `next_id = max(next_id, max(injected_placeholder_ids) + 1)`
 4. The bot then evaluates the status:
    - **`completed`**: Reaps the result immediately using `update_message_by_media_id` and fires callbacks.
    - **`pending` / `processing`**: Moves them back to the active collection for worker pools to (re)claim and process.
 5. The job record is deleted and the media file is removed from disk once processing and delivery complete successfully.
 
 **MongoDB is the source of truth for crash recovery — no data is lost.**
+
+To prevent ID collision persistence bugs from escaping to storage, the `queues` collection must enforce:
+- unique compound index on (`bot_id`, `provider_name`, `correspondent_id`, `id`)
+- do **not** enforce uniqueness on `id` alone (it is only unique within correspondent scope)
 
 ---
 
