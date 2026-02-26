@@ -58,7 +58,7 @@ To avoid "Permission Denied" errors (EACCES) on shared volumes, both containers 
 - **The Result**: Files written by the Node.js server are immediately reachable and manageable by the Python `MediaProcessingService` regardless of the host OS configuration.
 
 > [!TIP]
-> This pattern ensures "zero-touch" deployment security—the system auto-fortifies its permissions the moment you run the startup command. 🛡️
+> This pattern ensures "zero-touch" deployment security—the system auto-sets its permissions the moment you run the startup command. 🛡️
 
 ---
 
@@ -84,8 +84,47 @@ To avoid "Permission Denied" errors (EACCES) on shared volumes, both containers 
 
 8. **Final Reporting (Delivery vs. Reaping)**: Once the result is safely persisted in the DB, the worker attempts to complete the mission:
    - **Case A: Direct Worker Delivery** (Bot is Active): The worker locates the `BotQueuesManager`, calls `update_message_by_media_id(correspondent_id, guid, transcript)`, and **deletes the job**.
-   - **Case B: Recovery Bot Reaping** (Bot is Stopped): The worker finds no active bot and gracefully exits. The job remains in the DB as `"completed"`. When the bot eventually starts, it **reaps** the result from the DB, updates its own queue, and **deletes the job**.
-   - On completion (via either path), the raw media file is **deleted from disk**.
+   - **Case B: Recovery Bot Reaping** (Bot is Stopped): The worker finds no active bot and gracefully exits. The job remains in the **`media_processing_jobs_holding`** collection with `status="completed"`. When the bot eventually restarts, it **reaps** the result from the holding collection, injects the placeholder, updates its queue, and **deletes the job**.
+   - On completion (via either path), the **worker** deletes the raw media file from the shared disk.
+
+### Media Flow Sequence Diagram
+
+```mermaid
+sequenceDiagram
+    participant P as Chat Provider (Node.js)
+    participant FS as Shared Staging Volume
+    participant BQM as BotQueuesManager
+    participant Q as CorrespondentQueue
+    participant DB as MongoDB (Job Collections)
+    participant W as Media Processing Worker
+
+    Note over P, W: 1. Media Ingestion
+    P->>FS: 1. Stream media file to disk (GUID)
+    P->>BQM: 2. Send metadata via WebSocket
+    BQM->>Q: 3-4. Insert Placeholder Message (media_processing_id=GUID)
+    BQM->>DB: 5. Insert Job (status="pending")
+    
+    Note over DB, W: 2. Worker Processing
+    W->>DB: 6. Claim Job (find_one_and_update, status="processing")
+    W->>FS: Read media file from disk
+    Note over W: Process Media using APIs
+    W->>DB: 7. Persist Result (status="completed")
+    
+    Note over BQM, W: 3. Final Delivery
+    alt Case A: Bot is Active (Direct Delivery)
+        W->>BQM: 8a. update_message_by_media_id(transcript)
+        BQM->>Q: Update placeholder with final text
+        W->>DB: Delete Job
+    else Case B: Bot is Stopped (Recovery Reaping)
+        Note right of DB: Worker exits. Result stays in DB.
+        BQM-->>DB: 8b. Bot starts later, queries holding jobs
+        BQM->>Q: inject_placeholder(message)
+        BQM->>Q: update_message_by_media_id(transcript)
+        BQM->>DB: Delete Job
+    end
+    
+    W->>FS: Delete raw media file from disk
+```
 
 ---
 
@@ -129,7 +168,7 @@ Required fields:
 - All required text fields above
 - `message: str` (caption, or `""`)
 - `media_processing_id: str` (GUID)
-- `mime_type: "media_corrupt_<type>"`
+- `mime_type: "media_corrupt_<type>"` (where `type` is one of: `image`, `video`, `audio`, `document`, `sticker`)
 
 Optional fields:
 - `original_filename: str | null`
@@ -341,11 +380,11 @@ A fixed-concurrency pool to avoid memory bloat and starvation across bots. **All
 
 ### Corrupted Media Handling (`CorruptMediaProcessor`)
 
-When `server.js` fails to download media after **3 retry attempts** (exponential back-off: 2s → 4s → 8s), it deletes any partially-written file and sends metadata to Python with `mime_type = "media_corrupt_<type>"` (e.g. `media_corrupt_image`, `media_corrupt_audio`, `media_corrupt_document`). The `content` field carries the original caption if one exists, otherwise an empty string. The message enters the queue as a placeholder like any other media message.
+When `server.js` fails to download media after **3 retry attempts** (exponential back-off: 2s → 4s → 8s), it deletes any partially-written file and sends metadata to Python with `mime_type = "media_corrupt_<type>"` (where `<type>` is `image`, `video`, `audio`, `document`, or `sticker`). The `content` field carries the original caption if one exists, otherwise an empty string. The message enters the queue as a placeholder like any other media message.
 
 The `CorruptMediaProcessor` handles these jobs:
 1. Deletes the media file from the shared volume (if one exists).
-2. Moves the job to `media_processing_jobs_failed` with `error: "download failed — <type> corrupted"` for operator investigation.
+2. Moves the job to `media_processing_jobs_failed` with `error: "download failed — <type> corrupted"` (e.g., `image corrupted`) for operator investigation.
 3. Constructs the final message content:
    - If the placeholder has a caption: prepend `"[Corrupted <type> media could not be downloaded] "` to the existing caption.
    - If no caption: set `content = "[Corrupted <type> media could not be downloaded]"`.
