@@ -297,7 +297,7 @@ if (mediaInfo !== undefined) {
             media_processing_id: guid,
             mime_type: corruptMimetype,
             original_filename: filename,
-            _quota_error: true // diagnostic marker for system error
+            _quota_exceeded: true // diagnostic marker for system error
         };
     }
     // --- Proceed with Retry Logic ---    // Retry up to 3 times with exponential back-off (2s, 4s, 8s)
@@ -420,11 +420,12 @@ This keeps backend and provider fully decoupled — `server.js` never needs to k
 
 Pool definitions are loaded from the `bot_configurations` MongoDB collection, document `_id: "_mediaProcessorDefinitions"`. On startup, the `MediaProcessingService` creates one pool per entry.
 
-**Selection Logic (Last-Bot Skip)**: To ensure fairness across correspondents, each worker maintains a `self.last_bot_id` in its local memory. When polling for work:
-1. The worker fetches the **oldest pending job for each `bot_id`** matching its mime-type specialty.
-2. It selects the absolute oldest of these candidates whose `bot_id != self.last_bot_id`.
-3. If only one bot has messages (the one it just served), it selects that job.
-4. Using an atomic `find_one_and_update` on the chosen `_id`, it claims the job and updates its `self.last_bot_id`.
+**Selection Logic (Single-Skip Two-Step)**: To ensure fairness across bots without heavy database grouping, each worker maintains a `self.last_bot_id` in its local memory. When polling for work, the worker executes a two-step "Fairness-First" selection:
+
+1.  **Step 1: Fairness Search**: The worker attempts to claim the oldest pending job where `bot_id != self.last_bot_id` (matching its mime-type specialty).
+2.  **Step 2: Fallback (Throughput Safety)**: If Step 1 returns nothing (only the last-served bot has work), the worker immediately attempts to claim the oldest pending job from **any** bot (including `self.last_bot_id`).
+
+This "Skip-if-Choice" strategy prevents a noisy bot from occupying a worker's entire capacity while there are other bots waiting, but guarantees that no worker sits idle if only one bot has a backlog. Upon claiming a job, the worker updates its `self.last_bot_id` with the new job's `bot_id`.
 
 This ensures that a single noisy bot cannot occupy more than its fair share of the pool unless the rest of the kingdom is silent.
 
@@ -479,7 +480,7 @@ class MediaProcessingJob:
     mime_type: str
     status: str                    # "pending", "processing", "completed"
     original_filename: Optional[str] = None
-    metadata: Dict[str, Any] = field(default_factory=dict) # Field report: raw diagnostic flags
+    media_metadata: Dict[str, Any] = field(default_factory=dict) # Field report: raw diagnostic flags
     result: Optional[str] = None   # Final transcript or description
     error: Optional[str] = None    # Final verdict: human-readable failure reason
 
@@ -508,7 +509,7 @@ class BaseMediaProcessor(ABC):
             # 1. ACTUAL CONVERSION (Externally Guarded by Centralized Timeout)
             try:
                 result = await asyncio.wait_for(
-                    self.process_media(file_path, job.mime_type, job.placeholder_message.content, job.metadata),
+                    self.process_media(file_path, job.mime_type, job.placeholder_message.content, job.media_metadata),
                     timeout=self.processing_timeout
                 )
             except asyncio.TimeoutError:
@@ -546,7 +547,7 @@ class BaseMediaProcessor(ABC):
             self._delete_media_file(file_path)
 
     @abstractmethod
-    async def process_media(self, file_path: str, mime_type: str, caption: str, metadata: Dict[str, Any]) -> ProcessingResult:
+    async def process_media(self, file_path: str, mime_type: str, caption: str, media_metadata: Dict[str, Any]) -> ProcessingResult:
         """Subclass implements ONLY this: actual AI/conversion logic."""
         ...
 
@@ -609,7 +610,7 @@ Each subclass only implements `process_media()` and returns a `ProcessingResult`
 Worker pool stability is guaranteed by the **`BaseMediaProcessor`**, which wraps the subclass's mission logic in a strict timeout. This prevents a single hanging API call from permanently reducing worker capacity.
 
 ```python
-async def process_media(self, file_path: str, mime_type: str, caption: str, metadata: Dict[str, Any]) -> ProcessingResult:
+async def process_media(self, file_path: str, mime_type: str, caption: str, media_metadata: Dict[str, Any]) -> ProcessingResult:
     # Subclass implementation is now lean and focused ONLY on AI logic!
     # No need to wrap in asyncio.wait_for — the Base class does it for us.
     response = await api_client.process_image(encoded_image)
@@ -622,11 +623,12 @@ If the `process_media` implementation exceeds the configured `processing_timeout
 
 ---
 
----
-
 ## System State & Job Recovery
 
 To maintain perfect synchronization between the persistent MongoDB collections and the ephemeral in-memory queues, the system employs a tiered recovery and transition strategy.
+
+> [!NOTE]
+> **Processing Fails**: Individual media job failures (e.g. timeout, API error) are **not** handled by this systemic cleanup; they are managed immediately by the **Worker Template** logic.
 
 ### Job Collections Overview
 Three MongoDB collections manage job state:
@@ -646,7 +648,7 @@ This resets the battlefield, ensuring no jobs are orphaned in a "claimed but dea
 When individual bots connect or disconnect, state transitions occur at the bot level:
 - **Bot Starts (Recovery Job Restoration)**: The bot first initializes its `next_id` for each correspondent by querying the **`queues`** collection (highest persisted ID + 1). It then restores the active state:
   1. **Crucial Seeding Step**: The bot injects placeholders via the **`inject_placeholder(message)`** method for *every* job found (regardless of status). This bypasses ID generation and callbacks, securely seeding the empty queue.
-  2. **Monotonic ID Sync**: After injection, the bot forces `next_id = max(next_id, max(injected_placeholder_ids) + 1)`.
+  2. **Monotonic ID Sync**: After injection, the bot forces `next_id = max(next_id, max(injected_placeholder_ids, default=0) + 1)`.
   3. **The Reaping Path (`status == "completed"`)**: The bot uses an **Atomic Reaping** pattern (find-and-delete) to harvest the result, updates its queue via `update_message_by_media_id`, and deletes the job.
   4. **The Promotion Path (`status == "processing" | "pending"`)**: The bot moves the job record back to the active collection to allow workers to (continue) processing.
 - **Bot Stops**: All active jobs for that `bot_id` are moved from `media_processing_jobs` → `media_processing_jobs_holding`. In-flight workers will finish and save their results directly to `_holding` (Persistence-First path).
@@ -655,8 +657,9 @@ When individual bots connect or disconnect, state transitions occur at the bot l
 An hourly task sweeps both memory and database to purge jobs older than **3 hours**:
 - **Sweep 1 (Memory First)**: Scans active `CorrespondentQueue` instances for stale placeholders and moves their matching DB jobs to `_failed`.
 - **Sweep 2 (DB First)**: Directly queries `_jobs` and `_holding` for stale records (catching disconnected bots or zombie worker jobs). Found records are moved to `_failed` and their media files deleted.
+- **Sweep 3 (Orphan File Cleanup)**: Scans the `media_staging` volume for files older than 4 hours. Deletes any file whose GUID is **not** present as a `guid` in either `media_processing_jobs` or `media_processing_jobs_holding`. (Safeguard against crashes occurring between file-write and job-insertion).
 
-- **Processing fails**: (Individual failures are handled by the Worker Template).
+
 
 > [!IMPORTANT]
 > **Required fix — `IngestionService` final drain pass on bot stop**
