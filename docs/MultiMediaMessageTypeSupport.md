@@ -50,15 +50,32 @@ volumes:
 ```
 
 ### Permissions & Ownership (The Deployment Sentry)
-To avoid "Permission Denied" errors (EACCES) on shared volumes, both containers must match the identity of the host user who owns the project files. 
+To avoid "Permission Denied" errors (EACCES) on shared volumes, both containers must match the expected identity for filesystem operations.
 
 - **The Strategy**: Use dynamic environment variables `${CURRENT_UID}:${CURRENT_GID}` for the `user` field in `docker-compose.yml`.
 - **The Rationale**: Since bind mounts (like `baileys_store`) inherit the host's UID/GID, hardcoding `1000:1000` is risky if the host VM uses a different ID.
-- **The Implementation**: `./scripts/start.sh` must auto-detect the host identity (`id -u` and `id -g`) and export `CURRENT_UID` / `CURRENT_GID` into `.env` **before** `docker compose up`.
-- **The Result**: Files written by the Node.js server are immediately reachable and manageable by the Python `MediaProcessingService` regardless of the host OS configuration.
+- **The Implementation**: `./scripts/start.sh` must auto-detect the environment and export `CURRENT_UID` / `CURRENT_GID` into `.env` **before** `docker compose up`.
 
-> [!TIP]
-> This pattern ensures "zero-touch" deployment security—the system auto-sets its permissions the moment you run the startup command. 🛡️
+**Deterministic Mapping for Windows/MINGW64 Hosts:**
+When running from **MINGW64 (Git Bash)** or **WSL**, the host UID (e.g., `197611`) is a local mapping that the Linux container cannot resolve. The startup scripts must apply the following logic:
+
+1.  **Detect Environment**: Check if `$OSTYPE` is `msys` (MINGW64) or if `/proc/version` contains `Microsoft` (WSL).
+2.  **Standardize Identity**: If a Windows/Virtualized bridge is detected, set `CURRENT_UID=1000` and `CURRENT_GID=1000` to ensure containers operate with a standard, shared Linux identity.
+```bash
+# In start.sh
+if [[ "$OSTYPE" == "msys" ]] || grep -q Microsoft /proc/version 2>/dev/null; then
+    # MINGW64 (msys) or WSL (Microsoft) detected
+    export CURRENT_UID=1000
+    export CURRENT_GID=1000
+else
+    # Native Linux
+    export CURRENT_UID=$(id -u)
+    export CURRENT_GID=$(id -g)
+fi
+```
+3.  **Fallback**: On a native Linux host, use the true host IDs via `id -u` and `id -g`.
+
+- **The Result**: Files written by the Node.js server are immediately reachable and manageable by the Python `MediaProcessingService` regardless of the host OS or the ghost IDs of virtualized shells.
 
 ---
 
