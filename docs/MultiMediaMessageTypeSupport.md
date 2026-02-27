@@ -622,52 +622,40 @@ If the `process_media` implementation exceeds the configured `processing_timeout
 
 ---
 
-## Cleanup Job (The Double-Lock Strategy)
-
-To ensure no media artifact or job record is ever abandoned, the background cleanup job (running every **1 hour**) performs two independent sweeps:
-
-### Sweep 1: The UI Sweep (In-Memory First)
-It scans all active `CorrespondentQueue` instances for messages where `media_processing_id` is set and the message has been alive for more than **3 hours**. For each stale placeholder found:
-1. **Remove** the placeholder message from the `CorrespondentQueue`.
-2. **Locate the matching job** and move it to `media_processing_jobs_failed`:
-   - Found in `media_processing_jobs` → move and set `error`: `"message was transferred from media_processing_jobs to media_processing_jobs_failed by cleanup job"`
-   - Found in `media_processing_jobs_holding` → move and set `error`: `"message was transferred from media_processing_jobs_holding to media_processing_jobs_failed by cleanup job"`
-   - Found in neither → create a new record in `media_processing_jobs_failed` based on the placeholder message from `CorrespondentQueue` with added `error`: `"message was missing and created from scratch in media_processing_jobs_failed by cleanup job"`
-
-### Sweep 2: The Infrastructure Sweep (DB First)
-The cleanup job directly queries `media_processing_jobs` and `media_processing_jobs_holding` for any job records older than **3 hours**. This is the **Fail-Safe** path that catches:
-- Stale jobs for bots that are currently **disconnected** (in `_holding`, where no in-memory placeholder exists).
-- **"Zombie" jobs** stuck in `processing` state due to a worker crash.
-- Cases where the in-memory queue became out of sync with the DB.
-
-For each such record found:
-- Move it to `media_processing_jobs_failed` with `error`: `"TIMED_OUT: Job exceeded 3-hour threshold and was moved to failed by cleanup job"`.
-- Attempt to delete the raw media file from disk.
-- **In-Memory Sync**: If the bot is active and a matching placeholder *still* exists (i.e. if Sweep 1 failed to catch it or the job was a zombie), remove it from the `CorrespondentQueue`.
-
 ---
 
-## Job Collection Lifecycle
+## System State & Job Recovery
 
-Three MongoDB collections manage job state, mirroring the `async_message_delivery_queue_manager` pattern:
+To maintain perfect synchronization between the persistent MongoDB collections and the ephemeral in-memory queues, the system employs a tiered recovery and transition strategy.
 
+### Job Collections Overview
+Three MongoDB collections manage job state:
 | Collection | Purpose |
 |---|---|
-| `media_processing_jobs` | Active jobs — bot is running and jobs are being processed |
-| `media_processing_jobs_holding` | Holding jobs — bot is stopped, jobs are paused |
-| `media_processing_jobs_failed` | Failed jobs — processing failed on single attempt |
+| `media_processing_jobs` | **Active territory**: Bot is running and jobs are eligible for worker claim. |
+| `media_processing_jobs_holding` | **Private Sanctum**: Bot is stopped; jobs are frozen awaiting bot return. |
+| `media_processing_jobs_failed` | **Dead-Letter Office**: Failed or stale jobs archived for inspection. |
 
-### Lifecycle Transitions
-- **App startup (init phase)**: A global sweep performs a two-stage recovery:
-  1. Moves **all** records from `media_processing_jobs` to `media_processing_jobs_holding`.
-  2. Perform an `update_many` on `media_processing_jobs_holding` to set any record with `status: "processing"` back to `status: "pending"`.
-  This ensures no orphaned jobs remain stuck in an unclaimable state due to a previous system crash.
-- **Bot starts (Recovery Bot Reaping)**: When a `BotQueuesManager` initializes, it queries `media_processing_jobs_holding` for its `bot_id`. To prevent race conditions with workers, the bot uses an **Atomic Reaping** pattern:
-  - **`status == "completed"`**: The bot attempts to **atomically move** (find-and-delete) the record from the DB. If successful, it reaps the result, updates the newly-injected placeholder via `update_message_by_media_id`, and fires callbacks.
-  - **`status == "processing"`**: The job is moved back to `media_processing_jobs`. An orphaned worker is still working on it. The bot waits for **Direct Worker Delivery**.
-  - **`status == "pending"`**: The job is moved to `media_processing_jobs` to await a worker claim.
-- **Bot stops**: All active jobs for that `bot_id` are moved from `media_processing_jobs` → `media_processing_jobs_holding`.
-  - > **Note on in-flight jobs**: If a job is currently being processed at the moment the bot stops, the worker will finish and follow the **Persistence-First path**, saving the result into `_holding` for later reaping.
+### Phase 1: Global Startup Recovery (The Init Sweep)
+During the initial backend application startup (lifespan init), a global sweep handles the scenario where the entire system may have crashed:
+1. Moves **all** records from `media_processing_jobs` → `media_processing_jobs_holding`.
+2. Sets any record with `status: "processing"` back to `status: "pending"` within the holding collection.
+This resets the battlefield, ensuring no jobs are orphaned in a "claimed but dead" state.
+
+### Phase 2: Bot-Specific Transitions (The Active Handshake)
+When individual bots connect or disconnect, state transitions occur at the bot level:
+- **Bot Starts (Recovery Job Restoration)**: The bot first initializes its `next_id` for each correspondent by querying the **`queues`** collection (highest persisted ID + 1). It then restores the active state:
+  1. **Crucial Seeding Step**: The bot injects placeholders via the **`inject_placeholder(message)`** method for *every* job found (regardless of status). This bypasses ID generation and callbacks, securely seeding the empty queue.
+  2. **Monotonic ID Sync**: After injection, the bot forces `next_id = max(next_id, max(injected_placeholder_ids) + 1)`.
+  3. **The Reaping Path (`status == "completed"`)**: The bot uses an **Atomic Reaping** pattern (find-and-delete) to harvest the result, updates its queue via `update_message_by_media_id`, and deletes the job.
+  4. **The Promotion Path (`status == "processing" | "pending"`)**: The bot moves the job record back to the active collection to allow workers to (continue) processing.
+- **Bot Stops**: All active jobs for that `bot_id` are moved from `media_processing_jobs` → `media_processing_jobs_holding`. In-flight workers will finish and save their results directly to `_holding` (Persistence-First path).
+
+### Phase 3: Janitorial Sweep (The Double-Lock Cleanup)
+An hourly task sweeps both memory and database to purge jobs older than **3 hours**:
+- **Sweep 1 (Memory First)**: Scans active `CorrespondentQueue` instances for stale placeholders and moves their matching DB jobs to `_failed`.
+- **Sweep 2 (DB First)**: Directly queries `_jobs` and `_holding` for stale records (catching disconnected bots or zombie worker jobs). Found records are moved to `_failed` and their media files deleted.
+
 - **Processing fails**: (Individual failures are handled by the Worker Template).
 
 > [!IMPORTANT]
@@ -706,13 +694,13 @@ The full routing chain uses three keys to locate the exact placeholder:
 1. **`bot_id`** (from job) → look up the correct `BotQueuesManager` from the `Dict[str, BotQueuesManager]`.
 2. **`correspondent_id`** (from job) → go directly to the correct `CorrespondentQueue` within that `BotQueuesManager`.
 3. **`guid`** (from job) → search the `CorrespondentQueue`'s deque for the message matching `media_processing_id == guid`.
-4. **`update_message_by_media_id` contract (CorrespondentQueue method):**
-   - **IDEMPOTENT GATEWAY**: Always verify `media_processing_id == guid` before updating.
-   - If found: update `content`, `message_size`, **clear `media_processing_id`**, adjust `_total_chars`, and return `True`.
-   - If not found: return `False` (delivery was already handled by bot reaping or a previous worker attempt).
-5. **The media processor follows the Persistence-First path**:
-   - Every result is saved to the Job Document (status set to `"completed"`) *before* attempting in-memory queue updates.
+4. **Persistence-First path**:
+   - Every result is saved to the Job Document (status set to `"completed"`) **before** attempting in-memory queue updates.
    - The worker attempts to update the job record in the `media_processing_jobs` collection; if 0 documents were updated, it attempts the same update in `media_processing_jobs_holding`.
+5. **In-Memory Delivery (The Idempotent Gateway)**:
+   - Always verify `media_processing_id == guid` before updating using `update_message_by_media_id`.
+   - If found: update `content`, `message_size`, **clear `media_processing_id`**, adjust `_total_chars`, **fire `_trigger_callbacks`**, and return `True`.
+   - If not found: return `False` (delivery was already handled by bot reaping or a previous worker attempt).
 6. **Handling Job Abandonment (The "Late-Returning Hero")**: If both the `active` and `holding` job updates modify 0 documents (likely because the cleanup job dead-lettered the job due to a timeout):
    - The worker logs a `WARNING`: `"Job record missing for GUID <guid>. Task result abandoned — likely timed out."`
    - The worker deletes the raw media file and exits. No further action is taken.
@@ -759,20 +747,6 @@ Both the **regular ingestion cycle** and the **final drain on shutdown** use `po
 **Known limitation — message ordering is not guaranteed for media:** Since different mime types have separate pools and the **Last-Bot Skip** selection is applied per pool, the order in which transcripts arrive is non-deterministic. For example, if a user sends a video followed by a text message, the AI may respond to the text before the transcript is ready. This is an accepted and understood trade-off of the async processing design — not a bug to fix.
 
 ---
-
-## Crash / Startup Recovery
-
-Because the full placeholder `Message` is stored in the `media_processing_jobs_holding` collection (all jobs are moved there on startup init), recovery is straightforward:
-
-1. On startup, all records in `media_processing_jobs` are moved to `media_processing_jobs_holding`.
-2. As each bot connects, its `BotQueuesManager` queries the holding collection. 
-3. **Crucial Seeding Step:** For *every* job found (regardless of status), the bot deserializes the `placeholder_message` and re-injects it into the `CorrespondentQueue` using `inject_placeholder(message)`. This bypasses ID generation and callbacks, securely seeding the empty queue.
-   - After all placeholders are injected for a correspondent, force monotonic IDs:
-     - `next_id = max(next_id, max(injected_placeholder_ids) + 1)`
-4. The bot then evaluates the status:
-   - **`completed`**: Reaps the result immediately using `update_message_by_media_id` and fires callbacks.
-   - **`pending` / `processing`**: Moves them back to the active collection for worker pools to (re)claim and process.
-5. The job record is deleted and the media file is removed from disk once processing and delivery complete successfully.
 
 **MongoDB is the source of truth for crash recovery — no data is lost.**
 
