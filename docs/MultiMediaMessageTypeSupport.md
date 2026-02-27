@@ -195,7 +195,8 @@ async def add_message(
     # --- New optional media params ---
     media_processing_id: Optional[str] = None,  # GUID — file already on shared volume
     mime_type: Optional[str] = None,
-    original_filename: Optional[str] = None
+    original_filename: Optional[str] = None,
+    media_metadata: Optional[Dict[str, Any]] = None  # Diagnostic flags like _quota_error
 )
 ```
 
@@ -431,17 +432,18 @@ The configuration document contains an array of pool definitions:
 
 ```json
 [
-  { "mimeTypes": ["audio/ogg", "audio/mpeg"], "processorClass": "AudioTranscriptionProcessor", "concurrentProcessingPoolSize": 2 },
-  { "mimeTypes": ["video/mp4", "video/webm"], "processorClass": "VideoDescriptionProcessor", "concurrentProcessingPoolSize": 1 },
-  { "mimeTypes": ["image/jpeg", "image/png"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3 },
-  { "mimeTypes": ["application/pdf", "text/plain"], "processorClass": "DocumentProcessor", "concurrentProcessingPoolSize": 2 },
-  { "mimeTypes": ["image/webp"], "processorClass": "StickerProcessor", "concurrentProcessingPoolSize": 2 },
-  { "mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video", "media_corrupt_document", "media_corrupt_sticker"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1 },
-  { "mimeTypes": [], "processorClass": "UnsupportedMediaProcessor", "concurrentProcessingPoolSize": 1 }
+  { "mimeTypes": ["audio/ogg", "audio/mpeg"], "processorClass": "AudioTranscriptionProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 300 },
+  { "mimeTypes": ["video/mp4", "video/webm"], "processorClass": "VideoDescriptionProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 600 },
+  { "mimeTypes": ["image/jpeg", "image/png"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3, "processingTimeoutSeconds": 120 },
+  { "mimeTypes": ["application/pdf", "text/plain"], "processorClass": "DocumentProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 120 },
+  { "mimeTypes": ["image/webp"], "processorClass": "StickerProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 60 },
+  { "mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video", "media_corrupt_document", "media_corrupt_sticker"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10 },
+  { "mimeTypes": [], "processorClass": "UnsupportedMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10 }
 ]
 ```
 
 - `processorClass` — the Python class name that the service instantiates to handle messages in this pool.
+- `processingTimeoutSeconds` — the mission-limit enforced by the `BaseMediaProcessor` (defaulting to 60s if omitted).
 - `mimeTypes: []` — the **catch-all** entry. Any mime type not matched by any other pool is routed here. There must be exactly one catch-all entry.
 
 On startup, `MediaProcessingService` creates one worker pool per array entry, sized to `concurrentProcessingPoolSize`, instantiating the specified `processorClass` and **passing the `mimeTypes` array to its constructor**. Fairness is enforced via the **Last-Bot Skip** selection mechanism described above.
@@ -462,72 +464,134 @@ To help diagnose backpressure and pipeline health, the `MediaProcessingService` 
 
 All processors inherit from `BaseMediaProcessor`, which encapsulates the full job lifecycle. Subclasses only implement the actual media-to-text conversion.
 
-### `ProcessingResult` (Return Type)
+### Typed Data Models
+
+The media pipeline uses strong-typed dataclasses (defined in `infrastructure/models.py` or similar) to ensure technical precision and IDE safety.
 
 ```python
 @dataclass
+class MediaProcessingJob:
+    job_id: Any                    # MongoDB _id (ObjectId or string)
+    bot_id: str
+    correspondent_id: str
+    placeholder_message: Message   # Fully deserialized Message object from queue_manager
+    guid: str                      # used to find the file
+    mime_type: str
+    status: str                    # "pending", "processing", "completed"
+    original_filename: Optional[str] = None
+    metadata: Dict[str, Any] = field(default_factory=dict) # Field report: raw diagnostic flags
+    result: Optional[str] = None   # Final transcript or description
+    error: Optional[str] = None    # Final verdict: human-readable failure reason
+
+@dataclass
 class ProcessingResult:
     content: str                          # Final message content for the queue
-    failed_reason: Optional[str] = None   # If set, job is moved to _failed with this reason
+    failed_reason: Optional[str] = None   # If set, maps to job.error and moves job to _failed
 ```
 
 ### `BaseMediaProcessor` (Abstract Base Class)
 
+Only `process_media` is abstract. All other methods are **concrete shared logic** implemented once in the base class — subclasses inherit them for free.
+
 ```python
 class BaseMediaProcessor(ABC):
-    def __init__(self, handled_mime_types: List[str]):
-        """Initialized once per pool with the set of types this processor handles."""
+    def __init__(self, handled_mime_types: List[str], processing_timeout: float = 60.0):
+        """Initialized once per pool with specialized types and a mission-limit."""
         self.handled_mime_types = handled_mime_types
+        self.processing_timeout = processing_timeout
 
-    async def process_job(self, job: dict, all_bot_queues: Dict[str, BotQueuesManager], db: AsyncIOMotorDatabase):
+    async def process_job(self, job: MediaProcessingJob, all_bot_queues: Dict[str, BotQueuesManager], db: AsyncIOMotorDatabase):
         """Full shared lifecycle — called by the worker pool for each job."""
-        bot_id = job["bot_id"]
-        guid = job["guid"]
-        mime_type = job["mime_type"]
-        correspondent_id = job["correspondent_id"]
-        caption = job["placeholder_message"].get("content", "")
-        file_path = f"media_store/pending_media/{guid}"
+        file_path = f"media_store/pending_media/{job.guid}"
 
         try:
-            result = await self.process_media(file_path, mime_type, caption)
+            # 1. ACTUAL CONVERSION (Externally Guarded by Centralized Timeout)
+            try:
+                result = await asyncio.wait_for(
+                    self.process_media(file_path, job.mime_type, job.placeholder_message.content, job.metadata),
+                    timeout=self.processing_timeout
+                )
+            except asyncio.TimeoutError:
+                result = ProcessingResult(
+                    content="[Processing timed out]",
+                    failed_reason=f"TIMEOUT: Vision/Audio processing exceeded {self.processing_timeout}s"
+                )
+
+            # 2. PERSISTENCE (The Save Point)
+            if result.failed_reason:
+                # FAILURE PATH: Move to failed collection immediately
+                await self._move_to_failed(job, result, db)
+            else:
+                # SUCCESS PATH: Mark as 'completed' so it can be reaped if bot crashes
+                persisted = await self._persist_result_first(job, result, db)
+                if not persisted:
+                    return # Likely cleaned up or moved by another process
+
+            # 3. Best-effort direct delivery for ALL paths
+            bot_queues = all_bot_queues.get(job.bot_id)
+            if bot_queues:
+                # Deliver transcript OR error text "[Corrupted...]" to active bot
+                await bot_queues.update_message_by_media_id(job.correspondent_id, job.guid, result.content)
+
+                # 4. FINAL CLOSURE: only delete the SUCCESSFUL job once delivered
+                # (Failed jobs were already moved/removed by _move_to_failed)
+                if not result.failed_reason:
+                    await self._remove_job(job, db)
+
         except Exception as e:
+            # Catch ANY failure (conversion, DB, or delivery) to ensure dead-lettering
             await self._handle_unhandled_exception(job, db, error=str(e))
-            return
-
-        # PERSISTENCE-FIRST: write durable state before touching in-memory queue
-        persisted = await self._persist_result_first(job, result, db)  # active first, then holding
-        if not persisted:
+        finally:
+            # GUARANTEE: The media file is always removed from the shared terrain
             self._delete_media_file(file_path)
-            return
-
-        # Best-effort direct delivery if bot is currently active
-        bot_queues = all_bot_queues.get(bot_id)
-        if bot_queues:
-            await bot_queues.update_message_by_media_id(correspondent_id, guid, result.content)
-
-            # Direct delivery path: remove completed job only after successful queue update
-            if not result.failed_reason:
-                await self._remove_job(job, db)
-
-        self._delete_media_file(file_path)
 
     @abstractmethod
-    async def process_media(self, file_path: str, mime_type: str, caption: str) -> ProcessingResult:
-        """Subclass implements actual processing. Returns a ProcessingResult."""
+    async def process_media(self, file_path: str, mime_type: str, caption: str, metadata: Dict[str, Any]) -> ProcessingResult:
+        """Subclass implements ONLY this: actual AI/conversion logic."""
         ...
+
+    # --- Inherited Concrete Methods (Implemented once in Base class) ---
+
+    async def _persist_result_first(self, job: MediaProcessingJob, result: ProcessingResult, db: AsyncIOMotorDatabase) -> bool:
+        """Durable state anchor: updates status to completed in active/holding collections."""
+        ...
+
+    async def _move_to_failed(self, job: MediaProcessingJob, result: ProcessingResult, db: AsyncIOMotorDatabase):
+        """Archives the job to the _failed collection with error context."""
+        ...
+
+    async def _remove_job(self, job: MediaProcessingJob, db: AsyncIOMotorDatabase):
+        """Clears the job from active collections after results are delivered."""
+        ...
+
+    async def _handle_unhandled_exception(self, job: MediaProcessingJob, db: AsyncIOMotorDatabase, error: str):
+        """Safety net: dead-letters the job and notifies the user of a system error."""
+        ...
+
+    def _delete_media_file(self, file_path: str):
+        """Guaranteed cleanup of the shared media staging volume."""
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+        except Exception:
+            pass
 ```
 
-### Shared Lifecycle (`process_job`)
+### The Worker Template (Common `process_job` Logic)
+
+**Error Handling Policy**: To maintain absolute throughput and prevent "dead-lock loops," media processing follows a **No-Retry Policy**. If a job fails (either via a controlled failure or an unhandled exception), it is moved immediately to `media_processing_jobs_failed` for manual inspection and the media file is deleted.
 
 The base class handles all common operations in `process_job`:
 
-1. **Extract job metadata** — `guid`, `mime_type`, `correspondent_id`, `caption` from the job record.
-2. **Call `process_media()`** — the abstract method implemented by the subclass.
-3. **Persist result first (durable state)** — write result to job document (active collection first, then holding fallback) before any in-memory queue update.
-4. **Best-effort in-memory delivery** — if bot queue exists, call `update_message_by_media_id(...)`; if bot queue does not exist, leave persisted result for recovery reaping on next bot startup.
-5. **Direct delivery cleanup** — if in-memory update succeeds on an active bot, remove the completed job.
+1. **Extract job metadata** — `guid`, `mime_type`, `correspondent_id`, etc.
+2. **Call `process_media()` with Centralized Timeout**: The base class wraps the call in `asyncio.wait_for(..., timeout=self.processing_timeout)`. This removes the burden of timeout handling from the subclasses and ensures worker pool stability.
+3. **Persist result (durable state)**:
+    - **Success**: Write result to job document (active collection first, then holding fallback).
+    - **Controlled Failure** (has `failed_reason`): Move the job immediately to `media_processing_jobs_failed` with the error context.
+4. **Best-effort in-memory delivery**: If bot queue exists, call `update_message_by_media_id(...)` to deliver the transcript OR the error text (e.g. `[Corrupted...]`).
+5. **Direct delivery cleanup**: If in-memory update succeeds for a **successful** job, remove it from the active collection.
 6. **Delete the media file** from disk — always, regardless of success/failure path.
-7. **Unhandled exceptions** (`_handle_unhandled_exception`) — if `process_media()` raises, move job to `media_processing_jobs_failed` with full error context; set generic queue error content only if queue is available; always delete media file.
+7. **Unhandled exceptions** (`_handle_unhandled_exception`) — if `process_media()` raises, move job to `media_processing_jobs_failed` with full stack trace in `error` field; set generic queue error content only if queue is available; always delete media file.
 
 ### Subclass Responsibilities
 
@@ -541,50 +605,45 @@ Each subclass only implements `process_media()` and returns a `ProcessingResult`
 | `CorruptMediaProcessor` | `ProcessingResult(content="[Corrupted <type>...] <caption>", failed_reason="download failed — <type> corrupted")` |
 | `UnsupportedMediaProcessor` | `ProcessingResult(content="[Unsupported <mime_type>...] <caption>", failed_reason="unsupported mime type: <mime_type>")` |
 
-#### Anti-Starvation Rule (Mandatory Timeouts)
-To prevent workers from becoming permanently marooned by hanging external API calls (e.g., an OpenAI vision request that never returns), **every** external I/O operation inside `process_media()` must be wrapped in a strict `asyncio.wait_for()` timeout.
+#### Centralized Execution Guard (Automatic Timeouts)
+Worker pool stability is guaranteed by the **`BaseMediaProcessor`**, which wraps the subclass's mission logic in a strict timeout. This prevents a single hanging API call from permanently reducing worker capacity.
 
 ```python
-import asyncio
-
-async def process_media(self, file_path: str, mime_type: str, caption: str) -> ProcessingResult:
-    try:
-        # Force the API call to complete or fail within 60 seconds
-        response = await asyncio.wait_for(api_client.process_image(encoded_image), timeout=60.0)
-        return ProcessingResult(content=response.text)
-    except asyncio.TimeoutError:
-        # The timeout breaks the hang. We catch it and return a controlled failure.
-        # The worker loop continues, capacity is preserved!
-        return ProcessingResult(
-            content="[Processing timed out]",
-            failed_reason="API_TIMEOUT: Vision processing exceeded 60 seconds"
-        )
+async def process_media(self, file_path: str, mime_type: str, caption: str, metadata: Dict[str, Any]) -> ProcessingResult:
+    # Subclass implementation is now lean and focused ONLY on AI logic!
+    # No need to wrap in asyncio.wait_for — the Base class does it for us.
+    response = await api_client.process_image(encoded_image)
+    return ProcessingResult(content=response.text)
 ```
-If this rule is ignored, a hanging request permanently reduces the finite worker pool capacity by 1. Three such hangs would reduce a 3-worker pool to zero, freezing all media processing until the container is restarted.
+
+If the `process_media` implementation exceeds the configured `processing_timeout`, the base class catches the `TimeoutError`, delivers a standardized notice to the user, and archives the job—preserving the kingdom's finite worker capacity.
 
 > **Note**: Phase 1 stub processors also inherit from `BaseMediaProcessor` — they sleep for a configured duration and return `ProcessingResult(content="[Transcripted ...]")`. The base class handles everything else.
 
 ---
 
-## Cleanup Job
+## Cleanup Job (The Double-Lock Strategy)
 
-A background job runs every **1 hour**. It scans all `CorrespondentQueue` instances for messages where `media_processing_id` is set and the message has been alive for more than **3 hours**.
+To ensure no media artifact or job record is ever abandoned, the background cleanup job (running every **1 hour**) performs two independent sweeps:
 
-For each stale placeholder found:
+### Sweep 1: The UI Sweep (In-Memory First)
+It scans all active `CorrespondentQueue` instances for messages where `media_processing_id` is set and the message has been alive for more than **3 hours**. For each stale placeholder found:
 1. **Remove** the placeholder message from the `CorrespondentQueue`.
 2. **Locate the matching job** and move it to `media_processing_jobs_failed`:
    - Found in `media_processing_jobs` → move and set `error`: `"message was transferred from media_processing_jobs to media_processing_jobs_failed by cleanup job"`
    - Found in `media_processing_jobs_holding` → move and set `error`: `"message was transferred from media_processing_jobs_holding to media_processing_jobs_failed by cleanup job"`
    - Found in neither → create a new record in `media_processing_jobs_failed` based on the placeholder message from `CorrespondentQueue` with added `error`: `"message was missing and created from scratch in media_processing_jobs_failed by cleanup job"`
 
-**Additionally**, the cleanup job directly queries `media_processing_jobs` and `media_processing_jobs_holding` for any job records older than **3 hours**. This catches:
-- Stale jobs for bots that are currently **disconnected** (in `_holding`).
-- "Zombie" jobs stuck in `processing` state due to a worker crash.
+### Sweep 2: The Infrastructure Sweep (DB First)
+The cleanup job directly queries `media_processing_jobs` and `media_processing_jobs_holding` for any job records older than **3 hours**. This is the **Fail-Safe** path that catches:
+- Stale jobs for bots that are currently **disconnected** (in `_holding`, where no in-memory placeholder exists).
+- **"Zombie" jobs** stuck in `processing` state due to a worker crash.
+- Cases where the in-memory queue became out of sync with the DB.
 
 For each such record found:
 - Move it to `media_processing_jobs_failed` with `error`: `"TIMED_OUT: Job exceeded 3-hour threshold and was moved to failed by cleanup job"`.
 - Attempt to delete the raw media file from disk.
-- If an in-memory placeholder exists, remove it from the `CorrespondentQueue`.
+- **In-Memory Sync**: If the bot is active and a matching placeholder *still* exists (i.e. if Sweep 1 failed to catch it or the job was a zombie), remove it from the `CorrespondentQueue`.
 
 ---
 
@@ -603,13 +662,13 @@ Three MongoDB collections manage job state, mirroring the `async_message_deliver
   1. Moves **all** records from `media_processing_jobs` to `media_processing_jobs_holding`.
   2. Perform an `update_many` on `media_processing_jobs_holding` to set any record with `status: "processing"` back to `status: "pending"`.
   This ensures no orphaned jobs remain stuck in an unclaimable state due to a previous system crash.
-- **Bot starts (Recovery Bot Reaping)**: When a `BotQueuesManager` initializes, it queries `media_processing_jobs_holding` for its `bot_id`. For every job found, it must **first call `inject_placeholder(message)`** using the job's `placeholder_message` to seed the empty queue. Only *after* injecting the placeholder does the bot evaluate the job's `status`:
-  - **`status == "completed"`**: The bot **reaps** the result from the job, updates the newly-injected placeholder instantly via `update_message_by_media_id`, fires callbacks (triggering the AI), and **deletes the job**.
+- **Bot starts (Recovery Bot Reaping)**: When a `BotQueuesManager` initializes, it queries `media_processing_jobs_holding` for its `bot_id`. To prevent race conditions with workers, the bot uses an **Atomic Reaping** pattern:
+  - **`status == "completed"`**: The bot attempts to **atomically move** (find-and-delete) the record from the DB. If successful, it reaps the result, updates the newly-injected placeholder via `update_message_by_media_id`, and fires callbacks.
   - **`status == "processing"`**: The job is moved back to `media_processing_jobs`. An orphaned worker is still working on it. The bot waits for **Direct Worker Delivery**.
   - **`status == "pending"`**: The job is moved to `media_processing_jobs` to await a worker claim.
 - **Bot stops**: All active jobs for that `bot_id` are moved from `media_processing_jobs` → `media_processing_jobs_holding`.
   - > **Note on in-flight jobs**: If a job is currently being processed at the moment the bot stops, the worker will finish and follow the **Persistence-First path**, saving the result into `_holding` for later reaping.
-- **Processing fails** (single attempt, no retries): Job is moved immediately to `media_processing_jobs_failed` for inspection with an added `error` property and the raw media file is deleted. No retries.
+- **Processing fails**: (Individual failures are handled by the Worker Template).
 
 > [!IMPORTANT]
 > **Required fix — `IngestionService` final drain pass on bot stop**
@@ -647,14 +706,10 @@ The full routing chain uses three keys to locate the exact placeholder:
 1. **`bot_id`** (from job) → look up the correct `BotQueuesManager` from the `Dict[str, BotQueuesManager]`.
 2. **`correspondent_id`** (from job) → go directly to the correct `CorrespondentQueue` within that `BotQueuesManager`.
 3. **`guid`** (from job) → search the `CorrespondentQueue`'s deque for the message matching `media_processing_id == guid`.
-4. Updates `content`, `message_size`, clears `media_processing_id`, adjusts `_total_chars`, and fires `_trigger_callbacks`.
-   - **`update_message_by_media_id` contract (CorrespondentQueue method):**
-     - locate by `media_processing_id`
-     - compute `old_size` / `new_size`
-     - update `content`, `message_size`, clear `media_processing_id`
-     - update `_total_chars = _total_chars - old_size + new_size`
-     - fire callbacks exactly once
-     - return structured result (e.g. `updated`, `not_found`)
+4. **`update_message_by_media_id` contract (CorrespondentQueue method):**
+   - **IDEMPOTENT GATEWAY**: Always verify `media_processing_id == guid` before updating.
+   - If found: update `content`, `message_size`, **clear `media_processing_id`**, adjust `_total_chars`, and return `True`.
+   - If not found: return `False` (delivery was already handled by bot reaping or a previous worker attempt).
 5. **The media processor follows the Persistence-First path**:
    - Every result is saved to the Job Document (status set to `"completed"`) *before* attempting in-memory queue updates.
    - The worker attempts to update the job record in the `media_processing_jobs` collection; if 0 documents were updated, it attempts the same update in `media_processing_jobs_holding`.
