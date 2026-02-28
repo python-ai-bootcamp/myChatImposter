@@ -21,6 +21,9 @@ class GlobalStateManager:
         self.configurations_collection: Optional[AsyncIOMotorCollection] = None
         self.queues_collection: Optional[AsyncIOMotorCollection] = None
         self.baileys_sessions_collection: Optional[AsyncIOMotorCollection] = None
+        self.media_processing_jobs_collection: Optional[AsyncIOMotorCollection] = None
+        self.media_processing_jobs_holding_collection: Optional[AsyncIOMotorCollection] = None
+        self.media_processing_jobs_failed_collection: Optional[AsyncIOMotorCollection] = None
 
         # Authentication collections
         self.sessions_collection: Optional[AsyncIOMotorCollection] = None
@@ -42,6 +45,7 @@ class GlobalStateManager:
         self.group_tracker: Optional['GroupTracker'] = None
         self.async_message_delivery_queue_manager: Optional['AsyncMessageDeliveryQueueManager'] = None
         self.bot_lifecycle_service: Optional['BotLifecycleService'] = None
+        self.media_processing_service = None
 
     @classmethod
     def get_instance(cls):
@@ -59,6 +63,9 @@ class GlobalStateManager:
         self.configurations_collection = self.db.get_collection(db_schema.COLLECTION_BOT_CONFIGURATIONS)
         self.queues_collection = self.db.get_collection(db_schema.COLLECTION_QUEUES)
         self.baileys_sessions_collection = self.db.get_collection(db_schema.COLLECTION_BAILEYS_SESSIONS)
+        self.media_processing_jobs_collection = self.db.get_collection(db_schema.COLLECTION_MEDIA_PROCESSING_JOBS)
+        self.media_processing_jobs_holding_collection = self.db.get_collection(db_schema.COLLECTION_MEDIA_PROCESSING_JOBS_HOLDING)
+        self.media_processing_jobs_failed_collection = self.db.get_collection(db_schema.COLLECTION_MEDIA_PROCESSING_JOBS_FAILED)
 
         # Authentication collections
         self.sessions_collection = self.db.get_collection(db_schema.COLLECTION_SESSIONS)

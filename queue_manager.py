@@ -4,8 +4,8 @@ import sys
 import threading
 import asyncio
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Optional, Callable, List
+from dataclasses import dataclass, field, asdict
+from typing import Optional, Callable, List, Dict, Any
 from pymongo.collection import Collection
 from pymongo import DESCENDING
 
@@ -36,6 +36,7 @@ class Message:
     originating_time: Optional[int] = None
     group: Optional[Group] = None
     provider_message_id: Optional[str] = None
+    media_processing_id: Optional[str] = None
 
     def __post_init__(self):
         self.message_size = len(self.content)
@@ -93,55 +94,80 @@ class CorrespondentQueue:
             else:
                 logging.error(f"QUEUE: No main event loop provided to run async callback.")
 
-    def _evict_while(self, condition_fn, reason: str, new_message_size: int):
-        """
-        Helper to evict messages while a condition is true (Item #010).
-        Reduces duplication in _enforce_limits.
-        """
-        while self._messages and condition_fn():
-            evicted_msg = self._messages.popleft()
-            self._total_chars -= evicted_msg.message_size
-            self._log_retention_event(evicted_msg, reason, new_message_size)
-            logging.info(f"QUEUE EVICT ({self.bot_id}): Message {evicted_msg.id} evicted due to {reason}.")
+    def _iter_unprotected_messages(self):
+        for message in self._messages:
+            if not message.media_processing_id:
+                yield message
+
+    def _evict_oldest_unprotected(self, reason: str, new_message_size: int) -> bool:
+        for idx, message in enumerate(self._messages):
+            if message.media_processing_id:
+                continue
+            del self._messages[idx]
+            self._total_chars -= message.message_size
+            self._log_retention_event(message, reason, new_message_size)
+            logging.info(f"QUEUE EVICT ({self.bot_id}): Message {message.id} evicted due to {reason}.")
+            return True
+        return False
 
     def _enforce_limits(self, new_message_size: int):
-        """Evict old messages until the new message can be added."""
+        """Evict old unprotected messages until the new message can be added."""
         now = time.time()
 
-        # Evict by age first
-        self._evict_while(
-            lambda: (now - self._messages[0].accepted_time / 1000) > self.max_age_seconds,
-            "age", new_message_size
-        )
+        while True:
+            stale_unprotected = next(
+                (m for m in self._iter_unprotected_messages() if (now - m.accepted_time / 1000) > self.max_age_seconds),
+                None
+            )
+            if not stale_unprotected:
+                break
+            if not self._evict_oldest_unprotected("age", new_message_size):
+                break
 
-        # Evict by total characters
-        self._evict_while(
-            lambda: (self._total_chars + new_message_size) > self.max_characters,
-            "total_characters", new_message_size
-        )
+        while True:
+            unprotected_messages = list(self._iter_unprotected_messages())
+            unprotected_total_chars = sum(m.message_size for m in unprotected_messages)
+            if (unprotected_total_chars + new_message_size) <= self.max_characters:
+                break
+            if not self._evict_oldest_unprotected("total_characters", new_message_size):
+                break
 
-        # Evict by total message count
-        self._evict_while(
-            lambda: len(self._messages) >= self.max_messages,
-            "message_count", new_message_size
-        )
+        while True:
+            unprotected_count = sum(1 for _ in self._iter_unprotected_messages())
+            if unprotected_count < self.max_messages:
+                break
+            if not self._evict_oldest_unprotected("message_count", new_message_size):
+                break
 
-    async def add_message(self, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None, provider_message_id: Optional[str] = None):
+    async def add_message(
+        self,
+        content: str,
+        sender: Sender,
+        source: str,
+        originating_time: Optional[int] = None,
+        group: Optional[Group] = None,
+        provider_message_id: Optional[str] = None,
+        media_processing_id: Optional[str] = None,
+        mime_type: Optional[str] = None,
+        original_filename: Optional[str] = None,
+        media_metadata: Optional[Dict[str, Any]] = None,
+    ) -> Optional[Message]:
         """Create, add, and process a new message for the queue."""
         if provider_message_id:
             if provider_message_id in self._recent_provider_message_ids:
                 logging.info(f"QUEUE DUPE ({self.bot_id}): Duplicate message ID {provider_message_id} received, ignoring.")
-                return
+                return None
             self._recent_provider_message_ids.append(provider_message_id)
 
         # Truncate the message if it exceeds the single message character limit.
-        if len(content) > self.max_characters_single_message:
+        if media_processing_id is None and len(content) > self.max_characters_single_message:
             logging.warning(f"QUEUE TRUNCATE ({self.bot_id}): Message from {sender.display_name} is larger than the single message character limit ({self.max_characters_single_message}), truncating.")
             content = content[:self.max_characters_single_message]
 
         new_message_size = len(content)
 
-        self._enforce_limits(new_message_size)
+        if media_processing_id is None:
+            self._enforce_limits(new_message_size)
 
         message = Message(
             id=self._next_message_id,
@@ -150,7 +176,8 @@ class CorrespondentQueue:
             source=source,
             originating_time=originating_time,
             group=group,
-            provider_message_id=provider_message_id
+            provider_message_id=provider_message_id,
+            media_processing_id=media_processing_id,
         )
 
         self._messages.append(message)
@@ -163,7 +190,31 @@ class CorrespondentQueue:
         logging.info(f"QUEUE ADD ({self.bot_id}): Added message {message.id} from {message.sender.display_name}. Queue stats: {len(self._messages)} msgs, {self._total_chars} chars.")
 
         self._new_message_event.set()
-        self._trigger_callbacks(message)
+        if not message.media_processing_id:
+            self._trigger_callbacks(message)
+        return message
+
+    def inject_placeholder(self, message: Message):
+        """Insert pre-constructed placeholder without callbacks or re-processing."""
+        self._messages.append(message)
+        self._total_chars += message.message_size
+        self._next_message_id = max(self._next_message_id, message.id + 1)
+        self._new_message_event.set()
+
+    async def update_message_by_media_id(self, guid: str, content: str) -> bool:
+        for message in self._messages:
+            if message.media_processing_id == guid:
+                self._total_chars -= message.message_size
+                message.content = content
+                message.media_processing_id = None
+                message.message_size = len(content)
+                self._total_chars += message.message_size
+                self._trigger_callbacks(message)
+                return True
+        return False
+
+    def has_media_processing_id(self, guid: str) -> bool:
+        return any(message.media_processing_id == guid for message in self._messages)
 
     def pop_message(self) -> Optional[Message]:
         """Pops the oldest message from the queue in a thread-safe manner."""
@@ -175,6 +226,19 @@ class CorrespondentQueue:
             # The queue is empty, so we clear the event.
             self._new_message_event.clear()
             return None
+
+    def pop_ready_message(self) -> Optional[Message]:
+        for idx, message in enumerate(self._messages):
+            if message.media_processing_id:
+                continue
+            del self._messages[idx]
+            self._total_chars -= message.message_size
+            if not self._messages:
+                self._new_message_event.clear()
+            return message
+        if not self._messages:
+            self._new_message_event.clear()
+        return None
 
     async def wait_for_message(self, timeout: Optional[float] = None) -> bool:
         """
@@ -219,7 +283,15 @@ class CorrespondentQueue:
         logging.info(f"({self.bot_id}) {log_msg}")
 
 class BotQueuesManager:
-    def __init__(self, bot_id: str, provider_name: str, queue_config: QueueConfig, queues_collection: Optional[Collection] = None, main_loop = None):
+    def __init__(
+        self,
+        bot_id: str,
+        provider_name: str,
+        queue_config: QueueConfig,
+        queues_collection: Optional[Collection] = None,
+        main_loop = None,
+        media_jobs_collection = None,
+    ):
         self.bot_id = bot_id
         self.provider_name = provider_name
         self.queue_config = queue_config
@@ -228,6 +300,7 @@ class BotQueuesManager:
         self._queues: dict[str, CorrespondentQueue] = {}
         self._callbacks: List[Callable[[str, str, Message], None]] = []
         self._lock = threading.Lock()
+        self.media_jobs_collection = media_jobs_collection
 
     async def get_or_create_queue(self, correspondent_id: str) -> CorrespondentQueue:
         # Use asyncio Lock instead of threading Lock? 
@@ -258,9 +331,51 @@ class BotQueuesManager:
             
         return self._queues[correspondent_id]
 
-    async def add_message(self, correspondent_id: str, content: str, sender: Sender, source: str, originating_time: Optional[int] = None, group: Optional[Group] = None, provider_message_id: Optional[str] = None):
+    async def add_message(
+        self,
+        correspondent_id: str,
+        content: str,
+        sender: Sender,
+        source: str,
+        originating_time: Optional[int] = None,
+        group: Optional[Group] = None,
+        provider_message_id: Optional[str] = None,
+        media_processing_id: Optional[str] = None,
+        mime_type: Optional[str] = None,
+        original_filename: Optional[str] = None,
+        media_metadata: Optional[Dict[str, Any]] = None,
+    ):
         queue = await self.get_or_create_queue(correspondent_id)
-        await queue.add_message(content, sender, source, originating_time, group, provider_message_id)
+        message = await queue.add_message(
+            content,
+            sender,
+            source,
+            originating_time,
+            group,
+            provider_message_id,
+            media_processing_id=media_processing_id,
+            mime_type=mime_type,
+            original_filename=original_filename,
+            media_metadata=media_metadata,
+        )
+        if (
+            message
+            and media_processing_id
+            and mime_type
+            and self.media_jobs_collection is not None
+        ):
+            job_doc = {
+                "bot_id": self.bot_id,
+                "correspondent_id": correspondent_id,
+                "placeholder_message": asdict(message),
+                "guid": media_processing_id,
+                "mime_type": mime_type,
+                "original_filename": original_filename,
+                "status": "pending",
+                "media_metadata": media_metadata or {},
+                "created_at": int(time.time() * 1000),
+            }
+            await self.media_jobs_collection.insert_one(job_doc)
 
     def register_callback(self, callback: Callable[[str, str, Message], None]):
         """Register a callback to be added to all queues."""
@@ -276,3 +391,66 @@ class BotQueuesManager:
 
     def get_queue(self, correspondent_id: str) -> Optional[CorrespondentQueue]:
         return self._queues.get(correspondent_id)
+
+    async def update_message_by_media_id(self, correspondent_id: str, guid: str, content: str) -> bool:
+        queue = await self.get_or_create_queue(correspondent_id)
+        return await queue.update_message_by_media_id(guid, content)
+
+    async def inject_placeholder(self, correspondent_id: str, message: Message):
+        queue = await self.get_or_create_queue(correspondent_id)
+        queue.inject_placeholder(message)
+
+    async def has_media_processing_id(self, correspondent_id: str, guid: str) -> bool:
+        queue = await self.get_or_create_queue(correspondent_id)
+        return queue.has_media_processing_id(guid)
+
+    async def reap_and_promote_jobs(self, holding_collection, active_collection):
+        while True:
+            doc = await holding_collection.find_one_and_delete(
+                {
+                    "bot_id": self.bot_id,
+                    "$or": [
+                        {"status": "completed", "result": {"$exists": True}},
+                        {"status": {"$in": ["pending", "processing"]}},
+                        {"status": "completed", "result": {"$exists": False}},
+                    ],
+                },
+                sort=[("created_at", 1)],
+            )
+            if not doc:
+                break
+            placeholder_doc = doc.get("placeholder_message", {})
+            sender_doc = placeholder_doc.get("sender", {})
+            sender = Sender(
+                identifier=sender_doc.get("identifier", "unknown"),
+                display_name=sender_doc.get("display_name", "unknown"),
+                alternate_identifiers=sender_doc.get("alternate_identifiers", []),
+            )
+            group = None
+            if placeholder_doc.get("group"):
+                group_doc = placeholder_doc["group"]
+                group = Group(
+                    identifier=group_doc.get("identifier", ""),
+                    display_name=group_doc.get("display_name", ""),
+                    alternate_identifiers=group_doc.get("alternate_identifiers", []),
+                )
+            message = Message(
+                id=placeholder_doc.get("id", 0),
+                content=placeholder_doc.get("content", ""),
+                sender=sender,
+                source=placeholder_doc.get("source", "user"),
+                accepted_time=placeholder_doc.get("accepted_time", int(time.time() * 1000)),
+                message_size=placeholder_doc.get("message_size", 0),
+                originating_time=placeholder_doc.get("originating_time"),
+                group=group,
+                provider_message_id=placeholder_doc.get("provider_message_id"),
+                media_processing_id=placeholder_doc.get("media_processing_id"),
+            )
+            await self.inject_placeholder(doc["correspondent_id"], message)
+            if doc.get("status") == "completed" and doc.get("result"):
+                await self.update_message_by_media_id(doc["correspondent_id"], doc["guid"], doc["result"])
+            else:
+                promoted = dict(doc)
+                promoted.pop("_id", None)
+                promoted["status"] = "pending"
+                await active_collection.insert_one(promoted)

@@ -14,6 +14,7 @@ services:
       dockerfile: backend.Dockerfile
     container_name: backend
     init: true
+    user: "${CURRENT_UID}:${CURRENT_GID}"
     ports:
       - "8000:8000"
     # No ports exposed - only accessible via gateway on Docker network
@@ -22,6 +23,7 @@ services:
       - /app/frontend
       - /app/.git
       - /app/baileys_store
+      - media_staging:/app/media_store/pending_media
     environment:
       - WHATSAPP_SERVER_URL=http://whatsapp_baileys_server:9000
       - OPENAI_API_KEY=${OPENAI_API_KEY}
@@ -58,12 +60,14 @@ services:
       dockerfile: whatsapp.Dockerfile
     container_name: whatsapp_baileys_server
     init: true
+    user: "${CURRENT_UID}:${CURRENT_GID}"
     ports:
       - "9000:9000"
     environment:
       - MONGODB_URL=mongodb://mongodb:27017
     volumes:
       - ./baileys_store:/app/baileys_store
+      - media_staging:/app/media_store/pending_media
     command: ["node", "server.js", "9000"]
 
   nginx:
@@ -82,3 +86,4 @@ services:
 
 volumes:
   mongo-data:
+  media_staging:

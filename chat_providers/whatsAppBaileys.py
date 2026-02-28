@@ -10,6 +10,7 @@ import time
 
 import httpx
 import websockets
+from pydantic import BaseModel, Field, ValidationError
 
 from queue_manager import BotQueuesManager, Sender, Group, Message
 import logging
@@ -22,6 +23,32 @@ from infrastructure.exceptions import (
     ProviderMessageError, 
     ProviderError
 )
+
+class WhatsAppGroupPayload(BaseModel):
+    id: str
+    name: Optional[str] = None
+    alternate_identifiers: List[str] = Field(default_factory=list)
+
+class WhatsAppActualSenderPayload(BaseModel):
+    identifier: Optional[str] = None
+    display_name: Optional[str] = None
+    alternate_identifiers: List[str] = Field(default_factory=list)
+
+class WhatsAppIncomingPayload(BaseModel):
+    provider_message_id: str
+    sender: str
+    message: str
+    direction: str
+    originating_time: int
+    display_name: Optional[str] = None
+    group: Optional[WhatsAppGroupPayload] = None
+    alternate_identifiers: List[str] = Field(default_factory=list)
+    recipient_id: Optional[str] = None
+    actual_sender: Optional[WhatsAppActualSenderPayload] = None
+    media_processing_id: Optional[str] = None
+    mime_type: Optional[str] = None
+    original_filename: Optional[str] = None
+    _quota_exceeded: Optional[bool] = None
 
 
 class WhatsAppBaileysProvider(BaseChatProvider):
@@ -129,9 +156,38 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             # Force re-initialization if we are not currently connected to ensure a fresh start
             # This fixes "ghost session" issues where Node.js thinks we have a session but we don't.
             force_reinit = not self.is_connected
+            media_storage_quota_gb = None
+            try:
+                from dependencies import global_state
+                if global_state.configurations_collection is not None:
+                    config_doc = await global_state.configurations_collection.find_one(
+                        {"config_data.bot_id": self.bot_id},
+                        {"config_data.configurations.chat_provider_config.provider_config.media_storage_quota_gb": 1},
+                    )
+                    media_storage_quota_gb = (
+                        (config_doc or {})
+                        .get("config_data", {})
+                        .get("configurations", {})
+                        .get("chat_provider_config", {})
+                        .get("provider_config", {})
+                        .get("media_storage_quota_gb")
+                    )
+                    if media_storage_quota_gb is None:
+                        global_media_doc = await global_state.configurations_collection.find_one(
+                            {"_id": "_multimedia_message_support"},
+                            {"media_storage_quota_gb_default": 1},
+                        )
+                        media_storage_quota_gb = (global_media_doc or {}).get("media_storage_quota_gb_default")
+            except Exception as e:
+                logging.warning(f"Could not resolve media_storage_quota_gb for {self.bot_id}: {e}")
+
+            provider_config_payload = self.config.provider_config.model_dump()
+            if media_storage_quota_gb is not None:
+                provider_config_payload["media_storage_quota_gb"] = media_storage_quota_gb
+
             config_data = {
                 "userId": self.bot_id, 
-                "config": self.config.provider_config.model_dump(),
+                "config": provider_config_payload,
                 "forceReinit": force_reinit
             }
             
@@ -282,7 +338,13 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             return
 
         for msg in messages:
-            group_info = msg.get('group')
+            try:
+                payload = WhatsAppIncomingPayload.model_validate(msg)
+            except ValidationError as e:
+                logging.error(f"WS CONTRACT: Invalid message payload skipped: {e}")
+                continue
+
+            group_info = payload.group.model_dump() if payload.group else None
             if group_info and not self.config.provider_config.allow_group_messages:
                 continue
             group = Group(
@@ -291,22 +353,22 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 alternate_identifiers=group_info.get('alternate_identifiers', [])
             ) if group_info else None
 
-            direction = msg.get('direction', 'incoming')
-            provider_message_id = msg.get('provider_message_id')
+            direction = payload.direction or 'incoming'
+            provider_message_id = payload.provider_message_id
             source = 'user'  # Default source
 
             if direction == 'outgoing':
-                recipient_id = msg.get('recipient_id')
+                recipient_id = payload.recipient_id
                 if group:
                     correspondent_id = group.identifier
                 else:
-                    permanent_jid = next((alt_id for alt_id in (msg.get('alternate_identifiers') or []) if alt_id.endswith('@s.whatsapp.net')), None)
+                    permanent_jid = next((alt_id for alt_id in (payload.alternate_identifiers or []) if alt_id.endswith('@s.whatsapp.net')), None)
                     correspondent_id = permanent_jid or recipient_id
 
                 is_bot = False
                 if provider_message_id and self.is_bot_message(provider_message_id):
                     is_bot = True
-                elif self._check_and_consume_pending(recipient_id, msg.get('message')):
+                elif self._check_and_consume_pending(recipient_id, payload.message):
                     is_bot = True
                     # CRITICAL: Add to cache immediately so history/future checks work
                     if provider_message_id:
@@ -318,7 +380,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
                 if is_bot:
                     source = 'bot'
-                    actual_sender_data = msg.get('actual_sender')
+                    actual_sender_data = payload.actual_sender.model_dump() if payload.actual_sender else None
                     alternate_identifiers = []
                     if actual_sender_data:
                         alternate_identifiers = actual_sender_data.get('alternate_identifiers', [])
@@ -331,7 +393,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                     # Do not remove from cache here
                 else:
                     source = 'user_outgoing'
-                    actual_sender_data = msg.get('actual_sender')
+                    actual_sender_data = payload.actual_sender.model_dump() if payload.actual_sender else None
                     if actual_sender_data:
                         sender = Sender(
                             identifier=actual_sender_data.get('identifier'),
@@ -342,19 +404,19 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                         # Fallback for safety, though actual_sender should always be present for outgoing
                         sender = Sender(identifier=f"user_{self.bot_id}", display_name=f"User ({self.bot_id})")
             else:  # incoming
-                correspondent_id = group.identifier if group else msg['sender']
-                primary_identifier = msg['sender']
-                all_alternates = msg.get('alternate_identifiers') or []
+                correspondent_id = group.identifier if group else payload.sender
+                primary_identifier = payload.sender
+                all_alternates = payload.alternate_identifiers or []
                 if not isinstance(all_alternates, list): all_alternates = []
 
                 permanent_jid = next((alt_id for alt_id in all_alternates if alt_id.endswith('@s.whatsapp.net')), None)
                 if permanent_jid:
                     if not group: correspondent_id = permanent_jid
-                    if msg['sender'] not in all_alternates: all_alternates.append(msg['sender'])
+                    if payload.sender not in all_alternates: all_alternates.append(payload.sender)
 
                 sender = Sender(
                     identifier=primary_identifier,
-                    display_name=msg.get('display_name', msg['sender']),
+                    display_name=payload.display_name or payload.sender,
                     alternate_identifiers=all_alternates
                 )
                 source = 'user'
@@ -363,16 +425,23 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 logging.error(f"ERROR: Could not determine correspondent_id for message. Skipping. Data: {msg}")
                 continue
 
-            originating_time = msg.get('originating_time')
+            originating_time = payload.originating_time
+            media_metadata = {}
+            if payload._quota_exceeded is not None:
+                media_metadata["_quota_exceeded"] = payload._quota_exceeded
 
             await queues_manager.add_message(
                 correspondent_id=correspondent_id,
-                content=msg['message'],
+                content=payload.message,
                 sender=sender,
                 source=source,
                 group=group,
                 provider_message_id=provider_message_id,
-                originating_time=originating_time
+                originating_time=originating_time,
+                media_processing_id=payload.media_processing_id,
+                mime_type=payload.mime_type,
+                original_filename=payload.original_filename,
+                media_metadata=media_metadata if media_metadata else None,
             )
 
     async def stop_listening(self, cleanup_session: bool = False):

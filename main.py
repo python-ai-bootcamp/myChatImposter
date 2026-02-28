@@ -9,6 +9,7 @@ from async_message_delivery_queue_manager import AsyncMessageDeliveryQueueManage
 from services.session_manager import SessionManager
 from features.periodic_group_tracking.service import GroupTracker
 from services.bot_lifecycle_service import BotLifecycleService
+from services.media_processing_service import MediaProcessingService
 from utils.json_encoder import CustomJSONResponse
 
 # Import Routers
@@ -67,6 +68,18 @@ async def lifespan(app: FastAPI):
         # 3. Initialize GroupTracker
         global_state.group_tracker = GroupTracker(global_state.db, global_state.chatbot_instances, global_state.token_consumption_collection, global_state.async_message_delivery_queue_manager)
         global_state.group_tracker.start()
+
+        # 3.1 Initialize MediaProcessingService
+        global_state.media_processing_service = MediaProcessingService(
+            db=global_state.db,
+            get_bot_queues=lambda bot_id: (
+                global_state.get_chatbot_instance_by_bot(bot_id).bot_queues_manager
+                if global_state.get_chatbot_instance_by_bot(bot_id)
+                else None
+            ),
+            get_active_bot_ids=lambda: list(global_state.active_bots.keys()),
+        )
+        await global_state.media_processing_service.start()
         
         # 4a. Initialize UserAuthService (Needed by User Management)
         from services.user_auth_service import UserAuthService
@@ -141,6 +154,8 @@ async def lifespan(app: FastAPI):
         # Shutdown Queue Manager (Specific)
         if global_state.async_message_delivery_queue_manager:
             await global_state.async_message_delivery_queue_manager.stop_consumer()
+        if global_state.media_processing_service:
+            await global_state.media_processing_service.stop()
 
 app = FastAPI(lifespan=lifespan, default_response_class=CustomJSONResponse)
 

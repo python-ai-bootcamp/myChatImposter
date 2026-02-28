@@ -19,6 +19,9 @@ COLLECTION_STALE_SESSIONS = "stale_authenticated_sessions"
 COLLECTION_CREDENTIALS = "user_auth_credentials"
 COLLECTION_AUDIT_LOGS = "audit_logs"
 COLLECTION_ACCOUNT_LOCKOUTS = "account_lockouts"
+COLLECTION_MEDIA_PROCESSING_JOBS = "media_processing_jobs"
+COLLECTION_MEDIA_PROCESSING_JOBS_HOLDING = "media_processing_jobs_holding"
+COLLECTION_MEDIA_PROCESSING_JOBS_FAILED = "media_processing_jobs_failed"
 
 # --- Index Definitions ---
 
@@ -71,14 +74,38 @@ async def create_indexes(db: AsyncIOMotorDatabase):
 
     # 3. Features
     try:
+        await db[COLLECTION_QUEUES].create_index(
+            [("bot_id", ASCENDING), ("provider_name", ASCENDING), ("correspondent_id", ASCENDING), ("id", ASCENDING)],
+            unique=True,
+            name="queues_bot_provider_correspondent_id_unique",
+        )
+        logger.info(f"Ensured unique queue index for {COLLECTION_QUEUES}.")
+
+        for collection_name in [
+            COLLECTION_MEDIA_PROCESSING_JOBS,
+            COLLECTION_MEDIA_PROCESSING_JOBS_HOLDING,
+            COLLECTION_MEDIA_PROCESSING_JOBS_FAILED,
+        ]:
+            collection = db[collection_name]
+            await collection.create_index([("bot_id", ASCENDING)])
+            await collection.create_index([("status", ASCENDING)])
+            await collection.create_index([("mime_type", ASCENDING)])
+            await collection.create_index([("guid", ASCENDING)])
+            await collection.create_index([("created_at", ASCENDING)])
+        logger.info("Ensured media processing job indexes.")
+
         # 5. Indexes for Tracked Group Periods
-        await ensure_index(db[COLLECTION_TRACKED_GROUP_PERIODS], "tracked_group_periods_bot_id_idx", [("bot_id", 1)])
-        await ensure_index(db[COLLECTION_TRACKED_GROUP_PERIODS], "tracked_group_periods_unique_identifier_idx", [("tracked_group_unique_identifier", 1)])
-        await ensure_index(db[COLLECTION_TRACKED_GROUP_PERIODS], "tracked_group_periods_periodEnd_idx", [("periodEnd", -1)])
+        await db[COLLECTION_TRACKED_GROUP_PERIODS].create_index([("bot_id", ASCENDING)], name="tracked_group_periods_bot_id_idx")
+        await db[COLLECTION_TRACKED_GROUP_PERIODS].create_index([("tracked_group_unique_identifier", ASCENDING)], name="tracked_group_periods_unique_identifier_idx")
+        await db[COLLECTION_TRACKED_GROUP_PERIODS].create_index([("periodEnd", DESCENDING)], name="tracked_group_periods_periodEnd_idx")
         logger.info(f"Created indexes for {COLLECTION_TRACKED_GROUP_PERIODS}.")
 
         # 6. Indexes for Group Tracking State
-        await ensure_index(db[COLLECTION_GROUP_TRACKING_STATE], "group_tracking_state_bot_group_idx", [("bot_id", 1), ("groupIdentifier", 1)], unique=True)
+        await db[COLLECTION_GROUP_TRACKING_STATE].create_index(
+            [("bot_id", ASCENDING), ("groupIdentifier", ASCENDING)],
+            unique=True,
+            name="group_tracking_state_bot_group_idx",
+        )
         logger.info(f"Created indexes for {COLLECTION_GROUP_TRACKING_STATE}.")
         
     except Exception as e:

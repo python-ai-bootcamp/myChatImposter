@@ -52,6 +52,9 @@ class BotLifecycleService:
         if self.global_state.async_message_delivery_queue_manager:
             await self.global_state.async_message_delivery_queue_manager.move_bot_to_active(bot_id)
             logging.info(f"LIFECYCLE: Bot {bot_id} connected. Moved items to ACTIVE queue.")
+        media_service = getattr(self.global_state, "media_processing_service", None)
+        if media_service and hasattr(media_service, "on_bot_connected"):
+            await media_service.on_bot_connected(bot_id)
 
         # 2. Start Group Tracking (Late Binding)
         if self.global_state.group_tracker:
@@ -93,6 +96,9 @@ class BotLifecycleService:
         if self.global_state.group_tracker:
             logging.info(f"LIFECYCLE: Bot {bot_id} disconnected. Pausing tracking jobs.")
             self.global_state.group_tracker.stop_tracking_jobs(bot_id)
+        media_service = getattr(self.global_state, "media_processing_service", None)
+        if media_service and hasattr(media_service, "on_bot_disconnected"):
+            await media_service.on_bot_disconnected(bot_id)
     
     async def _get_bot_config(self, bot_id: str) -> Optional[dict]:
         """Helper to retrieve bot configuration from DB."""
@@ -153,6 +159,9 @@ class BotLifecycleService:
             # 3. Cleanup Queues (Move to Holding)
             if self.global_state.async_message_delivery_queue_manager:
                  await self.global_state.async_message_delivery_queue_manager.move_bot_to_holding(bot_id)
+            media_service = getattr(self.global_state, "media_processing_service", None)
+            if media_service and hasattr(media_service, "on_bot_disconnected"):
+                 await media_service.on_bot_disconnected(bot_id)
 
             # 4. Delete Configuration DO NOT DELETE CREDENTIALS HERE
             query = {"config_data.bot_id": bot_id}
@@ -191,6 +200,7 @@ class BotLifecycleService:
             config=config,
             on_session_end=self.global_state.remove_active_bot,
             queues_collection=self.global_state.queues_collection,
+            media_jobs_collection=getattr(self.global_state, "media_processing_jobs_collection", None),
             main_loop=loop,
             on_status_change=self.create_status_change_callback(),
             owner_user_id=owner_user_id
@@ -278,6 +288,9 @@ class BotLifecycleService:
             # 2. Re-route pending message queues to holding area
             if self.global_state.async_message_delivery_queue_manager:
                 await self.global_state.async_message_delivery_queue_manager.move_bot_to_holding(bot_id)
+            media_service = getattr(self.global_state, "media_processing_service", None)
+            if media_service and hasattr(media_service, "on_bot_disconnected"):
+                await media_service.on_bot_disconnected(bot_id)
                  
             # 3. Disconnect provider instance and clear its cache
             if instance:

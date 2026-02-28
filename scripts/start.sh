@@ -6,10 +6,31 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 LOG_DIR="$PROJECT_DIR/log"
 LOG_FILE="$LOG_DIR/consoleView.log"
+ENV_FILE="$PROJECT_DIR/.env"
 
 PRUNE=false
 NGINX_ONLY=false
 KILL_ALL=false
+
+detect_container_identity() {
+    if [[ "$OSTYPE" == "msys" ]] || grep -qi Microsoft /proc/version 2>/dev/null; then
+        export CURRENT_UID=1000
+        export CURRENT_GID=1000
+    else
+        export CURRENT_UID=$(id -u)
+        export CURRENT_GID=$(id -g)
+    fi
+}
+
+upsert_env_var() {
+    local key="$1"
+    local value="$2"
+    if [ -f "$ENV_FILE" ] && grep -q "^${key}=" "$ENV_FILE"; then
+        sed -i "s/^${key}=.*/${key}=${value}/" "$ENV_FILE"
+    else
+        echo "${key}=${value}" >> "$ENV_FILE"
+    fi
+}
 
 for arg in "$@"
 do
@@ -32,6 +53,10 @@ do
         exit 0
     fi
 done
+
+detect_container_identity
+upsert_env_var "CURRENT_UID" "$CURRENT_UID"
+upsert_env_var "CURRENT_GID" "$CURRENT_GID"
 
 if [ "$KILL_ALL" = true ]; then
     echo -e "\n=== Killing ALL Docker containers ==="

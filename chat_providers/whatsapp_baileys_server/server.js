@@ -24,6 +24,9 @@ const http = require('http');
 const { WebSocketServer } = require('ws');
 const pino = require('pino');
 const path = require('path');
+const crypto = require('crypto');
+const util = require('util');
+const execAsync = util.promisify(require('child_process').exec);
 const { MongoClient } = require('mongodb');
 const {
     default: makeWASocket,
@@ -32,6 +35,7 @@ const {
     initAuthCreds,
     proto,
     fetchLatestBaileysVersion,
+    downloadMediaMessage,
 } = require('@whiskeysockets/baileys');
 
 // --- Globals ---
@@ -405,8 +409,116 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
         return null;
     }
 
-    let messageContent = msg.message.conversation || msg.message.extendedTextMessage?.text;
-    if (!messageContent) {
+    const existingFields = {
+        provider_message_id: msg.key.id,
+        sender: senderId,
+        display_name: msg.pushName || session.pushNameCache[senderId] || session.pushNameCache[senderPn] || session.contactsCache[senderId]?.name || null,
+        timestamp: new Date().toISOString(),
+        direction: msg.key.fromMe ? 'outgoing' : 'incoming',
+        originating_time: messageTimestamp,
+    };
+
+    const mediaTypes = {
+        imageMessage: { caption: msg.message.imageMessage?.caption || '' },
+        videoMessage: { caption: msg.message.videoMessage?.caption || '' },
+        audioMessage: { caption: '' },
+        documentMessage: { caption: msg.message.documentMessage?.caption || '' },
+        stickerMessage: { caption: '' },
+    };
+
+    let mediaPayload = null;
+    const mediaInfo = mediaTypes[messageType];
+    if (mediaInfo !== undefined) {
+        const guid = crypto.randomUUID();
+        const mimetype = msg.message[messageType]?.mimetype;
+        const filename = msg.message[messageType]?.fileName || null;
+        const caption = mediaInfo.caption || '';
+        const writeDir = '/app/media_store/pending_media';
+        const writePath = path.join(writeDir, guid);
+
+        const configuredLimitGb = session.vendorConfig?.media_storage_quota_gb || 25;
+        const stopWritingThresholdGb = Math.max(configuredLimitGb - 2, 1);
+        const stopWritingThresholdMb = stopWritingThresholdGb * 1024;
+
+        try {
+            const { stdout } = await execAsync(`du -sm ${writeDir}`);
+            const sizeOutput = stdout.toString().split('\t')[0];
+            const currentSizeMb = parseInt(sizeOutput, 10);
+
+            if (currentSizeMb > stopWritingThresholdMb) {
+                const baseType = messageType.replace('Message', '');
+                mediaPayload = {
+                    message: caption,
+                    media_processing_id: guid,
+                    mime_type: `media_corrupt_${baseType}`,
+                    original_filename: filename,
+                    _quota_exceeded: true,
+                };
+            } else {
+                mediaPayload = null;
+            }
+        } catch (error) {
+            const baseType = messageType.replace('Message', '');
+            mediaPayload = {
+                message: caption,
+                media_processing_id: guid,
+                mime_type: `media_corrupt_${baseType}`,
+                original_filename: filename,
+                _quota_exceeded: true,
+            };
+        }
+
+        if (!mediaPayload) {
+            let downloaded = false;
+            let quotaExceeded = false;
+
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    const stream = await downloadMediaMessage(msg, 'stream', {});
+                    await fs.promises.mkdir(writeDir, { recursive: true });
+                    const writeStream = fs.createWriteStream(writePath);
+                    await new Promise((resolve, reject) => {
+                        stream.pipe(writeStream);
+                        writeStream.on('finish', resolve);
+                        writeStream.on('error', reject);
+                        stream.on('error', reject);
+                    });
+                    downloaded = true;
+                    break;
+                } catch (err) {
+                    try { fs.unlinkSync(writePath); } catch (_) {}
+                    if (err.code === 'ENOSPC') {
+                        quotaExceeded = true;
+                        break;
+                    }
+                    if (attempt < 3) {
+                        await new Promise((r) => setTimeout(r, 2000 * Math.pow(2, attempt - 1)));
+                    }
+                }
+            }
+
+            if (downloaded) {
+                mediaPayload = {
+                    message: caption,
+                    media_processing_id: guid,
+                    mime_type: mimetype || 'application/octet-stream',
+                    original_filename: filename,
+                };
+            } else {
+                const shortType = messageType.replace('Message', '');
+                mediaPayload = {
+                    message: caption,
+                    media_processing_id: guid,
+                    mime_type: `media_corrupt_${shortType}`,
+                    original_filename: filename,
+                    _quota_exceeded: quotaExceeded,
+                };
+            }
+        }
+    }
+
+    let messageContent = mediaPayload?.message ?? (msg.message.conversation || msg.message.extendedTextMessage?.text);
+    if (!messageContent && !mediaPayload) {
         const type = Object.keys(msg.message)[0] || 'unknown';
         messageContent = `[User sent a non-text message: ${type}]`;
     }
@@ -419,7 +531,7 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
         }
     }
 
-    const senderName = msg.pushName || session.pushNameCache[senderId] || session.pushNameCache[senderPn] || session.contactsCache[senderId]?.name || null;
+    const senderName = existingFields.display_name;
 
     let groupInfo = null;
     if (isGroup) {
@@ -508,17 +620,21 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
     }
 
     return {
-        provider_message_id: msg.key.id,
-        sender: senderId,
+        provider_message_id: existingFields.provider_message_id,
+        sender: existingFields.sender,
         display_name: senderName,
         message: messageContent,
-        timestamp: new Date().toISOString(),
+        timestamp: existingFields.timestamp,
         group: groupInfo,
         alternate_identifiers: finalSenderIdentifiers,
-        direction: msg.key.fromMe ? 'outgoing' : 'incoming',
+        direction: existingFields.direction,
         recipient_id: recipientId,
         actual_sender: actualSender,
-        originating_time: messageTimestamp,
+        originating_time: existingFields.originating_time,
+        media_processing_id: mediaPayload?.media_processing_id || null,
+        mime_type: mediaPayload?.mime_type || null,
+        original_filename: mediaPayload?.original_filename || null,
+        _quota_exceeded: mediaPayload?._quota_exceeded,
     };
 }
 

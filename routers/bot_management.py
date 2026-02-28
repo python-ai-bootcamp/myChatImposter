@@ -108,6 +108,7 @@ async def _setup_session(config: BotConfiguration, state: GlobalStateManager) ->
         config=config,
         on_session_end=state.remove_active_bot,
         queues_collection=state.queues_collection,
+        media_jobs_collection=getattr(state, "media_processing_jobs_collection", None),
         main_loop=loop,
         on_status_change=state.bot_lifecycle_service.create_status_change_callback(),
         owner_user_id=owner_user_id

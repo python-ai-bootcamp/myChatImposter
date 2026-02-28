@@ -41,7 +41,7 @@ class IngestionService:
 
             for queue in all_queues:
                 while True:
-                    message = queue.pop_message()
+                    message = queue.pop_ready_message()
                     if not message:
                         break
 
@@ -77,4 +77,23 @@ class IngestionService:
         if self._task:
             self._stop_event.set()
             await self._task
+            await self._final_drain()
             self._task = None
+
+    async def _final_drain(self):
+        if not self.session_manager.bot_queues_manager:
+            return
+        all_queues = self.session_manager.bot_queues_manager.get_all_queues()
+        for queue in all_queues:
+            while True:
+                message = queue.pop_ready_message()
+                if not message:
+                    break
+                try:
+                    message_doc = asdict(message)
+                    message_doc['bot_id'] = self.bot_id
+                    message_doc['provider_name'] = self.provider_name
+                    message_doc['correspondent_id'] = queue.correspondent_id
+                    await self.queues_collection.insert_one(message_doc)
+                except Exception as e:
+                    logging.error(f"INGESTION ({self.bot_id}/{queue.correspondent_id}): Final drain failed for message {message.id}: {e}")

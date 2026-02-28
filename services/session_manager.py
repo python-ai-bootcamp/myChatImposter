@@ -25,6 +25,7 @@ class SessionManager:
         config: BotConfiguration, 
         on_session_end: Optional[Callable[[str], None]] = None, 
         queues_collection: Optional[Collection] = None, 
+        media_jobs_collection = None,
         main_loop = None, 
         on_status_change: Optional[Callable[[str, str], Awaitable[None]]] = None,
         owner_user_id: Optional[str] = None
@@ -36,6 +37,7 @@ class SessionManager:
         self.main_loop = main_loop
         self.on_status_change = on_status_change
         self._queues_collection = queues_collection
+        self._media_jobs_collection = media_jobs_collection
         
         # Components
         self.bot_queues_manager: Optional[BotQueuesManager] = None
@@ -67,7 +69,8 @@ class SessionManager:
             provider_name=provider_name,
             queue_config=self.config.configurations.queue_config,
             queues_collection=self._queues_collection,
-            main_loop=self.main_loop
+            main_loop=self.main_loop,
+            media_jobs_collection=self._media_jobs_collection,
         )
         
         # Register self as the callback to receive messages from the Queue Manager

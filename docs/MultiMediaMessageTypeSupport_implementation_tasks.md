@@ -6,22 +6,22 @@ This document translates the `MultiMediaMessageTypeSupport.md` specification int
 
 | Task ID | Title | Status |
 | :--- | :--- | :--- |
-| [T-001](#t-001-update-message-data-models) | Update Message Data Models | Pending |
-| [T-002](#t-002-shared-staging-volume-setup) | Shared Staging Volume Setup | Pending |
-| [T-003](#t-003-host-identity-sentry-uidgid) | Host Identity Sentry (UID/GID) | Pending |
-| [T-004](#t-004-nodejs-media-streaming--quota) | Node.js Media Streaming & Quota | Pending |
-| [T-005](#t-005-python-provider-contract-alignment) | Python Provider Contract Alignment | Pending |
-| [T-006](#t-006-correspondentqueue-placeholder-support) | CorrespondentQueue Placeholder Support | Pending |
-| [T-007](#t-007-eviction-protection-logic) | Eviction Protection Logic | Pending |
-| [T-008](#t-008-media-processing-jobs-collections) | Media Processing Jobs Collections | Pending |
-| [T-009](#t-009-mediaprocessingservice-core) | MediaProcessingService Core | Pending |
-| [T-010](#t-010-basemediaprocessor--stub-implementations) | BaseMediaProcessor & Stub Implementations | Pending |
-| [T-011](#t-011-specialized-error-processors) | Specialized Error Processors | Pending |
-| [T-012](#t-012-fairness-first-worker-polling) | Fairness-First Worker Polling | Pending |
-| [T-013](#t-013-ingestionservice-skip-pop-logic) | IngestionService Skip-Pop Logic | Pending |
-| [T-014](#t-014-bot-lifecycle-recovery-hooks) | Bot Lifecycle Recovery Hooks | Pending |
-| [T-015](#t-015-global-startup-recovery-sweep) | Global Startup Recovery Sweep | Pending |
-| [T-016](#t-016-janitorial-cleanup-service) | Janitorial Cleanup Service | Pending |
+| [T-001](#t-001-update-message-data-models) | Update Message Data Models | Done |
+| [T-002](#t-002-shared-staging-volume-setup) | Shared Staging Volume Setup | Done |
+| [T-003](#t-003-host-identity-sentry-uidgid) | Host Identity Sentry (UID/GID) | Done |
+| [T-004](#t-004-nodejs-media-streaming--quota) | Node.js Media Streaming & Quota | Done |
+| [T-005](#t-005-python-provider-contract-alignment) | Python Provider Contract Alignment | Done |
+| [T-006](#t-006-correspondentqueue-placeholder-support) | CorrespondentQueue Placeholder Support | Done |
+| [T-007](#t-007-eviction-protection-logic) | Eviction Protection Logic | Done |
+| [T-008](#t-008-media-processing-jobs-collections) | Media Processing Jobs Collections | Done |
+| [T-009](#t-009-mediaprocessingservice-core) | MediaProcessingService Core | Done |
+| [T-010](#t-010-basemediaprocessor--stub-implementations) | BaseMediaProcessor & Stub Implementations | Done |
+| [T-011](#t-011-specialized-error-processors) | Specialized Error Processors | Done |
+| [T-012](#t-012-fairness-first-worker-polling) | Fairness-First Worker Polling | Done |
+| [T-013](#t-013-ingestionservice-skip-pop-logic) | IngestionService Skip-Pop Logic | Done |
+| [T-014](#t-014-bot-lifecycle-recovery-hooks) | Bot Lifecycle Recovery Hooks | Done |
+| [T-015](#t-015-global-startup-recovery-sweep) | Global Startup Recovery Sweep | Done |
+| [T-016](#t-016-janitorial-cleanup-service) | Janitorial Cleanup Service | Done |
 
 ---
 
