@@ -189,7 +189,7 @@ Required fields:
 
 Optional fields:
 - `original_filename: str | null`
-- `_quota_exceeded: bool` (diagnostic marker)
+- `quota_exceeded: bool` (diagnostic marker)
 
 Python should validate this WS payload contract (preferably via an internal typed model) before mapping to `BotQueuesManager.add_message(...)`.
 
@@ -401,22 +401,21 @@ A fixed-concurrency pool to avoid memory bloat and starvation across bots. **All
 | `video/mp4`, `video/webm` | Video pool | vision/transcription API → description |
 | `image/jpeg`, `image/png`, `image/webp` | Image pool | vision API → text description |
 | `application/pdf`, `text/plain`, etc. | Document pool | text extraction API → plain text |
-| `image/webp` (stickers) | Sticker pool | vision/metadata extraction → description |
-| `media_corrupt_image`, `media_corrupt_audio`, `media_corrupt_video`, `media_corrupt_document`, `media_corrupt_sticker` | `CorruptMediaProcessor` | error handling (see below) |
+| `media_corrupt_image`, `media_corrupt_audio`, `media_corrupt_video`, `media_corrupt_document` | `CorruptMediaProcessor` | error handling (see below) |
 | *anything else* (e.g. `text/calendar`)| `UnsupportedMediaProcessor` (default catch-all) | error handling (see below) |
 
 ### Corrupted Media Handling (`CorruptMediaProcessor`)
 
-When `server.js` fails to download media after **3 retry attempts** (exponential back-off: 2s → 4s → 8s), it deletes any partially-written file and sends metadata to Python with `mime_type = "media_corrupt_<type>"` (where `<type>` is `image`, `video`, `audio`, `document`, or `sticker`). The `content` field carries the original caption if one exists, otherwise an empty string. The message enters the queue as a placeholder like any other media message.
+When `server.js` fails to download media after **3 retry attempts** (exponential back-off: 2s → 4s → 8s), it deletes any partially-written file and sends metadata to Python with `mime_type = "media_corrupt_<type>"` (where `<type>` is `image`, `video`, `audio`, or `document`). The `content` field carries the original caption if one exists, otherwise an empty string. The message enters the queue as a placeholder like any other media message.
 
 The `CorruptMediaProcessor` handles these jobs:
 1. Deletes the media file from the shared volume (if one exists).
-2. Moves the job to `media_processing_jobs_failed` with `error: "download failed — <type> corrupted"` (e.g., `image corrupted`) for operator investigation.
+2. Archives a copy of the job to `media_processing_jobs_failed` with `error: "download failed — <type> corrupted"` for operator investigation.
 3. Constructs the final message content:
    - If the placeholder has a caption: prepend `"[Corrupted <type> media could not be downloaded] "` to the existing caption.
    - If no caption: set `content = "[Corrupted <type> media could not be downloaded]"`.
-4. Updates the placeholder in the `CorrespondentQueue` via `update_message_by_media_id` — (which is a method of `CorrespondentQueue` class that sets the final `content`, clears `media_processing_id`, adjusts `message_size`, and fires `_trigger_callbacks` so the bot can acknowledge and respond to the failure.)
-5. Job is removed from `media_processing_jobs`.
+4. Persists the result as `status = "completed"` in the active/holding collection, then delivers via `update_message_by_media_id` — sets the final `content`, clears `media_processing_id`, adjusts `message_size`, and fires `_trigger_callbacks` so the bot can acknowledge and respond to the failure.
+5. Job is removed from active/holding collections after successful delivery.
 
 ### Unsupported Media Handling (`UnsupportedMediaProcessor`)
 
@@ -452,10 +451,9 @@ The configuration document contains an array of pool definitions:
 [
   { "mimeTypes": ["audio/ogg", "audio/mpeg"], "processorClass": "AudioTranscriptionProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 300 },
   { "mimeTypes": ["video/mp4", "video/webm"], "processorClass": "VideoDescriptionProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 600 },
-  { "mimeTypes": ["image/jpeg", "image/png"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3, "processingTimeoutSeconds": 120 },
+  { "mimeTypes": ["image/jpeg", "image/png", "image/webp"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3, "processingTimeoutSeconds": 120 },
   { "mimeTypes": ["application/pdf", "text/plain"], "processorClass": "DocumentProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 120 },
-  { "mimeTypes": ["image/webp"], "processorClass": "StickerProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 60 },
-  { "mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video", "media_corrupt_document", "media_corrupt_sticker"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10 },
+  { "mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video", "media_corrupt_document"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10 },
   { "mimeTypes": [], "processorClass": "UnsupportedMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10 }
 ]
 ```
@@ -604,12 +602,12 @@ The base class handles all common operations in `process_job`:
 1. **Extract job metadata** — `guid`, `mime_type`, `correspondent_id`, etc.
 2. **Call `process_media()` with Centralized Timeout**: The base class wraps the call in `asyncio.wait_for(..., timeout=self.processing_timeout)`. This removes the burden of timeout handling from the subclasses and ensures worker pool stability.
 3. **Persist result (durable state)**:
-    - **Success**: Write result to job document (active collection first, then holding fallback).
-    - **Controlled Failure** (has `failed_reason`): Move the job immediately to `media_processing_jobs_failed` with the error context.
+    - **All outcomes** (success and failure): Write result to job document (active collection first, then holding fallback) with `status = "completed"` and `result = content`. This ensures the result is safely durable regardless of bot state.
+    - **Failure path** (has `failed_reason`): Additionally archive a copy of the job to `media_processing_jobs_failed` for operator inspection. This is purely additive — the `_failed` collection is never read by the recovery path.
 4. **Best-effort in-memory delivery**: If bot queue exists, call `update_message_by_media_id(...)` to deliver the transcript OR the error text (e.g. `[Corrupted...]`).
-5. **Direct delivery cleanup**: If in-memory update succeeds for a **successful** job, remove it from the active collection.
+5. **Direct delivery cleanup**: If in-memory update succeeds (for any outcome), remove the job from the active/holding collection.
 6. **Delete the media file** from disk — always, regardless of success/failure path.
-7. **Unhandled exceptions** (`_handle_unhandled_exception`) — if `process_media()` raises, move job to `media_processing_jobs_failed` with full stack trace in `error` field; set generic queue error content only if queue is available; always delete media file.
+7. **Unhandled exceptions** (`_handle_unhandled_exception`) — if `process_media()` raises, persist an error result as `completed` and archive to `media_processing_jobs_failed`; set generic queue error content only if queue is available; always delete media file.
 
 ### Subclass Responsibilities
 
@@ -664,10 +662,9 @@ This resets the battlefield, ensuring no jobs are orphaned in a "claimed but dea
 ### Phase 2: Bot-Specific Transitions (The Active Handshake)
 When individual bots connect or disconnect, state transitions occur at the bot level:
 - **Bot Starts (Recovery Job Restoration)**: The bot first initializes its `next_id` for each correspondent by querying the **`queues`** collection (highest persisted ID + 1). It then restores the active state:
-  1. **Crucial Seeding Step**: The bot injects placeholders via the **`inject_placeholder(message)`** method for *every* job found (regardless of status). This bypasses ID generation and callbacks, securely seeding the empty queue.
-  2. **Monotonic ID Sync**: After injection, the bot forces `next_id = max(next_id, max(injected_placeholder_ids, default=0) + 1)`.
-  3. **The Reaping Path (`status == "completed"`)**: The bot uses an **Atomic Reaping** pattern (find-and-delete) to harvest the result, updates its queue via `update_message_by_media_id`, and deletes the job.
-  4. **The Promotion Path (`status == "processing" | "pending"`)**: The bot moves the job record back to the active collection to allow workers to (continue) processing.
+  1. **Reaping Path (`status == "completed"`)**: The bot uses an **Atomic Reaping** pattern (find-and-delete) to harvest the result. It first attempts `update_message_by_media_id` to deliver directly; if the placeholder is not present in the queue yet, it calls `inject_placeholder` first and then delivers. The job is deleted.
+  2. **Promotion Path (`status == "processing" | "pending"`)**: The bot checks if the placeholder is already in the queue (to avoid duplicates). If not, it calls `inject_placeholder`. It then moves the job record back to the active collection, **resetting status to `"pending"`** so workers can claim it fresh (the original worker is no longer running).
+  3. **Monotonic ID Sync**: After injection, the queue's `next_id` is implicitly kept monotonic by `inject_placeholder`, which calls `next_id = max(next_id, message.id + 1)`.
 - **Bot Stops**: All active jobs for that `bot_id` are moved from `media_processing_jobs` → `media_processing_jobs_holding`. In-flight workers will finish and save their results directly to `_holding` (Persistence-First path).
 
 ### Phase 3: Janitorial Sweep (The Double-Lock Cleanup)

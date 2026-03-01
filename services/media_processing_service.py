@@ -14,10 +14,9 @@ from queue_manager import Group, Message, Sender
 DEFAULT_POOL_DEFINITIONS = [
     {"mimeTypes": ["audio/ogg", "audio/mpeg"], "processorClass": "AudioTranscriptionProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 300},
     {"mimeTypes": ["video/mp4", "video/webm"], "processorClass": "VideoDescriptionProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 600},
-    {"mimeTypes": ["image/jpeg", "image/png"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3, "processingTimeoutSeconds": 120},
-    {"mimeTypes": ["image/webp"], "processorClass": "StickerProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 60},
+    {"mimeTypes": ["image/jpeg", "image/png", "image/webp"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3, "processingTimeoutSeconds": 120},
     {"mimeTypes": ["application/pdf", "text/plain"], "processorClass": "DocumentProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 120},
-    {"mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video", "media_corrupt_document", "media_corrupt_sticker"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10},
+    {"mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video", "media_corrupt_document"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10},
     {"mimeTypes": [], "processorClass": "UnsupportedMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10},
 ]
 
@@ -148,12 +147,22 @@ class MediaProcessingService:
         processor = processor_class(pool_definition["mimeTypes"], pool_definition.get("processingTimeoutSeconds", 60))
         last_bot_id = None
 
+        # Pre-compute all mime types explicitly handled by specific (non-catch-all) pools.
+        # Used by the catch-all depth query to count only truly unhandled jobs.
+        all_specific_mime_types = [
+            mt for pd in self.pool_definitions if pd["mimeTypes"] for mt in pd["mimeTypes"]
+        ]
+
         while self.running:
             try:
                 job_doc = await self._claim_job(worker_id, pool_definition["mimeTypes"], last_bot_id)
                 pending_query = {"status": "pending"}
                 if pool_definition["mimeTypes"]:
+                    # Specific pool: count only jobs for this pool's mime types
                     pending_query["mime_type"] = {"$in": pool_definition["mimeTypes"]}
+                elif all_specific_mime_types:
+                    # Catch-all pool: count only jobs NOT handled by any specific pool
+                    pending_query["mime_type"] = {"$nin": all_specific_mime_types}
                 depth = await self.active_collection.count_documents(pending_query)
                 logging.info(
                     f"MEDIA SERVICE: pool={pool_definition['processorClass']} pending_depth={depth}"
@@ -317,8 +326,11 @@ class MediaProcessingService:
 
     async def _cleanup_stale_db_jobs(self, cutoff_ms: int):
         for collection_name in ["media_processing_jobs", "media_processing_jobs_holding"]:
-            cursor = self.db[collection_name].find({"created_at": {"$lt": cutoff_ms}})
-            async for doc in cursor:
+            # Collect all matching docs into memory first before any deletions.
+            # Deleting while iterating a live server-side cursor is unsafe — MongoDB may
+            # skip documents mid-batch if deletions shift internal cursor positions.
+            docs = [doc async for doc in self.db[collection_name].find({"created_at": {"$lt": cutoff_ms}})]
+            for doc in docs:
                 await self._archive_failed_doc(doc, "stale db job cleanup")
                 await self.db[collection_name].delete_one({"_id": doc["_id"]})
                 self._delete_media_file(doc.get("guid"))

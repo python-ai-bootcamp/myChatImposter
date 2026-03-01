@@ -36,8 +36,3 @@ class VideoDescriptionProcessor(StubSleepProcessor):
 class DocumentProcessor(StubSleepProcessor):
     sleep_seconds = 5
     media_label = "document"
-
-
-class StickerProcessor(StubSleepProcessor):
-    sleep_seconds = 5
-    media_label = "sticker"

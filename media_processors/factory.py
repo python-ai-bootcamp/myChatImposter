@@ -3,7 +3,6 @@ from media_processors.stub_processors import (
     AudioTranscriptionProcessor,
     DocumentProcessor,
     ImageVisionProcessor,
-    StickerProcessor,
     VideoDescriptionProcessor,
 )
 
@@ -13,7 +12,6 @@ PROCESSOR_CLASS_MAP = {
     "VideoDescriptionProcessor": VideoDescriptionProcessor,
     "ImageVisionProcessor": ImageVisionProcessor,
     "DocumentProcessor": DocumentProcessor,
-    "StickerProcessor": StickerProcessor,
     "CorruptMediaProcessor": CorruptMediaProcessor,
     "UnsupportedMediaProcessor": UnsupportedMediaProcessor,
 }
