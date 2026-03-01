@@ -48,7 +48,7 @@ class WhatsAppIncomingPayload(BaseModel):
     media_processing_id: Optional[str] = None
     mime_type: Optional[str] = None
     original_filename: Optional[str] = None
-    _quota_exceeded: Optional[bool] = None
+    quota_exceeded: Optional[bool] = None
 
 
 class WhatsAppBaileysProvider(BaseChatProvider):
@@ -427,8 +427,8 @@ class WhatsAppBaileysProvider(BaseChatProvider):
 
             originating_time = payload.originating_time
             media_metadata = {}
-            if payload._quota_exceeded is not None:
-                media_metadata["_quota_exceeded"] = payload._quota_exceeded
+            if payload.quota_exceeded is not None:
+                media_metadata["quota_exceeded"] = payload.quota_exceeded
 
             await queues_manager.add_message(
                 correspondent_id=correspondent_id,

@@ -14,7 +14,8 @@ from queue_manager import Group, Message, Sender
 DEFAULT_POOL_DEFINITIONS = [
     {"mimeTypes": ["audio/ogg", "audio/mpeg"], "processorClass": "AudioTranscriptionProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 300},
     {"mimeTypes": ["video/mp4", "video/webm"], "processorClass": "VideoDescriptionProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 600},
-    {"mimeTypes": ["image/jpeg", "image/png", "image/webp"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3, "processingTimeoutSeconds": 120},
+    {"mimeTypes": ["image/jpeg", "image/png"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3, "processingTimeoutSeconds": 120},
+    {"mimeTypes": ["image/webp"], "processorClass": "StickerProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 60},
     {"mimeTypes": ["application/pdf", "text/plain"], "processorClass": "DocumentProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 120},
     {"mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video", "media_corrupt_document", "media_corrupt_sticker"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10},
     {"mimeTypes": [], "processorClass": "UnsupportedMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10},
@@ -82,7 +83,6 @@ class MediaProcessingService:
             return
         await self._reap_completed_jobs_atomically(bot_id, bot_queues)
         await self._promote_incomplete_jobs_atomically(bot_id, bot_queues)
-        await self._reap_failed_notifications(bot_id, bot_queues)
 
     async def on_bot_disconnected(self, bot_id: str):
         docs = []
@@ -279,25 +279,7 @@ class MediaProcessingService:
             promoted["status"] = "pending"
             await self.active_collection.insert_one(promoted)
 
-    async def _reap_failed_notifications(self, bot_id: str, bot_queues):
-        while True:
-            doc = await self.failed_collection.find_one_and_update(
-                {
-                    "bot_id": bot_id,
-                    "pending_user_delivery": True,
-                    "result": {"$exists": True},
-                },
-                {"$set": {"pending_user_delivery": False}},
-                sort=[("created_at", 1)],
-                return_document=ReturnDocument.AFTER,
-            )
-            if not doc:
-                break
-            job = self._doc_to_job(doc)
-            updated = await bot_queues.update_message_by_media_id(job.correspondent_id, job.guid, doc["result"])
-            if not updated:
-                await bot_queues.inject_placeholder(job.correspondent_id, job.placeholder_message)
-                await bot_queues.update_message_by_media_id(job.correspondent_id, job.guid, doc["result"])
+
 
     async def _cleanup_loop(self):
         while self.running:

@@ -436,7 +436,7 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
         const writeDir = '/app/media_store/pending_media';
         const writePath = path.join(writeDir, guid);
 
-        const configuredLimitGb = session.vendorConfig?.media_storage_quota_gb || 25;
+        const configuredLimitGb = session.providerConfig?.media_storage_quota_gb || 25;
         const stopWritingThresholdGb = Math.max(configuredLimitGb - 2, 1);
         const stopWritingThresholdMb = stopWritingThresholdGb * 1024;
 
@@ -452,7 +452,7 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
                     media_processing_id: guid,
                     mime_type: `media_corrupt_${baseType}`,
                     original_filename: filename,
-                    _quota_exceeded: true,
+                    quota_exceeded: true,
                 };
             } else {
                 mediaPayload = null;
@@ -464,7 +464,7 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
                 media_processing_id: guid,
                 mime_type: `media_corrupt_${baseType}`,
                 original_filename: filename,
-                _quota_exceeded: true,
+                quota_exceeded: true,
             };
         }
 
@@ -511,7 +511,7 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
                     media_processing_id: guid,
                     mime_type: `media_corrupt_${shortType}`,
                     original_filename: filename,
-                    _quota_exceeded: quotaExceeded,
+                    quota_exceeded: quotaExceeded,
                 };
             }
         }
@@ -634,7 +634,7 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
         media_processing_id: mediaPayload?.media_processing_id || null,
         mime_type: mediaPayload?.mime_type || null,
         original_filename: mediaPayload?.original_filename || null,
-        _quota_exceeded: mediaPayload?._quota_exceeded,
+        quota_exceeded: mediaPayload?.quota_exceeded,
     };
 }
 
@@ -868,10 +868,10 @@ const performHardResetAction = async (userId, session) => {
             session.sock?.end(undefined); // Ensure socket is closed
 
             // Restart connection logic with new auth state (which will trigger QR)
-            if (session.vendorConfig) {
+            if (session.providerConfig) {
                 console.log(`[${userId}] Hard Reset: Scheduling reconnection/QR generation.`);
                 // Short delay to allow cleanup
-                setTimeout(() => connectToWhatsApp(userId, session.vendorConfig), 1000);
+                setTimeout(() => connectToWhatsApp(userId, session.providerConfig), 1000);
             }
         }
     } catch (err) {
@@ -879,7 +879,7 @@ const performHardResetAction = async (userId, session) => {
     }
 };
 
-async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
+async function connectToWhatsApp(userId, providerConfig, forceReinit = false) {
     if (pendingInits.has(userId)) {
         console.log(`[${userId}] Initialization already in progress (Internal/HTTP). Awaiting existing promise...`);
         return pendingInits.get(userId);
@@ -938,7 +938,7 @@ async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
                     contactsCache: {},
                     lidCache: lidMappings,
                     pushNameCache: {},
-                    vendorConfig: vendorConfig,
+                    providerConfig: providerConfig,
                     retryCount: 0,
                     http405Tracker: createHttp405Tracker(),
                     store: { messages: {} }, // Initialize in-memory message store
@@ -1116,7 +1116,7 @@ async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
                 logger: errorInterceptor,
                 version: waVersion,
                 browser: DEFAULT_BROWSER,
-                syncFullHistory: vendorConfig.sync_full_history === true,
+                syncFullHistory: providerConfig.sync_full_history === true,
                 printQRInTerminal: false, // We handle QR code generation manually
                 connectTimeoutMs: 60000, // Increase timeout to 60s for slow DNS
                 defaultQueryTimeoutMs: 60000, // Increase query timeout to 60s
@@ -1152,7 +1152,7 @@ async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
                     contactsCache: {},
                     lidCache: {}, // Initialize empty (will load from DB below)
                     pushNameCache: {},
-                    vendorConfig: vendorConfig,
+                    providerConfig: providerConfig,
                     retryCount: 0,
                     http405Tracker: createHttp405Tracker(),
                     store: { messages: {} }, // Initialize in-memory message store
@@ -1195,7 +1195,7 @@ async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
                 if (session.isPerformingSoftReset) {
                     session.isPerformingSoftReset = false; // Reset flag after handling
                     console.log(`[${userId}] Soft Reset triggered close event handled.`);
-                    setTimeout(() => connectToWhatsApp(userId, vendorConfig), 500);
+                    setTimeout(() => connectToWhatsApp(userId, providerConfig), 500);
                     return;
                 }
 
@@ -1357,10 +1357,10 @@ async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
                         if (performSoftReset) {
                             await performSoftResetAction(userId, session);
                             // Reconnect after a brief delay to allow cleanup
-                            setTimeout(() => connectToWhatsApp(userId, vendorConfig), 500);
+                            setTimeout(() => connectToWhatsApp(userId, providerConfig), 500);
                         } else {
                             console.log(`[${userId}] Connection requires a restart. Reconnecting immediately.`);
-                            connectToWhatsApp(userId, vendorConfig);
+                            connectToWhatsApp(userId, providerConfig);
                         }
 
                     } else if (isPermanentDisconnection || isPersistentBadSession || forceHardReset || shouldForceRelink(statusCode, session)) {
@@ -1380,7 +1380,7 @@ async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
                                 if (sessions[userId]) {
                                     sessions[userId].authState = null;
                                 }
-                                setTimeout(() => connectToWhatsApp(userId, vendorConfig), 1000);
+                                setTimeout(() => connectToWhatsApp(userId, providerConfig), 1000);
                             })
                             .catch(err => {
                                 console.error(`[${userId}] Failed to delete auth info from DB:`, err);
@@ -1392,7 +1392,7 @@ async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
                         console.log(`[${userId}] Connection closed transiently (code: ${statusCode}). Retry #${session.retryCount}.`);
                         console.log(`[${userId}] Underlying error:`, lastDisconnect.error);
                         console.log(`[${userId}] Attempting to reconnect in 5s...`);
-                        setTimeout(() => connectToWhatsApp(userId, vendorConfig), RETRY_DELAY_MS);
+                        setTimeout(() => connectToWhatsApp(userId, providerConfig), RETRY_DELAY_MS);
                     }
                 }
             });
@@ -1490,8 +1490,8 @@ async function connectToWhatsApp(userId, vendorConfig, forceReinit = false) {
                         session.connectionStatus = 'open';
                     }
 
-                    const processOffline = session.vendorConfig.process_offline_messages === true;
-                    const allowGroups = session.vendorConfig.allow_group_messages === true;
+                    const processOffline = session.providerConfig.process_offline_messages === true;
+                    const allowGroups = session.providerConfig.allow_group_messages === true;
 
                     const newMessagesPromises = m.messages.map(async (msg) => {
                         return await processMessage(session, userId, msg, processOffline, allowGroups);

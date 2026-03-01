@@ -216,17 +216,6 @@ class CorrespondentQueue:
     def has_media_processing_id(self, guid: str) -> bool:
         return any(message.media_processing_id == guid for message in self._messages)
 
-    def pop_message(self) -> Optional[Message]:
-        """Pops the oldest message from the queue in a thread-safe manner."""
-        try:
-            message = self._messages.popleft()
-            self._total_chars -= message.message_size
-            return message
-        except IndexError:
-            # The queue is empty, so we clear the event.
-            self._new_message_event.clear()
-            return None
-
     def pop_ready_message(self) -> Optional[Message]:
         for idx, message in enumerate(self._messages):
             if message.media_processing_id:
@@ -404,53 +393,4 @@ class BotQueuesManager:
         queue = await self.get_or_create_queue(correspondent_id)
         return queue.has_media_processing_id(guid)
 
-    async def reap_and_promote_jobs(self, holding_collection, active_collection):
-        while True:
-            doc = await holding_collection.find_one_and_delete(
-                {
-                    "bot_id": self.bot_id,
-                    "$or": [
-                        {"status": "completed", "result": {"$exists": True}},
-                        {"status": {"$in": ["pending", "processing"]}},
-                        {"status": "completed", "result": {"$exists": False}},
-                    ],
-                },
-                sort=[("created_at", 1)],
-            )
-            if not doc:
-                break
-            placeholder_doc = doc.get("placeholder_message", {})
-            sender_doc = placeholder_doc.get("sender", {})
-            sender = Sender(
-                identifier=sender_doc.get("identifier", "unknown"),
-                display_name=sender_doc.get("display_name", "unknown"),
-                alternate_identifiers=sender_doc.get("alternate_identifiers", []),
-            )
-            group = None
-            if placeholder_doc.get("group"):
-                group_doc = placeholder_doc["group"]
-                group = Group(
-                    identifier=group_doc.get("identifier", ""),
-                    display_name=group_doc.get("display_name", ""),
-                    alternate_identifiers=group_doc.get("alternate_identifiers", []),
-                )
-            message = Message(
-                id=placeholder_doc.get("id", 0),
-                content=placeholder_doc.get("content", ""),
-                sender=sender,
-                source=placeholder_doc.get("source", "user"),
-                accepted_time=placeholder_doc.get("accepted_time", int(time.time() * 1000)),
-                message_size=placeholder_doc.get("message_size", 0),
-                originating_time=placeholder_doc.get("originating_time"),
-                group=group,
-                provider_message_id=placeholder_doc.get("provider_message_id"),
-                media_processing_id=placeholder_doc.get("media_processing_id"),
-            )
-            await self.inject_placeholder(doc["correspondent_id"], message)
-            if doc.get("status") == "completed" and doc.get("result"):
-                await self.update_message_by_media_id(doc["correspondent_id"], doc["guid"], doc["result"])
-            else:
-                promoted = dict(doc)
-                promoted.pop("_id", None)
-                promoted["status"] = "pending"
-                await active_collection.insert_one(promoted)
+
