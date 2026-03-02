@@ -95,6 +95,12 @@ class GlobalStateManager:
             return self.chatbot_instances.get(instance_id)
         return None
 
+    def get_bot_queues(self, bot_id: str):
+        """Resolve bot_id -> BotQueuesManager. Returns None if the bot is not active.
+        Used as the resolver callable passed to MediaProcessingService."""
+        instance = self.get_chatbot_instance_by_bot(bot_id)
+        return instance.bot_queues_manager if instance else None
+
     def remove_active_bot(self, bot_id: str):
         """Callback to remove a bot from the active list and clean up instance."""
         if bot_id in self.active_bots:

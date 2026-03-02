@@ -150,7 +150,7 @@ class CorrespondentQueue:
         media_processing_id: Optional[str] = None,
         mime_type: Optional[str] = None,
         original_filename: Optional[str] = None,
-        media_metadata: Optional[Dict[str, Any]] = None,
+        quota_exceeded: Optional[bool] = None,
     ) -> Optional[Message]:
         """Create, add, and process a new message for the queue."""
         if provider_message_id:
@@ -332,7 +332,7 @@ class BotQueuesManager:
         media_processing_id: Optional[str] = None,
         mime_type: Optional[str] = None,
         original_filename: Optional[str] = None,
-        media_metadata: Optional[Dict[str, Any]] = None,
+        quota_exceeded: Optional[bool] = None,
     ):
         queue = await self.get_or_create_queue(correspondent_id)
         message = await queue.add_message(
@@ -345,7 +345,7 @@ class BotQueuesManager:
             media_processing_id=media_processing_id,
             mime_type=mime_type,
             original_filename=original_filename,
-            media_metadata=media_metadata,
+            quota_exceeded=quota_exceeded,
         )
         if (
             message
@@ -361,7 +361,7 @@ class BotQueuesManager:
                 "mime_type": mime_type,
                 "original_filename": original_filename,
                 "status": "pending",
-                "media_metadata": media_metadata or {},
+                "quota_exceeded": quota_exceeded,
                 "created_at": int(time.time() * 1000),
             }
             await self.media_jobs_collection.insert_one(job_doc)
@@ -382,7 +382,9 @@ class BotQueuesManager:
         return self._queues.get(correspondent_id)
 
     async def update_message_by_media_id(self, correspondent_id: str, guid: str, content: str) -> bool:
-        queue = await self.get_or_create_queue(correspondent_id)
+        queue = self.get_queue(correspondent_id)
+        if queue is None:
+            return False
         return await queue.update_message_by_media_id(guid, content)
 
     async def inject_placeholder(self, correspondent_id: str, message: Message):
@@ -390,7 +392,9 @@ class BotQueuesManager:
         queue.inject_placeholder(message)
 
     async def has_media_processing_id(self, correspondent_id: str, guid: str) -> bool:
-        queue = await self.get_or_create_queue(correspondent_id)
+        queue = self.get_queue(correspondent_id)
+        if queue is None:
+            return False
         return queue.has_media_processing_id(guid)
 
 

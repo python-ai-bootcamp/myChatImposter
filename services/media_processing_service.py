@@ -8,6 +8,7 @@ from pymongo import ReturnDocument
 
 from infrastructure.models import MediaProcessingJob
 from media_processors.factory import get_processor_class
+from media_processors.media_file_utils import delete_media_file, resolve_media_path, MEDIA_STAGING_DIR
 from queue_manager import Group, Message, Sender
 
 
@@ -16,7 +17,7 @@ DEFAULT_POOL_DEFINITIONS = [
     {"mimeTypes": ["video/mp4", "video/webm"], "processorClass": "VideoDescriptionProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 600},
     {"mimeTypes": ["image/jpeg", "image/png", "image/webp"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3, "processingTimeoutSeconds": 120},
     {"mimeTypes": ["application/pdf", "text/plain"], "processorClass": "DocumentProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 120},
-    {"mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video", "media_corrupt_document"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10},
+    {"mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video", "media_corrupt_document", "media_corrupt_sticker"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10},
     {"mimeTypes": [], "processorClass": "UnsupportedMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10},
 ]
 
@@ -242,7 +243,7 @@ class MediaProcessingService:
             mime_type=doc["mime_type"],
             status=doc["status"],
             original_filename=doc.get("original_filename"),
-            media_metadata=doc.get("media_metadata", {}),
+            quota_exceeded=doc.get("quota_exceeded"),
             result=doc.get("result"),
             error=doc.get("error"),
         )
@@ -286,6 +287,11 @@ class MediaProcessingService:
             promoted = dict(doc)
             promoted.pop("_id", None)
             promoted["status"] = "pending"
+            # Reset created_at to NOW so the janitor's staleness cutoff is measured from
+            # re-entry into the active collection — not from when the original message arrived.
+            # Without this, a bot offline for >3 hours would have all promoted jobs
+            # immediately dead-lettered by the next hourly janitor sweep.
+            promoted["created_at"] = int(time.time() * 1000)
             await self.active_collection.insert_one(promoted)
 
 
@@ -333,10 +339,10 @@ class MediaProcessingService:
             for doc in docs:
                 await self._archive_failed_doc(doc, "stale db job cleanup")
                 await self.db[collection_name].delete_one({"_id": doc["_id"]})
-                self._delete_media_file(doc.get("guid"))
+                delete_media_file(doc.get("guid"))
 
     async def _cleanup_orphan_files(self):
-        media_dir = os.path.join("media_store", "pending_media")
+        media_dir = MEDIA_STAGING_DIR
         if not os.path.isdir(media_dir):
             return
         known_guids = set()
@@ -365,7 +371,7 @@ class MediaProcessingService:
             async for doc in cursor:
                 await self._archive_failed_doc(doc, error)
                 await self.db[collection_name].delete_one({"_id": doc["_id"]})
-                self._delete_media_file(guid)
+                delete_media_file(guid)
 
     async def _archive_failed_doc(self, doc: Dict[str, Any], error: str):
         failed_doc = dict(doc)
@@ -374,12 +380,3 @@ class MediaProcessingService:
         failed_doc["error"] = error
         await self.failed_collection.insert_one(failed_doc)
 
-    def _delete_media_file(self, guid: Optional[str]):
-        if not guid:
-            return
-        file_path = os.path.join("media_store", "pending_media", guid)
-        try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        except Exception:
-            pass

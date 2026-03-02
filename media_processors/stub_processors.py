@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Any, Dict
+from typing import Optional
 
 from infrastructure.models import ProcessingResult
 from media_processors.base import BaseMediaProcessor
@@ -10,7 +10,7 @@ class StubSleepProcessor(BaseMediaProcessor):
     sleep_seconds: int = 1
     media_label: str = "media"
 
-    async def process_media(self, file_path: str, mime_type: str, caption: str, media_metadata: Dict[str, Any]) -> ProcessingResult:
+    async def process_media(self, file_path: str, mime_type: str, caption: str, quota_exceeded: Optional[bool]) -> ProcessingResult:
         if os.path.exists(file_path):
             with open(file_path, "rb"):
                 pass

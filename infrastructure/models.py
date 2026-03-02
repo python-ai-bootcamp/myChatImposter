@@ -1,5 +1,5 @@
 from dataclasses import dataclass, field
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from queue_manager import Message
 
@@ -14,7 +14,7 @@ class MediaProcessingJob:
     mime_type: str
     status: str
     original_filename: Optional[str] = None
-    media_metadata: Dict[str, Any] = field(default_factory=dict)
+    quota_exceeded: Optional[bool] = None
     result: Optional[str] = None
     error: Optional[str] = None
 

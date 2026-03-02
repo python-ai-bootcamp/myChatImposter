@@ -425,11 +425,6 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 logging.error(f"ERROR: Could not determine correspondent_id for message. Skipping. Data: {msg}")
                 continue
 
-            originating_time = payload.originating_time
-            media_metadata = {}
-            if payload.quota_exceeded is not None:
-                media_metadata["quota_exceeded"] = payload.quota_exceeded
-
             await queues_manager.add_message(
                 correspondent_id=correspondent_id,
                 content=payload.message,
@@ -441,7 +436,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 media_processing_id=payload.media_processing_id,
                 mime_type=payload.mime_type,
                 original_filename=payload.original_filename,
-                media_metadata=media_metadata if media_metadata else None,
+                quota_exceeded=payload.quota_exceeded,
             )
 
     async def stop_listening(self, cleanup_session: bool = False):

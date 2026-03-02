@@ -3,9 +3,10 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import asdict
-from typing import Any, Callable, Dict, List
+from typing import Any, Callable, List, Optional
 
 from infrastructure.models import MediaProcessingJob, ProcessingResult
+from media_processors.media_file_utils import resolve_media_path, delete_media_file
 
 
 class BaseMediaProcessor(ABC):
@@ -15,12 +16,12 @@ class BaseMediaProcessor(ABC):
 
     async def process_job(self, job: MediaProcessingJob, get_bot_queues: Callable[[str], Any], db):
         """Full shared lifecycle — called by the worker pool for each job."""
-        file_path = os.path.join("media_store", "pending_media", job.guid)
+        file_path = resolve_media_path(job.guid)
         try:
             # 1. ACTUAL CONVERSION (Externally Guarded by Centralized Timeout)
             try:
                 result = await asyncio.wait_for(
-                    self.process_media(file_path, job.mime_type, job.placeholder_message.content, job.media_metadata),
+                    self.process_media(file_path, job.mime_type, job.placeholder_message.content, job.quota_exceeded),
                     timeout=self.processing_timeout,
                 )
             except asyncio.TimeoutError:
@@ -65,13 +66,13 @@ class BaseMediaProcessor(ABC):
 
         except Exception as e:
             logging.exception("MEDIA PROCESSOR: unhandled exception")
-            await self._handle_unhandled_exception(job, db, str(e))
+            await self._handle_unhandled_exception(job, db, str(e), get_bot_queues)
         finally:
-            # GUARANTEE: The media file is always removed from the shared terrain
-            self._delete_media_file(file_path)
+            # GUARANTEE: The media file is always removed from the shared staging volume
+            delete_media_file(job.guid)
 
     @abstractmethod
-    async def process_media(self, file_path: str, mime_type: str, caption: str, media_metadata: Dict[str, Any]) -> ProcessingResult:
+    async def process_media(self, file_path: str, mime_type: str, caption: str, quota_exceeded: Optional[bool]) -> ProcessingResult:
         """Subclass implements ONLY this: actual AI/conversion logic."""
         ...
 
@@ -102,7 +103,7 @@ class BaseMediaProcessor(ABC):
             "status": "failed",
             "result": result.content,
             "error": result.failed_reason,
-            "media_metadata": job.media_metadata,
+            "quota_exceeded": job.quota_exceeded,
             "created_at": getattr(job, "created_at", None),
         }
         await db["media_processing_jobs_failed"].insert_one(doc)
@@ -112,17 +113,24 @@ class BaseMediaProcessor(ABC):
         await db["media_processing_jobs"].delete_one({"_id": job.job_id})
         await db["media_processing_jobs_holding"].delete_one({"_id": job.job_id})
 
-    async def _handle_unhandled_exception(self, job: MediaProcessingJob, db, error: str):
-        """Safety net: persists an error result and archives to _failed for operator investigation."""
+    async def _handle_unhandled_exception(self, job: MediaProcessingJob, db, error: str, get_bot_queues=None):
+        """Safety net: persists an error result, archives to _failed, and attempts best-effort
+        delivery to the active bot queue so the placeholder is resolved promptly."""
         result = ProcessingResult(content="[Media processing failed]", failed_reason=error)
         persisted = await self._persist_result_first(job, result, db)
         if persisted:
             await self._archive_to_failed(job, result, db)
+        # Best-effort delivery — resolve the placeholder immediately if the bot is active,
+        # rather than leaving it stuck until the 3-hour janitorial sweep.
+        if get_bot_queues:
+            try:
+                bot_queues = get_bot_queues(job.bot_id)
+                if bot_queues:
+                    delivered = await bot_queues.update_message_by_media_id(
+                        job.correspondent_id, job.guid, result.content
+                    )
+                    if delivered:
+                        await self._remove_job(job, db)
+            except Exception:
+                logging.exception("MEDIA PROCESSOR: failed to deliver unhandled-exception error to queue")
 
-    def _delete_media_file(self, file_path: str):
-        """Guaranteed cleanup of the shared media staging volume."""
-        try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        except Exception:
-            pass

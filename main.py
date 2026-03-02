@@ -72,11 +72,7 @@ async def lifespan(app: FastAPI):
         # 3.1 Initialize MediaProcessingService
         global_state.media_processing_service = MediaProcessingService(
             db=global_state.db,
-            get_bot_queues=lambda bot_id: (
-                global_state.get_chatbot_instance_by_bot(bot_id).bot_queues_manager
-                if global_state.get_chatbot_instance_by_bot(bot_id)
-                else None
-            ),
+            get_bot_queues=global_state.get_bot_queues,
             get_active_bot_ids=lambda: list(global_state.active_bots.keys()),
         )
         await global_state.media_processing_service.start()

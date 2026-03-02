@@ -189,7 +189,7 @@ Required fields:
 
 Optional fields:
 - `original_filename: str | null`
-- `quota_exceeded: bool` (diagnostic marker)
+- `quota_exceeded: bool` (diagnostic marker — `true` if rejection was due to quota, not a network/decryption failure)
 
 Python should validate this WS payload contract (preferably via an internal typed model) before mapping to `BotQueuesManager.add_message(...)`.
 
@@ -213,7 +213,7 @@ async def add_message(
     media_processing_id: Optional[str] = None,  # GUID — file already on shared volume
     mime_type: Optional[str] = None,
     original_filename: Optional[str] = None,
-    media_metadata: Optional[Dict[str, Any]] = None  # Diagnostic flags like _quota_error
+    quota_exceeded: Optional[bool] = None     # True if rejection was due to quota (not network/decryption failure)
 )
 ```
 
@@ -301,7 +301,7 @@ if (mediaInfo !== undefined) {
                 media_processing_id: guid,
                 mime_type: corruptMimetype,
                 original_filename: filename,
-                _quota_exceeded: true
+                quota_exceeded: true
             };
         }
     } catch (error) {
@@ -314,7 +314,7 @@ if (mediaInfo !== undefined) {
             media_processing_id: guid,
             mime_type: corruptMimetype,
             original_filename: filename,
-            _quota_exceeded: true // diagnostic marker for system error
+            quota_exceeded: true // diagnostic marker for system error
         };
     }
     // --- Proceed with Retry Logic ---    // Retry up to 3 times with exponential back-off (2s, 4s, 8s)
@@ -369,7 +369,7 @@ if (mediaInfo !== undefined) {
             media_processing_id: guid,
             mime_type: `media_corrupt_${shortType}`,       // e.g. "media_corrupt_image"
             original_filename: filename,
-            _quota_exceeded: quotaExceeded                 // Optional marker for deeper logging upstream
+            quota_exceeded: quotaExceeded                 // Optional marker for deeper logging upstream
         };
     }
 }
@@ -391,7 +391,7 @@ A fixed-concurrency pool to avoid memory bloat and starvation across bots. **All
   - on bot disconnect: trigger active->holding media transition for that specific bot's jobs
 - Runtime resolver API for queue routing:
   - `get_bot_queues(bot_id) -> Optional[BotQueuesManager]`
-  - implementation uses global state maps (`active_bots` and `chatbot_instances`) to resolve `bot_id -> SessionManager -> bot_queues_manager`
+  - Implemented as `GlobalStateManager.get_bot_queues(bot_id)` — a named, typed method that resolves `bot_id → active_bots → chatbot_instances → bot_queues_manager`. This method reference is passed as a callable to `MediaProcessingService` at initialization rather than passing a snapshot dict, ensuring freshness at the moment of delivery.
 
 ### Processor Routing
 
@@ -401,7 +401,7 @@ A fixed-concurrency pool to avoid memory bloat and starvation across bots. **All
 | `video/mp4`, `video/webm` | Video pool | vision/transcription API → description |
 | `image/jpeg`, `image/png`, `image/webp` | Image pool | vision API → text description |
 | `application/pdf`, `text/plain`, etc. | Document pool | text extraction API → plain text |
-| `media_corrupt_image`, `media_corrupt_audio`, `media_corrupt_video`, `media_corrupt_document` | `CorruptMediaProcessor` | error handling (see below) |
+| `media_corrupt_image`, `media_corrupt_audio`, `media_corrupt_video`, `media_corrupt_document`, `media_corrupt_sticker` | `CorruptMediaProcessor` | error handling (see below) |
 | *anything else* (e.g. `text/calendar`)| `UnsupportedMediaProcessor` (default catch-all) | error handling (see below) |
 
 ### Corrupted Media Handling (`CorruptMediaProcessor`)
@@ -453,7 +453,7 @@ The configuration document contains an array of pool definitions:
   { "mimeTypes": ["video/mp4", "video/webm"], "processorClass": "VideoDescriptionProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 600 },
   { "mimeTypes": ["image/jpeg", "image/png", "image/webp"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3, "processingTimeoutSeconds": 120 },
   { "mimeTypes": ["application/pdf", "text/plain"], "processorClass": "DocumentProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 120 },
-  { "mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video", "media_corrupt_document"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10 },
+  { "mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video", "media_corrupt_document", "media_corrupt_sticker"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10 },
   { "mimeTypes": [], "processorClass": "UnsupportedMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10 }
 ]
 ```
@@ -516,7 +516,7 @@ class BaseMediaProcessor(ABC):
         self.handled_mime_types = handled_mime_types
         self.processing_timeout = processing_timeout
 
-    async def process_job(self, job: MediaProcessingJob, all_bot_queues: Dict[str, BotQueuesManager], db: AsyncIOMotorDatabase):
+    async def process_job(self, job: MediaProcessingJob, get_bot_queues: Callable[[str], Optional[BotQueuesManager]], db: AsyncIOMotorDatabase):
         """Full shared lifecycle — called by the worker pool for each job."""
         file_path = f"media_store/pending_media/{job.guid}"
 
@@ -558,11 +558,11 @@ class BaseMediaProcessor(ABC):
             # Catch ANY failure (conversion, DB, or delivery) to ensure dead-lettering
             await self._handle_unhandled_exception(job, db, error=str(e))
         finally:
-            # GUARANTEE: The media file is always removed from the shared terrain
-            self._delete_media_file(file_path)
+            # GUARANTEE: The media file is always removed from the shared staging volume
+            delete_media_file(job.guid)  # from media_processors.media_file_utils
 
     @abstractmethod
-    async def process_media(self, file_path: str, mime_type: str, caption: str, media_metadata: Dict[str, Any]) -> ProcessingResult:
+    async def process_media(self, file_path: str, mime_type: str, caption: str, quota_exceeded: Optional[bool]) -> ProcessingResult:
         """Subclass implements ONLY this: actual AI/conversion logic."""
         ...
 
@@ -580,17 +580,16 @@ class BaseMediaProcessor(ABC):
         """Clears the job from active collections after results are delivered."""
         ...
 
-    async def _handle_unhandled_exception(self, job: MediaProcessingJob, db: AsyncIOMotorDatabase, error: str):
-        """Safety net: dead-letters the job and notifies the user of a system error."""
+    async def _handle_unhandled_exception(self, job: MediaProcessingJob, db: AsyncIOMotorDatabase, error: str, get_bot_queues=None):
+        """Safety net: persists error result, archives to _failed, and attempts best-effort queue delivery."""
         ...
 
-    def _delete_media_file(self, file_path: str):
-        """Guaranteed cleanup of the shared media staging volume."""
-        try:
-            if os.path.exists(file_path):
-                os.remove(file_path)
-        except Exception:
-            pass
+    # NOTE: File deletion is handled by the shared utility:
+    #   from media_processors.media_file_utils import resolve_media_path, delete_media_file, MEDIA_STAGING_DIR
+    # - resolve_media_path(guid) -> str  — single source of truth for the staging volume path
+    # - delete_media_file(guid)          — used by both workers and janitorial cleanup
+    # - MEDIA_STAGING_DIR                — the staging volume path constant
+    # If the volume mount path ever changes, update only media_file_utils.py.
 ```
 
 ### The Worker Template (Common `process_job` Logic)
@@ -607,7 +606,7 @@ The base class handles all common operations in `process_job`:
 4. **Best-effort in-memory delivery**: If bot queue exists, call `update_message_by_media_id(...)` to deliver the transcript OR the error text (e.g. `[Corrupted...]`).
 5. **Direct delivery cleanup**: If in-memory update succeeds (for any outcome), remove the job from the active/holding collection.
 6. **Delete the media file** from disk — always, regardless of success/failure path.
-7. **Unhandled exceptions** (`_handle_unhandled_exception`) — if `process_media()` raises, persist an error result as `completed` and archive to `media_processing_jobs_failed`; set generic queue error content only if queue is available; always delete media file.
+7. **Unhandled exceptions** (`_handle_unhandled_exception`) — if `process_media()` raises, persist an error result as `completed` and archive to `media_processing_jobs_failed`; attempt best-effort delivery of `[Media processing failed]` to the queue if the bot is active (same pattern as other failure paths, so the placeholder is resolved promptly — not left stuck until the 3-hour janitor sweep); always delete media file.
 
 ### Subclass Responsibilities
 
@@ -625,7 +624,7 @@ Each subclass only implements `process_media()` and returns a `ProcessingResult`
 Worker pool stability is guaranteed by the **`BaseMediaProcessor`**, which wraps the subclass's mission logic in a strict timeout. This prevents a single hanging API call from permanently reducing worker capacity.
 
 ```python
-async def process_media(self, file_path: str, mime_type: str, caption: str, media_metadata: Dict[str, Any]) -> ProcessingResult:
+async def process_media(self, file_path: str, mime_type: str, caption: str, quota_exceeded: Optional[bool]) -> ProcessingResult:
     # Subclass implementation is now lean and focused ONLY on AI logic!
     # No need to wrap in asyncio.wait_for — the Base class does it for us.
     response = await api_client.process_image(encoded_image)
@@ -663,7 +662,7 @@ This resets the battlefield, ensuring no jobs are orphaned in a "claimed but dea
 When individual bots connect or disconnect, state transitions occur at the bot level:
 - **Bot Starts (Recovery Job Restoration)**: The bot first initializes its `next_id` for each correspondent by querying the **`queues`** collection (highest persisted ID + 1). It then restores the active state:
   1. **Reaping Path (`status == "completed"`)**: The bot uses an **Atomic Reaping** pattern (find-and-delete) to harvest the result. It first attempts `update_message_by_media_id` to deliver directly; if the placeholder is not present in the queue yet, it calls `inject_placeholder` first and then delivers. The job is deleted.
-  2. **Promotion Path (`status == "processing" | "pending"`)**: The bot checks if the placeholder is already in the queue (to avoid duplicates). If not, it calls `inject_placeholder`. It then moves the job record back to the active collection, **resetting status to `"pending"`** so workers can claim it fresh (the original worker is no longer running).
+  2. **Promotion Path (`status == "processing" | "pending"`)**: The bot checks if the placeholder is already in the queue (to avoid duplicates). If not, it calls `inject_placeholder`. It then moves the job record back to the active collection, **resetting status to `"pending"`** so workers can claim it fresh (the original worker is no longer running). **`created_at` is also reset to the current time** — this gives the promoted job a fresh 3-hour processing window in the active collection. Without this reset, a bot offline for >3 hours would have all promoted jobs immediately dead-lettered by the next hourly janitorial sweep before any worker could claim them.
   3. **Monotonic ID Sync**: After injection, the queue's `next_id` is implicitly kept monotonic by `inject_placeholder`, which calls `next_id = max(next_id, message.id + 1)`.
 - **Bot Stops**: All active jobs for that `bot_id` are moved from `media_processing_jobs` → `media_processing_jobs_holding`. In-flight workers will finish and save their results directly to `_holding` (Persistence-First path).
 
@@ -708,8 +707,8 @@ And `update_message_by_media_id` fires `_trigger_callbacks` after setting `conte
 
 The full routing chain uses three keys to locate the exact placeholder:
 
-1. **`bot_id`** (from job) → look up the correct `BotQueuesManager` from the `Dict[str, BotQueuesManager]`.
-2. **`correspondent_id`** (from job) → go directly to the correct `CorrespondentQueue` within that `BotQueuesManager`.
+1. **`bot_id`** (from job) → call `get_bot_queues(bot_id)` (a `Callable[[str], Optional[BotQueuesManager]]` provided at service init, implemented as `GlobalStateManager.get_bot_queues`) to obtain the correct `BotQueuesManager`. Returns `None` if the bot is not currently active.
+2. **`correspondent_id`** (from job) → call `BotQueuesManager.get_queue(correspondent_id)` (not `get_or_create_queue`) to look up the `CorrespondentQueue`. Returns `None` immediately if the queue does not exist — no wasteful queue creation for a lookup that can never succeed.
 3. **`guid`** (from job) → search the `CorrespondentQueue`'s deque for the message matching `media_processing_id == guid`.
 4. **Persistence-First path**:
    - Every result is saved to the Job Document (status set to `"completed"`) **before** attempting in-memory queue updates.
@@ -722,7 +721,7 @@ The full routing chain uses three keys to locate the exact placeholder:
    - The worker logs a `WARNING`: `"Job record missing for GUID <guid>. Task result abandoned — likely timed out."`
    - The worker deletes the raw media file and exits. No further action is taken.
 7. If the `BotQueuesManager` is not found (bot was stopped), the worker logs the success and terminates. The result is already safe in MongoDB.
-8. If the `BotQueuesManager` is found but the message is **not found** in the deque (e.g. queue was reset), the update call to `CorrespondentQueue.update_message_by_media_id` is wrapped in a try/except — the worker logs the issue and deletes the job (as it's unrecoverable without a placeholder).
+8. If the `BotQueuesManager` is found but `get_queue(correspondent_id)` returns `None` (queue was reset or never existed in this process), `update_message_by_media_id` returns `False` immediately. The worker logs the issue and deletes the job (unrecoverable without a placeholder). Note: `inject_placeholder` (used in the recovery reaping path) still uses `get_or_create_queue` — it is the only caller that legitimately needs to create a fresh queue.
 
 ### Placeholder Eviction Protection (The Eviction Rewrite)
 
@@ -780,8 +779,11 @@ Before integrating real speech-to-text or vision APIs, each media type pool will
 Each stub processor:
 1. Opens a file handle to the media file at `media_store/pending_media/<guid>` (simulating real access).
 2. Sleeps for the configured duration (simulating processing time).
-3. Deletes the media file from disk.
-4. Returns a fixed text string as if it were a real transcript/description.
+3. Returns a fixed text string as if it were a real transcript/description.
+
+> [!NOTE]
+> Subclasses (including stubs) must **NOT** delete the media file themselves. `BaseMediaProcessor.process_job()` guarantees file deletion via `delete_media_file(job.guid)` in its `finally` block — this runs unconditionally after every `process_media()` call, whether it succeeds, times out, or raises.
+
 
 ### Stub Implementations
 
