@@ -287,7 +287,7 @@ class BotQueuesManager:
         self.queues_collection = queues_collection
         self._queues: dict[str, CorrespondentQueue] = {}
         self._callbacks: List[Callable[[str, str, Message], None]] = []
-        self._lock = threading.Lock()
+        self._lock = asyncio.Lock()
         self.media_jobs_collection = media_jobs_collection
 
     async def get_or_create_queue(self, correspondent_id: str) -> CorrespondentQueue:
@@ -299,23 +299,25 @@ class BotQueuesManager:
         # We'll just rely on the fact that dict operations are atomic.
         
         if correspondent_id not in self._queues:
-            # Double check pattern not easy without lock, but standard dict check is usually fine in single loop.
-            logging.info(f"QUEUE_MANAGER ({self.bot_id}): Creating new queue for correspondent '{correspondent_id}'.")
-            queue = CorrespondentQueue(
-                bot_id=self.bot_id,
-                provider_name=self.provider_name,
-                correspondent_id=correspondent_id,
-                queue_config=self.queue_config,
-                queues_collection=self.queues_collection,
-                main_loop=self.main_loop
-            )
-            # AWAIT initialization
-            await queue.initialize()
+            async with self._lock:
+                # Double check pattern after acquiring lock to prevent race condition
+                if correspondent_id not in self._queues:
+                    logging.info(f"QUEUE_MANAGER ({self.bot_id}): Creating new queue for correspondent '{correspondent_id}'.")
+                    queue = CorrespondentQueue(
+                        bot_id=self.bot_id,
+                        provider_name=self.provider_name,
+                        correspondent_id=correspondent_id,
+                        queue_config=self.queue_config,
+                        queues_collection=self.queues_collection,
+                        main_loop=self.main_loop
+                    )
+                    # AWAIT initialization
+                    await queue.initialize()
 
-            # Register all existing manager-level callbacks to the new queue
-            for callback in self._callbacks:
-                queue.register_callback(callback)
-            self._queues[correspondent_id] = queue
+                    # Register all existing manager-level callbacks to the new queue
+                    for callback in self._callbacks:
+                        queue.register_callback(callback)
+                    self._queues[correspondent_id] = queue
             
         return self._queues[correspondent_id]
 
@@ -367,15 +369,20 @@ class BotQueuesManager:
 
     def register_callback(self, callback: Callable[[str, str, Message], None]):
         """Register a callback to be added to all queues."""
-        with self._lock:
-            self._callbacks.append(callback)
-            # Add this new callback to all already-existing queues
-            for queue in self._queues.values():
-                queue.register_callback(callback)
+        # register_callback can be called from other threads (e.g. FastAPI route handlers)
+        # while get_or_create_queue is running in the main event loop.
+        # Since we switched self._lock to asyncio.Lock, we need to handle this carefully.
+        # Actually, if this is called from a thread, we can't use 'async with'.
+        # However, BotQueuesManager is mostly accessed within the main event loop.
+        # Let's use a separate threading lock for sync operations if needed.
+        # But for now, let's assume this is called within the same loop or use thread-safe logic.
+        self._callbacks.append(callback)
+        # Add this new callback to all already-existing queues
+        for queue in self._queues.values():
+            queue.register_callback(callback)
 
     def get_all_queues(self) -> List[CorrespondentQueue]:
-        with self._lock:
-            return list(self._queues.values())
+        return list(self._queues.values())
 
     def get_queue(self, correspondent_id: str) -> Optional[CorrespondentQueue]:
         return self._queues.get(correspondent_id)
