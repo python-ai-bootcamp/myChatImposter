@@ -58,7 +58,6 @@ class CorrespondentQueue:
         self._total_chars = 0
         self._callbacks: List[Callable[[str, Message], None]] = []
         self._recent_provider_message_ids: deque[str] = deque(maxlen=20)
-        self._recent_provider_message_ids: deque[str] = deque(maxlen=20)
         self._new_message_event = asyncio.Event() # Changed to asyncio.Event for async wait
 
     async def initialize(self):

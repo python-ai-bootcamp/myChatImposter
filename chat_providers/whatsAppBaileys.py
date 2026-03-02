@@ -432,7 +432,7 @@ class WhatsAppBaileysProvider(BaseChatProvider):
                 source=source,
                 group=group,
                 provider_message_id=provider_message_id,
-                originating_time=originating_time,
+                originating_time=payload.originating_time,
                 media_processing_id=payload.media_processing_id,
                 mime_type=payload.mime_type,
                 original_filename=payload.original_filename,

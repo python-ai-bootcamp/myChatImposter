@@ -156,7 +156,7 @@ class MediaProcessingService:
 
         while self.running:
             try:
-                job_doc = await self._claim_job(worker_id, pool_definition["mimeTypes"], last_bot_id)
+                job_doc = await self._claim_job(worker_id, pool_definition["mimeTypes"], last_bot_id, all_specific_mime_types)
                 pending_query = {"status": "pending"}
                 if pool_definition["mimeTypes"]:
                     # Specific pool: count only jobs for this pool's mime types
@@ -180,10 +180,13 @@ class MediaProcessingService:
                 logging.exception("MEDIA SERVICE: worker loop failure")
                 await asyncio.sleep(1)
 
-    async def _claim_job(self, worker_id: str, mime_types: List[str], last_bot_id: Optional[str]):
+    async def _claim_job(self, worker_id: str, mime_types: List[str], last_bot_id: Optional[str], all_specific_mime_types: Optional[List[str]] = None):
         base_query = {"status": "pending"}
         if mime_types:
             base_query["mime_type"] = {"$in": mime_types}
+        elif all_specific_mime_types:
+            # Catch-all pool: exclude mime types handled by dedicated pools
+            base_query["mime_type"] = {"$nin": all_specific_mime_types}
 
         fairness_query = dict(base_query)
         if last_bot_id:

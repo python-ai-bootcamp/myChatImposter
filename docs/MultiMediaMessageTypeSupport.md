@@ -495,7 +495,7 @@ class MediaProcessingJob:
     mime_type: str
     status: str                    # "pending", "processing", "completed"
     original_filename: Optional[str] = None
-    media_metadata: Dict[str, Any] = field(default_factory=dict) # Field report: raw diagnostic flags
+    quota_exceeded: Optional[bool] = None  # True if rejection was due to quota (not network/decryption failure)
     result: Optional[str] = None   # Final transcript or description
     error: Optional[str] = None    # Final verdict: human-readable failure reason
 
