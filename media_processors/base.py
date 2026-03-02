@@ -6,6 +6,11 @@ from dataclasses import asdict
 from typing import Any, Callable, List, Optional
 
 from infrastructure.models import MediaProcessingJob, ProcessingResult
+from infrastructure.db_schema import (
+    COLLECTION_MEDIA_PROCESSING_JOBS,
+    COLLECTION_MEDIA_PROCESSING_JOBS_HOLDING,
+    COLLECTION_MEDIA_PROCESSING_JOBS_FAILED,
+)
 from media_processors.media_file_utils import resolve_media_path, delete_media_file
 
 
@@ -82,10 +87,10 @@ class BaseMediaProcessor(ABC):
         """Durable state anchor: updates status to completed in active/holding collections.
         Works identically for success and failure outcomes."""
         update = {"$set": {"status": "completed", "result": result.content}}
-        active_result = await db["media_processing_jobs"].update_one({"_id": job.job_id}, update)
+        active_result = await db[COLLECTION_MEDIA_PROCESSING_JOBS].update_one({"_id": job.job_id}, update)
         if active_result.modified_count > 0:
             return True
-        holding_result = await db["media_processing_jobs_holding"].update_one({"_id": job.job_id}, update)
+        holding_result = await db[COLLECTION_MEDIA_PROCESSING_JOBS_HOLDING].update_one({"_id": job.job_id}, update)
         if holding_result.modified_count > 0:
             return True
         logging.warning(f"MEDIA PROCESSOR: Job record missing for GUID {job.guid}. Task result abandoned.")
@@ -106,12 +111,12 @@ class BaseMediaProcessor(ABC):
             "quota_exceeded": job.quota_exceeded,
             "created_at": getattr(job, "created_at", None),
         }
-        await db["media_processing_jobs_failed"].insert_one(doc)
+        await db[COLLECTION_MEDIA_PROCESSING_JOBS_FAILED].insert_one(doc)
 
     async def _remove_job(self, job: MediaProcessingJob, db):
         """Clears the job from active and holding collections after delivery."""
-        await db["media_processing_jobs"].delete_one({"_id": job.job_id})
-        await db["media_processing_jobs_holding"].delete_one({"_id": job.job_id})
+        await db[COLLECTION_MEDIA_PROCESSING_JOBS].delete_one({"_id": job.job_id})
+        await db[COLLECTION_MEDIA_PROCESSING_JOBS_HOLDING].delete_one({"_id": job.job_id})
 
     async def _handle_unhandled_exception(self, job: MediaProcessingJob, db, error: str, get_bot_queues=None):
         """Safety net: persists an error result, archives to _failed, and attempts best-effort

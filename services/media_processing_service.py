@@ -93,7 +93,7 @@ class MediaProcessingService:
             await self.active_collection.delete_many({"bot_id": bot_id})
 
     async def _load_pool_definitions(self):
-        config_doc = await self.db["bot_configurations"].find_one({"_id": "_mediaProcessorDefinitions"})
+        config_doc = await self.db["configurations"].find_one({"_id": "_mediaProcessorDefinitions"})
         definitions = config_doc.get("definitions") if config_doc else None
         if not definitions:
             definitions = DEFAULT_POOL_DEFINITIONS
@@ -107,10 +107,10 @@ class MediaProcessingService:
 
     async def _ensure_configuration_templates(self):
         # Keep existing documents untouched; create only if missing.
-        bot_cfg_doc = await self.db["bot_configurations"].find_one({"_id": "_mediaProcessorDefinitions"})
+        bot_cfg_doc = await self.db["configurations"].find_one({"_id": "_mediaProcessorDefinitions"})
         if bot_cfg_doc is None:
             try:
-                await self.db["bot_configurations"].insert_one(
+                await self.db["configurations"].insert_one(
                     {
                         "_id": "_mediaProcessorDefinitions",
                         "definitions": DEFAULT_POOL_DEFINITIONS,
@@ -157,20 +157,19 @@ class MediaProcessingService:
         while self.running:
             try:
                 job_doc = await self._claim_job(worker_id, pool_definition["mimeTypes"], last_bot_id, all_specific_mime_types)
+                if not job_doc:
+                    await asyncio.sleep(0.5)
+                    continue
+                # Log pool depth only when actual work is found
                 pending_query = {"status": "pending"}
                 if pool_definition["mimeTypes"]:
-                    # Specific pool: count only jobs for this pool's mime types
                     pending_query["mime_type"] = {"$in": pool_definition["mimeTypes"]}
                 elif all_specific_mime_types:
-                    # Catch-all pool: count only jobs NOT handled by any specific pool
                     pending_query["mime_type"] = {"$nin": all_specific_mime_types}
                 depth = await self.active_collection.count_documents(pending_query)
                 logging.info(
                     f"MEDIA SERVICE: pool={pool_definition['processorClass']} pending_depth={depth}"
                 )
-                if not job_doc:
-                    await asyncio.sleep(0.5)
-                    continue
                 last_bot_id = job_doc.get("bot_id")
                 job = self._doc_to_job(job_doc)
                 await processor.process_job(job, self.get_bot_queues, self.db)

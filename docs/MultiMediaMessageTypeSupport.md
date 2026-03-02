@@ -404,6 +404,8 @@ A fixed-concurrency pool to avoid memory bloat and starvation across bots. **All
 | `media_corrupt_image`, `media_corrupt_audio`, `media_corrupt_video`, `media_corrupt_document`, `media_corrupt_sticker` | `CorruptMediaProcessor` | error handling (see below) |
 | *anything else* (e.g. `text/calendar`)| `UnsupportedMediaProcessor` (default catch-all) | error handling (see below) |
 
+> **Note — Sticker messages**: WhatsApp stickers use mime type `image/webp`, which is already handled by the **Image pool** (`ImageVisionProcessor`). There is no dedicated `StickerProcessor` — stickers are processed identically to images. If sticker-specific behavior is needed in the future (e.g. bypassing vision API for simple emoji stickers), a separate pool entry can be added at that time.
+
 ### Corrupted Media Handling (`CorruptMediaProcessor`)
 
 When `server.js` fails to download media after **3 retry attempts** (exponential back-off: 2s → 4s → 8s), it deletes any partially-written file and sends metadata to Python with `mime_type = "media_corrupt_<type>"` (where `<type>` is `image`, `video`, `audio`, or `document`). The `content` field carries the original caption if one exists, otherwise an empty string. The message enters the queue as a placeholder like any other media message.
@@ -434,7 +436,7 @@ This keeps backend and provider fully decoupled — `server.js` never needs to k
 
 ### Concurrency Configuration & Pull-Based Selection
 
-Pool definitions are loaded from the `bot_configurations` MongoDB collection, document `_id: "_mediaProcessorDefinitions"`. On startup, the `MediaProcessingService` creates one pool per entry.
+Pool definitions are loaded from the `configurations` MongoDB collection (global settings), document `_id: "_mediaProcessorDefinitions"`. On startup, the `MediaProcessingService` creates one pool per entry.
 
 **Selection Logic (Single-Skip Two-Step)**: To ensure fairness across bots without heavy database grouping, each worker maintains a `self.last_bot_id` in its local memory. When polling for work, the worker executes a two-step "Fairness-First" selection:
 
@@ -524,7 +526,7 @@ class BaseMediaProcessor(ABC):
             # 1. ACTUAL CONVERSION (Externally Guarded by Centralized Timeout)
             try:
                 result = await asyncio.wait_for(
-                    self.process_media(file_path, job.mime_type, job.placeholder_message.content, job.media_metadata),
+                    self.process_media(file_path, job.mime_type, job.placeholder_message.content, job.quota_exceeded),
                     timeout=self.processing_timeout
                 )
             except asyncio.TimeoutError:
@@ -533,18 +535,17 @@ class BaseMediaProcessor(ABC):
                     failed_reason=f"TIMEOUT: Vision/Audio processing exceeded {self.processing_timeout}s"
                 )
 
-            # 2. PERSISTENCE (The Save Point)
-            if result.failed_reason:
-                # FAILURE PATH: Move to failed collection immediately
-                await self._move_to_failed(job, result, db)
-            else:
-                # SUCCESS PATH: Mark as 'completed' so it can be reaped if bot crashes
-                persisted = await self._persist_result_first(job, result, db)
-                if not persisted:
-                    return # Likely cleaned up or moved by another process
+            # 2. PERSISTENCE (Persistence-First — applies to ALL outcomes, success or failure)
+            persisted = await self._persist_result_first(job, result, db)
+            if not persisted:
+                return  # Job was already swept by cleanup — no further action
 
-            # 3. Best-effort direct delivery for ALL paths
-            bot_queues = all_bot_queues.get(job.bot_id)
+            # 3. ARCHIVE TO FAILED (operator inspection only — does not affect delivery flow)
+            if result.failed_reason:
+                await self._archive_to_failed(job, result, db)
+
+            # 4. BEST-EFFORT DIRECT DELIVERY (bot is active)
+            bot_queues = get_bot_queues(job.bot_id)
             if bot_queues:
                 # Deliver transcript OR error text "[Corrupted...]" to active bot
                 await bot_queues.update_message_by_media_id(job.correspondent_id, job.guid, result.content)
@@ -572,8 +573,9 @@ class BaseMediaProcessor(ABC):
         """Durable state anchor: updates status to completed in active/holding collections."""
         ...
 
-    async def _move_to_failed(self, job: MediaProcessingJob, result: ProcessingResult, db: AsyncIOMotorDatabase):
-        """Archives the job to the _failed collection with error context."""
+    async def _archive_to_failed(self, job: MediaProcessingJob, result: ProcessingResult, db: AsyncIOMotorDatabase):
+        """Archives a copy of the job to _failed for operator inspection ONLY.
+        This is purely additive — the _failed collection is never used for delivery or recovery."""
         ...
 
     async def _remove_job(self, job: MediaProcessingJob, db: AsyncIOMotorDatabase):
@@ -792,5 +794,6 @@ Each stub processor:
 | Image | 5 seconds  | `[Transcripted image multimedia message with guid='<guid>']` |
 | Audio | 10 seconds | `[Transcripted audio multimedia message with guid='<guid>']` |
 | Video | 60 seconds | `[Transcripted video multimedia message with guid='<guid>']` |
+| Document | 5 seconds | `[Transcripted document multimedia message with guid='<guid>']` |
 
 > **Note**: These stubs will be replaced with real API-backed processors in a future phase. The stub and real implementations share the same interface — the pool configuration drives which processor class is used per mime type.
