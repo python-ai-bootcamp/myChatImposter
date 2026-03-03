@@ -14,7 +14,6 @@ services:
       dockerfile: backend.Dockerfile
     container_name: backend
     init: true
-    user: "root"
     ports:
       - "8000:8000"
     # No ports exposed - only accessible via gateway on Docker network
@@ -31,6 +30,8 @@ services:
       - PYTHONUNBUFFERED=1
       - MONGO_DB_NAME=chat_manager
       - MALLOC_ARENA_MAX=2
+      - CURRENT_UID=${CURRENT_UID:-1500}
+      - CURRENT_GID=${CURRENT_GID:-1500}
     depends_on:
       - mongodb
       - whatsapp_baileys_server
@@ -60,11 +61,12 @@ services:
       dockerfile: whatsapp.Dockerfile
     container_name: whatsapp_baileys_server
     init: true
-    user: "root"
     ports:
       - "9000:9000"
     environment:
       - MONGODB_URL=mongodb://mongodb:27017
+      - CURRENT_UID=${CURRENT_UID:-1500}
+      - CURRENT_GID=${CURRENT_GID:-1500}
     volumes:
       - ./baileys_store:/app/baileys_store
       - media_staging:/app/media_store/pending_media
