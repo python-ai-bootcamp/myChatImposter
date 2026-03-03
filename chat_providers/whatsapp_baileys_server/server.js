@@ -486,7 +486,8 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
                     downloaded = true;
                     break;
                 } catch (err) {
-                    try { fs.unlinkSync(writePath); } catch (_) {}
+                    console.error(`[${userId}] ERROR downloading media (attempt ${attempt}/3) for msg ${msg?.key?.id}:`, err);
+                    try { fs.unlinkSync(writePath); } catch (_) { }
                     if (err.code === 'ENOSPC') {
                         quotaExceeded = true;
                         break;

@@ -87,11 +87,25 @@ class CorrespondentQueue:
 
     def _trigger_callbacks(self, message: Message):
         """Trigger all registered callbacks with the new message."""
+        def handle_future_exceptions(fut):
+            try:
+                fut.result()
+            except Exception as e:
+                import traceback
+                logging.error(f"QUEUE CALLBACK FUTURE ERROR: {e}\n{traceback.format_exc()}")
+
         for callback in self._callbacks:
             if self.main_loop:
-                asyncio.run_coroutine_threadsafe(callback(self.bot_id, self.correspondent_id, message), self.main_loop)
+                try:
+                    res = callback(self.bot_id, self.correspondent_id, message)
+                    if asyncio.iscoroutine(res):
+                        fut = asyncio.run_coroutine_threadsafe(res, self.main_loop)
+                        fut.add_done_callback(handle_future_exceptions)
+                except Exception as e:
+                    logging.error(f"Error in queue callback (sync): {e}")
             else:
                 logging.error(f"QUEUE: No main event loop provided to run async callback.")
+
 
     def _iter_unprotected_messages(self):
         for message in self._messages:
