@@ -90,7 +90,7 @@ async def create_indexes(db: AsyncIOMotorDatabase):
             await collection.create_index([("bot_id", ASCENDING)])
             await collection.create_index([("status", ASCENDING)])
             await collection.create_index([("mime_type", ASCENDING)])
-            await collection.create_index([("guid", ASCENDING)])
+            await collection.create_index([("guid", ASCENDING)], unique=True)
             await collection.create_index([("created_at", ASCENDING)])
         logger.info("Ensured media processing job indexes.")
 
@@ -102,7 +102,7 @@ async def create_indexes(db: AsyncIOMotorDatabase):
 
         # 6. Indexes for Group Tracking State
         await db[COLLECTION_GROUP_TRACKING_STATE].create_index(
-            [("bot_id", ASCENDING), ("groupIdentifier", ASCENDING)],
+            [("bot_id", ASCENDING), ("group_id", ASCENDING)],
             unique=True,
             name="group_tracking_state_bot_group_idx",
         )
