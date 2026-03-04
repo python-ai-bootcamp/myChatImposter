@@ -355,7 +355,7 @@ class MediaProcessingService:
 
         now = time.time()
         for file_name in os.listdir(media_dir):
-            file_path = os.path.join(media_dir, file_name)
+            file_path = resolve_media_path(file_name)
             if not os.path.isfile(file_path):
                 continue
             if file_name in known_guids:
@@ -363,7 +363,7 @@ class MediaProcessingService:
             if now - os.path.getmtime(file_path) < 4 * 60 * 60:
                 continue
             try:
-                os.remove(file_path)
+                delete_media_file(file_name)
             except Exception:
                 pass
 
