@@ -132,7 +132,7 @@ function EditPage() {
           const originalData = Array.isArray(data) ? data[0] : data;
 
           if (originalData.configurations?.llm_configs) {
-            ['high', 'low'].forEach(type => {
+            ['high', 'low', 'image_moderation'].forEach(type => {
               const providerConfig = originalData.configurations.llm_configs[type]?.provider_config;
               if (providerConfig && !providerConfig.hasOwnProperty('api_key_source')) {
                 if (providerConfig.api_key) {
@@ -225,8 +225,8 @@ function EditPage() {
     const newFormData = e.formData;
     try {
       // Logic for LLM Provider Config updates (api_key_source, reasoning_effort, seed) omitted for brevity but preserved in logic
-      // Logic for LLM Provider Config updates (api_key_source, reasoning_effort, seed) for both High and Low
-      ['high', 'low'].forEach(type => {
+      // Logic for LLM Provider Config updates (api_key_source, reasoning_effort, seed) for all types
+      ['high', 'low', 'image_moderation'].forEach(type => {
         const providerConfig = newFormData?.configurations?.llm_configs?.[type]?.provider_config;
         if (providerConfig) {
           if (providerConfig.api_key_source === 'environment') {
@@ -434,6 +434,18 @@ function EditPage() {
         low: {
           "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
           "ui:title": "Low Cost Model",
+          provider_name: { "ui:title": "Provider Name" },
+          provider_config: {
+            "ui:ObjectFieldTemplate": FlatProviderConfigTemplate,
+            "ui:title": " ",
+            api_key_source: { "ui:title": "API Key Source" },
+            reasoning_effort: { "ui:title": "Reasoning Effort" },
+            seed: { "ui:title": "Seed" }
+          }
+        },
+        image_moderation: {
+          "ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate,
+          "ui:title": "Media Moderation Model",
           provider_name: { "ui:title": "Provider Name" },
           provider_config: {
             "ui:ObjectFieldTemplate": FlatProviderConfigTemplate,

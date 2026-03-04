@@ -65,6 +65,7 @@ class LLMProviderConfig(BaseModel):
 class LLMConfigurations(BaseModel):
     high: LLMProviderConfig = Field(..., title="High Performance Model")
     low: LLMProviderConfig = Field(..., title="Low Cost Model")
+    image_moderation: LLMProviderConfig = Field(..., title="Media Moderation Model")
 
 class ContextConfig(BaseLimitConfig):
     shared_context: bool = True
@@ -137,6 +138,7 @@ class DefaultConfigurations:
     llm_provider_name: str = os.getenv("DEFAULT_LLM_PROVIDER", "openAi")
     llm_model_high: str = os.getenv("DEFAULT_LLM_MODEL_HIGH", "gpt-5")
     llm_model_low: str = os.getenv("DEFAULT_LLM_MODEL_LOW", "gpt-5-mini")
+    llm_model_image_moderation: str = os.getenv("DEFAULT_LLM_MODEL_IMAGE_MODERATION", "omni-moderation-latest")
     llm_api_key_source: Literal["environment", "explicit"] = os.getenv("DEFAULT_LLM_API_KEY_SOURCE", "environment")
     llm_temperature: float = float(os.getenv("DEFAULT_LLM_TEMPERATURE", "0.05"))
     llm_reasoning_effort: str = os.getenv("DEFAULT_LLM_REASONING_EFFORT", "minimal")

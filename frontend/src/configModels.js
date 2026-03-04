@@ -220,9 +220,10 @@ class UserDetails {
 }
 
 class LLMConfigurations {
-  constructor({ high, low }) {
+  constructor({ high, low, image_moderation }) {
     this.high = new LLMProviderConfig(high);
     this.low = new LLMProviderConfig(low);
+    this.image_moderation = new LLMProviderConfig(image_moderation || {});
   }
 
   static validate(data) {
@@ -235,6 +236,11 @@ class LLMConfigurations {
       throw new ValidationError('low config is required.', 'configurations.llm_configs.low');
     }
     LLMProviderConfig.validate(data.low);
+
+    if (!data.image_moderation || typeof data.image_moderation !== 'object') {
+      throw new ValidationError('image_moderation config is required.', 'configurations.llm_configs.image_moderation');
+    }
+    LLMProviderConfig.validate(data.image_moderation);
 
     return new LLMConfigurations(data);
   }

@@ -398,6 +398,27 @@ async def get_configuration_schema(
                              elif option.get('type') == 'null':
                                  option['title'] = 'Undefined'
 
+    # Surgery: Ensure LLMConfigurations properties are not optional in the schema
+    # This prevents the redundant 'anyOf' dropdown in the UI
+    llm_configs_defs = schema.get(defs_key, {}).get('LLMConfigurations', {})
+    if not llm_configs_defs and 'BotGeneralSettings' in schema.get(defs_key, {}):
+        # Sometimes it's nested or referenced differently
+        llm_configs_ref = schema[defs_key]['BotGeneralSettings'].get('properties', {}).get('llm_configs', {})
+        if '$ref' in llm_configs_ref:
+            ref_name = llm_configs_ref['$ref'].split('/')[-1]
+            if ref_name in schema[defs_key]:
+                llm_configs_defs = schema[defs_key][ref_name]
+
+    if llm_configs_defs and 'properties' in llm_configs_defs:
+        for prop_name in ['high', 'low', 'image_moderation']:
+            if prop_name in llm_configs_defs['properties']:
+                prop = llm_configs_defs['properties'][prop_name]
+                if 'anyOf' in prop:
+                    # Filter out null type and replace with the actual ref/type
+                    actual_type = [opt for opt in prop['anyOf'] if opt.get('type') != 'null']
+                    if len(actual_type) == 1:
+                        llm_configs_defs['properties'][prop_name] = {**actual_type[0], "title": prop.get('title')}
+
     return schema
 
 @router.get("/defaults", response_model=Union[BotConfiguration, RegularBotConfiguration])
@@ -433,6 +454,14 @@ async def get_bot_defaults(
                         api_key_source=DefaultConfigurations.llm_api_key_source,
                         temperature=DefaultConfigurations.llm_temperature,
                         reasoning_effort=DefaultConfigurations.llm_reasoning_effort
+                    )
+                ),
+                image_moderation=LLMProviderConfig(
+                    provider_name=DefaultConfigurations.llm_provider_name,
+                    provider_config=LLMProviderSettings(
+                        model=DefaultConfigurations.llm_model_image_moderation,
+                        api_key_source=DefaultConfigurations.llm_api_key_source,
+                        record_llm_interactions=False
                     )
                 )
             ),
