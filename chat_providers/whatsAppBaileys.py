@@ -577,9 +577,9 @@ class WhatsAppBaileysProvider(BaseChatProvider):
             logging.error(f"Exception while fetching active groups: {e}")
             return []
 
-    async def fetch_historic_messages(self, group_id: str, limit: int = 500) -> Optional[List]:
+    async def fetch_historic_messages(self, group_id: str, limit: int = 500, skip_media_download: bool = False) -> Optional[List]:
         try:
-            payload = {"groupId": group_id, "limit": limit}
+            payload = {"groupId": group_id, "limit": limit, "skipMediaDownload": skip_media_download}
             async with httpx.AsyncClient() as client:
                 response = await client.post(
                     f"{self.base_url}/sessions/{self.bot_id}/fetch-messages",

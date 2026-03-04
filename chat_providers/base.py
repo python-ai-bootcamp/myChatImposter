@@ -71,7 +71,7 @@ class BaseChatProvider(ABC):
         """
         pass
 
-    async def fetch_historic_messages(self, identifier: str, limit: int = 500) -> List[Dict]:
+    async def fetch_historic_messages(self, identifier: str, limit: int = 500, skip_media_download: bool = False) -> List[Dict]:
         """
         Fetches historic messages for a given identifier (group or user).
         Default implementation returns empty list.

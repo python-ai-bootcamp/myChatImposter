@@ -53,7 +53,7 @@ class GroupTrackingRunner:
         # Fetch messages
         try:
             # Polymorphic call
-            messages = await target_instance.provider_instance.fetch_historic_messages(config.groupIdentifier, limit=500)
+            messages = await target_instance.provider_instance.fetch_historic_messages(config.groupIdentifier, limit=500, skip_media_download=True)
             if messages is None:
                  logger.error(f"Fetch failed for {bot_id}/{config.groupIdentifier} (returned None). Aborting job to prevent data loss. State will NOT be updated.")
                  return # Abort without updating state, allowing retry next time

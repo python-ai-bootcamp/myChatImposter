@@ -241,7 +241,7 @@ const processContacts = (session, userId, contacts) => {
 };
 
 // --- Message Processing Helper ---
-async function processMessage(session, userId, msg, processOffline, allowGroups) {
+async function processMessage(session, userId, msg, processOffline, allowGroups, skipMediaDownload = false) {
     // if (msg?.key?.senderPn) {
     //    console.log(`[${userId}] Normalized senderPn detected: ${msg.key.senderPn}`);
     // }
@@ -429,23 +429,42 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
     let mediaPayload = null;
     const mediaInfo = mediaTypes[messageType];
     if (mediaInfo !== undefined) {
-        const guid = crypto.randomUUID();
-        const mimetype = msg.message[messageType]?.mimetype;
-        const filename = msg.message[messageType]?.fileName || null;
-        const caption = mediaInfo.caption || '';
-        const writeDir = '/app/media_store/pending_media';
-        const writePath = path.join(writeDir, guid);
+        if (skipMediaDownload) {
+            // Populate basic metadata and caption without triggering a download
+            mediaPayload = {
+                message: mediaInfo.caption || '',
+                media_processing_id: null,
+                mime_type: msg.message[messageType]?.mimetype || 'application/octet-stream',
+                original_filename: msg.message[messageType]?.fileName || null,
+            };
+        } else {
+            const guid = crypto.randomUUID();
+            const mimetype = msg.message[messageType]?.mimetype;
+            const filename = msg.message[messageType]?.fileName || null;
+            const caption = mediaInfo.caption || '';
+            const writeDir = '/app/media_store/pending_media';
+            const writePath = path.join(writeDir, guid);
 
-        const configuredLimitGb = session.providerConfig?.media_storage_quota_gb || 25;
-        const stopWritingThresholdGb = Math.max(configuredLimitGb - 2, 1);
-        const stopWritingThresholdMb = stopWritingThresholdGb * 1024;
+            const configuredLimitGb = session.providerConfig?.media_storage_quota_gb || 25;
+            const stopWritingThresholdGb = Math.max(configuredLimitGb - 2, 1);
+            const stopWritingThresholdMb = stopWritingThresholdGb * 1024;
 
-        try {
-            const { stdout } = await execAsync(`du -sm ${writeDir}`);
-            const sizeOutput = stdout.toString().split('\t')[0];
-            const currentSizeMb = parseInt(sizeOutput, 10);
+            try {
+                const { stdout } = await execAsync(`du -sm ${writeDir}`);
+                const sizeOutput = stdout.toString().split('\t')[0];
+                const currentSizeMb = parseInt(sizeOutput, 10);
 
-            if (currentSizeMb > stopWritingThresholdMb) {
+                if (currentSizeMb > stopWritingThresholdMb) {
+                    const baseType = messageType.replace('Message', '');
+                    mediaPayload = {
+                        message: caption,
+                        media_processing_id: guid,
+                        mime_type: `media_corrupt_${baseType}`,
+                        original_filename: filename,
+                        quota_exceeded: true,
+                    };
+                }
+            } catch (error) {
                 const baseType = messageType.replace('Message', '');
                 mediaPayload = {
                     message: caption,
@@ -454,66 +473,55 @@ async function processMessage(session, userId, msg, processOffline, allowGroups)
                     original_filename: filename,
                     quota_exceeded: true,
                 };
-            } else {
-                mediaPayload = null;
             }
-        } catch (error) {
-            const baseType = messageType.replace('Message', '');
-            mediaPayload = {
-                message: caption,
-                media_processing_id: guid,
-                mime_type: `media_corrupt_${baseType}`,
-                original_filename: filename,
-                quota_exceeded: true,
-            };
-        }
 
-        if (!mediaPayload) {
-            let downloaded = false;
-            let quotaExceeded = false;
+            if (!mediaPayload) {
+                let downloaded = false;
+                let quotaExceeded = false;
 
-            for (let attempt = 1; attempt <= 3; attempt++) {
-                try {
-                    const stream = await downloadMediaMessage(msg, 'stream', {});
-                    await fs.promises.mkdir(writeDir, { recursive: true });
-                    const writeStream = fs.createWriteStream(writePath);
-                    await new Promise((resolve, reject) => {
-                        stream.pipe(writeStream);
-                        writeStream.on('finish', resolve);
-                        writeStream.on('error', reject);
-                        stream.on('error', reject);
-                    });
-                    downloaded = true;
-                    break;
-                } catch (err) {
-                    console.error(`[${userId}] ERROR downloading media (attempt ${attempt}/3) for msg ${msg?.key?.id}:`, err);
-                    try { fs.unlinkSync(writePath); } catch (_) { }
-                    if (err.code === 'ENOSPC') {
-                        quotaExceeded = true;
+                for (let attempt = 1; attempt <= 3; attempt++) {
+                    try {
+                        const stream = await downloadMediaMessage(msg, 'stream', {});
+                        await fs.promises.mkdir(writeDir, { recursive: true });
+                        const writeStream = fs.createWriteStream(writePath);
+                        await new Promise((resolve, reject) => {
+                            stream.pipe(writeStream);
+                            writeStream.on('finish', resolve);
+                            writeStream.on('error', reject);
+                            stream.on('error', reject);
+                        });
+                        downloaded = true;
                         break;
-                    }
-                    if (attempt < 3) {
-                        await new Promise((r) => setTimeout(r, 2000 * Math.pow(2, attempt - 1)));
+                    } catch (err) {
+                        console.error(`[${userId}] ERROR downloading media (attempt ${attempt}/3) for msg ${msg?.key?.id}:`, err);
+                        try { fs.unlinkSync(writePath); } catch (_) { }
+                        if (err.code === 'ENOSPC') {
+                            quotaExceeded = true;
+                            break;
+                        }
+                        if (attempt < 3) {
+                            await new Promise((r) => setTimeout(r, 2000 * Math.pow(2, attempt - 1)));
+                        }
                     }
                 }
-            }
 
-            if (downloaded) {
-                mediaPayload = {
-                    message: caption,
-                    media_processing_id: guid,
-                    mime_type: mimetype || 'application/octet-stream',
-                    original_filename: filename,
-                };
-            } else {
-                const shortType = messageType.replace('Message', '');
-                mediaPayload = {
-                    message: caption,
-                    media_processing_id: guid,
-                    mime_type: `media_corrupt_${shortType}`,
-                    original_filename: filename,
-                    quota_exceeded: quotaExceeded,
-                };
+                if (downloaded) {
+                    mediaPayload = {
+                        message: caption,
+                        media_processing_id: guid,
+                        mime_type: mimetype || 'application/octet-stream',
+                        original_filename: filename,
+                    };
+                } else {
+                    const shortType = messageType.replace('Message', '');
+                    mediaPayload = {
+                        message: caption,
+                        media_processing_id: guid,
+                        mime_type: `media_corrupt_${shortType}`,
+                        original_filename: filename,
+                        quota_exceeded: quotaExceeded,
+                    };
+                }
             }
         }
     }
@@ -1789,7 +1797,7 @@ app.post('/sessions/:userId/groups', async (req, res) => {
 
 app.post('/sessions/:userId/fetch-messages', async (req, res) => {
     const { userId } = req.params;
-    const { groupId, limit } = req.body;
+    const { groupId, limit, skipMediaDownload } = req.body;
     const session = sessions[userId];
     if (!session || !session.sock) {
         return res.status(404).json({ error: 'Session not found.' });
@@ -1799,7 +1807,7 @@ app.post('/sessions/:userId/fetch-messages', async (req, res) => {
     }
 
     try {
-        console.log(`[${userId}] Fetching ${limit} historic messages for ${groupId}...`);
+        console.log(`[${userId}] Fetching ${limit} historic messages for ${groupId} (skipMediaDownload: ${skipMediaDownload})...`);
 
         let messages = [];
 
@@ -1832,7 +1840,7 @@ app.post('/sessions/:userId/fetch-messages', async (req, res) => {
 
         const processedMessagesPromises = messages.map(async (msg) => {
             // Reuse the extraction logic
-            return await processMessage(session, userId, msg, processOffline, allowGroups);
+            return await processMessage(session, userId, msg, processOffline, allowGroups, skipMediaDownload);
         });
 
         const processedMessages = (await Promise.all(processedMessagesPromises)).filter(Boolean);
