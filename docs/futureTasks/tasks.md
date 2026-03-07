@@ -7,3 +7,5 @@
  - reduce api cost by switching to gemini 2.0 flash or gemini 2.0 flash lite
  - kid safety feature
  - add more stuf to central services/resolver.py
+ - create client cache (bot_id, config_tier, feature_name)-> long living client
+ - add image moderation to ImageVisionProcessor 
