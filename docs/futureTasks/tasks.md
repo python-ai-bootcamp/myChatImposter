@@ -1,0 +1,9 @@
+ - image moderation
+ - sound moderation
+ - video moderation
+ - image transcript
+ - video transcript
+ - sound transcript
+ - reduce api cost by switching to gemini 2.0 flash or gemini 2.0 flash lite
+ - kid safety feature
+ - add more stuf to central services/resolver.py
