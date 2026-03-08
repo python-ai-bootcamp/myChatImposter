@@ -108,7 +108,7 @@ Its signature will be radically simplified. Instead of requiring the caller to p
 
 **New Signature**:
 ```python
-def create_model_provider(
+async def create_model_provider(
     bot_id: str,
     feature_name: str,
     config_tier: Literal["high", "low", "image_moderation"]
@@ -117,8 +117,8 @@ def create_model_provider(
 
 **Behavior**:
 - **Future Caching**: While the factory signature implies resolving configs and users from the DB on every invocation (introducing latency), this is a temporary architectural stage. A future `model_provider_cache` layer will be implemented to intercept these calls and yield already-instantiated clients.
-- The factory will utilize the new centralized `services/resolver.py` to fetch the `user_id` and the specific `ModelProviderConfig` (based on the `config_tier`).
-- It will internally resolve the `token_consumption_collection` singleton using `get_global_state().token_consumption_collection` (from `dependencies.py`), avoiding explicit parameter passing.
+- The factory will utilize the new centralized `services/resolver.py` to `await` the fetch of the `user_id` and the specific `ModelProviderConfig` (based on the `config_tier`). Because these resolvers are async, **the factory itself must be asynchronous**.
+- It will internally resolve the `token_consumption_collection` singleton using `get_global_state().token_consumption_collection` (from `dependencies.py`), avoiding explicit parameter passing. **Note**: `GlobalStateManager` is a true, thread-safe application-layout Singleton, making this fetching perfectly safe even for background workers like `APScheduler` without risk of context-loss.
 - **For `ChatCompletionProviderConfig` (high/low)**: The factory will instantiate the corresponding chat provider, attach the `TokenTrackingCallback`, and return the Langchain `BaseChatModel`. 
 - **For `BaseModelProviderConfig` (image_moderation)**: The factory will instantiate the underlying model provider (e.g., `OpenAiModerationProvider`), skip the Langchain token tracker, and return the `BaseModelProvider` instance itself.
 
@@ -144,7 +144,9 @@ Renaming `llm_configs` to `model_provider_configs` implies a significant data co
 4. **Database Migrations**: Existing bots stored in the database with the `llm_configs` key MUST be migrated to use `model_provider_configs`.
 
 ### 4.5 Safety and Downstream Code Refactoring
-1. **TokenConsumptionService Expansion**: The `TokenConsumptionService.record_event` function currently enforces `config_tier: Literal["high", "low"]`. This `Literal` MUST be explicitly expanded to include `"image_moderation"` to prevent runtime type crashes if the moderation tier ever interacts with the service (even for 0-token audit logging).
-2. **Broken Import Resolution**: Renaming `llm_providers.base` to `model_providers.base` and `BaseLlmProvider` to `BaseModelProvider` will break existing downstream feature imports. Areas known to require immediate import updates include:
+1. **Async Factory Cascade (`AutomaticBotReplyService`)**: Because `create_model_provider` is now an asynchronous function, it can no longer be invoked from a class constructor (`__init__`). **Mandatory Refactoring**: The `AutomaticBotReplyService` (and any similar service) MUST be refactored to remove naive synchronous LLM initialization from its constructor. Instead, introduce an asynchronous setup method (e.g., `async def start(self)`) that awaits the factory and is invoked by the service manager during the bot's startup phase.
+2. **TokenConsumptionService Expansion**: The `TokenConsumptionService.record_event` function currently enforces `config_tier: Literal["high", "low"]`. This `Literal` MUST be explicitly expanded to include `"image_moderation"` to prevent runtime type crashes.
+    - **Note on Exhaustive Omission**: Because image moderation requests are free and do not consume generative tokens, they are intentionally excluded from 0-token audit logging. The `TokenConsumptionService` will not be invoked for this tier, and the expansion of the `Literal` is purely a defensive type safety measure.
+3. **Broken Import Resolution**: Renaming `llm_providers.base` to `model_providers.base` and `BaseLlmProvider` to `BaseModelProvider` will break existing downstream feature imports. Areas known to require immediate import updates include:
    - `features/automatic_bot_reply/service.py`
    - `features/periodic_group_tracking/extractor.py`
