@@ -6,6 +6,7 @@
  - sound transcript
  - reduce api cost by switching to gemini 2.0 flash or gemini 2.0 flash lite
  - kid safety feature
- - add more stuf to central services/resolver.py
+ - add more stuf to central services/resolver.py and make more existing code consume its services
  - create client cache (bot_id, config_tier, feature_name)-> long living client
  - add image moderation to ImageVisionProcessor 
+ - `llm_configs` → `model_provider_configs` (full blast radius will be required to be addressed including upgrade scripts, UI changes, model changes, reference changes etc.)
