@@ -69,7 +69,9 @@ class LLMConfigurations(BaseModel):
 
 ### 2.5 `DefaultConfigurations` Attribute Rename
 The `DefaultConfigurations` class in `config_models.py` currently uses `llm_` prefixed attribute names (e.g., `llm_provider_name`, `llm_model_high`). These internal Python attributes will be renamed to use `model_` prefix for consistency:
-- `llm_provider_name` → `model_provider_name`
+- `llm_provider_name` → **split into two**:
+  - `model_provider_name_chat` (default: `"openAi"`) — used for `high` and `low` tiers
+  - `model_provider_name_moderation` (default: `"openAiModeration"`) — used for `image_moderation` tier
 - `llm_model_high` → `model_high`
 - `llm_model_low` → `model_low`
 - `llm_model_image_moderation` → `model_image_moderation`
@@ -77,11 +79,15 @@ The `DefaultConfigurations` class in `config_models.py` currently uses `llm_` pr
 - `llm_temperature` → `model_temperature`
 - `llm_reasoning_effort` → `model_reasoning_effort`
 
+> **Note — Provider Name Divergence**: A single `model_provider_name` default can no longer serve all tiers because `image_moderation` requires `provider_name: "openAiModeration"` (Section 3.5) while `high`/`low` use `"openAi"`. The default configuration builder must use the appropriate default when constructing each tier's config.
+
 > **Note**: The underlying **environment variable names** (`DEFAULT_LLM_PROVIDER`, `DEFAULT_LLM_MODEL_HIGH`, etc.) remain unchanged to avoid silent deployment fallback issues. Only the Python attribute names change.
 
 ## 3. Provider Architecture Refactor (`llm_providers/` → `model_providers/`)
 
 The package `llm_providers` will be renamed to `model_providers` for consistency with the new class naming convention.
+
+> **Note — Python Package**: The current `llm_providers/` directory works as an implicit namespace package (no `__init__.py`). The renamed `model_providers/` directory will continue to function as an implicit namespace package — `importlib.import_module("model_providers.openAi")` works correctly without an explicit `__init__.py` in Python 3.3+.
 
 ### 3.1 `base.py`
 The `BaseLlmProvider` becomes `BaseModelProvider`, a pure base abstract class that only expects a `BaseModelProviderConfig`. It defines **no abstract methods** on its own — subclasses are free to expose whichever interface is appropriate for their use case via intermediate abstract classes (see Sections 3.2 and 3.3).
@@ -265,14 +271,23 @@ Because `create_model_provider` is now an asynchronous function, it can no longe
 **Mandatory Refactoring**: `AutomaticBotReplyService` currently calls `self._initialize_llm()` synchronously from its `__init__` (line 189). Since the service is constructed inside the already-async `BotLifecycleService.create_bot_session()` (line 218), the fix is straightforward:
 - Remove the `self._initialize_llm()` call from `__init__`.
 - Make `_initialize_llm` async: `async def _initialize_llm(self)`.
-- Call `await bot_service._initialize_llm()` right after construction, inside `create_bot_session()`:
-  ```python
-  if config.features.automatic_bot_reply.enabled:
-      bot_service = AutomaticBotReplyService(instance)
-      await bot_service._initialize_llm()
-      instance.register_message_handler(bot_service.handle_message)
-      instance.register_feature("automatic_bot_reply", bot_service)
-  ```
+- Call `await bot_service._initialize_llm()` right after construction, inside `create_bot_session()`.
+
+**Before** (`AutomaticBotReplyService.__init__`, line 189):
+```python
+def __init__(self, session_manager):
+    ...
+    self._initialize_llm()  # ← REMOVE this line
+```
+
+**After** (`BotLifecycleService.create_bot_session()`, line 218):
+```python
+if config.features.automatic_bot_reply.enabled:
+    bot_service = AutomaticBotReplyService(instance)  # __init__ no longer calls _initialize_llm
+    await bot_service._initialize_llm()                # ← NEW: explicit async init
+    instance.register_message_handler(bot_service.handle_message)
+    instance.register_feature("automatic_bot_reply", bot_service)  # (existing line)
+```
 
 #### 4.5.2 Centralized `ConfigTier` Literal Expansion
 The following three locations currently hardcode `config_tier: Literal["high", "low"]`. All three **must** be updated to import and use the centralized `ConfigTier` alias from `config_models.py` (defined in Section 2.1):
@@ -292,22 +307,25 @@ The following comprehensive import migration table covers all files affected by 
 |---|---|---|
 | `features/automatic_bot_reply/service.py` | `from llm_providers.base import BaseLlmProvider` | `from model_providers.base import BaseModelProvider` |
 | `features/automatic_bot_reply/service.py` | `from services.llm_factory import create_tracked_llm` | `from services.model_factory import create_model_provider` |
+| `features/automatic_bot_reply/service.py` | `from utils.provider_utils import find_provider_class` | **REMOVE** (dead import — unused in current code) |
 | `features/periodic_group_tracking/extractor.py` | `from llm_providers.base import BaseLlmProvider` | `from model_providers.base import BaseModelProvider` |
 | `features/periodic_group_tracking/extractor.py` | `from config_models import LLMProviderConfig` | `from config_models import ChatCompletionProviderConfig` |
 | `features/periodic_group_tracking/extractor.py` | `from services.llm_factory import create_tracked_llm` | `from services.model_factory import create_model_provider` |
 | `features/periodic_group_tracking/extractor.py` | `from llm_providers.recorder import LLMRecorder` | `from model_providers.recorder import LLMRecorder` |
 | `services/llm_factory.py` (itself renamed) | `from llm_providers.base import BaseLlmProvider` | `from model_providers.base import BaseModelProvider` |
 | `services/llm_factory.py` (itself renamed) | `from config_models import LLMProviderConfig` | `from config_models import ChatCompletionProviderConfig, BaseModelProviderConfig` |
+| `services/llm_factory.py` (itself renamed) | local `find_provider_class` definition (lines 14-20) | **REMOVE** — import from `utils.provider_utils` instead |
 | `model_providers/openAi.py` | `from .base import BaseLlmProvider` | `from .base import BaseModelProvider` (via `ChatCompletionProvider`) |
 | `model_providers/openAi.py` | `from config_models import LLMProviderConfig` | `from config_models import ChatCompletionProviderConfig` |
 | `model_providers/base.py` | `from config_models import LLMProviderConfig` | `from config_models import BaseModelProviderConfig` |
 | `model_providers/fakeLlm.py` | `from config_models import LLMProviderConfig` | `from config_models import ChatCompletionProviderConfig` |
+| `model_providers/recorder.py` | *(file moved with package rename)* | No internal import changes needed |
 | `tests/services/test_token_services.py` | `from services.llm_factory import create_tracked_llm` | `from services.model_factory import create_model_provider` |
 | `tests/services/test_token_services.py` | `from config_models import LLMProviderConfig, LLMProviderSettings` | `from config_models import ChatCompletionProviderConfig, ChatCompletionProviderSettings` |
 | `tests/integration/test_token_flow_component.py` | `from services.llm_factory import create_tracked_llm` | `from services.model_factory import create_model_provider` |
 | `tests/integration/test_token_flow_component.py` | `from config_models import LLMProviderConfig, LLMProviderSettings` | `from config_models import ChatCompletionProviderConfig, ChatCompletionProviderSettings` |
 
-> **Note — `fakeLlm.py` Behavioral Breakage**: Beyond the import change, `FakeLlmProvider` in `model_providers/fakeLlm.py` currently uses `self.user_id` (line 88: `resp.format(user_id=self.user_id)`). Since `user_id` is dropped from the provider hierarchy (Section 3.1), this reference will crash at runtime. The `FakeLlmProvider` must be refactored to remove this dependency.
+> **Note — `fakeLlm.py` Behavioral Breakage**: Beyond the import change, `FakeLlmProvider` in `model_providers/fakeLlm.py` currently uses `self.user_id` (line 88: `resp.format(user_id=self.user_id)`). Since `user_id` is dropped from the provider hierarchy (Section 3.1), this reference will crash at runtime. The `FakeLlmProvider` must be refactored to remove this dependency. Additionally, `fakeLlm.py` is missing `from typing import Optional, List, Any` — a pre-existing bug that should be fixed during this refactoring pass.
 
 #### 4.5.4 Async Factory Cascade (`extractor.py` / `runner.py` / `GroupTracker`)
 The `periodic_group_tracking` feature has a deeper parameter cascade than `AutomaticBotReplyService`. The factory redesign eliminates several parameters that are currently threaded through multiple layers:
