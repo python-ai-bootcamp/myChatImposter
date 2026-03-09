@@ -53,7 +53,7 @@ class ChatCompletionProviderConfig(BaseModelProviderConfig):
 
 > **Note — Inheritance**: `ChatCompletionProviderConfig` inherits from `BaseModelProviderConfig`, overriding `provider_config` to `ChatCompletionProviderSettings`. This provides Liskov substitutability — the factory and resolver can uniformly accept `BaseModelProviderConfig` without `Union` handling for the input config types. Pydantic v2 correctly handles the field type override since `ChatCompletionProviderSettings` extends `BaseModelProviderSettings`.
 
-> **Note — `extra = 'allow'`**: Neither `BaseModelProviderSettings` nor `ChatCompletionProviderSettings` include `Config.extra = 'allow'`. The existing `LLMProviderSettings` has this setting, but it is intentionally dropped. The database migration script (Section 4.6) will strip any stray fields from `high`, `low`, and `image_moderation` entries to ensure clean deserialization.
+> **Note — `extra = 'allow'`**: Neither `BaseModelProviderSettings` nor `ChatCompletionProviderSettings` include `Config.extra = 'allow'`. The existing `LLMProviderSettings` has this setting, but it is intentionally dropped. While Pydantic's default `extra = 'ignore'` behavior will silently drop stray DB fields and prevent deserialization crashes, the database migration script (Section 4.6) will strip any stray fields from `high`, `low`, and `image_moderation` entries. This is strictly for database hygiene, ensuring optimal storage payload sizes, and preventing future developer confusion when inspecting raw database documents.
 
 > **Note — Field Name**: The field name remains `record_llm_interactions` (not `record_model_interactions`). Since this field lives exclusively in `ChatCompletionProviderSettings` and exclusively tracks LLM chat completion interactions, the "LLM" semantics are accurate. Renaming it would trigger a blast radius across the codebase, database documents, and the `LLMRecorder` class with zero functional benefit.
 
@@ -198,8 +198,9 @@ async def create_model_provider(
 - **Future Caching**: While the factory signature implies resolving configs and users from the DB on every invocation (introducing latency), this is a temporary architectural stage. A future `model_provider_cache` layer will be implemented to intercept these calls and yield already-instantiated clients.
 - The factory will utilize the new centralized `services/resolver.py` to `await` the fetch of the `user_id` and the specific model provider config (based on the `config_tier`). Because these resolvers are async, **the factory itself must be asynchronous**.
 - It will internally resolve the `token_consumption_collection` singleton using `get_global_state().token_consumption_collection` (from `dependencies.py`), avoiding explicit parameter passing. **Note**: `GlobalStateManager` is a true, thread-safe application-layout Singleton, making this fetching perfectly safe even for background workers like `APScheduler` without risk of context-loss.
-- **For `ChatCompletionProviderConfig` (high/low)**: The factory will instantiate the corresponding chat provider, attach the `TokenTrackingCallback`, and return the Langchain `BaseChatModel`. 
-- **For `BaseModelProviderConfig` (image_moderation)**: The factory will instantiate the underlying model provider (e.g., `OpenAiModerationProvider`), skip the Langchain token tracker, and return the `ImageModerationProvider` instance itself.
+- **Polymorphic Branching**: After dynamic instantiation of the provider class, the factory will explicitly branch using `isinstance` checks against the new base interfaces:
+  - If `isinstance(provider, ChatCompletionProvider)` (high/low tiers): The factory will call `provider.get_llm()`, attach the `TokenTrackingCallback`, and return the Langchain `BaseChatModel`.
+  - If `isinstance(provider, ImageModerationProvider)` (image_moderation tier): The factory will skip the token tracker and directly return the `provider` instance itself.
 
 > **Note — Resolution vs. Dispatch**: The factory uses two independent mechanisms that should not be confused:
 > 1. **Provider class resolution** is driven by `provider_name` — the factory calls `importlib.import_module(f"model_providers.{config.provider_name}")` to load the correct module, then `find_provider_class()` to discover the provider class within it. This is how `"openAi"` loads `OpenAiChatProvider` and `"openAiModeration"` loads `OpenAiModerationProvider`.
@@ -283,6 +284,7 @@ Because `create_model_provider` is now an asynchronous function, it can no longe
 - Remove the `self._initialize_llm()` call from `__init__`.
 - Make `_initialize_llm` async: `async def _initialize_llm(self)`.
 - Call `await bot_service._initialize_llm()` right after construction, inside `create_bot_session()`.
+- **Unit Test Sweep**: Perform a targeted sweep of test suites (e.g., `tests/features/test_automatic_bot_reply.py`). Any test setup that instantiates `AutomaticBotReplyService` directly must be patched to explicitly `await bot_service._initialize_llm()` immediately following instantiation, mirroring the new production lifecycle flow.
 
 **Before** (`AutomaticBotReplyService.__init__`, line 189):
 ```python
@@ -337,7 +339,7 @@ The following comprehensive import migration table covers all files affected by 
 | `tests/integration/test_token_flow_component.py` | `from services.llm_factory import create_tracked_llm` | `from services.model_factory import create_model_provider` |
 | `tests/integration/test_token_flow_component.py` | `from config_models import LLMProviderConfig, LLMProviderSettings` | `from config_models import ChatCompletionProviderConfig, ChatCompletionProviderSettings` |
 
-> **Note — `fakeLlm.py` Behavioral Breakage**: Beyond the import change, `FakeLlmProvider` in `model_providers/fakeLlm.py` currently uses `self.user_id` (line 88: `resp.format(user_id=self.user_id)`). Since `user_id` is dropped from the provider hierarchy (Section 3.1), this reference will crash at runtime. The `FakeLlmProvider` must be refactored to remove this dependency. Additionally, `fakeLlm.py` is missing `from typing import Optional, List, Any` — a pre-existing bug that should be fixed during this refactoring pass.
+> **Note — `fakeLlm.py` Behavioral Breakage & Test Impact**: Beyond the import change, `FakeLlmProvider` in `model_providers/fakeLlm.py` currently uses `self.user_id` (line 88: `resp.format(user_id=self.user_id)`). Since `user_id` is dropped from the provider hierarchy (Section 3.1), this reference will crash at runtime. The `FakeLlmProvider` must be refactored to remove this dependency. Additionally, `fakeLlm.py` is missing `from typing import Optional, List, Any` — a pre-existing bug that should be fixed during this refactoring pass. Finally, a full sweep of unit and integration tests (especially `tests/integration/test_token_flow_component.py`) must be conducted. Any test asserting against the strict equality of the old `fakeLlm.py` dummy output (which contained the `user_id`) must be updated to expect the new parameterless response string.
 
 #### 4.5.4 Async Factory Cascade (`extractor.py` / `runner.py` / `GroupTracker`)
 The `periodic_group_tracking` feature has a deeper parameter cascade than `AutomaticBotReplyService`. The factory redesign eliminates several parameters that are currently threaded through multiple layers:
@@ -350,6 +352,8 @@ The current signature accepts `llm_config`, `user_id`, `llm_config_high`, and `t
 llm = await create_model_provider(bot_id, "periodic_group_tracking", "low")
 high_llm = await create_model_provider(bot_id, "periodic_group_tracking", "high")
 ```
+
+> **Note — Phase 2 Refinement Execution**: The current extractor specifies Phase 2 refinement only `if llm_config_high:`. Since this parameter is being removed, this logic must change. The extractor must unconditionally request the high model (`config_tier="high"`), unconditionally executing Phase 2. If the user has no high model configured, the centralized `resolve_model_config` resolution inside the factory will explicitly raise an exception. The existing `except` block in `extract()` will catch this failure and gracefully degrade to returning the Phase 1 (low model) results. Thus, the explicit `if llm_config_high:` check should simply be removed.
 
 > **Note — `record_llm_interactions` Access**: The extractor currently reads `llm_config.provider_config.record_llm_interactions` (line 104) **before** the factory call to decide whether to activate the `LLMRecorder`. Since `llm_config` is removed, the extractor must call the resolver directly to obtain this flag:
 > ```python
@@ -382,6 +386,6 @@ Both blocks should be replaced with `await resolve_user(bot_id)` from `services/
 
 ### 4.6 Database Migration
 A migration script will be created to perform the following:
-1. **Strip chat-specific fields** (`temperature`, `seed`, `reasoning_effort`, `record_llm_interactions`) from existing `image_moderation` entries in the database. This ensures clean deserialization with the new `BaseModelProviderSettings` (which does not include `extra = 'allow'`).
+1. **Strip chat-specific fields** (`temperature`, `seed`, `reasoning_effort`, `record_llm_interactions`) from existing `image_moderation` entries in the database. While Pydantic's default `extra = 'ignore'` behavior prevents deserialization crashes when using the new `BaseModelProviderSettings` (which drops `extra = 'allow'`), this stripping is strictly required for database hygiene and optimizing payload sizes.
 2. **Update `provider_name`** in `image_moderation` entries from `"openAi"` to `"openAiModeration"` so the factory's `importlib` resolution loads the correct module (see Section 3.5).
-3. **Strip stray fields** from `high` and `low` tier entries if any exist from past experiments, since `ChatCompletionProviderSettings` also drops `extra = 'allow'`.
+3. **Strip stray fields** from `high` and `low` tier entries if any exist from past experiments, maintaining clean storage since `ChatCompletionProviderSettings` also drops `extra = 'allow'`.
