@@ -201,6 +201,10 @@ async def create_model_provider(
 - **For `ChatCompletionProviderConfig` (high/low)**: The factory will instantiate the corresponding chat provider, attach the `TokenTrackingCallback`, and return the Langchain `BaseChatModel`. 
 - **For `BaseModelProviderConfig` (image_moderation)**: The factory will instantiate the underlying model provider (e.g., `OpenAiModerationProvider`), skip the Langchain token tracker, and return the `ImageModerationProvider` instance itself.
 
+> **Note — Resolution vs. Dispatch**: The factory uses two independent mechanisms that should not be confused:
+> 1. **Provider class resolution** is driven by `provider_name` — the factory calls `importlib.import_module(f"model_providers.{config.provider_name}")` to load the correct module, then `find_provider_class()` to discover the provider class within it. This is how `"openAi"` loads `OpenAiChatProvider` and `"openAiModeration"` loads `OpenAiModerationProvider`.
+> 2. **Post-instantiation behavior** is driven by `config_tier` — it determines whether the `TokenTrackingCallback` is attached (for `"high"`/`"low"`) or skipped (for `"image_moderation"`), and what return type the caller receives.
+
 **Caller Requirement**:
 Because the factory is polymorphic and returns `Union[BaseChatModel, ImageModerationProvider]`, any caller expecting a specific type *must* perform a runtime type check and cast before usage to satisfy type checkers and prevent Langchain pipeline errors.
 
@@ -247,7 +251,14 @@ async def resolve_model_config(
     )
     if not db_config:
         raise ValueError(f"No configuration found for bot_id: {bot_id}")
-    tier_data = db_config["config_data"]["configurations"]["llm_configs"][config_tier]
+    tier_data = (
+        db_config.get("config_data", {})
+        .get("configurations", {})
+        .get("llm_configs", {})
+        .get(config_tier)
+    )
+    if not tier_data:
+        raise ValueError(f"Tier '{config_tier}' not found in configuration for bot_id: {bot_id}")
     # Parse with the appropriate config model based on tier
     if config_tier == "image_moderation":
         return BaseModelProviderConfig.model_validate(tier_data)
@@ -322,6 +333,7 @@ The following comprehensive import migration table covers all files affected by 
 | `model_providers/recorder.py` | *(file moved with package rename)* | No internal import changes needed |
 | `tests/services/test_token_services.py` | `from services.llm_factory import create_tracked_llm` | `from services.model_factory import create_model_provider` |
 | `tests/services/test_token_services.py` | `from config_models import LLMProviderConfig, LLMProviderSettings` | `from config_models import ChatCompletionProviderConfig, ChatCompletionProviderSettings` |
+| `tests/services/test_token_services.py` | `@patch('services.llm_factory.find_provider_class')` | `@patch('services.model_factory.find_provider_class')` (patched at import site) |
 | `tests/integration/test_token_flow_component.py` | `from services.llm_factory import create_tracked_llm` | `from services.model_factory import create_model_provider` |
 | `tests/integration/test_token_flow_component.py` | `from config_models import LLMProviderConfig, LLMProviderSettings` | `from config_models import ChatCompletionProviderConfig, ChatCompletionProviderSettings` |
 
@@ -339,6 +351,14 @@ llm = await create_model_provider(bot_id, "periodic_group_tracking", "low")
 high_llm = await create_model_provider(bot_id, "periodic_group_tracking", "high")
 ```
 
+> **Note — `record_llm_interactions` Access**: The extractor currently reads `llm_config.provider_config.record_llm_interactions` (line 104) **before** the factory call to decide whether to activate the `LLMRecorder`. Since `llm_config` is removed, the extractor must call the resolver directly to obtain this flag:
+> ```python
+> config = await resolve_model_config(bot_id, "low")
+> record_enabled = config.provider_config.record_llm_interactions
+> llm = await create_model_provider(bot_id, "periodic_group_tracking", "low")
+> ```
+> This keeps the factory's interface clean while giving callers access to config flags they need.
+
 **Dead Parameter Cascade**:
 
 | Layer | Dead Parameter | Reason |
@@ -349,6 +369,16 @@ high_llm = await create_model_provider(bot_id, "periodic_group_tracking", "high"
 | `runner.py` call site (lines 171-186) | Manual config/user resolution code | Replaced by factory calls |
 
 All listed parameters and their resolution code in `runner.py` must be removed as part of this refactoring.
+
+#### 4.5.5 `bot_lifecycle_service.py` Owner Resolution Consolidation
+`bot_lifecycle_service.py` contains two duplicate inline owner resolution blocks that perform the exact same query as the new `resolve_user()` (Section 4.3):
+
+1. **`on_bot_connected()`** (lines 69-77)
+2. **`create_bot_session()`** (lines 189-197)
+
+Both blocks should be replaced with `await resolve_user(bot_id)` from `services/resolver.py`.
+
+> **Note — Behavioral Change**: The existing inline code silently returns `None` when no owner is found. The centralized `resolve_user()` raises `ValueError`. This stricter behavior is appropriate — a bot without an owner should not be starting.
 
 ### 4.6 Database Migration
 A migration script will be created to perform the following:
