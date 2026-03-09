@@ -47,12 +47,15 @@ class ChatCompletionProviderSettings(BaseModelProviderSettings):
     seed: Optional[int] = Field(default=None, title="Seed")
     record_llm_interactions: bool = Field(default=False, title="Record Traffic")
     
-class ChatCompletionProviderConfig(BaseModel):
-    provider_name: str
+class ChatCompletionProviderConfig(BaseModelProviderConfig):
     provider_config: ChatCompletionProviderSettings
 ```
 
-> **Note**: The field name remains `record_llm_interactions` (not `record_model_interactions`). Since this field lives exclusively in `ChatCompletionProviderSettings` and exclusively tracks LLM chat completion interactions, the "LLM" semantics are accurate. Renaming it would trigger a blast radius across the codebase, database documents, and the `LLMRecorder` class with zero functional benefit.
+> **Note — Inheritance**: `ChatCompletionProviderConfig` inherits from `BaseModelProviderConfig`, overriding `provider_config` to `ChatCompletionProviderSettings`. This provides Liskov substitutability — the factory and resolver can uniformly accept `BaseModelProviderConfig` without `Union` handling for the input config types. Pydantic v2 correctly handles the field type override since `ChatCompletionProviderSettings` extends `BaseModelProviderSettings`.
+
+> **Note — `extra = 'allow'`**: Neither `BaseModelProviderSettings` nor `ChatCompletionProviderSettings` include `Config.extra = 'allow'`. The existing `LLMProviderSettings` has this setting, but it is intentionally dropped. The database migration script (Section 4.6) will strip any stray fields from `high`, `low`, and `image_moderation` entries to ensure clean deserialization.
+
+> **Note — Field Name**: The field name remains `record_llm_interactions` (not `record_model_interactions`). Since this field lives exclusively in `ChatCompletionProviderSettings` and exclusively tracks LLM chat completion interactions, the "LLM" semantics are accurate. Renaming it would trigger a blast radius across the codebase, database documents, and the `LLMRecorder` class with zero functional benefit.
 
 ### 2.4 Updating `LLMConfigurations` Internal Types
 The `LLMConfigurations` class (and the `llm_configs` field name in `BotGeneralSettings`) will **retain their current names** (see Deferred Rename note in Section 1). However, the `image_moderation` field's **type** will be updated from `LLMProviderConfig` to `BaseModelProviderConfig`:
@@ -85,13 +88,26 @@ The `BaseLlmProvider` becomes `BaseModelProvider`, a pure base abstract class th
 
 ```python
 from abc import ABC
+from typing import Optional
 
 class BaseModelProvider(ABC):
     def __init__(self, config: BaseModelProviderConfig):
         self.config = config
+
+    def _resolve_api_key(self) -> Optional[str]:
+        """Shared utility: resolves the API key based on api_key_source."""
+        settings = self.config.provider_config
+        if settings.api_key_source == "explicit":
+            if not settings.api_key:
+                raise ValueError("api_key_source is 'explicit' but no api_key provided.")
+            return settings.api_key
+        # "environment" — return None, letting the SDK fall back to OPENAI_API_KEY env var
+        return None
 ```
 
 > **Note — `user_id` Removal**: The current `BaseLlmProvider.__init__` accepts both `config` and `user_id`. The new `BaseModelProvider` drops `user_id` from its constructor entirely. The `user_id` is now resolved internally by the factory (Section 4.2) and used exclusively for the `TokenTrackingCallback`. Providers no longer need to know which user owns them.
+
+> **Note — Shared API Key Resolution**: The `_resolve_api_key()` method centralizes the `api_key_source` logic ("environment" vs "explicit") that previously lived in `OpenAiLlmProvider._build_llm_params()`. Both `OpenAiChatProvider` and `OpenAiModerationProvider` inherit this method, eliminating code duplication.
 
 ### 3.2 `chat_completion.py` [NEW]
 A new intermediate abstract class, `ChatCompletionProvider`, will inherit from `BaseModelProvider`. It defines `get_llm()` as its own abstract method, establishing the Langchain integration contract that all Chat Completion providers (like `OpenAiChatProvider`) must fulfill.
@@ -106,6 +122,23 @@ class ChatCompletionProvider(BaseModelProvider):
 ```
 
 ### 3.3 `image_moderation.py` [NEW]
+
+**`ModerationResult` Data Model**:
+```python
+from pydantic import BaseModel
+from typing import Dict
+
+class ModerationResult(BaseModel):
+    """Normalized result from an image moderation API call."""
+    flagged: bool
+    categories: Dict[str, bool]
+    category_scores: Dict[str, float]
+```
+
+> **Note**: This is a custom wrapper around the OpenAI SDK's `openai.types.ModerationCreateResponse`. The provider implementation is responsible for mapping the SDK response into this stable contract. This decouples consumers from the specific SDK type.
+
+**`ImageModerationProvider` Abstract Class**:
+
 A new intermediate abstract class, `ImageModerationProvider`, will inherit from `BaseModelProvider`. It defines `moderate_image()` as its own abstract method, mirroring the `ChatCompletionProvider` pattern and providing compile-time contract enforcement:
 ```python
 from abc import abstractmethod
@@ -131,6 +164,8 @@ A dedicated `OpenAiModerationProvider` will be created.
 - Implements `moderate_image(image_url: str) -> ModerationResult`.
 - **Scope**: This provider handles **image moderation only**. While the underlying OpenAI Moderation API supports text inputs as well, text moderation is explicitly out of scope for this provider.
 - Directly utilizes the `AsyncOpenAI` SDK to call the `moderations.create` API with an `image_url` input.
+- **API Key Resolution**: Uses the inherited `self._resolve_api_key()` method (from `BaseModelProvider`, Section 3.1) to obtain the API key for `AsyncOpenAI(api_key=...)`. If `api_key_source` is `"environment"`, passes `None` to let the SDK fall back to the `OPENAI_API_KEY` environment variable.
+- **Module-Provider Matching**: The `provider_name` in `image_moderation` database configs **must** be set to `"openAiModeration"` (matching this module's filename). This is what the factory's `importlib.import_module(f"model_providers.{provider_name}")` uses to locate the correct provider class. The migration script (Section 4.6) must update existing entries accordingly.
 
 ## 4. Downstream Impact
 
@@ -195,8 +230,10 @@ async def resolve_user(bot_id: str) -> str:
 async def resolve_model_config(
     bot_id: str,
     config_tier: ConfigTier
-) -> Union[ChatCompletionProviderConfig, BaseModelProviderConfig]:
-    """Returns the specific model provider config for the given bot and tier."""
+) -> BaseModelProviderConfig:
+    """Returns the specific model provider config for the given bot and tier.
+    Returns BaseModelProviderConfig (or ChatCompletionProviderConfig subclass for high/low).
+    """
     state = get_global_state()
     db_config = await state.configurations_collection.find_one(
         {"config_data.bot_id": bot_id},
@@ -272,5 +309,31 @@ The following comprehensive import migration table covers all files affected by 
 
 > **Note — `fakeLlm.py` Behavioral Breakage**: Beyond the import change, `FakeLlmProvider` in `model_providers/fakeLlm.py` currently uses `self.user_id` (line 88: `resp.format(user_id=self.user_id)`). Since `user_id` is dropped from the provider hierarchy (Section 3.1), this reference will crash at runtime. The `FakeLlmProvider` must be refactored to remove this dependency.
 
+#### 4.5.4 Async Factory Cascade (`extractor.py` / `runner.py` / `GroupTracker`)
+The `periodic_group_tracking` feature has a deeper parameter cascade than `AutomaticBotReplyService`. The factory redesign eliminates several parameters that are currently threaded through multiple layers:
+
+**`ActionItemExtractor.extract()` Parameter Simplification**:
+The current signature accepts `llm_config`, `user_id`, `llm_config_high`, and `token_consumption_collection` — all of which become dead after the factory internalizes config and user resolution. The simplified call body becomes:
+```python
+# Before: llm = create_tracked_llm(llm_config=llm_config, user_id=user_id, ...)
+# After:
+llm = await create_model_provider(bot_id, "periodic_group_tracking", "low")
+high_llm = await create_model_provider(bot_id, "periodic_group_tracking", "high")
+```
+
+**Dead Parameter Cascade**:
+
+| Layer | Dead Parameter | Reason |
+|---|---|---|
+| `ActionItemExtractor.extract()` | `llm_config`, `user_id`, `llm_config_high`, `token_consumption_collection` | Factory resolves all internally |
+| `GroupTrackingRunner.__init__` | `token_consumption_collection` | Factory resolves via `GlobalStateManager` |
+| `GroupTracker.__init__` | `token_consumption_collection` | No longer threaded to `GroupTrackingRunner` |
+| `runner.py` call site (lines 171-186) | Manual config/user resolution code | Replaced by factory calls |
+
+All listed parameters and their resolution code in `runner.py` must be removed as part of this refactoring.
+
 ### 4.6 Database Migration
-A migration script will be created to strip chat-specific fields (`temperature`, `seed`, `reasoning_effort`, `record_llm_interactions`) from existing `image_moderation` entries in the database. This ensures clean deserialization with the new `BaseModelProviderSettings` (which does not include `extra = 'allow'`).
+A migration script will be created to perform the following:
+1. **Strip chat-specific fields** (`temperature`, `seed`, `reasoning_effort`, `record_llm_interactions`) from existing `image_moderation` entries in the database. This ensures clean deserialization with the new `BaseModelProviderSettings` (which does not include `extra = 'allow'`).
+2. **Update `provider_name`** in `image_moderation` entries from `"openAi"` to `"openAiModeration"` so the factory's `importlib` resolution loads the correct module (see Section 3.5).
+3. **Strip stray fields** from `high` and `low` tier entries if any exist from past experiments, since `ChatCompletionProviderSettings` also drops `extra = 'allow'`.
