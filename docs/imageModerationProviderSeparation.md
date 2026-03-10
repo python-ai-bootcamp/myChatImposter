@@ -67,21 +67,21 @@ class LLMConfigurations(BaseModel):
     image_moderation: BaseModelProviderConfig = Field(..., title="Media Moderation Model")
 ```
 
-### 2.5 `DefaultConfigurations` Attribute Rename
-The `DefaultConfigurations` class in `config_models.py` currently uses `llm_` prefixed attribute names (e.g., `llm_provider_name`, `llm_model_high`). These internal Python attributes will be renamed to use `model_` prefix for consistency:
-- `llm_provider_name` → **split into two**:
-  - `model_provider_name_chat` (default: `"openAi"`) — used for `high` and `low` tiers
-  - `model_provider_name_moderation` (default: `"openAiModeration"`) — used for `image_moderation` tier
-- `llm_model_high` → `model_high`
-- `llm_model_low` → `model_low`
-- `llm_model_image_moderation` → `model_image_moderation`
-- `llm_api_key_source` → `model_api_key_source`
-- `llm_temperature` → `model_temperature`
-- `llm_reasoning_effort` → `model_reasoning_effort`
+### 2.5 `DefaultConfigurations` Attribute & Env Var Rename
+The `DefaultConfigurations` class in `config_models.py` currently uses `llm_` prefixed attribute names (e.g., `llm_provider_name`, `llm_model_high`). Both these internal Python attributes AND the underlying environment variables will be cleanly renamed to use the `model_` prefix for consistency, stripping the legacy "LLM" terminology entirely:
+- `llm_provider_name` / `DEFAULT_LLM_PROVIDER` → **split into two**:
+  - `model_provider_name_chat` / `DEFAULT_MODEL_PROVIDER_CHAT` (default: `"openAi"`)
+  - `model_provider_name_moderation` / `DEFAULT_MODEL_PROVIDER_MODERATION` (default: `"openAiModeration"`)
+- `llm_model_high` / `DEFAULT_LLM_MODEL_HIGH` → `model_high` / `DEFAULT_MODEL_HIGH`
+- `llm_model_low` / `DEFAULT_LLM_MODEL_LOW` → `model_low` / `DEFAULT_MODEL_LOW`
+- `llm_model_image_moderation` / `DEFAULT_LLM_MODEL_IMAGE_MODERATION` → `model_image_moderation` / `DEFAULT_MODEL_IMAGE_MODERATION`
+- `llm_api_key_source` / `DEFAULT_LLM_API_KEY_SOURCE` → `model_api_key_source` / `DEFAULT_MODEL_API_KEY_SOURCE`
+- `llm_temperature` / `DEFAULT_LLM_TEMPERATURE` → `model_temperature` / `DEFAULT_MODEL_TEMPERATURE`
+- `llm_reasoning_effort` / `DEFAULT_LLM_REASONING_EFFORT` → `model_reasoning_effort` / `DEFAULT_MODEL_REASONING_EFFORT`
 
 > **Note — Provider Name Divergence**: A single `model_provider_name` default can no longer serve all tiers because `image_moderation` requires `provider_name: "openAiModeration"` (Section 3.5) while `high`/`low` use `"openAi"`. The default configuration builder must use the appropriate default when constructing each tier's config.
 
-> **Note**: The underlying **environment variable names** (`DEFAULT_LLM_PROVIDER`, `DEFAULT_LLM_MODEL_HIGH`, etc.) remain unchanged to avoid silent deployment fallback issues. Only the Python attribute names change.
+> **Note — Self-Enforcing Refactor**: The old `llm_provider_name` attribute must be **deleted** (not merely renamed) from `DefaultConfigurations`. Replacing it with the two new attributes (`model_provider_name_chat`, `model_provider_name_moderation`) makes the refactor self-enforcing — any call site still referencing the old name will raise an `AttributeError` at runtime on first invocation, immediately surfacing missed updates without requiring a manual codebase audit.
 
 ## 3. Provider Architecture Refactor (`llm_providers/` → `model_providers/`)
 
@@ -169,7 +169,8 @@ A dedicated `OpenAiModerationProvider` will be created.
 - Inherits from `ImageModerationProvider`.
 - Implements `moderate_image(image_url: str) -> ModerationResult`.
 - **Scope**: This provider handles **image moderation only**. While the underlying OpenAI Moderation API supports text inputs as well, text moderation is explicitly out of scope for this provider.
-- Directly utilizes the `AsyncOpenAI` SDK to call the `moderations.create` API with an `image_url` input.
+- **SDK Invocation**: Directly utilizes the `AsyncOpenAI` SDK to call `client.moderations.create(model=..., input=...)`.
+  - **CRITICAL**: The configured model must be explicitly extracted and passed `model=self.config.provider_config.model` (e.g. `omni-moderation-latest`). If omitted, the SDK falls back to a legacy text-only model which rejects image inputs.
 - **API Key Resolution**: Uses the inherited `self._resolve_api_key()` method (from `BaseModelProvider`, Section 3.1) to obtain the API key for `AsyncOpenAI(api_key=...)`. If `api_key_source` is `"environment"`, passes `None` to let the SDK fall back to the `OPENAI_API_KEY` environment variable.
 - **Module-Provider Matching**: The `provider_name` in `image_moderation` database configs **must** be set to `"openAiModeration"` (matching this module's filename). This is what the factory's `importlib.import_module(f"model_providers.{provider_name}")` uses to locate the correct provider class. The migration script (Section 4.6) must update existing entries accordingly.
 
@@ -238,12 +239,16 @@ async def resolve_user(bot_id: str) -> str:
         raise ValueError(f"No owner found for bot_id: {bot_id}")
     return owner_doc["user_id"]
 
+@overload
+async def resolve_model_config(bot_id: str, config_tier: Literal["high", "low"]) -> ChatCompletionProviderConfig: ...
+@overload
+async def resolve_model_config(bot_id: str, config_tier: Literal["image_moderation"]) -> BaseModelProviderConfig: ...
 async def resolve_model_config(
     bot_id: str,
     config_tier: ConfigTier
 ) -> BaseModelProviderConfig:
     """Returns the specific model provider config for the given bot and tier.
-    Returns BaseModelProviderConfig (or ChatCompletionProviderConfig subclass for high/low).
+    Returns ChatCompletionProviderConfig for high/low tiers; BaseModelProviderConfig for image_moderation.
     """
     state = get_global_state()
     db_config = await state.configurations_collection.find_one(
@@ -328,6 +333,7 @@ The following comprehensive import migration table covers all files affected by 
 | `services/llm_factory.py` (itself renamed) | `from llm_providers.base import BaseLlmProvider` | `from model_providers.base import BaseModelProvider` |
 | `services/llm_factory.py` (itself renamed) | `from config_models import LLMProviderConfig` | `from config_models import ChatCompletionProviderConfig, BaseModelProviderConfig` |
 | `services/llm_factory.py` (itself renamed) | local `find_provider_class` definition (lines 14-20) | **REMOVE** — import from `utils.provider_utils` instead |
+| `utils/provider_utils.py` | `find_provider_class` — no `inspect.isabstract()` check | **UPDATE** — add `inspect.isabstract(obj)` filter to skip abstract intermediate classes |
 | `model_providers/openAi.py` | `from .base import BaseLlmProvider` | `from .base import BaseModelProvider` (via `ChatCompletionProvider`) |
 | `model_providers/openAi.py` | `from config_models import LLMProviderConfig` | `from config_models import ChatCompletionProviderConfig` |
 | `model_providers/base.py` | `from config_models import LLMProviderConfig` | `from config_models import BaseModelProviderConfig` |
@@ -345,7 +351,21 @@ The following comprehensive import migration table covers all files affected by 
 The `periodic_group_tracking` feature has a deeper parameter cascade than `AutomaticBotReplyService`. The factory redesign eliminates several parameters that are currently threaded through multiple layers:
 
 **`ActionItemExtractor.extract()` Parameter Simplification**:
-The current signature accepts `llm_config`, `user_id`, `llm_config_high`, and `token_consumption_collection` — all of which become dead after the factory internalizes config and user resolution. The simplified call body becomes:
+The current signature accepts `llm_config`, `user_id`, `llm_config_high`, and `token_consumption_collection` — all of which become dead after the factory internalizes config and user resolution.
+
+**New `extract()` signature after refactor**:
+```python
+async def extract(
+    self,
+    messages: list,
+    bot_id: str,          # ← retained: passed to create_model_provider(bot_id, ...)
+    timezone: ZoneInfo,
+    group_id: str = "",
+    language_code: str = "en"
+) -> list:
+```
+
+The simplified factory call body becomes:
 ```python
 # Before: llm = create_tracked_llm(llm_config=llm_config, user_id=user_id, ...)
 # After:
@@ -355,13 +375,25 @@ high_llm = await create_model_provider(bot_id, "periodic_group_tracking", "high"
 
 > **Note — Phase 2 Refinement Execution**: The current extractor specifies Phase 2 refinement only `if llm_config_high:`. Since this parameter is being removed, this logic must change. The extractor must unconditionally request the high model (`config_tier="high"`), unconditionally executing Phase 2. If the user has no high model configured, the centralized `resolve_model_config` resolution inside the factory will explicitly raise an exception. The existing `except` block in `extract()` will catch this failure and gracefully degrade to returning the Phase 1 (low model) results. Thus, the explicit `if llm_config_high:` check should simply be removed.
 
-> **Note — `record_llm_interactions` Access**: The extractor currently reads `llm_config.provider_config.record_llm_interactions` (line 104) **before** the factory call to decide whether to activate the `LLMRecorder`. Since `llm_config` is removed, the extractor must call the resolver directly to obtain this flag:
+> **Note — Full Recorder Setup Block Replacement** (extractor.py lines 103–122): The current block reads `llm_config` in three places (`record_enabled`, `config_dict`, `provider_name`). Since `llm_config` is removed, the entire block must be replaced using the config from `resolve_model_config()`:
 > ```python
+> # Full replacement for the recorder setup block (lines 103-122)
 > config = await resolve_model_config(bot_id, "low")
 > record_enabled = config.provider_config.record_llm_interactions
-> llm = await create_model_provider(bot_id, "periodic_group_tracking", "low")
+> recorder = None
+> epoch_ts = None
+> if record_enabled:
+>     recorder = LLMRecorder(bot_id, "periodic_group_tracking", group_id)
+>     epoch_ts = recorder.start_recording()
+>     language_name = get_language_name(language_code)
+>     formatted_prompt = system_prompt_template.replace("{language_name}", language_name)
+>     recorder.record_prompt(formatted_prompt, messages_json, epoch_ts=epoch_ts)
+>     config_dict = config.provider_config.model_dump()
+>     config_dict['provider_name'] = config.provider_name
+>     recorder.record_config(config_dict, epoch_ts=epoch_ts)
 > ```
-> This keeps the factory's interface clean while giving callers access to config flags they need.
+
+> **Note — Duplicate `__init__` Cleanup**: `extractor.py` contains a duplicate `__init__` definition (lines 19–20 and 22–23). The second definition silently overwrites the first. Remove the duplicate — retain only one empty `def __init__(self): pass`.
 
 **Dead Parameter Cascade**:
 
@@ -370,9 +402,9 @@ high_llm = await create_model_provider(bot_id, "periodic_group_tracking", "high"
 | `ActionItemExtractor.extract()` | `llm_config`, `user_id`, `llm_config_high`, `token_consumption_collection` | Factory resolves all internally |
 | `GroupTrackingRunner.__init__` | `token_consumption_collection` | Factory resolves via `GlobalStateManager` |
 | `GroupTracker.__init__` | `token_consumption_collection` | No longer threaded to `GroupTrackingRunner` |
-| `runner.py` call site (lines 171-186) | Manual config/user resolution code | Replaced by factory calls |
+| `runner.py` call site (lines 171-186) | Manual config/user/collection resolution code | Replaced by factory calls |
 
-All listed parameters and their resolution code in `runner.py` must be removed as part of this refactoring.
+> **Note — Cron State Purge**: In addition to the parameters above, `owner_user_id` must be fully purged from the cron scheduling layer. Currently, `GroupTracker.update_jobs()` and `GroupTrackingRunner.run_tracking_cycle()` thread `owner_user_id` through the APScheduler arguments. Because the factory dynamically resolves the owner at the exact moment of job execution, passing it at scheduling time is redundant and a bug risk (if a bot changes hands while sleeping). `owner_user_id` must be stripped from the method signatures and the `args` payload injected into the APScheduler.
 
 #### 4.5.5 `bot_lifecycle_service.py` Owner Resolution Consolidation
 `bot_lifecycle_service.py` contains two duplicate inline owner resolution blocks that perform the exact same query as the new `resolve_user()` (Section 4.3):
@@ -386,6 +418,7 @@ Both blocks should be replaced with `await resolve_user(bot_id)` from `services/
 
 ### 4.6 Database Migration
 A migration script will be created to perform the following:
-1. **Strip chat-specific fields** (`temperature`, `seed`, `reasoning_effort`, `record_llm_interactions`) from existing `image_moderation` entries in the database. While Pydantic's default `extra = 'ignore'` behavior prevents deserialization crashes when using the new `BaseModelProviderSettings` (which drops `extra = 'allow'`), this stripping is strictly required for database hygiene and optimizing payload sizes.
-2. **Update `provider_name`** in `image_moderation` entries from `"openAi"` to `"openAiModeration"` so the factory's `importlib` resolution loads the correct module (see Section 3.5).
-3. **Strip stray fields** from `high` and `low` tier entries if any exist from past experiments, maintaining clean storage since `ChatCompletionProviderSettings` also drops `extra = 'allow'`.
+1. **Assign Ownerless Bots**: The centralized `resolve_user()` aggressively raises a `ValueError` if a bot has no owner document. To support this strict data integrity, the migration script must assign a designated "system" or "admin" owner ID to any bot currently residing in the database without an assigned owner.
+2. **Strip chat-specific fields** (`temperature`, `seed`, `reasoning_effort`, `record_llm_interactions`) from existing `image_moderation` entries in the database. While Pydantic's default `extra = 'ignore'` behavior prevents deserialization crashes when using the new `BaseModelProviderSettings` (which drops `extra = 'allow'`), this stripping is strictly required for database hygiene and optimizing payload sizes.
+3. **Update `provider_name`** in `image_moderation` entries from `"openAi"` to `"openAiModeration"` so the factory's `importlib` resolution loads the correct module (see Section 3.5).
+4. **Strip stray fields** from `high` and `low` tier entries if any exist from past experiments, maintaining clean storage since `ChatCompletionProviderSettings` also drops `extra = 'allow'`.
