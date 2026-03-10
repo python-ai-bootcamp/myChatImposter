@@ -1,0 +1,66 @@
+================ better of executed on clean chat:
+- please read the following file 
+
+/docs/imageModerationProviderSeparation.md
+
+- this is a specification file to restructure the llm provider into a more general model provider in order to facilitate the seperation of multiple chat completion models from different vendors and also add a completely different non chat completion model for image moderation
+
+- please study all the relevant files inside this spec in their current state
+  -- services\llm_factory.py
+  -- services\token_consumption_service.py
+  -- services\media_processing_service.py
+  -- services\tracked_llm.py
+  -- llm_providers\openAi.py
+  -- llm_providers\base.py
+  -- features\automatic_bot_reply\service.py
+  -- features\periodic_group_tracking\service.py
+  -- features\periodic_group_tracking\runner.py
+  -- features\periodic_group_tracking\extractor.py
+  -- any other relevant files related to the spec file that i might have missed in this list.
+
+
+- after finishing please read the spec file again,
+
+- then critically review the spec file according to all you've learned
+ -- do not try to please me and find isoteric issues, only real serious findings that should be addressed before starting implementation please
+ -- if you think the spec is solid enough to start implementation, say so, don't invent criticism just for the sake of it, if its solid, its solid!
+ -- if you do happen to find real substantial issues, rate all items by priority
+   -- each one will have a: priority, id, title, detailed description, status (pending, bypassed, done)
+
+
+- write your review into an md file at docs\imageModerationProviderSeparationReview\06_opus_4_6.md
+- this file will contain a list of items detected by review (issues, contraditions, design gaps, loose ends, incorrect code snippets etc)
+- it will also contain summerry table on top of review file in a table format with following columns (left to right):
+  --priority, 
+  --id, 
+  --title, 
+  --link (clicking it will jump to detailed description), 
+  --status (pending, bypassed, done)
+
+
+================ review the review and set proposed solutions
+lets go over the detected items in the review one by one by priority
+- each time you will present me an item and desribe it.
+- after description you will propose several mitigations for described issue
+- i will select the mitigation, and you will modify review to specified proposed solution
+- we will then continue to the next item
+
+================ after you reviewed the review: (better executed on the chat which created the spec)
+read following spec file: imageModerationProviderSeparation.md
+and following review for this spec file: docs\imageModerationProviderSeparationReview\05_opus_4_6.md
+
+once finished, go over each finding and summerise to me:
+1. do you agree with this finding
+2. if you agree with this finding, do you agree with the required action to fix it in the spec?
+
+just conclusion, don't apply anything yet
+
+================ if he agrees with everything:
+ok, so please correct the spec file with all the required actions from the review
+
+================ after implementing:
+ok, i implemented all of the changes you recommended in the spec file (after modifying the review a bit)
+please read the final review file (after i modified it) and then check if spec was fixed accordingly to its findings
+if not, list the gaps here
+
+
