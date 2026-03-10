@@ -291,6 +291,16 @@ Because `create_model_provider` is now an asynchronous function, it can no longe
 - Call `await bot_service._initialize_llm()` right after construction, inside `create_bot_session()`.
 - **Unit Test Sweep**: Perform a targeted sweep of test suites (e.g., `tests/features/test_automatic_bot_reply.py`). Any test setup that instantiates `AutomaticBotReplyService` directly must be patched to explicitly `await bot_service._initialize_llm()` immediately following instantiation, mirroring the new production lifecycle flow.
 
+> **Note — `_setup_session()` Elimination**: `routers/bot_management.py` contains a private `_setup_session()` function (lines 88–140) that is architecturally parallel to `BotLifecycleService.create_bot_session()`. It is the function called by the `link_bot` route handler. After the refactor, this duplicate must be **deleted entirely** and the `link_bot` route updated to call `state.bot_lifecycle_service.create_bot_session(config)` instead:
+> ```python
+> # BEFORE (bot_management.py link_bot(), line 751)
+> instance = await _setup_session(config, state)
+> 
+> # AFTER
+> instance = await state.bot_lifecycle_service.create_bot_session(config)
+> ```
+> This ensures that the single async cascade fix in `create_bot_session()` (above) covers both the `reload` endpoint and the `link_bot` endpoint, with no duplicate code paths ever diverging again.
+
 **Before** (`AutomaticBotReplyService.__init__`, line 189):
 ```python
 def __init__(self, session_manager):
@@ -344,6 +354,16 @@ The following comprehensive import migration table covers all files affected by 
 | `tests/services/test_token_services.py` | `@patch('services.llm_factory.find_provider_class')` | `@patch('services.model_factory.find_provider_class')` (patched at import site) |
 | `tests/integration/test_token_flow_component.py` | `from services.llm_factory import create_tracked_llm` | `from services.model_factory import create_model_provider` |
 | `tests/integration/test_token_flow_component.py` | `from config_models import LLMProviderConfig, LLMProviderSettings` | `from config_models import ChatCompletionProviderConfig, ChatCompletionProviderSettings` |
+| `routers/bot_management.py` | `from config_models import LLMProviderConfig, LLMProviderSettings` | `from config_models import ChatCompletionProviderConfig, ChatCompletionProviderSettings, BaseModelProviderConfig, BaseModelProviderSettings` |
+| `routers/bot_management.py` | `DefaultConfigurations.llm_provider_name` (high/low tiers, ×2) | `DefaultConfigurations.model_provider_name_chat` |
+| `routers/bot_management.py` | `DefaultConfigurations.llm_provider_name` (image_moderation tier, ×1) | `DefaultConfigurations.model_provider_name_moderation` |
+| `routers/bot_management.py` | `LLMProviderConfig(...)` / `LLMProviderSettings(...)` for high/low tiers | `ChatCompletionProviderConfig(...)` / `ChatCompletionProviderSettings(...)` |
+| `routers/bot_management.py` | `LLMProviderConfig(...)` / `LLMProviderSettings(...)` for image_moderation tier | `BaseModelProviderConfig(...)` / `BaseModelProviderSettings(...)` (strip `temperature`, `reasoning_effort`, `record_llm_interactions`) |
+| `routers/bot_management.py` — `get_configuration_schema()` | `'LLMProviderSettings'` string key for `api_key_source` oneOf patch (lines 359, 382) | `'ChatCompletionProviderSettings'` — applies to high/low settings only |
+| `routers/bot_management.py` — `get_configuration_schema()` | `'LLMProviderSettings'` string key for `reasoning_effort` titles patch (lines 387–388) | `'ChatCompletionProviderSettings'` — `reasoning_effort` is exclusive to `ChatCompletionProviderSettings` |
+| `routers/bot_management.py` — `get_configuration_schema()` | *(no existing equivalent)* | **NEW patch required**: suppress `temperature`, `seed`, and `reasoning_effort` properties from `'BaseModelProviderSettings'` in the generated schema so the `image_moderation` tier form does not render chat-only fields (fulfills Section 4.4's UI requirement) |
+| `routers/bot_ui.py` | `from config_models import LLMProviderConfig, LLMProviderSettings` | Same split as `bot_management.py` above |
+| `routers/bot_ui.py` | `LLMProviderConfig(...)` / `DefaultConfigurations.llm_provider_name` for high/low tiers | `ChatCompletionProviderConfig(...)` / `DefaultConfigurations.model_provider_name_chat` |
 
 > **Note — `fakeLlm.py` Behavioral Breakage & Test Impact**: Beyond the import change, `FakeLlmProvider` in `model_providers/fakeLlm.py` currently uses `self.user_id` (line 88: `resp.format(user_id=self.user_id)`). Since `user_id` is dropped from the provider hierarchy (Section 3.1), this reference will crash at runtime. The `FakeLlmProvider` must be refactored to remove this dependency. Additionally, `fakeLlm.py` is missing `from typing import Optional, List, Any` — a pre-existing bug that should be fixed during this refactoring pass. Finally, a full sweep of unit and integration tests (especially `tests/integration/test_token_flow_component.py`) must be conducted. Any test asserting against the strict equality of the old `fakeLlm.py` dummy output (which contained the `user_id`) must be updated to expect the new parameterless response string.
 
@@ -406,15 +426,14 @@ high_llm = await create_model_provider(bot_id, "periodic_group_tracking", "high"
 
 > **Note — Cron State Purge**: In addition to the parameters above, `owner_user_id` must be fully purged from the cron scheduling layer. Currently, `GroupTracker.update_jobs()` and `GroupTrackingRunner.run_tracking_cycle()` thread `owner_user_id` through the APScheduler arguments. Because the factory dynamically resolves the owner at the exact moment of job execution, passing it at scheduling time is redundant and a bug risk (if a bot changes hands while sleeping). `owner_user_id` must be stripped from the method signatures and the `args` payload injected into the APScheduler.
 
-#### 4.5.5 `bot_lifecycle_service.py` Owner Resolution Consolidation
-`bot_lifecycle_service.py` contains two duplicate inline owner resolution blocks that perform the exact same query as the new `resolve_user()` (Section 4.3):
+#### 4.5.5 `bot_lifecycle_service.py` Owner Resolution Cleanup
+`bot_lifecycle_service.py` has two owner resolution blocks that require different treatment:
 
-1. **`on_bot_connected()`** (lines 69-77)
-2. **`create_bot_session()`** (lines 189-197)
+1. **`on_bot_connected()` (lines 69–77)** — **DELETE OUTRIGHT**: After the cron state purge (Section 4.5.4 removes `owner_user_id` from `update_jobs()` signatures), the resolved value has no consumer. Calling `resolve_user()` here would produce a discarded value and would raise `ValueError` for ownerless bots in a context where the original code was tolerant. This block must be **deleted**, not refactored.
 
-Both blocks should be replaced with `await resolve_user(bot_id)` from `services/resolver.py`.
+2. **`create_bot_session()` (lines 189–197)** — **REPLACE with `resolve_user()`**: Here the resolved `user_id` is actively consumed by `SessionManager(owner_user_id=...)`. Replace the inline query block with `await resolve_user(bot_id)` from `services/resolver.py`.
 
-> **Note — Behavioral Change**: The existing inline code silently returns `None` when no owner is found. The centralized `resolve_user()` raises `ValueError`. This stricter behavior is appropriate — a bot without an owner should not be starting.
+> **Note — Behavioral Change**: The inline code in `create_bot_session()` silently returns `None` when no owner is found. The centralized `resolve_user()` raises `ValueError`. This stricter behavior is appropriate — a bot without an owner must not be allowed to start (and the DB migration in Section 4.6 will pre-assign owners to any currently ownerless bots).
 
 ### 4.6 Database Migration
 A migration script will be created to perform the following:
