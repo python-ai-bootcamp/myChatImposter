@@ -3,8 +3,9 @@ import logging
 import uuid
 from datetime import datetime
 from motor.motor_asyncio import AsyncIOMotorClient
-from config_models import LLMProviderConfig, LLMProviderSettings
-from services.llm_factory import create_tracked_llm
+from config_models import ChatCompletionProviderConfig, ChatCompletionProviderSettings
+from services.model_factory import create_model_provider
+from unittest.mock import patch, MagicMock, AsyncMock
 from infrastructure import db_schema
 
 # Configure logging
@@ -40,30 +41,31 @@ async def run_integration_test():
         feature_name = "integration_test"
         
         # 3. Create Tracked LLM (Fake Provider)
-        # Note: FakeLlmProvider (MockTokenChatModel) returns implicit 10/5 tokens
-        llm_config = LLMProviderConfig(
+        llm_config = ChatCompletionProviderConfig(
             provider_name="fakeLlm", 
-            provider_config=LLMProviderSettings(
+            provider_config=ChatCompletionProviderSettings(
                 model="fake-gpt", 
                 api_key="fake",
-                # Pass response_array to configure the fake response
             )
-            # wait, LLMProviderSettings doesn't have response_array, it's in extra fields allowed
         )
-        # We need to set the response_array in the dict since pydantic model might filter if not explicit, 
-        # but Config.extra='allow' is set. 
-        # Actually LLMProviderSettings has extra='allow'.
         setattr(llm_config.provider_config, "response_array", ["Hello Integration Test"])
 
+        # Patch dependencies for the factory
+        with patch('services.model_factory.resolve_model_config', new_callable=AsyncMock) as mock_config, \
+             patch('services.model_factory.resolve_user', new_callable=AsyncMock) as mock_user, \
+             patch('services.model_factory.get_global_state') as mock_state:
+            mock_config.return_value = llm_config
+            mock_user.return_value = user_id
+            
+            mock_global = MagicMock()
+            mock_global.token_consumption_collection = collection
+            mock_state.return_value = mock_global
 
-        llm = create_tracked_llm(
-            llm_config=llm_config,
-            user_id=user_id,
-            bot_id=bot_id,
-            feature_name=feature_name,
-            config_tier="low",
-            token_consumption_collection=collection
-        )
+            llm = await create_model_provider(
+                bot_id=bot_id,
+                feature_name=feature_name,
+                config_tier="low"
+            )
         
         # 4. Invoke LLM
         logger.info("Invoking LLM...")

@@ -5,25 +5,25 @@
 
 | # | Task | Status | Spec Section(s) |
 |---|------|--------|-----------------|
-| 1 | Add `inspect.isabstract()` guard to `find_provider_class` | Pending | 4.5.3 |
-| 2 | Define `ConfigTier` type alias in `config_models.py` | Pending | 2.1 |
-| 3 | Add `BaseModelProviderSettings` and `BaseModelProviderConfig` classes | Pending | 2.2 |
-| 4 | Add `ChatCompletionProviderSettings` and `ChatCompletionProviderConfig` classes | Pending | 2.3 |
-| 5 | Update `LLMConfigurations` field types (retain class/field names) | Pending | 2.4 |
-| 6 | Rename `DefaultConfigurations` attributes and env vars (`llm_` → `model_`) | Pending | 2.5 |
-| 7 | Rename `llm_providers/` directory to `model_providers/` | Pending | 3 |
-| 8 | Rewrite `base.py`: `BaseLlmProvider` → `BaseModelProvider` (drop `user_id`, add `_resolve_api_key`) | Pending | 3.1 |
-| 9 | Create `model_providers/chat_completion.py` (`ChatCompletionProvider` abstract class) | Pending | 3.2 |
-| 10 | Create `model_providers/image_moderation.py` (`ModerationResult` + `ImageModerationProvider` abstract class) | Pending | 3.3 |
-| 11 | Refactor `openAi.py`: rename class to `OpenAiChatProvider`, inherit `ChatCompletionProvider`, drop `user_id`, consolidate httpx logger blocks | Pending | 3.4 |
-| 12 | Create `model_providers/openAiModeration.py` (`OpenAiModerationProvider`) | Pending | 3.5 |
-| 13 | Fix `fakeLlm.py`: drop `user_id`, add missing typing imports, update response formatting | Pending | 4.5.3 |
-| 14 | Create `services/resolver.py` with `resolve_user()` and `resolve_model_config()` | Pending | 4.3 |
-| 15 | Rename `services/llm_factory.py` → `services/model_factory.py` and rewrite factory method | Pending | 4.2 |
-| 16 | Expand `ConfigTier` literal in `token_consumption_service.py`, `quota_service.py`, `tracked_llm.py` | Pending | 4.5.2 |
-| 17 | Refactor `AutomaticBotReplyService`: async `_initialize_llm`, remove from `__init__` | Pending | 4.5.1 |
-| 18 | Update `BotLifecycleService.create_bot_session()` to call `await bot_service._initialize_llm()` | Pending | 4.5.1 |
-| 19 | Delete `_setup_session()` from `bot_management.py`, update `link_bot` to use `create_bot_session()` | Pending | 4.5.1 |
+| 1 | Add `inspect.isabstract()` guard to `find_provider_class` | Done | 4.5.3 |
+| 2 | Define `ConfigTier` type alias in `config_models.py` | Done | 2.1 |
+| 3 | Add `BaseModelProviderSettings` and `BaseModelProviderConfig` classes | Done | 2.2 |
+| 4 | Add `ChatCompletionProviderSettings` and `ChatCompletionProviderConfig` classes | Done | 2.3 |
+| 5 | Update `LLMConfigurations` field types (retain class/field names) | Done | 2.4 |
+| 6 | Rename `DefaultConfigurations` attributes and env vars (`llm_` → `model_`) | Done | 2.5 |
+| 7 | Rename `llm_providers/` directory to `model_providers/` | Done | 3 |
+| 8 | Rewrite `base.py`: `BaseLlmProvider` → `BaseModelProvider` (drop `user_id`, add `_resolve_api_key`) | Done | 3.1 |
+| 9 | Create `model_providers/chat_completion.py` (`ChatCompletionProvider` abstract class) | Done | 3.2 |
+| 10 | Create `model_providers/image_moderation.py` (`ModerationResult` + `ImageModerationProvider` abstract class) | Done | 3.3 |
+| 11 | Refactor `openAi.py`: rename class to `OpenAiChatProvider`, inherit `ChatCompletionProvider`, drop `user_id`, consolidate httpx logger blocks | Done | 3.4 |
+| 12 | Create `model_providers/openAiModeration.py` (`OpenAiModerationProvider`) | Done | 3.5 |
+| 13 | Fix `fakeLlm.py`: drop `user_id`, add missing typing imports, update response formatting | Done | 4.5.3 |
+| 14 | Create `services/resolver.py` with `resolve_user()` and `resolve_model_config()` | Done | 4.3 |
+| 15 | Rename `services/llm_factory.py` → `services/model_factory.py` and rewrite factory method | Done | 4.2 |
+| 16 | Expand `ConfigTier` literal in `token_consumption_service.py`, `quota_service.py`, `tracked_llm.py` | Done | 4.5.2 |
+| 17 | Refactor `AutomaticBotReplyService`: make `_initialize_llm` async, remove from `__init__` | Done | 4.5.1 |
+| 18 | Update `BotLifecycleService.create_bot_session()` | Done | 4.5.1 |
+| 19 | Delete `_setup_session()` duplicate and update `link_bot` route | Done | 4.5.1 |
 | 20 | Cleanup `BotLifecycleService` owner resolution blocks (`on_bot_connected` + `create_bot_session`) | Pending | 4.5.5 |
 | 21 | Simplify `ActionItemExtractor.extract()` signature and body (remove dead params, replace recorder block) | Pending | 4.5.4 |
 | 22 | Remove `token_consumption_collection` from `GroupTrackingRunner.__init__` and simplify `run_tracking_cycle` call site | Pending | 4.5.4 |
@@ -48,7 +48,7 @@
 ## Detailed Implementation Tasks
 
 ### 1. Add `inspect.isabstract()` guard to `find_provider_class`
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 4.5.3
 - **File:** `utils/provider_utils.py`
 - **Description:** Add an `inspect.isabstract(obj)` check inside the `find_provider_class` loop so it skips abstract intermediate classes (`ChatCompletionProvider`, `ImageModerationProvider`). This **must** be done first — before creating any new abstract subclasses — to prevent the factory from attempting to instantiate an abstract class at runtime.
@@ -56,7 +56,7 @@
 ---
 
 ### 2. Define `ConfigTier` type alias in `config_models.py`
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 2.1
 - **File:** `config_models.py`
 - **Description:** Add a centralized `ConfigTier = Literal["high", "low", "image_moderation"]` type alias at the top of `config_models.py`. This alias will replace all inline `Literal["high", "low"]` definitions across the codebase (see Task 16).
@@ -64,7 +64,7 @@
 ---
 
 ### 3. Add `BaseModelProviderSettings` and `BaseModelProviderConfig` classes
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 2.2
 - **File:** `config_models.py`
 - **Description:** Create `BaseModelProviderSettings(BaseModel)` with fields `api_key_source`, `api_key`, and `model` only. No `extra = 'allow'`. Create `BaseModelProviderConfig(BaseModel)` with `provider_name: str` and `provider_config: BaseModelProviderSettings`. These serve as the base config for all model providers including image moderation.
@@ -72,7 +72,7 @@
 ---
 
 ### 4. Add `ChatCompletionProviderSettings` and `ChatCompletionProviderConfig` classes
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 2.3
 - **File:** `config_models.py`
 - **Description:** Create `ChatCompletionProviderSettings(BaseModelProviderSettings)` inheriting the base and adding `temperature`, `reasoning_effort`, `seed`, and `record_llm_interactions`. Create `ChatCompletionProviderConfig(BaseModelProviderConfig)` overriding `provider_config` to type `ChatCompletionProviderSettings`. No `extra = 'allow'` on either. The existing `LLMProviderSettings` / `LLMProviderConfig` classes can remain temporarily for backward compat but should be considered deprecated.
@@ -80,7 +80,7 @@
 ---
 
 ### 5. Update `LLMConfigurations` field types (retain class/field names)
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 2.4
 - **File:** `config_models.py`
 - **Description:** Change `LLMConfigurations.high` and `LLMConfigurations.low` from `LLMProviderConfig` to `ChatCompletionProviderConfig`. Change `LLMConfigurations.image_moderation` from `LLMProviderConfig` to `BaseModelProviderConfig`. The class name `LLMConfigurations` and field name `llm_configs` are **not** renamed (deferred per Section 1).
@@ -88,7 +88,7 @@
 ---
 
 ### 6. Rename `DefaultConfigurations` attributes and env vars (`llm_` → `model_`)
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 2.5
 - **File:** `config_models.py`
 - **Description:** Rename all attributes and their environment variable strings:
@@ -105,7 +105,7 @@
 ---
 
 ### 7. Rename `llm_providers/` directory to `model_providers/`
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 3
 - **Files:** `llm_providers/` → `model_providers/`
 - **Description:** Rename the entire `llm_providers/` package directory to `model_providers/`. The directory has no `__init__.py` (implicit namespace package) and no new one is needed. All internal cross-references (`from .base import ...`) will continue working after the rename. External imports are updated in Task 26–31.
@@ -113,7 +113,7 @@
 ---
 
 ### 8. Rewrite `base.py`: `BaseLlmProvider` → `BaseModelProvider`
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 3.1
 - **File:** `model_providers/base.py`
 - **Description:** Replace `BaseLlmProvider` with `BaseModelProvider(ABC)`:
@@ -125,7 +125,7 @@
 ---
 
 ### 9. Create `model_providers/chat_completion.py`
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 3.2
 - **File:** `model_providers/chat_completion.py` [NEW]
 - **Description:** Create an intermediate abstract class `ChatCompletionProvider(BaseModelProvider)` that defines `@abstractmethod get_llm(self) -> BaseChatModel`. This establishes the LangChain integration contract. `OpenAiChatProvider` and `FakeLlmProvider` will inherit from this.
@@ -133,7 +133,7 @@
 ---
 
 ### 10. Create `model_providers/image_moderation.py`
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 3.3
 - **File:** `model_providers/image_moderation.py` [NEW]
 - **Description:** Create:
@@ -143,7 +143,7 @@
 ---
 
 ### 11. Refactor `openAi.py`: rename to `OpenAiChatProvider`, inherit `ChatCompletionProvider`
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 3.4
 - **File:** `model_providers/openAi.py`
 - **Description:**
@@ -157,7 +157,7 @@
 ---
 
 ### 12. Create `model_providers/openAiModeration.py`
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 3.5
 - **File:** `model_providers/openAiModeration.py` [NEW]
 - **Description:** Create `OpenAiModerationProvider(ImageModerationProvider)`:
@@ -170,7 +170,7 @@
 ---
 
 ### 13. Fix `fakeLlm.py`: drop `user_id`, add missing imports, update response formatting
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 4.5.3
 - **File:** `model_providers/fakeLlm.py`
 - **Description:**
@@ -183,7 +183,7 @@
 ---
 
 ### 14. Create `services/resolver.py`
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 4.3
 - **File:** `services/resolver.py` [NEW]
 - **Description:** Create centralized resolver utilities:
@@ -193,8 +193,8 @@
 
 ---
 
-### 15. Rename `services/llm_factory.py` → `services/model_factory.py` and rewrite factory method
-- **Status:** Pending
+### 15. Rename and Rewrite `services/model_factory.py`
+- **Status:** Done
 - **Spec Section:** 4.1, 4.2
 - **Files:** `services/llm_factory.py` → `services/model_factory.py`
 - **Description:**
@@ -210,8 +210,8 @@
 
 ---
 
-### 16. Expand `ConfigTier` literal in downstream services
-- **Status:** Pending
+### 16. Expand `ConfigTier` literal in consuming services
+- **Status:** Done
 - **Spec Section:** 4.5.2
 - **Files:** `services/token_consumption_service.py`, `services/quota_service.py`, `services/tracked_llm.py`
 - **Description:** Replace all inline `config_tier: Literal["high", "low"]` with `config_tier: ConfigTier` imported from `config_models`. Affected locations:
@@ -224,7 +224,7 @@
 ---
 
 ### 17. Refactor `AutomaticBotReplyService`: make `_initialize_llm` async, remove from `__init__`
-- **Status:** Pending
+- **Status:** Done
 - **Spec Section:** 4.5.1
 - **File:** `features/automatic_bot_reply/service.py`
 - **Description:**
@@ -235,8 +235,8 @@
 
 ---
 
-### 18. Update `BotLifecycleService.create_bot_session()` for async `_initialize_llm`
-- **Status:** Pending
+### 18. Update `BotLifecycleService.create_bot_session()`
+- **Status:** Done
 - **Spec Section:** 4.5.1
 - **File:** `services/bot_lifecycle_service.py`
 - **Description:** After `AutomaticBotReplyService(instance)` construction, add `await bot_service._initialize_llm()` before registering handlers:
@@ -250,8 +250,8 @@
 
 ---
 
-### 19. Delete `_setup_session()` from `bot_management.py`, update `link_bot` route
-- **Status:** Pending
+### 19. Delete `_setup_session()` duplicate and update `link_bot` route
+- **Status:** Done
 - **Spec Section:** 4.5.1
 - **File:** `routers/bot_management.py`
 - **Description:** Delete the private `_setup_session()` function (lines 88–140) entirely. In the `link_bot` route handler (around **line 751**), replace:

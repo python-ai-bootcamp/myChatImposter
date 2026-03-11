@@ -2,6 +2,8 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Literal
 import os
 
+ConfigTier = Literal["high", "low", "image_moderation"]
+
 class ChatProviderSettings(BaseModel):
     allow_group_messages: bool = False
     process_offline_messages: bool = False
@@ -26,6 +28,37 @@ class QueueConfig(BaseLimitConfig):
     max_characters: int = 20000
     max_days: int = 2
     max_characters_single_message: int = 700
+
+class BaseModelProviderSettings(BaseModel):
+    api_key_source: Literal["environment", "explicit"] = Field(
+        default="environment",
+        title="API Key Source",
+        description="Choose how the API key is provided."
+    )
+    api_key: Optional[str] = Field(default=None, title="API Key")
+    model: str
+
+class BaseModelProviderConfig(BaseModel):
+    provider_name: str
+    provider_config: BaseModelProviderSettings
+
+class ChatCompletionProviderSettings(BaseModelProviderSettings):
+    temperature: float = 0.7
+    reasoning_effort: Optional[Literal["low", "medium", "high", "minimal"]] = None
+    seed: Optional[int] = Field(
+        default=None,
+        title="Seed",
+        json_schema_extra={
+            "anyOf": [
+                {"type": "integer", "title": "Defined"},
+                {"type": "null", "title": "Undefined"}
+            ]
+        }
+    )
+    record_llm_interactions: bool = Field(default=False, title="Record Traffic")
+
+class ChatCompletionProviderConfig(BaseModelProviderConfig):
+    provider_config: ChatCompletionProviderSettings
 
 class LLMProviderSettings(BaseModel):
     api_key_source: Literal["environment", "explicit"] = Field(
@@ -63,9 +96,9 @@ class LLMProviderConfig(BaseModel):
     provider_config: LLMProviderSettings
 
 class LLMConfigurations(BaseModel):
-    high: LLMProviderConfig = Field(..., title="High Performance Model")
-    low: LLMProviderConfig = Field(..., title="Low Cost Model")
-    image_moderation: LLMProviderConfig = Field(..., title="Media Moderation Model")
+    high: ChatCompletionProviderConfig = Field(..., title="High Performance Model")
+    low: ChatCompletionProviderConfig = Field(..., title="Low Cost Model")
+    image_moderation: BaseModelProviderConfig = Field(..., title="Media Moderation Model")
 
 class ContextConfig(BaseLimitConfig):
     shared_context: bool = True
@@ -135,11 +168,12 @@ class BotConfiguration(BaseModel):
 
 class DefaultConfigurations:
     chat_provider_name: str = os.getenv("DEFAULT_CHAT_PROVIDER", "whatsAppBaileys")
-    llm_provider_name: str = os.getenv("DEFAULT_LLM_PROVIDER", "openAi")
-    llm_model_high: str = os.getenv("DEFAULT_LLM_MODEL_HIGH", "gpt-5")
-    llm_model_low: str = os.getenv("DEFAULT_LLM_MODEL_LOW", "gpt-5-mini")
-    llm_model_image_moderation: str = os.getenv("DEFAULT_LLM_MODEL_IMAGE_MODERATION", "omni-moderation-latest")
-    llm_api_key_source: Literal["environment", "explicit"] = os.getenv("DEFAULT_LLM_API_KEY_SOURCE", "environment")
-    llm_temperature: float = float(os.getenv("DEFAULT_LLM_TEMPERATURE", "0.05"))
-    llm_reasoning_effort: str = os.getenv("DEFAULT_LLM_REASONING_EFFORT", "minimal")
+    model_provider_name_chat: str = os.getenv("DEFAULT_MODEL_PROVIDER_CHAT", "openAi")
+    model_provider_name_moderation: str = os.getenv("DEFAULT_MODEL_PROVIDER_MODERATION", "openAiModeration")
+    model_high: str = os.getenv("DEFAULT_MODEL_HIGH", "gpt-5")
+    model_low: str = os.getenv("DEFAULT_MODEL_LOW", "gpt-5-mini")
+    model_image_moderation: str = os.getenv("DEFAULT_MODEL_IMAGE_MODERATION", "omni-moderation-latest")
+    model_api_key_source: Literal["environment", "explicit"] = os.getenv("DEFAULT_MODEL_API_KEY_SOURCE", "environment")
+    model_temperature: float = float(os.getenv("DEFAULT_MODEL_TEMPERATURE", "0.05"))
+    model_reasoning_effort: str = os.getenv("DEFAULT_MODEL_REASONING_EFFORT", "minimal")
 

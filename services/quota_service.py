@@ -1,7 +1,8 @@
 import logging
 from datetime import datetime
-from typing import Optional, Dict, Literal
+from typing import Optional, Dict
 from motor.motor_asyncio import AsyncIOMotorCollection, AsyncIOMotorDatabase
+from config_models import ConfigTier
 from infrastructure import db_schema
 
 logger = logging.getLogger(__name__)
@@ -40,7 +41,7 @@ class QuotaService:
     def calculate_cost(self, 
                        input_tokens: int, 
                        output_tokens: int, 
-                       config_tier: Literal["high", "low"],
+                       config_tier: ConfigTier,
                        cached_input_tokens: int = 0) -> float:
         """
         Calculates cost in dollars based on tokens and tier.

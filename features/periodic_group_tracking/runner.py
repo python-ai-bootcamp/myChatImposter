@@ -19,15 +19,14 @@ logger = logging.getLogger(__name__)
 from motor.motor_asyncio import AsyncIOMotorCollection
 
 class GroupTrackingRunner:
-    def __init__(self, chatbot_instances: Dict[str, SessionManager], history_service: GroupHistoryService, queue_manager: AsyncMessageDeliveryQueueManager, extractor: ActionItemExtractor, window_calculator: CronWindowCalculator, token_consumption_collection: AsyncIOMotorCollection):
+    def __init__(self, chatbot_instances: Dict[str, SessionManager], history_service: GroupHistoryService, queue_manager: AsyncMessageDeliveryQueueManager, extractor: ActionItemExtractor, window_calculator: CronWindowCalculator):
         self.chatbot_instances = chatbot_instances
         self.history = history_service
         self.queue_manager = queue_manager
         self.extractor = extractor
         self.window_calculator = window_calculator
-        self.token_consumption_collection = token_consumption_collection
 
-    async def run_tracking_cycle(self, bot_id: str, owner_user_id: str, config: PeriodicGroupTrackingConfig, timezone: str = "UTC"):
+    async def run_tracking_cycle(self, bot_id: str, config: PeriodicGroupTrackingConfig, timezone: str = "UTC"):
         """
         Executes a single tracking cycle for a group.
         Fetch -> Window -> Filter -> Save -> Extract -> Queue.
@@ -37,7 +36,7 @@ class GroupTrackingRunner:
         logger.info(f"Scheduled tracking for {bot_id}/{config.groupIdentifier} starting in {delay:.2f}s")
         await asyncio.sleep(delay)
         
-        logger.info(f"Starting tracking job for bot {bot_id} (owner: {owner_user_id}), group {config.groupIdentifier}")
+        logger.info(f"Starting tracking job for bot {bot_id}, group {config.groupIdentifier}")
 
         # Find the chatbot instance for this user
         target_instance = None
@@ -168,21 +167,15 @@ class GroupTrackingRunner:
                     user_tz = ZoneInfo("UTC")
 
                 # Get user's LLM config and language preference
-                llm_config = target_instance.config.configurations.llm_configs.low
-                llm_config_high = target_instance.config.configurations.llm_configs.high
                 language_code = target_instance.config.configurations.user_details.language_code
                 
                 # Extract action items
                 action_items = await self.extractor.extract(
                     messages=transformed_messages,
-                    llm_config=llm_config,
-                    user_id=owner_user_id, # Can be None if not found, logic should handle
                     bot_id=bot_id,
                     timezone=user_tz,
                     group_id=config.groupIdentifier,
-                    language_code=language_code,
-                    llm_config_high=llm_config_high,
-                    token_consumption_collection=self.token_consumption_collection
+                    language_code=language_code
                 )
                 
                 if not action_items:
@@ -191,7 +184,7 @@ class GroupTrackingRunner:
 
                 # Send items to Queue
                 if self.queue_manager:
-                    logger.info(f"Queuing {len(action_items)} items for {bot_id} (owner: {owner_user_id})")
+                    logger.info(f"Queuing {len(action_items)} items for {bot_id}")
                     for item in action_items:
                         # Inject Group Name
                         item["group_display_name"] = config.displayName

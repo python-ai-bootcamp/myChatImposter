@@ -33,6 +33,7 @@ class TestBotManagementAPI:
         mock_state.async_message_delivery_queue_manager = MagicMock()
         mock_state.bot_lifecycle_service = MagicMock() 
         mock_state.bot_lifecycle_service.create_status_change_callback.return_value = AsyncMock()
+        mock_state.bot_lifecycle_service.create_bot_session = AsyncMock()
         
         return mock_state
 
@@ -110,7 +111,8 @@ class TestBotManagementAPI:
                     "chat_provider_config": {"provider_name": "mock", "provider_config": {}},
                     "llm_configs": {
                         "high": {"provider_name": "mock", "provider_config": {"model": "gpt-4"}},
-                        "low": {"provider_name": "mock", "provider_config": {"model": "gpt-3.5"}}
+                        "low": {"provider_name": "mock", "provider_config": {"model": "gpt-3.5"}},
+                        "image_moderation": {"provider_name": "mock", "provider_config": {"model": "gpt-4"}}
                     },
                     "queue_config": {},
                     "context_config": {}
@@ -136,6 +138,8 @@ class TestBotManagementAPI:
         mock_instance.bot_id = bot_id
         
         mock_session_cls.return_value = mock_instance
+        mock_global_state.get_chatbot_instance_by_bot = MagicMock(return_value=mock_instance)
+        mock_global_state.bot_lifecycle_service.create_bot_session.return_value = mock_instance
         
         # Patch AutomaticBotReplyService to avoid real LLM init
         with patch("routers.bot_management.AutomaticBotReplyService") as mock_auto_reply:

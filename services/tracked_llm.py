@@ -1,4 +1,5 @@
-from typing import Any, Dict, List, Literal, Optional
+from typing import Any, Dict, List, Optional
+from config_models import ConfigTier
 from langchain_core.callbacks import AsyncCallbackHandler
 from langchain_core.outputs import LLMResult
 from services.token_consumption_service import TokenConsumptionService
@@ -17,7 +18,7 @@ class TokenTrackingCallback(AsyncCallbackHandler):
                  user_id: str,
                  bot_id: str,
                  feature_name: str,
-                 config_tier: Literal["high", "low"],
+                 config_tier: ConfigTier,
                  provider_name: str):
         self.token_service = token_service
         self.user_id = user_id

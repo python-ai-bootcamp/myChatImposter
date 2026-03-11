@@ -70,6 +70,10 @@ def test_save_and_get_single_configuration(setup_and_teardown_function):
                 "low": {
                     "provider_name": "fakeLlm",
                     "provider_config": {"model": "fake", "temperature": 0.7}
+                },
+                "image_moderation": {
+                    "provider_name": "fakeLlm",
+                    "provider_config": {"model": "fake"}
                 }
             }
         },
@@ -104,16 +108,16 @@ def test_get_configuration_schema_api_key_logic(setup_and_teardown_function):
 
     defs_key = '$defs' if '$defs' in schema else 'definitions'
     # Config schema might have changed slightly, but keeping logic
-    # Note: BotConfiguration maps llm_provider_config -> LLMProviderConfig -> provider_config -> LLMProviderSettings
-    # LLMProviderSettings is what we are checking.
+    # Note: BotConfiguration maps llm_provider_config -> ChatCompletionProviderConfig -> provider_config -> ChatCompletionProviderSettings
+    # ChatCompletionProviderSettings is what we are checking.
     
-    # We need to find LLMProviderSettings in definitions.
-    if 'LLMProviderSettings' not in schema[defs_key]:
+    # We need to find ChatCompletionProviderSettings in definitions.
+    if 'ChatCompletionProviderSettings' not in schema[defs_key]:
          # It might be aliased or nested differently in Pydantic V2 or refactor
          # For now, let's assume it's there or fail
          pass
 
-    llm_settings_schema = schema[defs_key]['LLMProviderSettings']
+    llm_settings_schema = schema[defs_key]['ChatCompletionProviderSettings']
 
     # Check that the top level is a oneOf
     assert 'oneOf' in llm_settings_schema
@@ -149,6 +153,10 @@ def test_delete_configuration(setup_and_teardown_function):
                 "low": {
                     "provider_name": "fakeLlm",
                     "provider_config": {"model": "fake", "temperature": 0.7}
+                },
+                "image_moderation": {
+                    "provider_name": "fakeLlm",
+                    "provider_config": {"model": "fake"}
                 }
             }
         },

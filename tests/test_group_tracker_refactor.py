@@ -18,7 +18,7 @@ class TestGroupTrackerRefactor(unittest.TestCase):
         
         with unittest.mock.patch('features.periodic_group_tracking.history_service.AsyncIOMotorDatabase') as mock_db:
              
-            tracker = GroupTracker(mock_db, chatbot_instances, MagicMock(), queue_manager)
+            tracker = GroupTracker(mock_db, chatbot_instances, queue_manager)
             
             # Check Services
             self.assertIsInstance(tracker.history, GroupHistoryService)
@@ -40,7 +40,7 @@ class TestGroupTrackerRefactor(unittest.TestCase):
         # So we must patch HistoryService MongoClient.
         
         with unittest.mock.patch('features.periodic_group_tracking.history_service.AsyncIOMotorDatabase') as mock_db:
-             tracker = GroupTracker(mock_db, {}, MagicMock(), MagicMock())
+             tracker = GroupTracker(mock_db, {}, MagicMock())
              tracker.scheduler = MagicMock()
              
              tracker.start()

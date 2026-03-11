@@ -9,7 +9,7 @@ from config_models import QueueConfig
 class TestCorrespondentQueue(unittest.TestCase):
     def setUp(self):
         # Create a mock for the MongoDB collection
-        self.mock_queues_collection = MagicMock()
+        self.mock_queues_collection = AsyncMock()
 
     def tearDown(self):
         # Clean up any log files created during tests
@@ -198,7 +198,8 @@ class TestCorrespondentQueue(unittest.TestCase):
 
 class TestBotQueuesManager(unittest.TestCase):
     def setUp(self):
-        self.mock_queues_collection = MagicMock()
+        self.mock_queues_collection = AsyncMock()
+        self.mock_queues_collection.find_one.return_value = None
         self.queue_config = QueueConfig(max_messages=10, max_characters=1000, max_days=1, max_characters_single_message=100)
         self.mock_loop = MagicMock()
         self.manager = BotQueuesManager(
@@ -245,8 +246,9 @@ class TestBotQueuesManager(unittest.TestCase):
     def test_callback_registration(self):
         """Test that callbacks are registered with all queues, including future ones."""
         mock_callback = MagicMock()
-        mock_coroutine = MagicMock()
-        mock_callback.return_value = mock_coroutine
+        async def dummy_coro(): pass
+        real_coroutine = dummy_coro()
+        mock_callback.return_value = real_coroutine
 
         # Register callback before any queues are created
         self.manager.register_callback(mock_callback)
@@ -268,7 +270,7 @@ class TestBotQueuesManager(unittest.TestCase):
             self.assertEqual(args[2].content, "Test message")
 
             # 2. Assert that the created coroutine was passed to run_coroutine_threadsafe
-            mock_run_coroutine.assert_called_once_with(mock_coroutine, self.mock_loop)
+            mock_run_coroutine.assert_called_once_with(real_coroutine, self.mock_loop)
 
         # Create a second queue, it should also have the callback
         queue2 = asyncio.run(self.manager.get_or_create_queue('cor2'))

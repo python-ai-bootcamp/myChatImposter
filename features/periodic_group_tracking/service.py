@@ -23,7 +23,7 @@ from .cron_window import CronWindowCalculator
 logger = logging.getLogger(__name__)
 
 class GroupTracker:
-    def __init__(self, db: AsyncIOMotorDatabase, chatbot_instances: Dict[str, SessionManager], token_consumption_collection: AsyncIOMotorCollection, async_message_delivery_queue_manager: AsyncMessageDeliveryQueueManager = None):
+    def __init__(self, db: AsyncIOMotorDatabase, chatbot_instances: Dict[str, SessionManager], async_message_delivery_queue_manager: AsyncMessageDeliveryQueueManager = None):
         
         # Dependencies
         self.chatbot_instances = chatbot_instances
@@ -41,8 +41,7 @@ class GroupTracker:
             history_service=self.history,
             queue_manager=self.async_message_delivery_queue_manager,
             extractor=extractor,
-            window_calculator=window_calculator,
-            token_consumption_collection=token_consumption_collection
+            window_calculator=window_calculator
         )
         
         # Scheduler
@@ -98,7 +97,7 @@ class GroupTracker:
         for k in keys_to_remove:
             del self.jobs[k]
 
-    def update_jobs(self, bot_id: str, tracking_configs: list[PeriodicGroupTrackingConfig], timezone: str = "UTC", owner_user_id: str = None):
+    def update_jobs(self, bot_id: str, tracking_configs: list[PeriodicGroupTrackingConfig], timezone: str = "UTC"):
         # Remove existing jobs for this user by querying the scheduler directly
         # This ensures we catch any zombie jobs even if self.jobs is out of sync
         all_jobs = self.scheduler.get_jobs()
@@ -126,11 +125,11 @@ class GroupTracker:
                     self.track_group_context,
                     trigger,
                     id=job_id,
-                    args=[bot_id, owner_user_id, config, timezone],
+                    args=[bot_id, config, timezone],
                     replace_existing=True
                 )
                 self.jobs[job_id] = True
-                logger.info(f"Added tracking job {job_id} with schedule {config.cronTrackingSchedule} for bot {bot_id} (owner: {owner_user_id})")
+                logger.info(f"Added tracking job {job_id} with schedule {config.cronTrackingSchedule} for bot {bot_id}")
             except Exception as e:
                 logger.error(f"Failed to add tracking job {job_id}: {e}")
 
@@ -145,6 +144,6 @@ class GroupTracker:
         if target_instance and target_instance.provider_instance:
             target_instance.provider_instance.update_cache_policy(max_interval)
 
-    async def track_group_context(self, bot_id: str, owner_user_id: str, config: PeriodicGroupTrackingConfig, timezone: str = "UTC"):
+    async def track_group_context(self, bot_id: str, config: PeriodicGroupTrackingConfig, timezone: str = "UTC"):
         # Delegate to Runner
-        await self.runner.run_tracking_cycle(bot_id, owner_user_id, config, timezone)
+        await self.runner.run_tracking_cycle(bot_id, config, timezone)

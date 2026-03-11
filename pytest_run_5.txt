@@ -1,0 +1,62 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\code\myChatImposterProject\myChatImposter_antigravityPlayground
+plugins: anyio-4.12.1, langsmith-0.6.3, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 20 items
+
+tests\test_api_bots.py ...F.                                             [ 25%]
+tests\test_e2e.py F                                                      [ 30%]
+tests\test_periodic_group_tracking_runner.py .....                       [ 55%]
+tests\test_queue_manager.py ......F.                                     [ 95%]
+tests\test_tracker_deduplication.py F                                    [100%]
+
+================================== FAILURES ===================================
+_________________ TestBotManagementAPI.test_link_bot_success __________________
+tests\test_api_bots.py:153: in test_link_bot_success
+    mock_instance.start.assert_called_once()
+C:\Python314\Lib\unittest\mock.py:964: in assert_called_once
+    raise AssertionError(msg)
+E   AssertionError: Expected 'start' to have been called once. Called 0 times.
+____________________ test_group_and_direct_message_queues _____________________
+tests\test_e2e.py:115: in test_group_and_direct_message_queues
+    assert response_link.status_code == 200, f"Link failed: {response_link.text}"
+E   AssertionError: Link failed: {"detail":"No owner found for bot_id: test_bot_e2e"}
+E   assert 500 == 200
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+------------------------------ Captured log call ------------------------------
+ERROR    root:bot_lifecycle_service.py:181 LIFECYCLE: Error resolving owner for session setup: No owner found for bot_id: test_bot_e2e
+ERROR    root:bot_management.py:729 API: Link failed for test_bot_e2e: No owner found for bot_id: test_bot_e2e
+_______________ TestBotQueuesManager.test_callback_registration _______________
+tests\test_queue_manager.py:272: in test_callback_registration
+    mock_run_coroutine.assert_called_once_with(mock_coroutine, self.mock_loop)
+C:\Python314\Lib\unittest\mock.py:996: in assert_called_once_with
+    raise AssertionError(msg)
+E   AssertionError: Expected 'run_coroutine_threadsafe' to be called once. Called 0 times.
+_____ TestTrackerDeduplication.test_deduplication_of_historical_messages ______
+tests\test_tracker_deduplication.py:76: in test_deduplication_of_historical_messages
+    await runner.run_tracking_cycle(user_id, "test_owner", config)
+features\periodic_group_tracking\runner.py:36: in run_tracking_cycle
+    logger.info(f"Scheduled tracking for {bot_id}/{config.groupIdentifier} starting in {delay:.2f}s")
+                                                   ^^^^^^^^^^^^^^^^^^^^^^
+E   AttributeError: 'str' object has no attribute 'groupIdentifier'
+============================== warnings summary ===============================
+config_models.py:7
+  C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\config_models.py:7: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ChatProviderSettings(BaseModel):
+
+config_models.py:63
+  C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\config_models.py:63: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class LLMProviderSettings(BaseModel):
+
+..\..\..\Users\pytho\AppData\Roaming\Python\Python314\site-packages\langchain_core\_api\deprecation.py:26
+  C:\Users\pytho\AppData\Roaming\Python\Python314\site-packages\langchain_core\_api\deprecation.py:26: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+    from pydantic.v1.fields import FieldInfo as FieldInfoV1
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_api_bots.py::TestBotManagementAPI::test_link_bot_success - ...
+FAILED tests/test_e2e.py::test_group_and_direct_message_queues - AssertionErr...
+FAILED tests/test_queue_manager.py::TestBotQueuesManager::test_callback_registration
+FAILED tests/test_tracker_deduplication.py::TestTrackerDeduplication::test_deduplication_of_historical_messages
+================== 4 failed, 16 passed, 3 warnings in 1.05s ===================

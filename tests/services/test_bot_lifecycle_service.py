@@ -44,6 +44,9 @@ class TestBotLifecycleService:
         self.mock_global_state.credentials_collection = AsyncMock()
         self.mock_global_state.credentials_collection.find_one.return_value = None
         
+        # Mock Media Processing Service
+        self.mock_global_state.media_processing_service = AsyncMock()
+        
         # Create service instance
         self.service = BotLifecycleService(self.mock_global_state)
 

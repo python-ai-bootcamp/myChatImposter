@@ -78,16 +78,20 @@ class TestTokenServices(unittest.IsolatedAsyncioTestCase):
             
         self.mock_collection.insert_one.assert_not_called()
 
-class TestLLMFactory(unittest.IsolatedAsyncioTestCase):
+class TestModelFactory(unittest.IsolatedAsyncioTestCase):
     @patch('importlib.import_module')
-    @patch('services.llm_factory.find_provider_class')
-    async def test_create_tracked_llm_attaches_callback(self, mock_find, mock_import):
-        from services.llm_factory import create_tracked_llm
-        from config_models import LLMProviderConfig, LLMProviderSettings
+    @patch('services.model_factory.find_provider_class')
+    @patch('services.model_factory.resolve_user')
+    @patch('services.model_factory.resolve_model_config')
+    @patch('services.model_factory.get_global_state')
+    async def test_create_model_provider_attaches_callback(self, mock_get_state, mock_resolve_config, mock_resolve_user, mock_find, mock_import):
+        from services.model_factory import create_model_provider
+        from config_models import ChatCompletionProviderConfig, ChatCompletionProviderSettings
+        from model_providers.chat_completion import ChatCompletionProvider
         
         # Mock Provider Class
         mock_provider_cls = MagicMock()
-        mock_provider_instance = MagicMock()
+        mock_provider_instance = MagicMock(spec=ChatCompletionProvider)
         mock_llm = MagicMock()
         mock_llm.callbacks = None # Simulate no callbacks initially
         
@@ -96,11 +100,17 @@ class TestLLMFactory(unittest.IsolatedAsyncioTestCase):
         mock_find.return_value = mock_provider_cls
         
         # Config
-        config = LLMProviderConfig(provider_name="test_provider", provider_config=LLMProviderSettings(model="test"))
+        config = ChatCompletionProviderConfig(provider_name="test_provider", provider_config=ChatCompletionProviderSettings(model="test"))
+        mock_resolve_config.return_value = config
+        mock_resolve_user.return_value = "test_user"
+        
         mock_collection = AsyncMock()
+        mock_state = MagicMock()
+        mock_state.token_consumption_collection = mock_collection
+        mock_get_state.return_value = mock_state
         
         # Call factory
-        llm = create_tracked_llm(config, "user", "bot", "feature", "high", mock_collection)
+        llm = await create_model_provider("bot", "feature", "high")
         
         # Assertions
         self.assertIsNotNone(llm.callbacks)

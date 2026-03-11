@@ -6,6 +6,7 @@ import pytest
 from pymongo import MongoClient
 import os
 import time
+from infrastructure import db_schema
 
 # client = TestClient(app) # Removed global client
 mongo_client: MongoClient = None
@@ -39,6 +40,7 @@ def client(monkeypatch):
         db.get_collection("async_message_delivery_queue_active").delete_many({"message_metadata.message_destination.bot_id": {"$regex": "^test_bot_"}})
         db.get_collection("async_message_delivery_queue_failed").delete_many({"message_metadata.message_destination.bot_id": {"$regex": "^test_bot_"}})
         db.get_collection("async_message_delivery_queue_holding").delete_many({"message_metadata.message_destination.bot_id": {"$regex": "^test_bot_"}})
+        db.get_collection(db_schema.COLLECTION_CREDENTIALS).delete_many({"user_id": {"$regex": "^test_e2e_user"}})
         mongo_client.close()
 
 # @pytest.mark.skip(reason="Flaky: TestClient async lifecycle issues cause teardown failures. See technical debt.")
@@ -77,6 +79,14 @@ def test_group_and_direct_message_queues(client):
                         "model": "gpt-4o-mini",
                         "record_llm_interactions": False
                     }
+                },
+                "image_moderation": {
+                    "provider_name": "openAiModeration",
+                    "provider_config": {
+                        "api_key_source": "explicit",
+                        "api_key": "sk-dummy",
+                        "model": "gpt-4o"
+                    }
                 }
             },
             "queue_config": {"max_messages": 5},
@@ -92,6 +102,11 @@ def test_group_and_direct_message_queues(client):
             }
         }
     }
+    
+    # Needs owner resolution for config setups
+    db = mongo_client.get_database("chat_manager")
+    # Actually wait, credentials requires UserBot object mapping format? No, 'owned_bots': [bot_id] should work. Let me just use test_bot_e2e
+    db.get_collection(db_schema.COLLECTION_CREDENTIALS).insert_one({"user_id": "test_e2e_user", "owned_bots": [bot_id]})
     
     # Correct Endpoint: /api/internal/bots/{bot_id}
     response_put = client.put(f"/api/internal/bots/{bot_id}", json=config_data)

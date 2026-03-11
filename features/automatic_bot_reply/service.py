@@ -14,11 +14,9 @@ from pydantic import Field
 
 from config_models import ContextConfig
 from queue_manager import Message
-from llm_providers.base import BaseLlmProvider
+from model_providers.base import BaseModelProvider
 from services.session_manager import SessionManager
 from .whitelist import WhitelistPolicy
-
-from utils.provider_utils import find_provider_class
 
 class TimestampedAndPrefixedChatMessageHistory(ChatMessageHistory):
     """
@@ -185,24 +183,15 @@ class AutomaticBotReplyService:
         self.whitelist_group = self.config.features.automatic_bot_reply.respond_to_whitelist_group
         self.chatbot_model: Optional[ChatbotModel] = None
         self.llm: Any = None # Initialize self.llm here
-        
-        self._initialize_llm()
 
-    def _initialize_llm(self):
+    async def _initialize_llm(self):
         try:
-            from services.llm_factory import create_tracked_llm
+            from services.model_factory import create_model_provider
             
-            # Use the new factory with token tracking
-            # user_id should be the OWNER of the bot
-            owner_user_id = self.session_manager.owner_user_id if self.session_manager.owner_user_id else self.bot_id
-            
-            llm_instance = create_tracked_llm(
-                llm_config=self.config.configurations.llm_configs.high,
-                user_id=owner_user_id, 
+            llm_instance = await create_model_provider(
                 bot_id=self.bot_id,
                 feature_name="automatic_bot_reply",
-                config_tier="high",
-                token_consumption_collection=self.session_manager.token_consumption_collection
+                config_tier="high"
             )
             
             self.llm = llm_instance

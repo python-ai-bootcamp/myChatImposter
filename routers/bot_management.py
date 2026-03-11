@@ -10,7 +10,9 @@ from pymongo.errors import DuplicateKeyError
 
 from config_models import (
     BotConfiguration, BotGeneralSettings, FeaturesConfiguration,
-    ChatProviderConfig, LLMProviderConfig, LLMConfigurations, ChatProviderSettings, LLMProviderSettings,
+    ChatProviderConfig, LLMConfigurations, ChatProviderSettings,
+    ChatCompletionProviderConfig, ChatCompletionProviderSettings,
+    BaseModelProviderConfig, BaseModelProviderSettings,
     UserDetails, QueueConfig, ContextConfig, DefaultConfigurations,
     RegularBotConfiguration, RegularBotGeneralSettings
 )
@@ -85,59 +87,7 @@ async def _check_quota_enabled(bot_id: str, state: GlobalStateManager):
         )
 
 
-async def _setup_session(config: BotConfiguration, state: GlobalStateManager) -> SessionManager:
-    """
-    Create and configure a SessionManager with all services and features.
-    
-    Returns a fully configured SessionManager (not yet started).
-    """
-    loop = asyncio.get_running_loop()
-    
-    # Determine Owner
-    owner_user_id = None
-    if state.credentials_collection is not None:
-        # Find credential that owns this configuration
-        owner_doc = await state.credentials_collection.find_one(
-            {"owned_bots": config.bot_id},
-            {"user_id": 1}
-        )
-        if owner_doc:
-            owner_user_id = owner_doc.get("user_id")
 
-    instance = SessionManager(
-        config=config,
-        on_session_end=state.remove_active_bot,
-        queues_collection=state.queues_collection,
-        media_jobs_collection=getattr(state, "media_processing_jobs_collection", None),
-        main_loop=loop,
-        on_status_change=state.bot_lifecycle_service.create_status_change_callback(),
-        owner_user_id=owner_user_id
-    )
-    
-    try:
-        # 1. Ingestion Service
-        if state.queues_collection is not None:
-            ingester = IngestionService(instance, state.queues_collection)
-            ingester.start()
-            instance.register_service(ingester)
-
-        # 2. Features Subscription
-        if config.features.automatic_bot_reply.enabled:
-            bot_service = AutomaticBotReplyService(instance)
-            instance.register_message_handler(bot_service.handle_message)
-            instance.register_feature("automatic_bot_reply", bot_service)
-        
-        if config.features.kid_phone_safety_tracking.enabled:
-            kid_service = KidPhoneSafetyService(instance)
-            instance.register_message_handler(kid_service.handle_message)
-            instance.register_feature("kid_phone_safety_tracking", kid_service)
-            
-        return instance
-        
-    except Exception as e:
-        logging.error(f"API: Error setting up session for {config.bot_id}: {e}")
-        await instance.stop()
-        raise e
 
 # --- Routes ---
 
@@ -356,36 +306,37 @@ async def get_configuration_schema(
     defs_key = '$defs' if '$defs' in schema else 'definitions'
 
     # Schema Patching Logic
-    if defs_key in schema and 'LLMProviderSettings' in schema[defs_key]:
-        llm_settings_schema = schema[defs_key]['LLMProviderSettings']
-        original_props = llm_settings_schema.get('properties', {}).copy()
-        original_props.pop('api_key_source', None)
-        original_props.pop('api_key', None)
+    if defs_key in schema:
+        for model_name, model_schema in schema[defs_key].items():
+            if 'properties' in model_schema and 'api_key_source' in model_schema['properties'] and 'api_key' in model_schema['properties']:
+                original_props = model_schema.get('properties', {}).copy()
+                original_props.pop('api_key_source', None)
+                original_props.pop('api_key', None)
 
-        schema_from_env = {
-            "title": "API Key From Environment",
-            "properties": {
-                "api_key_source": {"const": "environment"},
-                **original_props
-            }
-        }
-        schema_explicit = {
-            "title": "API Key From User Input",
-            "properties": {
-                "api_key_source": {"const": "explicit"},
-                "api_key": {"type": "string", "title": "API Key", "minLength": 1},
-                **original_props
-            },
-            "required": ["api_key"]
-        }
-        
-        schema[defs_key]['LLMProviderSettings'] = {
-            "oneOf": [schema_from_env, schema_explicit]
-        }
+                schema_from_env = {
+                    "title": "API Key From Environment",
+                    "properties": {
+                        "api_key_source": {"const": "environment"},
+                        **original_props
+                    }
+                }
+                schema_explicit = {
+                    "title": "API Key From User Input",
+                    "properties": {
+                        "api_key_source": {"const": "explicit"},
+                        "api_key": {"type": "string", "title": "API Key", "minLength": 1},
+                        **original_props
+                    },
+                    "required": ["api_key"]
+                }
+                
+                schema[defs_key][model_name] = {
+                    "oneOf": [schema_from_env, schema_explicit]
+                }
 
     # Patch reasoning_effort titles
-    if defs_key in schema and 'LLMProviderSettings' in schema[defs_key]:
-         llm_settings = schema[defs_key]['LLMProviderSettings']
+    if defs_key in schema and 'ChatCompletionProviderSettings' in schema[defs_key]:
+         llm_settings = schema[defs_key]['ChatCompletionProviderSettings']
          if 'oneOf' in llm_settings:
              for branch in llm_settings['oneOf']:
                  if 'properties' in branch and 'reasoning_effort' in branch['properties']:
@@ -438,30 +389,29 @@ async def get_bot_defaults(
                 provider_config=ChatProviderSettings()
             ),
             llm_configs=LLMConfigurations(
-                high=LLMProviderConfig(
-                    provider_name=DefaultConfigurations.llm_provider_name,
-                    provider_config=LLMProviderSettings(
-                        model=DefaultConfigurations.llm_model_high,
-                        api_key_source=DefaultConfigurations.llm_api_key_source,
-                        temperature=DefaultConfigurations.llm_temperature,
-                        reasoning_effort=DefaultConfigurations.llm_reasoning_effort
+                high=ChatCompletionProviderConfig(
+                    provider_name=DefaultConfigurations.model_provider_name_chat,
+                    provider_config=ChatCompletionProviderSettings(
+                        model=DefaultConfigurations.model_chat_high,
+                        api_key_source=DefaultConfigurations.model_api_key_source,
+                        temperature=DefaultConfigurations.model_temperature,
+                        reasoning_effort=DefaultConfigurations.model_reasoning_effort
                     )
                 ),
-                low=LLMProviderConfig(
-                    provider_name=DefaultConfigurations.llm_provider_name,
-                    provider_config=LLMProviderSettings(
-                        model=DefaultConfigurations.llm_model_low,
-                        api_key_source=DefaultConfigurations.llm_api_key_source,
-                        temperature=DefaultConfigurations.llm_temperature,
-                        reasoning_effort=DefaultConfigurations.llm_reasoning_effort
+                low=ChatCompletionProviderConfig(
+                    provider_name=DefaultConfigurations.model_provider_name_chat,
+                    provider_config=ChatCompletionProviderSettings(
+                        model=DefaultConfigurations.model_chat_low,
+                        api_key_source=DefaultConfigurations.model_api_key_source,
+                        temperature=DefaultConfigurations.model_temperature,
+                        reasoning_effort=DefaultConfigurations.model_reasoning_effort
                     )
                 ),
-                image_moderation=LLMProviderConfig(
-                    provider_name=DefaultConfigurations.llm_provider_name,
-                    provider_config=LLMProviderSettings(
-                        model=DefaultConfigurations.llm_model_image_moderation,
-                        api_key_source=DefaultConfigurations.llm_api_key_source,
-                        record_llm_interactions=False
+                image_moderation=BaseModelProviderConfig(
+                    provider_name=DefaultConfigurations.model_provider_name_moderation,
+                    provider_config=BaseModelProviderSettings(
+                        model=DefaultConfigurations.model_image_moderation,
+                        api_key_source=DefaultConfigurations.model_api_key_source
                     )
                 )
             ),
@@ -748,7 +698,9 @@ async def link_bot(bot_id: str, state: GlobalStateManager = Depends(ensure_db_co
         instance_id = str(uuid.uuid4())
         logging.info(f"API: Starting new instance {instance_id} for {bot_id}")
         
-        instance = await _setup_session(config, state)
+        if not state.bot_lifecycle_service:
+            raise HTTPException(status_code=500, detail="Bot Lifecycle Service not initialized.")
+        instance = await state.bot_lifecycle_service.create_bot_session(config)
 
         state.chatbot_instances[instance_id] = instance
         await instance.start()

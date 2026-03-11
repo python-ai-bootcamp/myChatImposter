@@ -13,6 +13,6 @@ def find_provider_class(module, base_class: Type) -> Optional[Type]:
         The found subclass, or None if not found.
     """
     for name, obj in inspect.getmembers(module):
-        if inspect.isclass(obj) and issubclass(obj, base_class) and obj is not base_class:
+        if inspect.isclass(obj) and issubclass(obj, base_class) and obj is not base_class and not inspect.isabstract(obj):
             return obj
     return None

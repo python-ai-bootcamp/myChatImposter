@@ -1,0 +1,159 @@
+﻿..........................FFF...........FFFFFFFFF....................... [ 58%]
+F...........FFFFFF...FFFFF......F........F...F.....                      [100%]
+================================== FAILURES ===================================
+E   AssertionError: Expected 'add_message' to have been called once. Called 0 times.
+------------------------------ Captured log call ------------------------------
+ERROR    root:whatsAppBaileys.py:344 WS CONTRACT: Invalid message payload skipped: 2 validation errors for WhatsAppIncomingPayload
+provider_message_id
+  Field required [type=missing, input_value={'sender': 'sender@s.what...ay_name': 'Sender Name'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+originating_time
+  Field required [type=missing, input_value={'sender': 'sender@s.what...ay_name': 'Sender Name'}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+C:\Python314\Lib\unittest\mock.py:964: AssertionError: Expected 'add_message' to have been called once. Called 0 times.
+E   TypeError: 'NoneType' object is not subscriptable
+------------------------------ Captured log call ------------------------------
+ERROR    root:whatsAppBaileys.py:344 WS CONTRACT: Invalid message payload skipped: 1 validation error for WhatsAppIncomingPayload
+originating_time
+  Field required [type=missing, input_value={'sender': 'self', 'recip..., 'display_name': 'Me'}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\chat_providers\test_whatsapp_baileys_provider.py:522: TypeError: 'NoneType' object is not subscriptable
+E   TypeError: 'NoneType' object is not subscriptable
+------------------------------ Captured log call ------------------------------
+ERROR    root:whatsAppBaileys.py:344 WS CONTRACT: Invalid message payload skipped: 1 validation error for WhatsAppIncomingPayload
+originating_time
+  Field required [type=missing, input_value={'sender': 'self', 'recip..., 'display_name': 'Me'}}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.12/v/missing
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\chat_providers\test_whatsapp_baileys_provider.py:539: TypeError: 'NoneType' object is not subscriptable
+E   TypeError: 'MagicMock' object can't be awaited
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\services\bot_lifecycle_service.py:57: TypeError: 'MagicMock' object can't be awaited
+E   TypeError: 'MagicMock' object can't be awaited
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\services\bot_lifecycle_service.py:57: TypeError: 'MagicMock' object can't be awaited
+E   TypeError: 'MagicMock' object can't be awaited
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\services\bot_lifecycle_service.py:57: TypeError: 'MagicMock' object can't be awaited
+E   TypeError: 'MagicMock' object can't be awaited
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\services\bot_lifecycle_service.py:57: TypeError: 'MagicMock' object can't be awaited
+E   TypeError: 'MagicMock' object can't be awaited
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\services\bot_lifecycle_service.py:57: TypeError: 'MagicMock' object can't be awaited
+E   TypeError: 'MagicMock' object can't be awaited
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\services\bot_lifecycle_service.py:89: TypeError: 'MagicMock' object can't be awaited
+E   TypeError: 'MagicMock' object can't be awaited
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\services\bot_lifecycle_service.py:89: TypeError: 'MagicMock' object can't be awaited
+E   TypeError: 'MagicMock' object can't be awaited
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\services\bot_lifecycle_service.py:57: TypeError: 'MagicMock' object can't be awaited
+E   TypeError: 'MagicMock' object can't be awaited
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\services\bot_lifecycle_service.py:89: TypeError: 'MagicMock' object can't be awaited
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for BotConfiguration
+    configurations.llm_configs.image_moderation
+      Field required [type=missing, input_value={'high': {'provider_name'...: {'model': 'gpt-3.5'}}}, input_type=dict]
+        For further information visit https://errors.pydantic.dev/2.12/v/missing
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\test_api_bots.py:134: pydantic_core._pydantic_core.ValidationError: 1 validation error for BotConfiguration
+E   AssertionError: Setup failed: {"detail":[{"type":"missing","loc":["body","configurations","llm_configs","image_moderation"],"msg":"Field required","input":{"high":{"provider_name":"openAi","provider_config":{"api_key_source":"explicit","api_key":"sk-dummy","model":"gpt-4o","record_llm_interactions":false}},"low":{"provider_name":"openAi","provider_config":{"api_key_source":"explicit","api_key":"sk-dummy","model":"gpt-4o-mini","record_llm_interactions":false}}}}]}
+    assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\test_e2e.py:98: AssertionError: Setup failed: {"detail":[{"type":"missing","loc":["body","configurations","llm_configs","image_moderation"],"msg":"Field required","input":{"high":{"provider_name":"openAi","provider_config":{"api_key_source":"explicit","api_key":"sk-dummy","model":"gpt-4o","record_llm_interactions":false}},"low":{"provider_name":"openAi","provider_config":{"api_key_source":"explicit","api_key":"sk-dummy","model":"gpt-4o-mini","record_llm_interactions":false}}}}]}
+E   TypeError: GroupTracker.__init__() takes from 3 to 4 positional arguments but 5 were given
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\test_group_tracker_refactor.py:21: TypeError: GroupTracker.__init__() takes from 3 to 4 positional arguments but 5 were given
+E   TypeError: GroupTracker.__init__() takes from 3 to 4 positional arguments but 5 were given
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\test_group_tracker_refactor.py:43: TypeError: GroupTracker.__init__() takes from 3 to 4 positional arguments but 5 were given
+E   assert 422 == 200
+     +  where 422 = <Response [422 Unprocessable Entity]>.status_code
+---------------------------- Captured stdout setup ----------------------------
+Successfully connected to MongoDB for testing.
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\test_main.py:88: assert 422 == 200
+E   KeyError: 'LLMProviderSettings'
+---------------------------- Captured stdout setup ----------------------------
+Successfully connected to MongoDB for testing.
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\test_main.py:116: KeyError: 'LLMProviderSettings'
+E   assert 404 == 200
+     +  where 404 = <Response [404 Not Found]>.status_code
+---------------------------- Captured stdout setup ----------------------------
+Successfully connected to MongoDB for testing.
+------------------------------ Captured log call ------------------------------
+WARNING  root:bot_lifecycle_service.py:162 LIFECYCLE: Configuration for test_bot_to_delete not found during delete.
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\test_main.py:170: assert 404 == 200
+E   TypeError: GroupTrackingRunner.__init__() got an unexpected keyword argument 'token_consumption_collection'
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\test_periodic_group_tracking_runner.py:20: TypeError: GroupTrackingRunner.__init__() got an unexpected keyword argument 'token_consumption_collection'
+E   TypeError: GroupTrackingRunner.__init__() got an unexpected keyword argument 'token_consumption_collection'
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\test_periodic_group_tracking_runner.py:20: TypeError: GroupTrackingRunner.__init__() got an unexpected keyword argument 'token_consumption_collection'
+E   TypeError: GroupTrackingRunner.__init__() got an unexpected keyword argument 'token_consumption_collection'
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\test_periodic_group_tracking_runner.py:20: TypeError: GroupTrackingRunner.__init__() got an unexpected keyword argument 'token_consumption_collection'
+E   TypeError: GroupTrackingRunner.__init__() got an unexpected keyword argument 'token_consumption_collection'
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\test_periodic_group_tracking_runner.py:20: TypeError: GroupTrackingRunner.__init__() got an unexpected keyword argument 'token_consumption_collection'
+E   TypeError: GroupTrackingRunner.__init__() got an unexpected keyword argument 'token_consumption_collection'
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\test_periodic_group_tracking_runner.py:20: TypeError: GroupTrackingRunner.__init__() got an unexpected keyword argument 'token_consumption_collection'
+E   AssertionError: Expected 'run_coroutine_threadsafe' to be called once. Called 0 times.
+------------------------------ Captured log call ------------------------------
+ERROR    root:queue_manager.py:82 QUEUE: Could not initialize next message ID from DB: 'MagicMock' object can't be awaited
+C:\Python314\Lib\unittest\mock.py:996: AssertionError: Expected 'run_coroutine_threadsafe' to be called once. Called 0 times.
+E   httpcore.ConnectError: All connection attempts failed
+
+The above exception was the direct cause of the following exception:
+E   httpx.ConnectError: All connection attempts failed
+------------------------------ Captured log call ------------------------------
+ERROR    root:test_restricted_api.py:124 TEST EXCEPTION: All connection attempts failed
+C:\Users\pytho\AppData\Roaming\Python\Python314\site-packages\httpx\_transports\default.py:118: httpx.ConnectError: All connection attempts failed
+E   TypeError: GroupTrackingRunner.__init__() takes 6 positional arguments but 7 were given
+C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\tests\test_tracker_deduplication.py:30: TypeError: GroupTrackingRunner.__init__() takes 6 positional arguments but 7 were given
+============================== warnings summary ===============================
+config_models.py:7
+  C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\config_models.py:7: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ChatProviderSettings(BaseModel):
+
+config_models.py:63
+  C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\config_models.py:63: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class LLMProviderSettings(BaseModel):
+
+..\..\..\Users\pytho\AppData\Roaming\Python\Python314\site-packages\langchain_core\_api\deprecation.py:26
+  C:\Users\pytho\AppData\Roaming\Python\Python314\site-packages\langchain_core\_api\deprecation.py:26: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+    from pydantic.v1.fields import FieldInfo as FieldInfoV1
+
+tests/chat_providers/test_whatsapp_baileys_provider.py::TestWebSocketMessageProcessing::test_process_ws_message_invokes_status_callback
+tests/chat_providers/test_whatsapp_baileys_provider.py::TestWebSocketMessageProcessing::test_process_ws_message_invokes_async_callback
+  C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\chat_providers\whatsAppBaileys.py:315: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    if asyncio.iscoroutinefunction(self.on_status_change):
+
+tests/services/test_token_services.py::TestTokenServices::test_callback_strategy_1_standard_metadata
+tests/services/test_token_services.py::TestTokenServices::test_callback_strategy_2_provider_specific
+tests/services/test_token_services.py::TestTokenServices::test_record_event
+  C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\services\token_consumption_service.py:38: DeprecationWarning: datetime.datetime.utcnow() is deprecated and scheduled for removal in a future version. Use timezone-aware objects to represent datetimes in UTC: datetime.datetime.now(datetime.UTC).
+    "timestamp": datetime.utcnow(), # stored as ISODate (BSON Date) for TTL and logic
+
+tests/test_refactored_services.py: 12 warnings
+  C:\Users\pytho\AppData\Roaming\Python\Python314\site-packages\langchain_core\runnables\utils.py:756: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    return asyncio.iscoroutinefunction(func) or (
+
+tests/test_refactored_services.py: 12 warnings
+  C:\Users\pytho\AppData\Roaming\Python\Python314\site-packages\langchain_core\runnables\utils.py:758: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    and asyncio.iscoroutinefunction(func.__call__)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/chat_providers/test_whatsapp_baileys_provider.py::TestWebSocketMessageProcessing::test_process_messages_incoming_adds_to_queue
+FAILED tests/chat_providers/test_whatsapp_baileys_provider.py::TestWebSocketMessageProcessing::test_process_messages_outgoing_bot_detection
+FAILED tests/chat_providers/test_whatsapp_baileys_provider.py::TestWebSocketMessageProcessing::test_process_messages_outgoing_user_detection
+FAILED tests/services/test_bot_lifecycle_service.py::TestBotLifecycleService::test_on_bot_connected_moves_queue_to_active
+FAILED tests/services/test_bot_lifecycle_service.py::TestBotLifecycleService::test_on_bot_connected_starts_group_tracking_when_enabled
+FAILED tests/services/test_bot_lifecycle_service.py::TestBotLifecycleService::test_on_bot_connected_clears_tracking_when_disabled
+FAILED tests/services/test_bot_lifecycle_service.py::TestBotLifecycleService::test_on_bot_connected_handles_missing_config
+FAILED tests/services/test_bot_lifecycle_service.py::TestBotLifecycleService::test_on_bot_connected_handles_db_error
+FAILED tests/services/test_bot_lifecycle_service.py::TestBotLifecycleService::test_on_bot_disconnected_stops_tracking_jobs
+FAILED tests/services/test_bot_lifecycle_service.py::TestBotLifecycleService::test_on_bot_disconnected_handles_no_tracker
+FAILED tests/services/test_bot_lifecycle_service.py::TestBotLifecycleService::test_callback_dispatches_connected_status
+FAILED tests/services/test_bot_lifecycle_service.py::TestBotLifecycleService::test_callback_dispatches_disconnected_status
+FAILED tests/test_api_bots.py::TestBotManagementAPI::test_link_bot_success - ...
+FAILED tests/test_e2e.py::test_group_and_direct_message_queues - AssertionErr...
+FAILED tests/test_group_tracker_refactor.py::TestGroupTrackerRefactor::test_initialization
+FAILED tests/test_group_tracker_refactor.py::TestGroupTrackerRefactor::test_lifecycle
+FAILED tests/test_main.py::test_save_and_get_single_configuration - assert 42...
+FAILED tests/test_main.py::test_get_configuration_schema_api_key_logic - KeyE...
+FAILED tests/test_main.py::test_delete_configuration - assert 404 == 200
+FAILED tests/test_periodic_group_tracking_runner.py::TestGroupTrackingRunner::test_aborts_if_chatbot_not_active
+FAILED tests/test_periodic_group_tracking_runner.py::TestGroupTrackingRunner::test_aborts_if_fetch_returns_none
+FAILED tests/test_periodic_group_tracking_runner.py::TestGroupTrackingRunner::test_aborts_if_provider_disconnected
+FAILED tests/test_periodic_group_tracking_runner.py::TestGroupTrackingRunner::test_deduplication
+FAILED tests/test_periodic_group_tracking_runner.py::TestGroupTrackingRunner::test_successful_run_flow
+FAILED tests/test_queue_manager.py::TestBotQueuesManager::test_callback_registration
+FAILED tests/test_restricted_api.py::test_restricted_api_flow - httpx.Connect...
+FAILED tests/test_tracker_deduplication.py::TestTrackerDeduplication::test_deduplication_of_historical_messages
+27 failed, 96 passed, 32 warnings in 6.66s

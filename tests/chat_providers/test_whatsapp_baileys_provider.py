@@ -492,7 +492,9 @@ class TestWebSocketMessageProcessing:
             "sender": "sender@s.whatsapp.net",
             "message": "Hello!",
             "direction": "incoming",
-            "display_name": "Sender Name"
+            "display_name": "Sender Name",
+            "originating_time": 1600000000,
+            "provider_message_id": "msg_incoming_123"
         }]
         
         await self.provider._process_messages(messages)
@@ -514,7 +516,8 @@ class TestWebSocketMessageProcessing:
             "message": "Bot reply",
             "direction": "outgoing",
             "provider_message_id": "msg_bot_123",
-            "actual_sender": {"identifier": "me", "display_name": "Me"}
+            "actual_sender": {"identifier": "me", "display_name": "Me"},
+            "originating_time": 1600000000
         }]
         
         await self.provider._process_messages(messages)
@@ -531,7 +534,8 @@ class TestWebSocketMessageProcessing:
             "message": "User's own message",
             "direction": "outgoing",
             "provider_message_id": "msg_user_456",  # Not in cache
-            "actual_sender": {"identifier": "me", "display_name": "Me"}
+            "actual_sender": {"identifier": "me", "display_name": "Me"},
+            "originating_time": 1600000000
         }]
         
         await self.provider._process_messages(messages)
@@ -558,7 +562,9 @@ class TestWebSocketMessageProcessing:
             "sender": "sender@s.whatsapp.net",
             "message": "Group message",
             "direction": "incoming",
-            "group": {"id": "group@g.us", "name": "Test Group"}
+            "group": {"id": "group@g.us", "name": "Test Group"},
+            "originating_time": 1600000000,
+            "provider_message_id": "msg_group_123"
         }]
         
         await provider._process_messages(messages)

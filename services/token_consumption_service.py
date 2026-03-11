@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal
+from config_models import ConfigTier
 from motor.motor_asyncio import AsyncIOMotorCollection
 import logging
 
@@ -15,7 +15,7 @@ class TokenConsumptionService:
                            feature_name: str, 
                            input_tokens: int, 
                            output_tokens: int, 
-                           config_tier: Literal["high", "low"],
+                           config_tier: ConfigTier,
                            cached_input_tokens: int = 0):
         """
         Record a token consumption event to MongoDB.

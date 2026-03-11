@@ -11,9 +11,11 @@ from config_models import (
     BotGeneralSettings, 
     ChatProviderConfig, 
     ChatProviderSettings, 
-    LLMProviderConfig, 
-    LLMProviderSettings,
     LLMConfigurations,
+    ChatCompletionProviderConfig,
+    ChatCompletionProviderSettings,
+    BaseModelProviderConfig,
+    BaseModelProviderSettings,
     QueueConfig,
     ContextConfig,
     DefaultConfigurations
@@ -345,22 +347,29 @@ async def update_bot_ui_configuration(
                     provider_config=ChatProviderSettings()
                 ),
                 llm_configs=LLMConfigurations(
-                    high=LLMProviderConfig(
-                        provider_name=DefaultConfigurations.llm_provider_name,
-                        provider_config=LLMProviderSettings(
-                            model=DefaultConfigurations.llm_model_high,
-                            api_key_source=DefaultConfigurations.llm_api_key_source,
-                            temperature=DefaultConfigurations.llm_temperature,
-                            reasoning_effort=DefaultConfigurations.llm_reasoning_effort
+                    high=ChatCompletionProviderConfig(
+                        provider_name=DefaultConfigurations.model_provider_name_chat,
+                        provider_config=ChatCompletionProviderSettings(
+                            model=DefaultConfigurations.model_chat_high,
+                            api_key_source=DefaultConfigurations.model_api_key_source,
+                            temperature=DefaultConfigurations.model_temperature,
+                            reasoning_effort=DefaultConfigurations.model_reasoning_effort
                         )
                     ),
-                    low=LLMProviderConfig(
-                        provider_name=DefaultConfigurations.llm_provider_name,
-                        provider_config=LLMProviderSettings(
-                            model=DefaultConfigurations.llm_model_low,
-                            api_key_source=DefaultConfigurations.llm_api_key_source,
-                            temperature=DefaultConfigurations.llm_temperature,
-                            reasoning_effort=DefaultConfigurations.llm_reasoning_effort
+                    low=ChatCompletionProviderConfig(
+                        provider_name=DefaultConfigurations.model_provider_name_chat,
+                        provider_config=ChatCompletionProviderSettings(
+                            model=DefaultConfigurations.model_chat_low,
+                            api_key_source=DefaultConfigurations.model_api_key_source,
+                            temperature=DefaultConfigurations.model_temperature,
+                            reasoning_effort=DefaultConfigurations.model_reasoning_effort
+                        )
+                    ),
+                    image_moderation=BaseModelProviderConfig(
+                        provider_name=DefaultConfigurations.model_provider_name_moderation,
+                        provider_config=BaseModelProviderSettings(
+                            model=DefaultConfigurations.model_image_moderation,
+                            api_key_source=DefaultConfigurations.model_api_key_source
                         )
                     )
                 ),

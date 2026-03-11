@@ -8,17 +8,14 @@ from pathlib import Path
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 
-from config_models import LLMProviderConfig
-from llm_providers.base import BaseLlmProvider
+from config_models import ChatCompletionProviderConfig
+from model_providers.base import BaseModelProvider
 from resources import get_language_name
 
 # Initialize logger
 logger = logging.getLogger(__name__)
 
 class ActionItemExtractor:
-    def __init__(self):
-        pass
-
     def __init__(self):
         pass
 
@@ -66,14 +63,12 @@ class ActionItemExtractor:
             logger.error(f"Failed to parse LLM JSON: {e}. Raw: {json_str[:200]}...")
             return []
 
-    async def extract(self, messages: list, llm_config: LLMProviderConfig, user_id: str, bot_id: str, timezone: ZoneInfo, group_id: str = "", language_code: str = "en", llm_config_high: LLMProviderConfig = None, token_consumption_collection = None) -> list:
+    async def extract(self, messages: list, bot_id: str, timezone: ZoneInfo, group_id: str = "", language_code: str = "en") -> list:
         """
         Main entry point. Uses LLM to extract action items from group messages.
         
         Args:
             messages: List of raw message dicts
-            llm_config: LLM provider configuration
-            user_id: User identifier (Owner)
             bot_id: Bot identifier
             timezone: User's timezone
             group_id: Group identifier for recording purposes
@@ -82,7 +77,7 @@ class ActionItemExtractor:
         Returns:
             List of action item dicts.
         """
-        from llm_providers.recorder import LLMRecorder
+        from model_providers.recorder import LLMRecorder
         
         # Build Input JSON
         messages_json = self._build_llm_input_json(messages, timezone)
@@ -101,37 +96,33 @@ class ActionItemExtractor:
             return []
         
         # Setup recorder if enabled
-        record_enabled = llm_config.provider_config.record_llm_interactions
+        from services.resolver import resolve_model_config
         recorder = None
         epoch_ts = None
-        if record_enabled:
-            # Recorder uses owner_id? or bot_id? Usually owner_id for user-visible logs, but features are bot-centric.
-            # Using bot_id for recorder to keep it associated with the bot's activity stream?
-            # Existing code used user_id which was bot_id.
-            # Let's use bot_id for recording context in recorder, but token tracking uses owner_id.
-            recorder = LLMRecorder(bot_id, "periodic_group_tracking", group_id)
-            epoch_ts = recorder.start_recording()
-            # Format prompt for recording - substitute language_name variable
-            language_name = get_language_name(language_code)
-            formatted_prompt = system_prompt_template.replace("{language_name}", language_name)
-            recorder.record_prompt(formatted_prompt, messages_json, epoch_ts=epoch_ts)
-            # Record full LLM config (model, temperature, reasoning_effort, etc.)
-            config_dict = llm_config.provider_config.model_dump()
-            config_dict['provider_name'] = llm_config.provider_name
-            config_dict['language_code'] = language_code
-            recorder.record_config(config_dict, epoch_ts=epoch_ts)
+        try:
+            config_low = await resolve_model_config(bot_id, "low")
+            record_enabled = getattr(config_low.provider_config, "record_llm_interactions", False)
+            if record_enabled:
+                recorder = LLMRecorder(bot_id, "periodic_group_tracking", group_id)
+                epoch_ts = recorder.start_recording()
+                language_name = get_language_name(language_code)
+                formatted_prompt = system_prompt_template.replace("{language_name}", language_name)
+                recorder.record_prompt(formatted_prompt, messages_json, epoch_ts=epoch_ts)
+                config_dict = config_low.provider_config.model_dump()
+                config_dict['provider_name'] = config_low.provider_name
+                config_dict['language_code'] = language_code
+                recorder.record_config(config_dict, epoch_ts=epoch_ts)
+        except Exception as e:
+            logger.warning(f"Could not setup recorder for bot {bot_id}: {e}")
         
         try:
             # Dynamically load the LLM provider via Factory
-            from services.llm_factory import create_tracked_llm
+            from services.model_factory import create_model_provider
             
-            llm = create_tracked_llm(
-                llm_config=llm_config,
-                user_id=user_id if user_id else bot_id, # Use owner_id if available, else fallback to bot_id
+            llm = await create_model_provider(
                 bot_id=bot_id, 
                 feature_name="periodic_group_tracking",
-                config_tier="low",
-                token_consumption_collection=token_consumption_collection
+                config_tier="low"
             )
             
             # Create the prompt and chain - language_code passed as template variable
@@ -163,66 +154,59 @@ class ActionItemExtractor:
                 result_low = result_low.replace("\\'", "'")
             
             # PHASE 2: High Model Refinement
-            if llm_config_high:
-                logger.info(f"Invoking LLM (High) for refinement for bot {bot_id}")
+            logger.info(f"Invoking LLM (High) for refinement for bot {bot_id}")
+            try:
+                # 1. Load System Prompt
+                refine_prompt_path = Path("prompts/action_item_refinement_system.txt")
+                if refine_prompt_path.exists():
+                    refine_system_prompt = refine_prompt_path.read_text(encoding="utf-8")
+                else:
+                    logger.warning("Refinement prompt file not found, skipping Stage 2.")
+                    refine_system_prompt = ""
+
+                # 2. Initialize High Model via Factory
+                high_llm = await create_model_provider(
+                    bot_id=bot_id,
+                    feature_name="periodic_group_tracking",
+                    config_tier="high"
+                )
+
+                # 3. Create Chain
+                # We pass the result_low as the USER message. System prompt is the file content.
+                refine_prompt = ChatPromptTemplate.from_messages([
+                    ("system", "{system_content}"),
+                    ("user", "{input_content}")
+                ])
+                refine_chain = refine_prompt | high_llm | StrOutputParser()
+                
+                # Format system prompt with language_code and language_name if present
                 try:
-                    # 1. Load System Prompt
-                    refine_prompt_path = Path("prompts/action_item_refinement_system.txt")
-                    if refine_prompt_path.exists():
-                        refine_system_prompt = refine_prompt_path.read_text(encoding="utf-8")
-                    else:
-                        logger.warning("Refinement prompt file not found, skipping Stage 2.")
-                        refine_system_prompt = ""
-
-                    # 2. Initialize High Model
-                    # 2. Initialize High Model via Factory
-                    high_llm = create_tracked_llm(
-                        llm_config=llm_config_high,
-                        user_id=user_id if user_id else bot_id,
-                        bot_id=bot_id,
-                        feature_name="periodic_group_tracking",
-                        config_tier="high",
-                        token_consumption_collection=token_consumption_collection
+                    formatted_system_prompt = refine_system_prompt.format(
+                        language_code=language_code,
+                        language_name=language_name
                     )
+                except Exception as fmt_err:
+                    logger.warning(f"Failed to format refinement system prompt: {fmt_err}. Using raw content.")
+                    formatted_system_prompt = refine_system_prompt
 
-                    # 3. Create Chain
-                    # We pass the result_low as the USER message. System prompt is the file content.
-                    refine_prompt = ChatPromptTemplate.from_messages([
-                        ("system", "{system_content}"),
-                        ("user", "{input_content}")
-                    ])
-                    refine_chain = refine_prompt | high_llm | StrOutputParser()
+                # 4. Invoke
+                result_high = await refine_chain.ainvoke({
+                    "system_content": formatted_system_prompt,
+                    "input_content": result_low
+                })
+
+                print(f"--- LLM RESULT (HIGH) DEBUG ---\n{result_high}\n-----------------------")
+                
+                # Sanitize
+                if isinstance(result_high, str):
+                    result_high = result_high.replace("\\'", "'")
                     
-                    # Format system prompt with language_code and language_name if present
-                    try:
-                        formatted_system_prompt = refine_system_prompt.format(
-                            language_code=language_code,
-                            language_name=language_name
-                        )
-                    except Exception as fmt_err:
-                        logger.warning(f"Failed to format refinement system prompt: {fmt_err}. Using raw content.")
-                        formatted_system_prompt = refine_system_prompt
+                # Use High result as final
+                final_result = result_high
 
-                    # 4. Invoke
-                    result_high = await refine_chain.ainvoke({
-                        "system_content": formatted_system_prompt,
-                        "input_content": result_low
-                    })
-
-                    print(f"--- LLM RESULT (HIGH) DEBUG ---\n{result_high}\n-----------------------")
-                    
-                    # Sanitize
-                    if isinstance(result_high, str):
-                        result_high = result_high.replace("\\'", "'")
-                        
-                    # Use High result as final
-                    final_result = result_high
-
-                except Exception as e:
-                    logger.error(f"Stage 2 (High) Failed: {e}. Falling back to Low result.")
-                    final_result = result_low
-            else:
-                 final_result = result_low
+            except Exception as e:
+                logger.error(f"Stage 2 (High) Failed: {e}. Falling back to Low result.")
+                final_result = result_low
 
             logger.info(f"LLM action items extraction completed for bot {bot_id}")
             

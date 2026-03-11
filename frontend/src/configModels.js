@@ -117,6 +117,47 @@ class LLMProviderConfig {
   }
 }
 
+class BaseModelProviderSettings {
+  constructor({ api_key = null, model, api_key_source = 'environment', ...extra }) {
+    this.api_key = api_key;
+    this.model = model;
+    this.api_key_source = api_key_source;
+    // Allow extra fields
+    Object.assign(this, extra);
+  }
+
+  static validate(data, pathPrefix = 'configurations.llm_configs.image_moderation.provider_config') {
+    if (data.api_key !== null && data.api_key !== undefined && typeof data.api_key !== 'string') {
+      throw new ValidationError('api_key must be a string or null.', `${pathPrefix}.api_key`);
+    }
+    if (!data.model || typeof data.model !== 'string') {
+      throw new ValidationError('model is required and must be a string.', `${pathPrefix}.model`);
+    }
+    if (data.api_key_source !== undefined && typeof data.api_key_source !== 'string') {
+      throw new ValidationError('api_key_source must be a string.', `${pathPrefix}.api_key_source`);
+    }
+    return new BaseModelProviderSettings(data);
+  }
+}
+
+class BaseModelProviderConfig {
+  constructor({ provider_name, provider_config }) {
+    this.provider_name = provider_name;
+    this.provider_config = new BaseModelProviderSettings(provider_config || {});
+  }
+
+  static validate(data, pathPrefix = 'configurations.llm_configs.image_moderation') {
+    if (!data.provider_name || typeof data.provider_name !== 'string') {
+      throw new ValidationError('provider_name is required and must be a string.', `${pathPrefix}.provider_name`);
+    }
+    if (!data.provider_config || typeof data.provider_config !== 'object') {
+      throw new ValidationError('provider_config is required.', `${pathPrefix}.provider_config`);
+    }
+    BaseModelProviderSettings.validate(data.provider_config, `${pathPrefix}.provider_config`);
+    return new BaseModelProviderConfig(data);
+  }
+}
+
 // Feature Classes
 class AutomaticBotReplyFeature {
   constructor({ enabled = false, respond_to_whitelist = [], respond_to_whitelist_group = [], chat_system_prompt = '' }) {
@@ -223,7 +264,7 @@ class LLMConfigurations {
   constructor({ high, low, image_moderation }) {
     this.high = new LLMProviderConfig(high);
     this.low = new LLMProviderConfig(low);
-    this.image_moderation = new LLMProviderConfig(image_moderation || {});
+    this.image_moderation = new BaseModelProviderConfig(image_moderation || {});
   }
 
   static validate(data) {
@@ -240,7 +281,7 @@ class LLMConfigurations {
     if (!data.image_moderation || typeof data.image_moderation !== 'object') {
       throw new ValidationError('image_moderation config is required.', 'configurations.llm_configs.image_moderation');
     }
-    LLMProviderConfig.validate(data.image_moderation);
+    BaseModelProviderConfig.validate(data.image_moderation);
 
     return new LLMConfigurations(data);
   }

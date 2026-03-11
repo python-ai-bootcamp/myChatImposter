@@ -27,7 +27,7 @@ class TestTrackerDeduplication(unittest.IsolatedAsyncioTestCase):
         history.save_tracking_result = AsyncMock()
         
         # 2. Setup Runner
-        runner = GroupTrackingRunner(instances, history, queue, MagicMock(), MagicMock(), MagicMock())
+        runner = GroupTrackingRunner(instances, history, queue, MagicMock(), MagicMock())
         
         # 3. Use a fake chatbot instance
         fake_instance = MagicMock()
@@ -73,7 +73,7 @@ class TestTrackerDeduplication(unittest.IsolatedAsyncioTestCase):
         # EXECUTE
         # Patch sleep to avoid waiting for jitter
         with unittest.mock.patch('asyncio.sleep', new_callable=AsyncMock):
-            await runner.run_tracking_cycle(user_id, "test_owner", config)
+            await runner.run_tracking_cycle(user_id, config)
         
         # ASSERT
         history.save_tracking_result.assert_called_once()

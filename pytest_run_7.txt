@@ -1,0 +1,38 @@
+﻿============================= test session starts =============================
+platform win32 -- Python 3.14.2, pytest-9.0.2, pluggy-1.6.0
+rootdir: C:\code\myChatImposterProject\myChatImposter_antigravityPlayground
+plugins: anyio-4.12.1, langsmith-0.6.3, asyncio-1.3.0
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collected 20 items
+
+tests\test_api_bots.py .....                                             [ 25%]
+tests\test_e2e.py .                                                      [ 30%]
+tests\test_periodic_group_tracking_runner.py .....                       [ 55%]
+tests\test_queue_manager.py ........                                     [ 95%]
+tests\test_tracker_deduplication.py .                                    [100%]
+
+============================== warnings summary ===============================
+config_models.py:7
+  C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\config_models.py:7: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class ChatProviderSettings(BaseModel):
+
+config_models.py:63
+  C:\code\myChatImposterProject\myChatImposter_antigravityPlayground\config_models.py:63: PydanticDeprecatedSince20: Support for class-based `config` is deprecated, use ConfigDict instead. Deprecated in Pydantic V2.0 to be removed in V3.0. See Pydantic V2 Migration Guide at https://errors.pydantic.dev/2.12/migration/
+    class LLMProviderSettings(BaseModel):
+
+..\..\..\Users\pytho\AppData\Roaming\Python\Python314\site-packages\langchain_core\_api\deprecation.py:26
+  C:\Users\pytho\AppData\Roaming\Python\Python314\site-packages\langchain_core\_api\deprecation.py:26: UserWarning: Core Pydantic V1 functionality isn't compatible with Python 3.14 or greater.
+    from pydantic.v1.fields import FieldInfo as FieldInfoV1
+
+tests/test_e2e.py::test_group_and_direct_message_queues
+tests/test_e2e.py::test_group_and_direct_message_queues
+  C:\Users\pytho\AppData\Roaming\Python\Python314\site-packages\langchain_core\runnables\utils.py:756: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    return asyncio.iscoroutinefunction(func) or (
+
+tests/test_e2e.py::test_group_and_direct_message_queues
+tests/test_e2e.py::test_group_and_direct_message_queues
+  C:\Users\pytho\AppData\Roaming\Python\Python314\site-packages\langchain_core\runnables\utils.py:758: DeprecationWarning: 'asyncio.iscoroutinefunction' is deprecated and slated for removal in Python 3.16; use inspect.iscoroutinefunction() instead
+    and asyncio.iscoroutinefunction(func.__call__)
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+======================= 20 passed, 7 warnings in 4.67s ========================

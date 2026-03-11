@@ -65,26 +65,14 @@ class BotLifecycleService:
                 if config_dict:
                     config = BotConfiguration.model_validate(config_dict)
                     
-                    # Determine Owner
-                    owner_user_id = None
-                    if self.global_state.credentials_collection is not None:
-                         # Find credential that owns this configuration
-                         owner_doc = await self.global_state.credentials_collection.find_one(
-                             {"owned_bots": bot_id},
-                             {"user_id": 1}
-                         )
-                         if owner_doc:
-                             owner_user_id = owner_doc.get("user_id")
-
                     if config.features.periodic_group_tracking.enabled:
                         self.global_state.group_tracker.update_jobs(
                             bot_id,
                             config.features.periodic_group_tracking.tracked_groups,
-                            config.configurations.user_details.timezone,
-                            owner_user_id=owner_user_id
+                            config.configurations.user_details.timezone
                         )
                     else:
-                        self.global_state.group_tracker.update_jobs(bot_id, [], owner_user_id=owner_user_id)
+                        self.global_state.group_tracker.update_jobs(bot_id, [])
             except Exception as e:
                 logging.error(f"LIFECYCLE: Failed to start tracking for {bot_id}: {e}")
     
@@ -186,15 +174,12 @@ class BotLifecycleService:
         loop = asyncio.get_running_loop()
         
         # Determine Owner
-        owner_user_id = None
-        if self.global_state.credentials_collection is not None:
-            # Find credential that owns this configuration
-            owner_doc = await self.global_state.credentials_collection.find_one(
-                {"owned_bots": config.bot_id},
-                {"user_id": 1}
-            )
-            if owner_doc:
-                owner_user_id = owner_doc.get("user_id")
+        from services.resolver import resolve_user
+        try:
+            owner_user_id = await resolve_user(config.bot_id)
+        except ValueError as e:
+            logging.error(f"LIFECYCLE: Error resolving owner for session setup: {e}")
+            raise e
         
         instance = SessionManager(
             config=config,
@@ -216,6 +201,7 @@ class BotLifecycleService:
             # 2. Features Subscription
             if config.features.automatic_bot_reply.enabled:
                 bot_service = AutomaticBotReplyService(instance)
+                await bot_service._initialize_llm()
                 instance.register_message_handler(bot_service.handle_message)
                 instance.register_feature("automatic_bot_reply", bot_service)
             
