@@ -53,8 +53,8 @@ case "$COMMAND" in
         tar -czf "${BACKUP_DIR}/${TAR_FILENAME}" "${FILENAME}"
         
         echo "4. Cleaning up temporary files..."
-        rm ./${FILENAME}
-        docker exec mongodb rm "/tmp/${FILENAME}"
+        rm "./${FILENAME}"
+        docker exec mongodb sh -c "rm /tmp/${FILENAME}"
         
         echo "Backup successfully created at: ${BACKUP_DIR}/${TAR_FILENAME}"
         ;;
@@ -93,8 +93,8 @@ case "$COMMAND" in
         docker exec mongodb sh -c "mongorestore --archive=/tmp/${ARCHIVE_NAME} --drop"
         
         echo "4. Cleaning up temporary files..."
-        rm ./${ARCHIVE_NAME}
-        docker exec mongodb rm "/tmp/${ARCHIVE_NAME}"
+        rm "./${ARCHIVE_NAME}"
+        docker exec mongodb sh -c "rm /tmp/${ARCHIVE_NAME}"
         
         echo "Database successfully restored from ${BACKUP_FILE}"
         ;;
