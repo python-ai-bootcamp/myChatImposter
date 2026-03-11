@@ -95,4 +95,4 @@ please make sure that:
 1. entire spec is covered by the tasks
 2. each and every task is rooted from sections inside the spec
 
-just write this file (/docs/imageModerationProviderSeparation_implementationTasks_gemini_3_1_pro_high.md) and nothing more. do NOT start implementing yet
+just create this implementation tasks md file i requested and nothing more. do NOT start implementing yet
