@@ -19,3 +19,7 @@ configurations/*
 
 # Ignore environment files
 .env
+
+# Ignore MongoDB backups but keep the directory
+backups/*
+!backups/.gitkeep
