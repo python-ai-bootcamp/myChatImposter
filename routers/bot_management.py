@@ -392,7 +392,7 @@ async def get_bot_defaults(
                 high=ChatCompletionProviderConfig(
                     provider_name=DefaultConfigurations.model_provider_name_chat,
                     provider_config=ChatCompletionProviderSettings(
-                        model=DefaultConfigurations.model_chat_high,
+                        model=DefaultConfigurations.model_high,
                         api_key_source=DefaultConfigurations.model_api_key_source,
                         temperature=DefaultConfigurations.model_temperature,
                         reasoning_effort=DefaultConfigurations.model_reasoning_effort
@@ -401,7 +401,7 @@ async def get_bot_defaults(
                 low=ChatCompletionProviderConfig(
                     provider_name=DefaultConfigurations.model_provider_name_chat,
                     provider_config=ChatCompletionProviderSettings(
-                        model=DefaultConfigurations.model_chat_low,
+                        model=DefaultConfigurations.model_low,
                         api_key_source=DefaultConfigurations.model_api_key_source,
                         temperature=DefaultConfigurations.model_temperature,
                         reasoning_effort=DefaultConfigurations.model_reasoning_effort

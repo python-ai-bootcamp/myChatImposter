@@ -79,7 +79,7 @@ function RestrictedEditPage() {
 
 
     const [userStatus, setUserStatus] = useState(location.state?.status || null);
-    const [userEnabled, setUserEnabled] = useState(location.state?.user_enabled !== undefined ? location.state.user_enabled : true);
+    const [userEnabled] = useState(location.state?.user_enabled !== undefined ? location.state.user_enabled : true);
     const isNew = location.state?.isNew;
     const isLinked = userStatus === 'connected';
 

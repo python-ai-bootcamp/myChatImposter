@@ -38,7 +38,7 @@ function EditPage() {
   const [validationError, setValidationError] = useState(null);
   const [scrollToErrorTrigger, setScrollToErrorTrigger] = useState(0);
 
-  const [userEnabled, setUserEnabled] = useState(location.state?.user_enabled !== undefined ? location.state.user_enabled : true);
+  const [userEnabled] = useState(location.state?.user_enabled !== undefined ? location.state.user_enabled : true);
   const isNew = location.state?.isNew;
 
   // Debounced validation (cron + backend API)

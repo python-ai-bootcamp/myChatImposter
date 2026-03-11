@@ -81,7 +81,7 @@ class ActionItemExtractor:
         
         # Build Input JSON
         messages_json = self._build_llm_input_json(messages, timezone)
-        logger.info(f"Built LLM input JSON with {len(messages)} messages for bot {bot_id} (owner: {user_id})")
+        logger.info(f"Built LLM input JSON with {len(messages)} messages for bot {bot_id}")
 
         # System prompt with language placeholder - loaded from external file
         try:
