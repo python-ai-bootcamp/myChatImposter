@@ -64,3 +64,35 @@ please read the final review file (after i modified it) and then check if spec w
 if not, list the gaps here
 
 
+================ making implementation task list
+- please read the following file 
+
+/docs/imageModerationProviderSeparation.md
+
+- this is a specification file to restructure the llm provider into a more general model provider in order to facilitate the seperation of multiple chat completion models from different vendors and also add a completely different non chat completion model for image moderation
+
+- please study all the relevant files inside this spec in their current state
+  -- services\llm_factory.py
+  -- services\token_consumption_service.py
+  -- services\media_processing_service.py
+  -- services\tracked_llm.py
+  -- llm_providers\openAi.py
+  -- llm_providers\base.py
+  -- features\automatic_bot_reply\service.py
+  -- features\periodic_group_tracking\service.py
+  -- features\periodic_group_tracking\runner.py
+  -- features\periodic_group_tracking\extractor.py
+  -- any other relevant files related to the spec file that i might have missed in this list.
+
+
+- after finishing please read the spec file again,
+
+- once finished, please create a new file (/docs/imageModerationProviderSeparation_implementationTasks_gemini_3_1_pro_high.md) which will have a flat list of all needed implementation tasks in order to fulfill all requirements in the spec file properly
+- make sure that the tasks are written by a logical order of implementation with a short description detailing which parts of the spec they are implementing and each carry a status (Pending/inProgress/Done)
+summerize the task in a table at the top of the file
+
+please make sure that:
+1. entire spec is covered by the tasks
+2. each and every task is rooted from sections inside the spec
+
+just write this file (/docs/imageModerationProviderSeparation_implementationTasks_gemini_3_1_pro_high.md) and nothing more. do NOT start implementing yet
