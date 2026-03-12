@@ -40,8 +40,8 @@ lets go over the detected items in the review one by one by priority
 - we will then continue to the next item
 
 ================ after you reviewed the review: (better executed on the chat which created the spec)
-read following spec file: imageModerationProviderSeparation.md
-and following review for this spec file: docs\imageModerationProviderSeparationReview\05_opus_4_6.md
+read following spec file: docs\moderateImage_spec.md
+and following review for this spec file: docs\moderateImage_spec_reviews\01_opus_4_6_thinking.md
 
 once finished, go over each finding and summerise to me:
 1. do you agree with this finding
