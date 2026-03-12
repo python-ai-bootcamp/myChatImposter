@@ -16,7 +16,6 @@
 | 🟠 P2 | F-004 | Spec references a nonexistent `ConfigurationMissingError` exception class | [Details](#f-004) | PENDING |
 | 🟡 P3 | F-005 | Spec refers to "OpenAiLlmProvider" — the actual class is `OpenAiModerationProvider` | [Details](#f-005) | PENDING |
 | 🟡 P3 | F-006 | Spec file lists wrong filenames for project references (`openai.py`, `openai_moderation.py` vs actual `openAi.py`, `openAiModeration.py`) | [Details](#f-006) | PENDING |
-| 🟡 P3 | F-007 | No mention of how `ImageVisionProcessor` obtains `bot_id` to resolve the moderation config inside `process_media` | [Details](#f-007) | PENDING |
 
 ---
 
@@ -62,6 +61,22 @@ result = await asyncio.wait_for(
 
 **The spec must explicitly decide:** either keep the base signature as-is and have `ImageVisionProcessor` receive `bot_id` through an alternative mechanism (e.g., constructor injection, or by accessing it from the `job` object at a higher level), or explicitly document the full migration of all affected processors and the removal of the `caption`/`quota_exceeded` parameters with replacement logic for `CorruptMediaProcessor` and `UnsupportedMediaProcessor`.
 
+**Required Action:**
+
+Change the base `process_media()` signature to `(self, file_path: str, mime_type: str, caption: str, bot_id: str) -> ProcessingResult`:
+
+- **Keep `caption`** — actively used by `CorruptMediaProcessor` and `UnsupportedMediaProcessor` for error messages.
+- **Drop `quota_exceeded`** — no processor's conversion logic uses it. It is purely job metadata, already available on `MediaProcessingJob` and archived to `_failed` by the base class's `_archive_to_failed` method independently of the `process_media` signature.
+- **Add `bot_id`** — needed by `ImageVisionProcessor` for moderation config resolution, and likely useful for future processors when they become real (e.g., bot-specific config for audio/video).
+
+Call site update in `base.py`: replace `job.quota_exceeded` with `job.bot_id` (stays at 4 arguments — clean swap).
+
+Affected subclasses:
+- `StubSleepProcessor`: update signature, ignore `bot_id`.
+- `CorruptMediaProcessor`, `UnsupportedMediaProcessor`: update signature, ignore `bot_id`.
+- `AudioTranscriptionProcessor`, `VideoDescriptionProcessor`, `DocumentProcessor`: inherit from `StubSleepProcessor`, no direct change needed.
+- `ImageVisionProcessor`: extracted to own file, uses `bot_id` for moderation provider resolution.
+
 ---
 
 ### F-002
@@ -88,6 +103,15 @@ So calling `.model_dump()` on the return of `moderate_image()` would dump a `Mod
 - **Option B:** If `ModerationResult` is the intended abstraction boundary, then the spec should say to call `.model_dump()` on the `ModerationResult`, and the logged dict will only contain `{flagged, categories, category_scores}`, not the full API response.
 
 This also affects Spec Section 4.6: *"log the full moderation result dictionary returned by the wrapper"*. What constitutes "full" depends on which option is chosen.
+
+**Required Action:**
+
+Keep `ModerationResult` as the abstraction boundary — `moderate_image()` continues returning `ModerationResult`. Logging happens at two levels:
+
+1. **Inside `OpenAiModerationProvider.moderate_image()`**: Log the raw SDK `response` object (via `logger.debug()`) before extracting `results[0]` and constructing `ModerationResult`. This provides full raw response visibility for debugging malformed/malprocessed SDK responses.
+2. **In `ImageVisionProcessor.process_media()`**: Log the received `ModerationResult` via `.model_dump()` using `logger.info()`. This is the structured, normalized output for auditing.
+
+Update the spec to reference `.model_dump()` on `ModerationResult` (not `ModerationCreateResponse`), and to document both logging points.
 
 ---
 
@@ -120,6 +144,12 @@ The spec wants the data-URI to be built **inside** the provider from raw base64 
 
 **The spec should explicitly state** that the `ImageModerationProvider` abstract method signature and the `OpenAiModerationProvider` concrete implementation both need to be updated from `(self, image_url: str)` to `(self, base64_image: str, mime_type: str)`.
 
+**Required Action:**
+
+Update the `moderate_image()` signature to `(self, base64_image: str, mime_type: str) -> ModerationResult` in both the abstract `ImageModerationProvider` and the concrete `OpenAiModerationProvider`.
+
+The `ImageVisionProcessor` passes raw base64 image data and mime_type — it remains completely agnostic to any SDK-specific input format. The provider is the layer with the intimate SDK relationship, so it is solely responsible for transforming raw image data into whatever format its SDK requires (e.g., OpenAI's data-URI `f"data:{mime_type};base64,{base64_image}"` wrapped in `[{"type": "image_url", "image_url": {"url": data_uri}}]`). A different provider (e.g., Anthropic, Azure) would have a completely different SDK input format — that transformation is the provider's concern, not the caller's.
+
 ---
 
 ### F-004
@@ -144,6 +174,10 @@ And `services/model_factory.py` uses generic `Exception` catching.
 
 This is a minor documentation accuracy issue — the spec should reference `ValueError` or simply say "configuration resolution errors" generically, rather than citing a non-existent exception class.
 
+**Required Action:**
+
+Replace the reference to `ConfigurationMissingError` in the spec with generic wording, e.g.: *"If the moderation call throws an exception (e.g., configuration resolution errors, or SDK failures after retries)..."* — no specific class name, just describes the category of errors.
+
 ---
 
 ### F-005
@@ -163,6 +197,10 @@ There is no class named `OpenAiLlmProvider` in the codebase. The relevant classe
 
 The spec should reference `OpenAiModerationProvider` instead.
 
+**Required Action:**
+
+Replace `OpenAiLlmProvider` with `OpenAiModerationProvider` in the spec.
+
 ---
 
 ### F-006
@@ -178,26 +216,9 @@ The spec's "Relevant Background Information → Project Files" section lists:
 
 These are case-sensitive on Linux-based systems (relevant since the project uses Docker). The filenames in the spec should match the actual filesystem.
 
----
+**Required Action:**
 
-### F-007
-
-**Priority:** 🟡 P3  
-**Title:** No mention of how `ImageVisionProcessor` obtains `bot_id` to resolve the moderation config inside `process_media`  
-
-**Description:**
-
-The new `ImageVisionProcessor.process_media()` needs `bot_id` to call `create_model_provider(bot_id, feature_name, config_tier)` or equivalent to resolve the moderation provider.
-
-The spec says (Section 4.2):
-> *"process_media() signature will be updated to `self.process_media(file_path, job.mime_type, job.bot_id)`"*
-
-However, as discussed in F-001, changing the base signature is problematic. Even setting that aside, the spec **doesn't describe the actual wiring** of how `bot_id` flows into the moderation provider creation. The spec should specify:
-1. Will `ImageVisionProcessor` call `create_model_provider()` from `services/model_factory.py`?
-2. Or will it directly use `resolve_model_config()` + manual provider instantiation?
-3. Or will the provider be injected at construction time?
-
-This is a design gap — the mechanism for provider resolution within `process_media` needs to be specified.
+Fix the filenames in the spec to match actual filesystem casing: `openai.py` → `openAi.py`, `openai_moderation.py` → `openAiModeration.py`.
 
 ---
 
