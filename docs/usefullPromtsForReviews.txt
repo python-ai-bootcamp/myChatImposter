@@ -37,7 +37,7 @@ lets go over the detected items in the review one by one by priority
 - each time you will present me an item and desribe it.
 - after description you will propose several mitigations for described issue
 - i will select the mitigation, and you will modify review to specified proposed solution
-- we will then continue to the next item
+- we will then continue you explaining me the next item
 
 ================ after you reviewed the review: (better executed on the chat which created the spec)
 read following spec file: docs\moderateImage_spec.md
@@ -59,34 +59,59 @@ if not, list the gaps here
 
 
 ================ making implementation task list
-- please read the following file 
+## Initial Spec Overview
+- please thouroughly completely read the following spec file end to end
 
-/docs/imageModerationProviderSeparation.md
+  - docs/moderateImage_spec.md
 
-- this is a specification file to restructure the llm provider into a more general model provider in order to facilitate the seperation of multiple chat completion models from different vendors and also add a completely different non chat completion model for image moderation
+## Ingest Relevant Backround Information
+### Project Files
+- please deep dive and thouroughly and completely study the relevant project files mentioned in the spec file
+- identify other project files related to the spec but unmentioned inside it and study them as well
 
-- please study all the relevant files inside this spec in their current state
-  -- services\llm_factory.py
-  -- services\token_consumption_service.py
-  -- services\media_processing_service.py
-  -- services\tracked_llm.py
-  -- llm_providers\openAi.py
-  -- llm_providers\base.py
-  -- features\automatic_bot_reply\service.py
-  -- features\periodic_group_tracking\service.py
-  -- features\periodic_group_tracking\runner.py
-  -- features\periodic_group_tracking\extractor.py
-  -- any other relevant files related to the spec file that i might have missed in this list.
+### External Resources
+- please study all the reousrces external to the project supplied in the spec file
 
-
-- after finishing please read the spec file again,
-
-- once finished, please create a new file (/docs/imageModerationProviderSeparation_implementationTasks_gemini_3_1_pro_high.md) which will have a flat list of all needed implementation tasks in order to fulfill all requirements in the spec file properly
-- make sure that the tasks are written by a logical order of implementation with a short description detailing which parts of the spec they are implementing and each carry a status (Pending/inProgress/Done)
-summerize the task in a table at the top of the file
+## Produce Implementation  Task For Spec
+- read the spec file again
+- create a new file (docs/moderateImage_spec_implementationTasks/<MODEL_NAME>.md) which will have a flat list of all needed implementation tasks in order to fulfill all requirements in the spec file properly
+- make sure that the tasks are written by a logical order of implementation, each with a short description detailing which parts of the spec they are implementing and each will also carry a status (<PENDING/IN_PROGRESS/DONE>)
+- summerize the task in a table at the top of the file
 
 please make sure that:
-1. entire spec is covered by the tasks
-2. each and every task is rooted from sections inside the spec
+ 1. entire spec file is covered by the tasks implementation file
+ 2. each and every task in the tasks implementation file is rooted from sections inside the spec file
 
-just create this implementation tasks md file i requested and nothing more. do NOT start implementing yet
+- just create this implementation tasks md file i requested and nothing more. 
+- do NOT start implementing yet
+
+================== unifying implementation task lists
+## Initial Spec Overview
+- please thouroughly completely read the following spec file end to end
+
+  - docs/moderateImage_spec.md
+
+## Ingest Relevant Backround Information
+### Project Files
+- please deep dive and thouroughly and completely study the relevant project files mentioned in the spec file
+- identify other project files related to the spec but unmentioned inside it and study them as well
+
+### External Resources
+- please study all the reousrces external to the project supplied in the spec file
+
+## Rate all Implementation Task For Spec
+- read the spec file again
+- create each file in following directory (docs/moderateImage_spec_implementationTasks/*.md)
+- each file is an implementation task file for the above spec created by a different model using cursor agent
+
+
+- for each implementation task file, rate by following criteria:
+1. coverage (every part of the spec file is covered by a task)
+2. correctness (every task stems from direct information inside the spec file)
+3. coheseveness (the order of the task implementation makes sense and is cohesive and not ditached)
+4. general quality (all tasks are crystal clear, and have a good detailed explenation)
+5. averaged score score (1->10, 10 being the best)
+
+- once you finish rating all of the implementation tasks file, create a summary table presenting the results
+
+this is all i need you to do, do not start implementing anything.
