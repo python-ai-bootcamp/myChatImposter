@@ -21,15 +21,21 @@ This is a preparation phase:
 - `media_processors\stub_processors.py`
 - `media_processors\media_file_utils.py`
 - `media_processors\factory.py`
+- `media_processors/error_processors.py`
+- `media_processors/__init__.py`
 - `model_providers\base.py`
 - `model_providers\openAi.py`
 - `model_providers\openAiModeration.py`
 - `model_providers\image_moderation.py`
+- `model_providers/chat_completion.py`
 - `services\media_processing_service.py`
 - `services\model_factory.py`
 - `services\resolver.py`
+- `utils/provider_utils.py`
 - `config_models.py`
 - `queue_manager.py`
+- `infrastructure/models.py`
+
 
 ### External Resource
 - https://developers.openai.com/api/docs/guides/moderation/
@@ -38,6 +44,7 @@ This is a preparation phase:
 
 ### 1) `ImageVisionProcessor` Extraction and Strict Module Hygiene
 `ImageVisionProcessor` must be extracted from `media_processors\stub_processors.py` into `media_processors\image_vision_processor.py`.
+The extracted `ImageVisionProcessor` inherits directly from `BaseMediaProcessor` (not `StubSleepProcessor`).
 
 Mandatory strict hygiene rules:
 1. `media_processors\image_vision_processor.py` is the only canonical source for `ImageVisionProcessor`.
