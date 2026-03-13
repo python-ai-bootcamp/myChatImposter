@@ -58,6 +58,47 @@ Rules:
 - Remove `quota_exceeded` from the `process_media()` contract.
 - Update base processor and all concrete processors to the new signature.
 
+**Base class call site (`media_processors/base.py`):** In `BaseMediaProcessor.process_job`, pass `job.bot_id` instead of `job.quota_exceeded` as the fourth argument.
+
+Current:
+```python
+result = await asyncio.wait_for(
+    self.process_media(file_path, job.mime_type, job.placeholder_message.content, job.quota_exceeded),
+    timeout=self.processing_timeout,
+)
+```
+
+Should be:
+```python
+result = await asyncio.wait_for(
+    self.process_media(file_path, job.mime_type, job.placeholder_message.content, job.bot_id),
+    timeout=self.processing_timeout,
+)
+```
+
+**Abstract method and subclasses:** Update the abstract method in `BaseMediaProcessor` and all concrete implementations.
+
+Current:
+```python
+@abstractmethod
+async def process_media(self, file_path: str, mime_type: str, caption: str, quota_exceeded: Optional[bool]) -> ProcessingResult:
+    """Subclass implements ONLY this: actual AI/conversion logic."""
+    ...
+```
+
+Should be:
+```python
+@abstractmethod
+async def process_media(self, file_path: str, mime_type: str, caption: str, bot_id: str) -> ProcessingResult:
+    """Subclass implements ONLY this: actual AI/conversion logic."""
+    ...
+```
+
+Affected subclasses (update signature; processors other than `ImageVisionProcessor` can ignore `bot_id`):
+- `StubSleepProcessor` (and its subclasses: `AudioTranscriptionProcessor`, `VideoDescriptionProcessor`, `DocumentProcessor`)
+- `CorruptMediaProcessor`, `UnsupportedMediaProcessor`
+- `ImageVisionProcessor` (in new `image_vision_processor.py`)
+
 ### 3) Image Data Loading (Event-Loop Safe)
 Inside `ImageVisionProcessor.process_media()`:
 1. Read image bytes from `file_path`.
