@@ -3,7 +3,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import asdict
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, List
 
 from infrastructure.models import MediaProcessingJob, ProcessingResult
 from infrastructure.db_schema import (
@@ -26,7 +26,7 @@ class BaseMediaProcessor(ABC):
             # 1. ACTUAL CONVERSION (Externally Guarded by Centralized Timeout)
             try:
                 result = await asyncio.wait_for(
-                    self.process_media(file_path, job.mime_type, job.placeholder_message.content, job.quota_exceeded),
+                    self.process_media(file_path, job.mime_type, job.placeholder_message.content, job.bot_id),
                     timeout=self.processing_timeout,
                 )
             except asyncio.TimeoutError:
@@ -77,7 +77,7 @@ class BaseMediaProcessor(ABC):
             delete_media_file(job.guid)
 
     @abstractmethod
-    async def process_media(self, file_path: str, mime_type: str, caption: str, quota_exceeded: Optional[bool]) -> ProcessingResult:
+    async def process_media(self, file_path: str, mime_type: str, caption: str, bot_id: str) -> ProcessingResult:
         """Subclass implements ONLY this: actual AI/conversion logic."""
         ...
 

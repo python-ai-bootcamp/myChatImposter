@@ -11,27 +11,27 @@ Per the spec overview, the following are **out of scope** for this phase:
 
 | # | Phase | Task | File(s) | Spec Section(s) | Status |
 |---|-------|------|---------|-----------------|--------|
-| 1 | A — Contracts | Update `BaseMediaProcessor.process_media()` abstract signature: `quota_exceeded` → `bot_id` | `media_processors/base.py` | §2 | PENDING |
-| 2 | A — Contracts | Update `BaseMediaProcessor.process_job()` call site to pass `job.bot_id` | `media_processors/base.py` | §2 | PENDING |
-| 3 | A — Contracts | Update `StubSleepProcessor.process_media()` signature: `quota_exceeded` → `bot_id` | `media_processors/stub_processors.py` | §2 | PENDING |
-| 4 | A — Contracts | Update `CorruptMediaProcessor.process_media()` signature: `quota_exceeded` → `bot_id` | `media_processors/error_processors.py` | §2 | PENDING |
-| 5 | A — Contracts | Update `UnsupportedMediaProcessor.process_media()` signature: `quota_exceeded` → `bot_id` | `media_processors/error_processors.py` | §2 | PENDING |
-| 6 | A — Contracts | Update `ImageModerationProvider.moderate_image()` abstract signature to `(base64_image, mime_type)` | `model_providers/image_moderation.py` | §4 | PENDING |
-| 7 | A — Contracts | Update `OpenAiModerationProvider.moderate_image()`: signature, data URI, SDK payload, raw response logging | `model_providers/openAiModeration.py` | §4, §6 | PENDING |
-| 8 | B — Processor | Create `media_processors/image_vision_processor.py` with `ImageVisionProcessor` inheriting from `BaseMediaProcessor` | `media_processors/image_vision_processor.py` (**new**) | §1 | PENDING |
-| 9 | B — Processor | Implement event-loop-safe image byte reading and base64 encoding via `asyncio.to_thread` | `media_processors/image_vision_processor.py` | §3 | PENDING |
-| 10 | B — Processor | Implement factory-based provider resolution with `ImageModerationProvider` type validation and moderation call | `media_processors/image_vision_processor.py` | §4 | PENDING |
-| 11 | B — Processor | Ensure centralized error handling — no local catch in `ImageVisionProcessor.process_media()` | `media_processors/image_vision_processor.py` | §5 | PENDING |
-| 12 | B — Processor | Add normalized `ModerationResult` logging at INFO level | `media_processors/image_vision_processor.py` | §6 | PENDING |
-| 13 | B — Processor | Return stub-style `ProcessingResult` without moderation payload in content | `media_processors/image_vision_processor.py` | §7 | PENDING |
-| 14 | C — Hygiene | Update `media_processors/factory.py` import to new module | `media_processors/factory.py` | §1 rule 4 | PENDING |
-| 15 | C — Hygiene | Remove `ImageVisionProcessor` from `stub_processors.py` — no aliases or re-exports | `media_processors/stub_processors.py` | §1 rules 2–3 | PENDING |
-| 16 | D — Defaults | Verify default bot config seeds `openAiModeration` + `omni-moderation-latest` | `config_models.py`, bot creation paths | Requirements | PENDING |
-| 17 | E — Verification | Verify: `PROCESSOR_CLASS_MAP["ImageVisionProcessor"]` resolves to `media_processors.image_vision_processor` | test file | §1 rule 5, §8 item 1 | PENDING |
-| 18 | E — Verification | Verify: `process_media(..., bot_id: str)` signature on base class and all concrete processors | test file | §8 item 2 | PENDING |
-| 19 | E — Verification | Verify: `moderate_image(base64_image, mime_type)` signatures on both provider classes | test file | §8 item 3 | PENDING |
-| 20 | E — Verification | Verify: image bytes read and base64-encoded via `asyncio.to_thread(...)` | test file | §8 item 4 | PENDING |
-| 21 | E — Verification | Verify: moderation SDK input matches `[{"type": "image_url", "image_url": {"url": data_uri}}]` | test file | §8 item 5 | PENDING |
+| 1 | A — Contracts | Update `BaseMediaProcessor.process_media()` abstract signature: `quota_exceeded` → `bot_id` | `media_processors/base.py` | §2 | DONE |
+| 2 | A — Contracts | Update `BaseMediaProcessor.process_job()` call site to pass `job.bot_id` | `media_processors/base.py` | §2 | DONE |
+| 3 | A — Contracts | Update `StubSleepProcessor.process_media()` signature: `quota_exceeded` → `bot_id` | `media_processors/stub_processors.py` | §2 | DONE |
+| 4 | A — Contracts | Update `CorruptMediaProcessor.process_media()` signature: `quota_exceeded` → `bot_id` | `media_processors/error_processors.py` | §2 | DONE |
+| 5 | A — Contracts | Update `UnsupportedMediaProcessor.process_media()` signature: `quota_exceeded` → `bot_id` | `media_processors/error_processors.py` | §2 | DONE |
+| 6 | A — Contracts | Update `ImageModerationProvider.moderate_image()` abstract signature to `(base64_image, mime_type)` | `model_providers/image_moderation.py` | §4 | DONE |
+| 7 | A — Contracts | Update `OpenAiModerationProvider.moderate_image()`: signature, data URI, SDK payload, raw response logging | `model_providers/openAiModeration.py` | §4, §6 | DONE |
+| 8 | B — Processor | Create `media_processors/image_vision_processor.py` with `ImageVisionProcessor` inheriting from `BaseMediaProcessor` | `media_processors/image_vision_processor.py` (**new**) | §1 | DONE |
+| 9 | B — Processor | Implement event-loop-safe image byte reading and base64 encoding via `asyncio.to_thread` | `media_processors/image_vision_processor.py` | §3 | DONE |
+| 10 | B — Processor | Implement factory-based provider resolution with `ImageModerationProvider` type validation and moderation call | `media_processors/image_vision_processor.py` | §4 | DONE |
+| 11 | B — Processor | Ensure centralized error handling — no local catch in `ImageVisionProcessor.process_media()` | `media_processors/image_vision_processor.py` | §5 | DONE |
+| 12 | B — Processor | Add normalized `ModerationResult` logging at INFO level | `media_processors/image_vision_processor.py` | §6 | DONE |
+| 13 | B — Processor | Return stub-style `ProcessingResult` without moderation payload in content | `media_processors/image_vision_processor.py` | §7 | DONE |
+| 14 | C — Hygiene | Update `media_processors/factory.py` import to new module | `media_processors/factory.py` | §1 rule 4 | DONE |
+| 15 | C — Hygiene | Remove `ImageVisionProcessor` from `stub_processors.py` — no aliases or re-exports | `media_processors/stub_processors.py` | §1 rules 2–3 | DONE |
+| 16 | D — Defaults | Verify default bot config seeds `openAiModeration` + `omni-moderation-latest` | `config_models.py`, bot creation paths | Requirements | DONE |
+| 17 | E — Verification | Verify: `PROCESSOR_CLASS_MAP["ImageVisionProcessor"]` resolves to `media_processors.image_vision_processor` | test file | §1 rule 5, §8 item 1 | DONE |
+| 18 | E — Verification | Verify: `process_media(..., bot_id: str)` signature on base class and all concrete processors | test file | §8 item 2 | DONE |
+| 19 | E — Verification | Verify: `moderate_image(base64_image, mime_type)` signatures on both provider classes | test file | §8 item 3 | DONE |
+| 20 | E — Verification | Verify: image bytes read and base64-encoded via `asyncio.to_thread(...)` | test file | §8 item 4 | DONE |
+| 21 | E — Verification | Verify: moderation SDK input matches `[{"type": "image_url", "image_url": {"url": data_uri}}]` | test file | §8 item 5 | DONE |
 
 ---
 
@@ -42,7 +42,7 @@ Update all shared interface signatures first so downstream implementation target
 ---
 
 ### Task 1 — Update `BaseMediaProcessor.process_media()` abstract signature
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §2 `process_media()` Contract Update (abstract method)
 **File:** `media_processors/base.py`
 
@@ -68,7 +68,7 @@ This task defines the contract that all concrete processors and the `process_job
 ---
 
 ### Task 2 — Update `BaseMediaProcessor.process_job()` call site
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §2 `process_media()` Contract Update (base class call site)
 **File:** `media_processors/base.py`
 **Depends on:** Task 1
@@ -93,7 +93,7 @@ result = await asyncio.wait_for(
 ---
 
 ### Task 3 — Update `StubSleepProcessor.process_media()` signature
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §2 `process_media()` Contract Update (affected subclasses)
 **File:** `media_processors/stub_processors.py`
 **Depends on:** Task 1
@@ -105,7 +105,7 @@ Remove the `Optional` import from `typing` if no longer needed in `stub_processo
 ---
 
 ### Task 4 — Update `CorruptMediaProcessor.process_media()` signature
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §2 `process_media()` Contract Update (affected subclasses)
 **File:** `media_processors/error_processors.py`
 **Depends on:** Task 1
@@ -115,7 +115,7 @@ Change `CorruptMediaProcessor.process_media()` parameter from `quota_exceeded: O
 ---
 
 ### Task 5 — Update `UnsupportedMediaProcessor.process_media()` signature
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §2 `process_media()` Contract Update (affected subclasses)
 **File:** `media_processors/error_processors.py`
 **Depends on:** Task 1
@@ -127,7 +127,7 @@ Remove the `Optional` import from `typing` in `error_processors.py` if no longer
 ---
 
 ### Task 6 — Update `ImageModerationProvider.moderate_image()` abstract signature
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §4 Provider Resolution and Moderation Call (provider contract update)
 **File:** `model_providers/image_moderation.py`
 
@@ -147,7 +147,7 @@ The caller (`ImageVisionProcessor`) will supply raw base64-encoded image bytes a
 ---
 
 ### Task 7 — Update `OpenAiModerationProvider.moderate_image()`: signature, data URI, SDK payload, and raw response logging
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §4 Provider Resolution and Moderation Call (provider contract update, input payload shape), §6 Logging Requirements
 **File:** `model_providers/openAiModeration.py`
 **Depends on:** Task 6
@@ -184,7 +184,7 @@ Create the new `ImageVisionProcessor` in its canonical module and implement the 
 ---
 
 ### Task 8 — Create `media_processors/image_vision_processor.py`
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §1 `ImageVisionProcessor` Extraction and Strict Module Hygiene
 **File:** `media_processors/image_vision_processor.py` (**new file**)
 **Depends on:** Tasks 1–2 (contract must be defined before implementing)
@@ -198,7 +198,7 @@ Create `media_processors/image_vision_processor.py` containing the `ImageVisionP
 ---
 
 ### Task 9 — Implement event-loop-safe image loading
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §3 Image Data Loading (Event-Loop Safe)
 **File:** `media_processors/image_vision_processor.py`
 **Depends on:** Task 8
@@ -220,7 +220,7 @@ The helper function (or equivalent inline callable) must perform both the read a
 ---
 
 ### Task 10 — Implement factory-based provider resolution and moderation call
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §4 Provider Resolution and Moderation Call
 **File:** `media_processors/image_vision_processor.py`
 **Depends on:** Tasks 6–7 (provider contract must be updated), Task 9 (base64_image must be available)
@@ -244,7 +244,7 @@ Rules:
 ---
 
 ### Task 11 — Ensure centralized error handling — no local catch
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §5 Error Handling Strategy
 **File:** `media_processors/image_vision_processor.py`
 **Depends on:** Task 10
@@ -258,7 +258,7 @@ This must be actively verified during implementation — ensure no defensive `tr
 ---
 
 ### Task 12 — Add normalized `ModerationResult` logging
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §6 Logging Requirements
 **File:** `media_processors/image_vision_processor.py`
 **Depends on:** Task 10
@@ -274,7 +274,7 @@ This captures `flagged`, `categories`, and `category_scores`. It is separate fro
 ---
 
 ### Task 13 — Return stub-style `ProcessingResult`
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §7 Processing Result for This Phase
 **File:** `media_processors/image_vision_processor.py`
 **Depends on:** Task 12
@@ -301,7 +301,7 @@ Rewire the factory and remove the old definition. Task 14 must be completed befo
 ---
 
 ### Task 14 — Update `media_processors/factory.py` import to new module
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §1 `ImageVisionProcessor` Extraction and Strict Module Hygiene (rule 4)
 **File:** `media_processors/factory.py`
 **Depends on:** Task 8 (new module must exist)
@@ -332,7 +332,7 @@ The `PROCESSOR_CLASS_MAP["ImageVisionProcessor"]` entry remains unchanged — it
 ---
 
 ### Task 15 — Remove `ImageVisionProcessor` from `stub_processors.py`
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §1 `ImageVisionProcessor` Extraction and Strict Module Hygiene (rules 2–3)
 **File:** `media_processors/stub_processors.py`
 **Depends on:** Task 8 (new module created), Task 14 (factory rewired)
@@ -349,7 +349,7 @@ Delete the `ImageVisionProcessor` class definition entirely from `stub_processor
 ---
 
 ### Task 16 — Verify default bot config seeds `openAiModeration` + `omni-moderation-latest`
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** Requirements
 **File:** `config_models.py`, `routers/bot_management.py`, `routers/bot_ui.py`
 
@@ -372,7 +372,7 @@ Each verification task maps 1:1 to a checklist item from §8. The proof method i
 ---
 
 ### Task 17 — Verification: Factory resolution points to `media_processors.image_vision_processor`
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §1 Hygiene Rule 5, §8 Verification Checklist item 1
 **File:** `tests/test_image_vision_processor.py`
 **Depends on:** Task 14
@@ -390,7 +390,7 @@ def test_image_vision_processor_factory_resolution():
 ---
 
 ### Task 18 — Verification: `process_media(..., bot_id: str)` signature on all processors
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §8 Verification Checklist item 2
 **File:** `tests/test_image_vision_processor.py`
 **Depends on:** Tasks 1, 3–5, 8
@@ -417,7 +417,7 @@ def test_process_media_bot_id_signature():
 ---
 
 ### Task 19 — Verification: `moderate_image(base64_image, mime_type)` signatures on both provider classes
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §8 Verification Checklist item 3
 **File:** `tests/test_image_vision_processor.py`
 **Depends on:** Tasks 6–7
@@ -437,7 +437,7 @@ def test_moderate_image_signature():
 ---
 
 ### Task 20 — Verification: Event-loop safety — image loading via `asyncio.to_thread`
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §8 Verification Checklist item 4
 **File:** `tests/test_image_vision_processor.py`
 **Depends on:** Task 9
@@ -447,7 +447,7 @@ Write a test confirming `ImageVisionProcessor.process_media()` offloads file rea
 ---
 
 ### Task 21 — Verification: Moderation SDK payload shape
-**Status:** PENDING
+**Status:** DONE
 **Spec Section:** §8 Verification Checklist item 5
 **File:** `tests/test_image_vision_processor.py`
 **Depends on:** Task 7

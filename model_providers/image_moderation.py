@@ -12,5 +12,5 @@ class ModerationResult(BaseModel):
 
 class ImageModerationProvider(BaseModelProvider):
     @abstractmethod
-    async def moderate_image(self, image_url: str) -> ModerationResult:
+    async def moderate_image(self, base64_image: str, mime_type: str) -> ModerationResult:
         pass

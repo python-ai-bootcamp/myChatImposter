@@ -2,9 +2,9 @@ from media_processors.error_processors import CorruptMediaProcessor, Unsupported
 from media_processors.stub_processors import (
     AudioTranscriptionProcessor,
     DocumentProcessor,
-    ImageVisionProcessor,
     VideoDescriptionProcessor,
 )
+from media_processors.image_vision_processor import ImageVisionProcessor
 
 
 PROCESSOR_CLASS_MAP = {
