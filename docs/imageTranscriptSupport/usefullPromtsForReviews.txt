@@ -1,0 +1,151 @@
+================ better of executed on clean chat (A):
+# variables:
+in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
+- REVIEW_ID        ="02_cursor_codex_5_3"
+- FEATURE_NAME     ="imageTranscriptSupport"
+- PARENT_DOCS_DIR  ="/docs/$${{FEATURE_NAME}}$$"
+- SPEC_FILE        ="$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
+- SPEC_REVIEW_FILE ="$${{PARENT_DOCS_DIR}}$$/specReviews/$${{FEATURE_NAME}}$$_spec_review_$${{REVIEW_ID}}$$.md"
+
+## Initial Spec Overview
+- please thouroughly completely read the following spec file end to end __$${{SPEC_FILE}}$$__
+
+## Ingest Relevant Backround Information
+### Project Files
+- please perform a serious deep dive into project relevant files:
+ - thouroughly and completely read&study the relevant project files as mentioned in the spec's "Relevant Background Information"\"Project Files" section
+ - in addition, please attempt to independently identify other project files related to the spec but unmentioned inside it and study them thouroughly as well
+
+### External Resources
+- please study all the resources external to the project supplied in the spec file
+
+## Spec Review
+- after finished learning background information referenced by the spec file, please read the spec file again.
+
+- continue to critically review the spec file according to all you've just learned
+  - do not try to please me and find isoteric issues, only real serious findings that should be addressed before starting implementation please
+  - if you think the spec is solid enough to start implementation, say so, don't invent criticism just for the sake of it, if the spec is solid, it's solid!
+  - if you do happen to find real substantial issues, rate all items by priority
+    - each item detected will have the following fields related to it: 
+      1. priority: (general priority of the detected item)
+      2. id: (an identifier which is unique in the scope of this specific review)
+      3. title: (short consice single sentence describing the detected item)
+      4. detailed description: (a full description of the item detected)
+      5. status: (will contain one of the values <PENDING|READY|BYPASSED|DONE>, all set to PENDING on review creation)
+      6. required actions: (empty field, will be filled later phase of the review preparation)
+
+## Review Output
+- write your review into an md file at $${{SPEC_REVIEW_FILE}}$$
+- this file will contain a list of items detected by review (issues, contraditions, design gaps, loose ends, incorrect code snippets etc)
+- it will also contain summerry table on top of review file in a table format with following columns (left to right):
+  - priority 
+  - id
+  - title
+  - link (clicking it in the md file will jump to the relevant detailed description of the clicked issue)
+  - status ( contains value of <PENDING|BYPASSED|DONE>, initially all set on PENDING)
+- all items in the top table will be sorted by priority
+
+================ review the review and set proposed solutions (in same chat A)
+# variables:
+in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
+- REVIEW_ID        ="02_cursor_codex_5_3"
+- FEATURE_NAME     ="imageTranscriptSupport"
+- PARENT_DOCS_DIR  ="/docs/$${{FEATURE_NAME}}$$"
+- SPEC_FILE        ="$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
+- SPEC_REVIEW_FILE ="$${{PARENT_DOCS_DIR}}$$/specReviews/$${{FEATURE_NAME}}$$_spec_review_$${{REVIEW_ID}}$$.md"
+
+## review the review items one by one:
+lets go over the detected items in the $${{SPEC_REVIEW_FILE}}$$ review one by one by priority
+- each time you will present me an item and desribe it.
+- after description you will propose several mitigations for described issue
+- i will select the mitigation, and you will modify review iterm's "Required Actions:" subsection to specified selected mitigation
+- you will then imidiately continue  explaining me the next item etc etc until no items are left
+
+================ after you reviewed the review: (better executed on fresh context chat B)
+# variables:
+in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
+- REVIEW_ID        ="02_cursor_codex_5_3"
+- FEATURE_NAME     ="imageTranscriptSupport"
+- PARENT_DOCS_DIR  ="/docs/$${{FEATURE_NAME}}$$"
+- SPEC_FILE        ="$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
+- SPEC_REVIEW_FILE ="$${{PARENT_DOCS_DIR}}$$/specReviews/$${{FEATURE_NAME}}$$_spec_review_$${{REVIEW_ID}}$$.md"
+
+## go over spec review
+- read following spec file: $${{SPEC_FILE}}$$
+- and following review for this spec file: $${{SPEC_REVIEW_FILE}}$$
+
+- once finished, go over each review item and decide if:
+ 1. you agree with this item
+ 2. if you agree with this item, do you agree with the required action to fix it in the spec?
+
+- summerise each item conclusion concisely (start with agree/agree with solution at begining)
+- at the end give quick summary of which items you did not agree with (if there were any)
+
+- give just conclusion, don't apply anything yet to the spec file
+
+================ if he agrees with everything (on chat B):
+Please correct the spec file with all the "Required Actions" from all the review items
+
+================ after implementing, enter this in original chat (chat A) that created the review:
+I have finished implementing all of the "Required Actions" you recommended in the spec review file (after modifying the review a bit) into the spec
+please read the final review file (after i modified it) and then check if spec file was fixed accordingly to the review's "Required Actions" for all items
+if not, list the gaps here
+
+
+================ making implementation task list
+## Initial Spec Overview
+- please thouroughly completely read the following spec file end to end
+
+  - docs/moderateImage_spec.md
+
+## Ingest Relevant Backround Information
+### Project Files
+- please deep dive and thouroughly and completely study the relevant project files mentioned in the spec file
+- identify other project files related to the spec but unmentioned inside it and study them as well
+
+### External Resources
+- please study all the reousrces external to the project supplied in the spec file
+
+## Produce Implementation  Task For Spec
+- read the spec file again
+- create a new file (docs/moderateImage_spec_implementationTasks/<MODEL_NAME>.md) which will have a flat list of all needed implementation tasks in order to fulfill all requirements in the spec file properly
+- make sure that the tasks are written by a logical order of implementation, each with a short description detailing which parts of the spec they are implementing and each will also carry a status (<PENDING/IN_PROGRESS/DONE>)
+- summerize the task in a table at the top of the file
+
+please make sure that:
+ 1. entire spec file is covered by the tasks implementation file
+ 2. each and every task in the tasks implementation file is rooted from sections inside the spec file
+
+- just create this implementation tasks md file i requested and nothing more. 
+- do NOT start implementing yet
+
+================== unifying implementation task lists
+## Initial Spec Overview
+- please thouroughly completely read the following spec file end to end
+
+  - docs/moderateImage_spec.md
+
+## Ingest Relevant Backround Information
+### Project Files
+- please deep dive and thouroughly and completely study the relevant project files mentioned in the spec file
+- identify other project files related to the spec but unmentioned inside it and study them as well
+
+### External Resources
+- please study all the reousrces external to the project supplied in the spec file
+
+## Rate all Implementation Task For Spec
+- read the spec file again
+- create each file in following directory (docs/moderateImage_spec_implementationTasks/*.md)
+- each file is an implementation task file for the above spec created by a different model using cursor agent
+
+
+- for each implementation task file, rate by following criteria:
+1. coverage (every part of the spec file is covered by a task)
+2. correctness (every task stems from direct information inside the spec file)
+3. coheseveness (the order of the task implementation makes sense and is cohesive and not ditached)
+4. general quality (all tasks are crystal clear, and have a good detailed explenation)
+5. averaged score score (1->10, 10 being the best)
+
+- once you finish rating all of the implementation tasks file, create a summary table presenting the results
+
+this is all i need you to do, do not start implementing anything.
