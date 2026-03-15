@@ -14,9 +14,9 @@ Three items were identified that should be addressed before or during implementa
 
 | Priority | ID | Title | Link | Status |
 |----------|----|-------|------|--------|
-| MEDIUM | ITS-12 | token_menu update missing from Deployment Checklist | [Details](#its-12-token_menu-update-missing-from-deployment-checklist) | PENDING |
-| MEDIUM | ITS-13 | Schema surgery for image_transcription in get_configuration_schema | [Details](#its-13-schema-surgery-for-image_transcription-in-get_configuration_schema) | PENDING |
-| LOW | ITS-14 | transcribe_image async signature not explicit | [Details](#its-14-transcribe_image-async-signature-not-explicit) | PENDING |
+| MEDIUM | ITS-12 | token_menu update missing from Deployment Checklist | [Details](#its-12-token_menu-update-missing-from-deployment-checklist) | READY |
+| MEDIUM | ITS-13 | Schema surgery for image_transcription in get_configuration_schema | [Details](#its-13-schema-surgery-for-image_transcription-in-get_configuration_schema) | READY |
+| LOW | ITS-14 | transcribe_image async signature not explicit | [Details](#its-14-transcribe_image-async-signature-not-explicit) | READY |
 
 ---
 
@@ -35,8 +35,8 @@ Three items were identified that should be addressed before or during implementa
   Without this, `QuotaService.calculate_cost(config_tier="image_transcription", ...)` will hit the fallback branch (`config_tier not in self._token_menu`) and return `0.0`, so vision tokens will not be priced or counted toward user quotas. The `TokenTrackingCallback` will still record events with `config_tier="image_transcription"`, but cost calculation will be zero.
 
   The `token_menu` is stored in the `configurations` collection (per `COLLECTION_GLOBAL_CONFIGURATIONS`) with `_id: "token_menu"`. The structure is `{ high: {...}, low: {...} }` where each tier has `input_tokens`, `output_tokens`, `cached_input_tokens` (per 1M tokens). The `initialize_quota_and_bots.py` script creates this document but does not include `image_moderation` or `image_transcription`. A migration or initialization step is needed to add the `image_transcription` entry.
-- **Status:** PENDING
-- **Required Actions:** Add a fifth item to the Deployment Checklist: update the `token_menu` document in the global configurations collection to include an `"image_transcription"` entry with appropriate pricing (input_tokens, output_tokens, cached_input_tokens per 1M tokens). This can be done via a migration script (e.g., `scripts/migrate_image_transcription.py` or a separate `migrate_token_menu_image_transcription.py`) or by extending `initialize_quota_and_bots.py` to add the entry when creating/updating the token_menu. Vision pricing differs from text; refer to OpenAI's vision pricing documentation for values.
+- **Status:** READY
+- **Required Actions:** Update the initialization script (`scripts/initialize_quota_and_bots.py`) so new deployments are initialized with the correct `image_transcription` token menu tier. Additionally, create a targeted migration script (`scripts/migrate_token_menu_image_transcription.py`) to safely patch existing staging and production environments. Finally, add a fifth item to the Deployment Checklist dictating the execution of this new migration script.
 
 ---
 
@@ -53,8 +53,8 @@ Three items were identified that should be addressed before or during implementa
   ```
 
   This iterates over the LLM config tier names to fix `anyOf`/`null` patterns so the UI does not show a redundant optional dropdown. When `image_transcription` is added to `LLMConfigurations`, this list must be extended to include `'image_transcription'`. Otherwise, the schema for the new tier may render with confusing optional semantics in the frontend form.
-- **Status:** PENDING
-- **Required Actions:** Add `'image_transcription'` to the `prop_name` list in the schema surgery loop within `get_configuration_schema` (around line 364 in `routers/bot_management.py`).
+- **Status:** READY
+- **Required Actions:** Refactor the schema surgery loop within `get_configuration_schema` (around line 364 in `routers/bot_management.py`) to dynamically extract the list of LLM configuration tiers from the overarching configuration model's fields, rather than relying on a hardcoded list. This ensures future tiers like `image_transcription` are automatically patched without manual updates.
 
 ---
 
@@ -67,7 +67,7 @@ Three items were identified that should be addressed before or during implementa
   The spec states that `ImageTranscriptionProvider` declares `transcribe_image(base64_image, mime_type) -> str` as an abstract method. The implementation will invoke the LLM via LangChain's `ainvoke`, which is asynchronous. Therefore, the method must be `async def transcribe_image(...) -> str`, and callers (e.g., `ImageVisionProcessor.process_media`) must `await` it.
 
   The spec does not explicitly show the `async` keyword. The existing `ImageModerationProvider.moderate_image` is `async`, so the pattern is established. Making the async nature explicit in the spec avoids implementer ambiguity.
-- **Status:** PENDING
-- **Required Actions:** In the Technical Details §1 (Provider Architecture), explicitly specify `async def transcribe_image(base64_image: str, mime_type: str) -> str` for the abstract method signature.
+- **Status:** READY
+- **Required Actions:** In the Technical Details §1 (Provider Architecture), explicitly specify `async def transcribe_image(base64_image: str, mime_type: str) -> str` for the abstract method signature. Additionally, include a complete Python code block demonstrating the skeleton of the abstract class `ImageTranscriptionProvider` with `abc.ABC`, `@abstractmethod`, and the `async def transcribe_image` signature to serve as a visual contract for implementers.
 
 ---
