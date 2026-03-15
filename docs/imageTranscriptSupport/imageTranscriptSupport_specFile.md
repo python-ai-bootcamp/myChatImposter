@@ -25,6 +25,10 @@ Every image processed by the media processing pipeline which arrives to the `Ima
 ### Transcription
 - `ImageVisionProcessor` will use the bot's `image_transcription` tier to resolve an `ImageTranscriptionProvider` and call `await provider.transcribe_image(base64_image, mime_type)` to transcribe the actual image bytes (base64-encoded) into a message describing the image. The `feature_name` passed to `create_model_provider` for this call must be `"image_transcription"` to enable fine-grained token tracking and billing distinction from other media processing tasks.
 - The transcription prompt is hardcoded in the provider (no system message): *"Describe the contents of this image concisely in 1-3 sentences, if there is text in the image add the text inside image to description as well"*
+- Transcription response normalization contract (must always produce a plain string):
+  - If `response.content` is `str`: return it as-is.
+  - If `response.content` is content blocks: extract text-bearing blocks in original order and concatenate into one deterministic string (single-space separator, trim outer whitespace).
+  - If `response.content` is neither string nor content blocks: return `"[Unable to transcribe image content]"`.
 - **Error handling:** No custom error handling (`try/except`) should be added around `transcribe_image` within `ImageVisionProcessor`. All exceptions propagate up to `BaseMediaProcessor.process_job()`, which handles failures gracefully by logging the error, archiving the job to the failed collection, and returning the standard `[Media processing failed]` placeholder to the user. This maintains consistency with the existing `moderate_image` implementation.
 
 ### Output Format
@@ -78,7 +82,7 @@ Every image processed by the media processing pipeline which arrives to the `Ima
 ## Technical Details
 
 ### 1) Provider Architecture
-`ImageTranscriptionProvider` (in `model_providers/image_transcription.py`) extends `ChatCompletionProvider` and declares `async def transcribe_image(base64_image: str, mime_type: str) -> str` as an abstract method. `OpenAiImageTranscriptionProvider` (in `model_providers/openAiImageTranscription.py`) extends this class (optionally via `OpenAiChatProvider`), implements `get_llm()` to return `ChatOpenAI`, and implements `transcribe_image` by constructing a multimodal `HumanMessage` (text prompt + `image_url` data URI + `detail` from config), invoking the LLM via `ainvoke`, and returning `response.content`. Callers (e.g., `ImageVisionProcessor.process_media`) must `await` the method.
+`ImageTranscriptionProvider` (in `model_providers/image_transcription.py`) extends `ChatCompletionProvider` and declares `async def transcribe_image(base64_image: str, mime_type: str) -> str` as an abstract method. `OpenAiImageTranscriptionProvider` (in `model_providers/openAiImageTranscription.py`) extends this class as the concrete implementation (without sibling inheritance coupling to `OpenAiChatProvider`), and both OpenAI providers (`OpenAiChatProvider`, `OpenAiImageTranscriptionProvider`) must reuse a shared OpenAI helper layer (mixin/base) for API-key resolution, safe `ChatOpenAI` kwargs filtering, and cached `get_llm()` behavior. `OpenAiImageTranscriptionProvider` implements `get_llm()` to return `ChatOpenAI`, and implements `transcribe_image` by constructing a multimodal `HumanMessage` (text prompt + `image_url` data URI + `detail` from config), invoking the LLM via `ainvoke`, and returning the normalized transcript string according to the transcription response normalization contract above. Callers (e.g., `ImageVisionProcessor.process_media`) must `await` the method.
 
 Contract skeleton for implementers:
 
@@ -91,16 +95,29 @@ class ImageTranscriptionProvider(ChatCompletionProvider, ABC):
         ...
 ```
 
-`create_model_provider` in `services/model_factory.py` keeps the existing `ChatCompletionProvider` tracking path: resolve provider -> call `get_llm()` -> attach `TokenTrackingCallback`. For the `ImageTranscriptionProvider` subtype specifically, the factory returns the provider object (not raw LLM) so callers can `await provider.transcribe_image(...)`; for regular chat providers, it continues returning the raw tracked LLM. To ensure token tracking works correctly, `OpenAiChatProvider.get_llm()` must cache the `ChatOpenAI` instance on the provider object (`self._llm`) on first call and return the cached instance on subsequent calls. This guarantees the `TokenTrackingCallback` attached by the factory is present on the same LLM instance used by `transcribe_image`.
+`create_model_provider` in `services/model_factory.py` keeps the existing `ChatCompletionProvider` tracking path: resolve provider -> call `get_llm()` -> attach `TokenTrackingCallback`. For the `ImageTranscriptionProvider` subtype specifically, the factory returns the provider object (not raw LLM) so callers can `await provider.transcribe_image(...)`; for regular chat providers, it continues returning the raw tracked LLM. Callback continuity is a strict contract: for image transcription providers, `get_llm()` must be idempotent and return the same in-memory `ChatOpenAI` instance for the provider lifetime. This guarantees the `TokenTrackingCallback` attached by the factory is present on the exact same LLM object later used by `transcribe_image`.
 
 `find_provider_class` in `utils/provider_utils.py` must include an `obj.__module__ == module.__name__` filter in its `inspect.getmembers` loop. This prevents imported concrete parent classes (e.g., `OpenAiChatProvider` imported into `openAiImageTranscription.py`) from being returned instead of the module's own provider class, since `inspect.getmembers` returns members alphabetically and would otherwise match the imported class first.
 
 ### 2) OpenAI Vision Parameter
-The provider reads the `detail` parameter from its `ImageTranscriptionProviderConfig` (default `"auto"`, see OpenAI docs on [Images and vision](https://developers.openai.com/api/docs/guides/images-vision?format=base64-encoded)). The `detail` parameter controls image tokenization fidelity (how many patches/tiles the image is broken into). Valid values: `"low"`, `"high"`, `"original"`, `"auto"`. It defaults to `"auto"` but is overridable per-bot through config. No validation is added for the `"original"` detail level against the configured model; if misconfigured with an unsupported model (e.g., `gpt-5-mini`), the resulting OpenAI API error will propagate through the standard implicit error handling path.
+The provider reads the `detail` parameter from its `ImageTranscriptionProviderConfig` (default `"auto"`, see OpenAI docs on [Images and vision](https://developers.openai.com/api/docs/guides/images-vision?format=base64-encoded)). The `detail` parameter controls image tokenization fidelity (how many patches/tiles the image is broken into). Valid values: `"low"`, `"high"`, `"original"`, `"auto"`. It defaults to `"auto"` but is overridable per-bot through config. `detail` is transcription-only metadata and must never be forwarded into `ChatOpenAI(...)` constructor kwargs; it is used only when building the multimodal image payload in `transcribe_image(...)`. No validation is added for the `"original"` detail level against the configured model; if misconfigured with an unsupported model (e.g., `gpt-5-mini`), the resulting OpenAI API error will propagate through the standard implicit error handling path.
 
 ### 3) Deployment Checklist
-1. Add migration script `scripts/migrations/migrate_image_transcription.py` to iterate existing bot configs in MongoDB and add `config_data.configurations.llm_configs.image_transcription` where missing (following `migrate_image_moderation.py` pattern).
+1. Add migration script `scripts/migrations/migrate_image_transcription.py` to iterate existing bot configs in MongoDB and add `config_data.configurations.llm_configs.image_transcription` where missing (following existing migration patterns). This migration must target `infrastructure/db_schema.py::COLLECTION_BOT_CONFIGURATIONS`.
 2. Extend `DefaultConfigurations` in `config_models.py` with `model_provider_name_image_transcription = "openAiImageTranscription"` (must match provider module name) and defaults for the image transcription model/settings.
 3. Update `get_bot_defaults` in `routers/bot_management.py` to include `image_transcription` in `LLMConfigurations` using `ImageTranscriptionProviderConfig` and `DefaultConfigurations`.
 4. Define `LLMConfigurations.image_transcription` with a `default_factory` that builds a complete `ImageTranscriptionProviderConfig` to avoid validation failures on stored configs that predate this tier.
-5. Update `scripts/migrations/initialize_quota_and_bots.py` so new deployments are initialized with the `image_transcription` token menu tier. Create `scripts/migrations/migrate_token_menu_image_transcription.py` to patch existing staging and production environments. Execute this migration script for existing deployments.
+5. Update `scripts/migrations/initialize_quota_and_bots.py` so new deployments are initialized with the `image_transcription` token menu tier. Create `scripts/migrations/migrate_token_menu_image_transcription.py` to patch existing staging and production environments. This migration must target `infrastructure/db_schema.py::COLLECTION_GLOBAL_CONFIGURATIONS`. Execute this migration script for existing deployments.
+6. Migration contract: all migration scripts for this feature must import and use `infrastructure/db_schema.py` constants (no hardcoded collection names).
+7. Verification checklist for rollout:
+   - Capture pre/post document counts for both target collections (`COLLECTION_BOT_CONFIGURATIONS`, `COLLECTION_GLOBAL_CONFIGURATIONS`).
+   - Validate sample bot documents now include `config_data.configurations.llm_configs.image_transcription`.
+   - Validate global token menu includes the `image_transcription` tier with expected pricing fields.
+
+### 4) Test Expectations
+- Add tests that verify `detail` is filtered from `ChatOpenAI(...)` constructor kwargs and only used in transcription payload construction.
+- Add tests that verify callback continuity: callback attachment in `create_model_provider` and transcription invocation in `transcribe_image(...)` use the same LLM object reference.
+- Add tests for transcription normalization covering all branches:
+  - string content -> returned as-is,
+  - content blocks -> concatenated deterministic string,
+  - unsupported content type -> `"[Unable to transcribe image content]"`.
