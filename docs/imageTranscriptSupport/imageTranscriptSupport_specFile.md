@@ -9,10 +9,11 @@ Every image processed by the media processing pipeline which arrives to the `Ima
 ## Requirements
 
 ### Configuration
-- `image_transcription` is added as a new per-bot tier in `LLMConfigurations` (alongside `high`, `low`, `image_moderation`), with defaults matching the `low` tier (`OpenAiChatProvider` with `gpt-5-mini`). Individual bots may override to any compatible chat model (e.g. `gpt-5`) through their config.
-- A new `ImageTranscriptionProviderConfig` extends `ChatCompletionProviderConfig` with an additional `detail: Literal["low", "high", "auto"] = "auto"` field. The `LLMConfigurations.image_transcription` field type is `ImageTranscriptionProviderConfig`.
+- `image_transcription` is added as a new per-bot tier in `LLMConfigurations` (alongside `high`, `low`, `image_moderation`), with defaults matching the `low` tier model/settings (`gpt-5-mini`, same API-key source and chat settings). The default provider module for this tier is `openAiImageTranscription`. Individual bots may override to any compatible chat model (e.g. `gpt-5`) through their config.
+- A new `ImageTranscriptionProviderConfig` extends `ChatCompletionProviderConfig` with an additional `detail: Literal["low", "high", "original", "auto"] = "auto"` field. The `LLMConfigurations.image_transcription` field type is `ImageTranscriptionProviderConfig`.
 - `ConfigTier` is updated to include `"image_transcription"`.
 - `resolve_model_config` in `services/resolver.py` returns `ImageTranscriptionProviderConfig` for the `"image_transcription"` tier.
+- `global_configurations.token_menu` is extended with an `"image_transcription"` pricing entry so vision usage is tracked and priced under the correct tier.
 
 ### Processing Flow
 - `ImageVisionProcessor` will first moderate the image (as it currently does)
@@ -58,6 +59,9 @@ Every image processed by the media processing pipeline which arrives to the `Ima
 - `services/media_processing_service.py`
 - `services/model_factory.py`
 - `services/resolver.py`
+- `routers/bot_management.py`
+- `scripts/migrate_image_transcription.py` *(new)*
+- `global_configurations` *(token menu update for image transcription tier pricing)*
 - `utils/provider_utils.py`
 - `config_models.py`
 - `queue_manager.py`
@@ -70,7 +74,15 @@ Every image processed by the media processing pipeline which arrives to the `Ima
 ## Technical Details
 
 ### 1) Provider Architecture
-A dedicated `ImageTranscriptionProvider` abstract class (in `model_providers/image_transcription.py`) exposes a `transcribe_image(base64_image, mime_type) -> str` method, mirroring the `ImageModerationProvider` pattern. A concrete `OpenAiImageTranscriptionProvider` (in `model_providers/openAiImageTranscription.py`) internally builds a `ChatOpenAI` LLM, constructs a multimodal `HumanMessage` with content blocks (text prompt + `image_url` with `detail="auto"`), invokes it, and returns `response.content`. `create_model_provider` in `services/model_factory.py` is extended to handle `ImageTranscriptionProvider` as a third branch.
+`ImageTranscriptionProvider` (in `model_providers/image_transcription.py`) extends `ChatCompletionProvider` and declares `transcribe_image(base64_image, mime_type) -> str` as an abstract method. `OpenAiImageTranscriptionProvider` (in `model_providers/openAiImageTranscription.py`) extends this class (optionally via `OpenAiChatProvider`), implements `get_llm()` to return `ChatOpenAI`, and implements `transcribe_image` by constructing a multimodal `HumanMessage` (text prompt + `image_url` data URI + `detail` from config), invoking the LLM, and returning `response.content`.
+
+`create_model_provider` in `services/model_factory.py` keeps the existing `ChatCompletionProvider` tracking path: resolve provider -> call `get_llm()` -> attach `TokenTrackingCallback`. For the `ImageTranscriptionProvider` subtype specifically, the factory returns the provider object (not raw LLM) so callers can invoke `provider.transcribe_image(...)`; for regular chat providers, it continues returning the raw tracked LLM.
 
 ### 2) OpenAI Vision Parameter
-The provider reads the `detail` parameter from its `ImageTranscriptionProviderConfig` (default `"auto"`, see OpenAI docs on [Images and vision](https://developers.openai.com/api/docs/guides/images-vision?format=base64-encoded)). The `detail` parameter controls image tokenization fidelity (how many patches/tiles the image is broken into). Valid values: `"low"`, `"high"`, `"auto"`. It defaults to `"auto"` but is overridable per-bot through config.
+The provider reads the `detail` parameter from its `ImageTranscriptionProviderConfig` (default `"auto"`, see OpenAI docs on [Images and vision](https://developers.openai.com/api/docs/guides/images-vision?format=base64-encoded)). The `detail` parameter controls image tokenization fidelity (how many patches/tiles the image is broken into). Valid values: `"low"`, `"high"`, `"original"`, `"auto"`. It defaults to `"auto"` but is overridable per-bot through config.
+
+### 3) Deployment Checklist
+1. Add migration script `scripts/migrate_image_transcription.py` to iterate existing bot configs in MongoDB and add `config_data.configurations.llm_configs.image_transcription` where missing (following `migrate_image_moderation.py` pattern).
+2. Extend `DefaultConfigurations` in `config_models.py` with `model_provider_name_image_transcription = "openAiImageTranscription"` (must match provider module name) and defaults for the image transcription model/settings.
+3. Update `get_bot_defaults` in `routers/bot_management.py` to include `image_transcription` in `LLMConfigurations` using `ImageTranscriptionProviderConfig` and `DefaultConfigurations`.
+4. Define `LLMConfigurations.image_transcription` with a `default_factory` that builds a complete `ImageTranscriptionProviderConfig` to avoid validation failures on stored configs that predate this tier.

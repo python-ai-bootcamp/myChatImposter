@@ -58,7 +58,7 @@ in following below requests you will replace all variable (denoted as $${{VARIAB
 lets go over the detected items in the $${{SPEC_REVIEW_FILE}}$$ review one by one by priority
 - each time you will present me an item and desribe it.
 - after description you will propose several mitigations for described issue
-- i will select the mitigation, and you will modify review iterm's "Required Actions:" subsection to specified selected mitigation
+- i will select the mitigation, and you will modify review iterm's "Required Actions:" subsection to specified selected mitigation and set its status from  PENDING to READY
 - you will then imidiately continue  explaining me the next item etc etc until no items are left
 
 ================ after you reviewed the review: (better executed on fresh context chat B)
