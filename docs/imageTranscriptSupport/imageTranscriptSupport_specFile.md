@@ -13,7 +13,7 @@ Every image processed by the media processing pipeline which arrives to the `Ima
 - A new `ImageTranscriptionProviderConfig` extends `ChatCompletionProviderConfig` with an additional `detail: Literal["low", "high", "original", "auto"] = "auto"` field. The `LLMConfigurations.image_transcription` field type is `ImageTranscriptionProviderConfig`.
 - `ConfigTier` is updated to include `"image_transcription"`.
 - `resolve_model_config` in `services/resolver.py` returns `ImageTranscriptionProviderConfig` for the `"image_transcription"` tier.
-- `global_configurations.token_menu` is extended with an `"image_transcription"` pricing entry so vision usage is tracked and priced under the correct tier.
+- `global_configurations.token_menu` is extended with an `"image_transcription"` pricing entry (as a distinct, independent tier — not reusing the `low` tier) so vision usage is tracked and priced under the correct tier. The pricing values are: `input_tokens: 0.25`, `cached_input_tokens: 0.025`, `output_tokens: 2.0` (matching the default model `gpt-5-mini` rates).
 - `get_configuration_schema` in `routers/bot_management.py` must dynamically extract the list of LLM configuration tiers from the overarching configuration model's fields (rather than a hardcoded list) so that schema surgery patches all tiers including `image_transcription` and future tiers automatically.
 
 ### Processing Flow
@@ -23,8 +23,9 @@ Every image processed by the media processing pipeline which arrives to the `Ima
   - If `moderation_result.flagged == true`: return a clean placeholder (no `failed_reason`, no failure archival) with content: `"[Transcribed image multimedia message was flagged with following problematic tags: ('tag1', 'tag2', ...)]"` where the tags are the keys from `moderation_result.categories` whose value is `true`. Moderation flagging is treated as a normal processing outcome, not an error.
 
 ### Transcription
-- `ImageVisionProcessor` will use the bot's `image_transcription` tier to resolve an `ImageTranscriptionProvider` and call `await provider.transcribe_image(base64_image, mime_type)` to transcribe the actual image bytes (base64-encoded) into a message describing the image.
+- `ImageVisionProcessor` will use the bot's `image_transcription` tier to resolve an `ImageTranscriptionProvider` and call `await provider.transcribe_image(base64_image, mime_type)` to transcribe the actual image bytes (base64-encoded) into a message describing the image. The `feature_name` passed to `create_model_provider` for this call must be `"image_transcription"` to enable fine-grained token tracking and billing distinction from other media processing tasks.
 - The transcription prompt is hardcoded in the provider (no system message): *"Describe the contents of this image concisely in 1-3 sentences, if there is text in the image add the text inside image to description as well"*
+- **Error handling:** No custom error handling (`try/except`) should be added around `transcribe_image` within `ImageVisionProcessor`. All exceptions propagate up to `BaseMediaProcessor.process_job()`, which handles failures gracefully by logging the error, archiving the job to the failed collection, and returning the standard `[Media processing failed]` placeholder to the user. This maintains consistency with the existing `moderate_image` implementation.
 
 ### Output Format
 - The produced image transcript will be formatted and passed to the caller, arriving at the bot message queue as if it was a text message (using base media processor existing mechanism).
@@ -61,9 +62,9 @@ Every image processed by the media processing pipeline which arrives to the `Ima
 - `services/model_factory.py`
 - `services/resolver.py`
 - `routers/bot_management.py`
-- `scripts/migrate_image_transcription.py` *(new)*
-- `scripts/initialize_quota_and_bots.py` *(update for image_transcription token menu tier)*
-- `scripts/migrate_token_menu_image_transcription.py` *(new)*
+- `scripts/migrations/migrate_image_transcription.py` *(new)*
+- `scripts/migrations/initialize_quota_and_bots.py` *(update for image_transcription token menu tier)*
+- `scripts/migrations/migrate_token_menu_image_transcription.py` *(new)*
 - `global_configurations` *(token menu update for image transcription tier pricing)*
 - `utils/provider_utils.py`
 - `config_models.py`
@@ -90,14 +91,16 @@ class ImageTranscriptionProvider(ChatCompletionProvider, ABC):
         ...
 ```
 
-`create_model_provider` in `services/model_factory.py` keeps the existing `ChatCompletionProvider` tracking path: resolve provider -> call `get_llm()` -> attach `TokenTrackingCallback`. For the `ImageTranscriptionProvider` subtype specifically, the factory returns the provider object (not raw LLM) so callers can `await provider.transcribe_image(...)`; for regular chat providers, it continues returning the raw tracked LLM.
+`create_model_provider` in `services/model_factory.py` keeps the existing `ChatCompletionProvider` tracking path: resolve provider -> call `get_llm()` -> attach `TokenTrackingCallback`. For the `ImageTranscriptionProvider` subtype specifically, the factory returns the provider object (not raw LLM) so callers can `await provider.transcribe_image(...)`; for regular chat providers, it continues returning the raw tracked LLM. To ensure token tracking works correctly, `OpenAiChatProvider.get_llm()` must cache the `ChatOpenAI` instance on the provider object (`self._llm`) on first call and return the cached instance on subsequent calls. This guarantees the `TokenTrackingCallback` attached by the factory is present on the same LLM instance used by `transcribe_image`.
+
+`find_provider_class` in `utils/provider_utils.py` must include an `obj.__module__ == module.__name__` filter in its `inspect.getmembers` loop. This prevents imported concrete parent classes (e.g., `OpenAiChatProvider` imported into `openAiImageTranscription.py`) from being returned instead of the module's own provider class, since `inspect.getmembers` returns members alphabetically and would otherwise match the imported class first.
 
 ### 2) OpenAI Vision Parameter
-The provider reads the `detail` parameter from its `ImageTranscriptionProviderConfig` (default `"auto"`, see OpenAI docs on [Images and vision](https://developers.openai.com/api/docs/guides/images-vision?format=base64-encoded)). The `detail` parameter controls image tokenization fidelity (how many patches/tiles the image is broken into). Valid values: `"low"`, `"high"`, `"original"`, `"auto"`. It defaults to `"auto"` but is overridable per-bot through config.
+The provider reads the `detail` parameter from its `ImageTranscriptionProviderConfig` (default `"auto"`, see OpenAI docs on [Images and vision](https://developers.openai.com/api/docs/guides/images-vision?format=base64-encoded)). The `detail` parameter controls image tokenization fidelity (how many patches/tiles the image is broken into). Valid values: `"low"`, `"high"`, `"original"`, `"auto"`. It defaults to `"auto"` but is overridable per-bot through config. No validation is added for the `"original"` detail level against the configured model; if misconfigured with an unsupported model (e.g., `gpt-5-mini`), the resulting OpenAI API error will propagate through the standard implicit error handling path.
 
 ### 3) Deployment Checklist
-1. Add migration script `scripts/migrate_image_transcription.py` to iterate existing bot configs in MongoDB and add `config_data.configurations.llm_configs.image_transcription` where missing (following `migrate_image_moderation.py` pattern).
+1. Add migration script `scripts/migrations/migrate_image_transcription.py` to iterate existing bot configs in MongoDB and add `config_data.configurations.llm_configs.image_transcription` where missing (following `migrate_image_moderation.py` pattern).
 2. Extend `DefaultConfigurations` in `config_models.py` with `model_provider_name_image_transcription = "openAiImageTranscription"` (must match provider module name) and defaults for the image transcription model/settings.
 3. Update `get_bot_defaults` in `routers/bot_management.py` to include `image_transcription` in `LLMConfigurations` using `ImageTranscriptionProviderConfig` and `DefaultConfigurations`.
 4. Define `LLMConfigurations.image_transcription` with a `default_factory` that builds a complete `ImageTranscriptionProviderConfig` to avoid validation failures on stored configs that predate this tier.
-5. Update `scripts/initialize_quota_and_bots.py` so new deployments are initialized with the `image_transcription` token menu tier. Create `scripts/migrate_token_menu_image_transcription.py` to patch existing staging and production environments. Execute this migration script for existing deployments.
+5. Update `scripts/migrations/initialize_quota_and_bots.py` so new deployments are initialized with the `image_transcription` token menu tier. Create `scripts/migrations/migrate_token_menu_image_transcription.py` to patch existing staging and production environments. Execute this migration script for existing deployments.

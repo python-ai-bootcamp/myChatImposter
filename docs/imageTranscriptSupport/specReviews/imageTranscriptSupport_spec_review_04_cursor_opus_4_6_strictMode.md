@@ -106,7 +106,7 @@ This review focuses on **implementation-blocking gaps** that remain, primarily i
   Note: This bug does NOT affect the existing `openAiModeration.py` module because it only imports `ImageModerationProvider` (which has `@abstractmethod moderate_image` and is therefore filtered out by `inspect.isabstract`). The issue is specific to importing a **concrete** parent class.
 - **Status:** READY
 - **Required Actions:**
-  Adopt Option 1: Modify `utils/provider_utils.py`'s `find_provider_class` to look for an explicit `__provider_class__` module-level variable instead of relying on alphabetic inspection. Require all existing (`openAi.py`, `openAiModeration.py`) and future provider modules to define `__provider_class__` returning their concrete provider class.
+  Modify `utils/provider_utils.py`'s `find_provider_class` to add an `obj.__module__ == module.__name__` filter to the existing `inspect.getmembers` loop. This excludes imported classes (e.g., `OpenAiChatProvider` imported into `openAiImageTranscription.py`) because their `__module__` attribute points to their defining module, not the importing module. This fix is backward-compatible — no changes required to existing provider modules (`openAi.py`, `openAiModeration.py`).
 
 ---
 
