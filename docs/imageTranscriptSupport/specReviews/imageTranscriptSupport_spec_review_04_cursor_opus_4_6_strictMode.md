@@ -14,13 +14,13 @@ This review focuses on **implementation-blocking gaps** that remain, primarily i
 
 | Priority | ID | Title | Link | Status |
 |----------|----|-------|------|--------|
-| HIGH | ITS-15 | Token tracking silently fails — `get_llm()` creates fresh instances, factory-attached callbacks are lost | [Details](#its-15-token-tracking-silently-fails--get_llm-creates-fresh-instances-factory-attached-callbacks-are-lost) | PENDING |
-| HIGH | ITS-16 | `find_provider_class` may return `OpenAiChatProvider` instead of `OpenAiImageTranscriptionProvider` | [Details](#its-16-find_provider_class-may-return-openaichatprovider-instead-of-openaiimagetranscriptionprovider) | PENDING |
-| MEDIUM | ITS-17 | Migration/initialization script path references are inconsistent with actual file locations | [Details](#its-17-migrationinitialization-script-path-references-are-inconsistent-with-actual-file-locations) | PENDING |
-| MEDIUM | ITS-18 | Token menu `image_transcription` pricing values not specified | [Details](#its-18-token-menu-image_transcription-pricing-values-not-specified) | PENDING |
-| MEDIUM | ITS-19 | Error handling strategy for `transcribe_image` failures unspecified | [Details](#its-19-error-handling-strategy-for-transcribe_image-failures-unspecified) | PENDING |
-| LOW | ITS-20 | No validation or warning for `"original"` detail with incompatible models | [Details](#its-20-no-validation-or-warning-for-original-detail-with-incompatible-models) | PENDING |
-| LOW | ITS-21 | `feature_name` parameter value for transcription token tracking unspecified | [Details](#its-21-feature_name-parameter-value-for-transcription-token-tracking-unspecified) | PENDING |
+| HIGH | ITS-15 | Token tracking silently fails — `get_llm()` creates fresh instances, factory-attached callbacks are lost | [Details](#its-15-token-tracking-silently-fails--get_llm-creates-fresh-instances-factory-attached-callbacks-are-lost) | READY |
+| HIGH | ITS-16 | `find_provider_class` may return `OpenAiChatProvider` instead of `OpenAiImageTranscriptionProvider` | [Details](#its-16-find_provider_class-may-return-openaichatprovider-instead-of-openaiimagetranscriptionprovider) | READY |
+| MEDIUM | ITS-17 | Migration/initialization script path references are inconsistent with actual file locations | [Details](#its-17-migrationinitialization-script-path-references-are-inconsistent-with-actual-file-locations) | READY |
+| MEDIUM | ITS-18 | Token menu `image_transcription` pricing values not specified | [Details](#its-18-token-menu-image_transcription-pricing-values-not-specified) | READY |
+| MEDIUM | ITS-19 | Error handling strategy for `transcribe_image` failures unspecified | [Details](#its-19-error-handling-strategy-for-transcribe_image-failures-unspecified) | READY |
+| LOW | ITS-20 | No validation or warning for `"original"` detail with incompatible models | [Details](#its-20-no-validation-or-warning-for-original-detail-with-incompatible-models) | READY |
+| LOW | ITS-21 | `feature_name` parameter value for transcription token tracking unspecified | [Details](#its-21-feature_name-parameter-value-for-transcription-token-tracking-unspecified) | READY |
 
 ---
 
@@ -58,8 +58,9 @@ This review focuses on **implementation-blocking gaps** that remain, primarily i
   **Result:** Vision tokens consumed during image transcription are **never tracked**. `TokenConsumptionService.record_event` is never called. `QuotaService.calculate_cost` never runs. Users are not billed for potentially expensive vision API usage.
 
   This is not hypothetical — it follows directly from the existing `get_llm()` implementation pattern and the spec's factory design.
-- **Status:** PENDING
+- **Status:** READY
 - **Required Actions:**
+  Modify `OpenAiChatProvider.get_llm()` to construct and cache the `ChatOpenAI` instance on the provider object (`self._llm = ChatOpenAI(...)`) the first time it is called, and return the cached instance on subsequent calls. This ensures the instance that receives the `TokenTrackingCallback` in the factory is the exact same instance used by `transcribe_image`.
 
 ---
 
@@ -103,8 +104,9 @@ This review focuses on **implementation-blocking gaps** that remain, primarily i
   The provider instance would be an `OpenAiChatProvider` instead of `OpenAiImageTranscriptionProvider`. It would lack the `transcribe_image` method entirely, and the `isinstance(provider, ImageTranscriptionProvider)` check in the factory would fail, causing the factory to return a raw `BaseChatModel` — completely wrong behavior for image transcription.
 
   Note: This bug does NOT affect the existing `openAiModeration.py` module because it only imports `ImageModerationProvider` (which has `@abstractmethod moderate_image` and is therefore filtered out by `inspect.isabstract`). The issue is specific to importing a **concrete** parent class.
-- **Status:** PENDING
+- **Status:** READY
 - **Required Actions:**
+  Adopt Option 1: Modify `utils/provider_utils.py`'s `find_provider_class` to look for an explicit `__provider_class__` module-level variable instead of relying on alphabetic inspection. Require all existing (`openAi.py`, `openAiModeration.py`) and future provider modules to define `__provider_class__` returning their concrete provider class.
 
 ---
 
@@ -126,8 +128,9 @@ This review focuses on **implementation-blocking gaps** that remain, primarily i
   The project has two different locations for migration scripts: `scripts/` (root) and `scripts/migrations/`. The spec doesn't clarify which subdirectory the new scripts should reside in. An implementer following the `migrate_image_moderation.py` pattern would place new files in `scripts/`, but following `initialize_quota_and_bots.py` would place them in `scripts/migrations/`.
 
   Additionally, the path `scripts/initialize_quota_and_bots.py` in the spec would cause an implementer to look for a file that doesn't exist at that location.
-- **Status:** PENDING
+- **Status:** READY
 - **Required Actions:**
+  Adopt Option 2: Update the spec to standardize all migration scripts under the `scripts/migrations/` directory. Specifically, change references to create `scripts/migrations/migrate_image_transcription.py` and `scripts/migrations/migrate_token_menu_image_transcription.py`, and correct the path reference to update `scripts/migrations/initialize_quota_and_bots.py`.
 
 ---
 
@@ -165,9 +168,9 @@ This review focuses on **implementation-blocking gaps** that remain, primarily i
   Vision tokens on OpenAI have different pricing than text-only tokens and vary by model and `detail` level. The `image_transcription` tier defaults to `gpt-5-mini`, which uses patch-based tokenization with a 1.62× multiplier. The implementer would need to determine the correct per-1M-token rates for vision usage and may set them incorrectly without guidance.
 
   The spec should either provide concrete values or explicitly state that the pricing matches the `low` tier rates (since the default model is the same, `gpt-5-mini`, and vision tokens are billed at the same per-token rate as text tokens — just more tokens are consumed per image).
-- **Status:** PENDING
+- **Status:** READY
 - **Required Actions:**
-
+  Adopt Option 1: Update the spec to explicitly mandate that the `image_transcription` tier must be added as a completely distinct, independent entry in the `token_menu` global configuration (do not reuse the `low` tier). The specified pricing values for this new tier should match the default model rates: `input_tokens: 0.25`, `cached_input_tokens: 0.025`, and `output_tokens: 2.0`.
 ---
 
 ### ITS-19: Error handling strategy for `transcribe_image` failures unspecified
@@ -187,9 +190,9 @@ This review focuses on **implementation-blocking gaps** that remain, primarily i
   `ImageVisionProcessor.process_media` wraps the `transcribe_image` call in a try/except and returns a specific `ProcessingResult` like `ProcessingResult(content="[Image transcription failed]", failed_reason=str(e))`. This provides a more descriptive message and allows the processor to decide whether specific errors (e.g., content policy) should be treated differently.
 
   The existing `moderate_image` in `ImageVisionProcessor` follows Strategy A (no error handling — exceptions propagate). For consistency, Strategy A would be the natural choice. But the spec should confirm this, especially since transcription is a higher-latency operation (2-5s vs <1s for moderation) with different failure modes (e.g., the model might refuse to describe certain non-flagged-but-borderline images).
-- **Status:** PENDING
+- **Status:** READY
 - **Required Actions:**
-
+  Adopt Option 1: Update the spec to explicitly state that no custom error handling (`try/except`) should be added around `transcribe_image` within `ImageVisionProcessor`. By design, all exceptions must propagate up to `BaseMediaProcessor.process_job()`, which handles failures gracefully by logging the error, archiving the job to the failed collection, and returning the standard `[Media processing failed]` placeholder to the user. This maintains consistency with the existing `moderate_image` implementation.
 ---
 
 ### ITS-20: No validation or warning for `"original"` detail with incompatible models
@@ -210,8 +213,9 @@ This review focuses on **implementation-blocking gaps** that remain, primarily i
   - Whether the provider should silently fall back to `"auto"` for unsupported combinations
 
   This is low priority because: (a) the default is `"auto"`, (b) `"original"` requires explicit override by an admin user, and (c) the API error would propagate through the standard error handling path. But a validation note in the spec would prevent confusion.
-- **Status:** PENDING
+- **Status:** READY
 - **Required Actions:**
+  Adopt Option 3: Update the spec to explicitly state that no validation should be added for the `"original"` detail level against the configured model. If a database administrator misconfigures the system by combining `"original"` with an unsupported model (like `gpt-5-mini`), the resulting OpenAI API validation error will safely propagate through the standard implicit error handling strategy confirmed in ITS-19.
 
 ---
 
@@ -235,7 +239,8 @@ This review focuses on **implementation-blocking gaps** that remain, primarily i
   - `"image_transcription"` — enables finer-grained billing and usage analysis
 
   This affects the ability to distinguish image transcription costs from other media processing costs in billing reports and quota dashboards.
-- **Status:** PENDING
+- **Status:** READY
 - **Required Actions:**
+  Adopt Option 2: Update the `ImageVisionProcessor` section of the spec to specify that the `feature_name` string passed to `create_model_provider` during image transcription must be exactly `"image_transcription"`. This explicit string ensures fine-grained token tracking and billing reports can distinguish transcription costs from other potential media processing tasks.
 
 ---
