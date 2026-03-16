@@ -147,6 +147,23 @@ The spec is well-structured and incorporates feedback from prior reviews (detail
 
 - **Priority:** LOW
 - **ID:** ITS-32
+- **Title:** Shared OpenAI helper refactoring scope underspecified
+- **Detailed Description:**  
+  The spec states that "both OpenAI providers (`OpenAiChatProvider`, `OpenAiImageTranscriptionProvider`) must reuse a shared OpenAI helper layer (mixin/base) for API-key resolution, safe `ChatOpenAI` kwargs filtering, and cached `get_llm()` behavior."
+
+  The current `OpenAiChatProvider` has no such shared layer; API-key resolution and kwargs filtering are implemented directly in `_build_llm_params()`. The spec does not specify: (1) whether the existing `OpenAiChatProvider` must be refactored to use the shared layer, or (2) whether only `OpenAiImageTranscriptionProvider` must use it while `OpenAiChatProvider` remains unchanged. If only the new provider uses the helper, "both" is misleading. If both must use it, the refactoring scope for `OpenAiChatProvider` is significant and should be called out explicitly to avoid partial implementation.
+- **Status:** READY
+- **Required Actions:**  
+  Adopt the "Sibling Architecture" for provider separation. Define a centralized `OpenAiMixin` containing the shared OpenAI initialization logic (`_resolve_base_url`, kwargs filtering, API key handling). Specify that the new `OpenAiImageTranscriptionProvider` should inherit from `LLMProvider` and this `OpenAiMixin` to reuse the logic without duplicating it or creating an overly deep inheritance chain. Also, specify that `OpenAiChatCompletionProvider` must be refactored to use this same Mixin.
+
+---
+
+### ITS-33: config tier future dynamic resiliency
+
+- **Priority:** HIGH
+- **ID:** ITS-33
+- **Title:** config tier future dynamic resiliency
+- **Detailed Description:**  
   The current spec does not adequately protect the codebase from future configuration tier additions. Adding a tier requires touching a specific, disparate set of files, which is error-prone. To ensure future dynamic resiliency, the spec must mandate architectural comments and a frontend refactor.
 - **Status:** READY
 - **Required Actions:**  
