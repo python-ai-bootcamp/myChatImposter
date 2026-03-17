@@ -10,17 +10,19 @@ Every image processed by the media processing pipeline which arrives to the `Ima
 
 ### Configuration
 - `image_transcription` is added as a new per-bot tier in `LLMConfigurations` (alongside `high`, `low`, `image_moderation`), with defaults matching the `low` tier settings (same API-key source and chat settings), but the default model should use a new dedicated environment variable: `os.getenv("DEFAULT_MODEL_IMAGE_TRANSCRIPTION", "gpt-5-mini")`. The default provider module for this tier is `openAiImageTranscription`. Individual bots may override to any compatible chat model (e.g. `gpt-5`) through their config.
-- A new `ImageTranscriptionProviderConfig` extends `ChatCompletionProviderConfig` with an additional `detail: Literal["low", "high", "original", "auto"] = "auto"` field. The `LLMConfigurations.image_transcription` field type is `ImageTranscriptionProviderConfig`.
+- Create a new `ImageTranscriptionProviderSettings` class inheriting from `ChatCompletionProviderSettings`, adding the `detail: Literal["low", "high", "original", "auto"] = "auto"` field.
+- Modify `ImageTranscriptionProviderConfig` to extend `ChatCompletionProviderConfig` and redefine `provider_config: ImageTranscriptionProviderSettings`. The `LLMConfigurations.image_transcription` field type is `ImageTranscriptionProviderConfig`.
 - `ConfigTier` is updated to include `"image_transcription"`.
 - `resolve_model_config` in `services/resolver.py` returns `ImageTranscriptionProviderConfig` for the `"image_transcription"` tier.
 - `global_configurations.token_menu` is extended with an `"image_transcription"` pricing entry (as a distinct, independent tier — not reusing the `low` tier) so vision usage is tracked and priced under the correct tier. The pricing values are: `input_tokens: 0.25`, `cached_input_tokens: 0.025`, `output_tokens: 2.0` (matching the default model `gpt-5-mini` rates).
 - `get_configuration_schema` in `routers/bot_management.py` must dynamically extract the list of LLM configuration tiers using `LLMConfigurations.model_fields.keys()`. Refactor the code to iterate over this shared list rather than hardcoded values or raw model fields.
 
 ### Processing Flow
+- Add a new boolean field `unprocessable_media` (defaulting to `False`) to the `ProcessingResult` data model.
 - `ImageVisionProcessor` will first moderate the image (as it currently does)
 - After `moderation_result` is obtained:
   - If `moderation_result.flagged == false`: proceed to transcribe the image (see below)
-  - If `moderation_result.flagged == true`: return a clean placeholder (no `failed_reason`, no failure archival) with static content: `"[cannot process image as it violates safety guidelines]"`. Do not return the specific tags that were flagged. Moderation flagging is treated as a normal processing outcome, not an error. The `BaseMediaProcessor` will then naturally handle this as a regular successful transcription.
+  - If `moderation_result.flagged == true`: return a `ProcessingResult` where `unprocessable_media = True` with static content: `"cannot process image as it violates safety guidelines"`. Do not return the specific tags that were flagged. Moderation flagging is treated as a normal processing outcome, not an error. The `BaseMediaProcessor` will automatically format the content and append captions correctly.
 
 ### Transcription
 - `ImageVisionProcessor` will use the bot's `image_transcription` tier to resolve an `ImageTranscriptionProvider` and call `await provider.transcribe_image(base64_image, mime_type)` to transcribe the actual image bytes (base64-encoded) into a message describing the image. The `feature_name` passed to `create_model_provider` for this transcription call must be `"image_transcription"` (the second argument) to enable fine-grained token tracking. The moderation call should continue passing `"media_processing"` as its `feature_name`.
@@ -29,10 +31,12 @@ Every image processed by the media processing pipeline which arrives to the `Ima
   - If `response.content` is `str`: return it as-is.
   - If `response.content` is content blocks: extract text-bearing blocks in original order and concatenate into one deterministic string (single-space separator, trim outer whitespace).
   - If `response.content` is neither string nor content blocks: return `"[Unable to transcribe image content]"`.
-- **Error handling:** No custom error handling (`try/except`) should be added around `transcribe_image` within `ImageVisionProcessor`. All exceptions propagate up to `BaseMediaProcessor.process_job()`, which handles failures gracefully by logging the error, archiving the job to the failed collection, and returning the standard `[Media processing failed]` placeholder to the user. `BaseMediaProcessor` (specifically `_handle_unhandled_exception`) will be updated to ensure captions are appended even in failure scenarios.
+- **Error handling:** No custom error handling (`try/except`) should be added around `transcribe_image` within `ImageVisionProcessor`. All exceptions propagate up to `BaseMediaProcessor.process_job()`, which handles failures gracefully. The `asyncio.TimeoutError` exception block in `BaseMediaProcessor.process_job()` must return a `ProcessingResult` with `unprocessable_media=True` to preserve image captions during timeouts.
 
 ### Output Format
-- The produced image transcript will be formatted and passed to the caller, arriving at the bot message queue as if it was a text message. Caption formatting is **processor-specific**: `ImageVisionProcessor.process_media` returns the fully-formatted output including `[Attached image description: <transcription>]` and `[Image caption: <caption>]` (when caption exists). `BaseMediaProcessor.process_job` is **not** modified for caption logic. However, `BaseMediaProcessor._handle_unhandled_exception` **must** be updated: change it to append `\n[Image caption: <caption>]` to the failed content **only if** the original caption (from `job.placeholder_message.content`) is non-empty. This ensures captions are preserved even in crash scenarios.
+- The produced image transcript will be passed to the caller, arriving at the bot message queue as if it was a text message. Caption formatting is **centralized**. Remove the `caption: str` argument from the `process_media` signature in `BaseMediaProcessor` and update all subclass signatures to match. 
+- In `BaseMediaProcessor.process_job`, check if `result.unprocessable_media` is `True`. If so, automatically format the result content by wrapping it in brackets `[<content>]`. Additionally, regardless of processor type, if `result.unprocessable_media` is `True` AND a caption exists (`job.placeholder_message.content`), append `\n[Caption: <caption_text>]` to the result string.
+- Error Processors (`CorruptMediaProcessor`, `UnsupportedMediaProcessor`) must return a `ProcessingResult` with `unprocessable_media = True` and have their manual bracket wrapping and concatenation removed, returning only the base prefix.
 
 ## Relevant Background Information
 ### Project Files
@@ -76,49 +80,114 @@ We adopt a "Sibling Architecture" for providers to eliminate inheritance clashes
 ```mermaid
 classDiagram
     direction BT
+
+    %% Configuration Settings Hierarchy %%
+    class BaseModelProviderSettings {
+        +api_key_source
+        +api_key
+        +model
+    }
+
+    class ChatCompletionProviderSettings {
+        +temperature
+        +reasoning_effort
+        +seed
+        +record_llm_interactions
+    }
+    
+    class ImageTranscriptionProviderSettings {
+        +detail: Literal["low", "high", "original", "auto"]
+    }
+
+    ChatCompletionProviderSettings --|> BaseModelProviderSettings : inherits
+    ImageTranscriptionProviderSettings --|> ChatCompletionProviderSettings : inherits
+
+    %% Configuration Wrapper Hierarchy %%
+    class BaseModelProviderConfig {
+        +provider_name: str
+        +provider_config: BaseModelProviderSettings
+    }
+
+    class ChatCompletionProviderConfig {
+        +provider_config: ChatCompletionProviderSettings
+    }
+
+    class ImageTranscriptionProviderConfig {
+        +provider_config: ImageTranscriptionProviderSettings
+    }
+
+    ChatCompletionProviderConfig --|> BaseModelProviderConfig : inherits
+    ImageTranscriptionProviderConfig --|> ChatCompletionProviderConfig : inherits
+
+    %% Link Settings to Configs %%
+    BaseModelProviderConfig ..> BaseModelProviderSettings : contains
+    ChatCompletionProviderConfig ..> ChatCompletionProviderSettings : contains
+    ImageTranscriptionProviderConfig ..> ImageTranscriptionProviderSettings : contains
+
+    %% Provider Hierarchy %%
     class BaseModelProvider {
         <<Abstract>>
-        +config
+        +config: BaseModelProviderConfig
         +_resolve_api_key()
     }
+    
     class LLMProvider {
         <<Abstract>>
-        +get_llm() BaseChatModel*
+        +get_llm() BaseChatModel
     }
+
     class ChatCompletionProvider {
         <<Type Marker>>
     }
+
     class ImageTranscriptionProvider {
         <<Abstract>>
-        +transcribe_image(base64_image, mime_type) str*
+        +transcribe_image(base64_image, mime_type) str
     }
+
     class ImageModerationProvider {
         <<Abstract>>
-        +moderate_image(base64_image, mime_type)*
+        +moderate_image(base64_image, mime_type)
     }
+
     class OpenAiMixin {
         <<Mixin>>
-        +_build_llm_params()
+        +_build_llm_params() dict
     }
+
+    %% Concrete Providers %%
     class OpenAiChatProvider {
         +get_llm() ChatOpenAI
     }
+
     class OpenAiImageTranscriptionProvider {
         +get_llm() ChatOpenAI
-        +transcribe_image()
+        +transcribe_image(base64_image, mime_type) str
     }
+
     class OpenAiModerationProvider {
-        +moderate_image()
+        +moderate_image(base64_image, mime_type)
     }
-    LLMProvider --|> BaseModelProvider
-    ImageModerationProvider --|> BaseModelProvider
-    ChatCompletionProvider --|> LLMProvider
-    ImageTranscriptionProvider --|> LLMProvider
-    OpenAiChatProvider --|> ChatCompletionProvider
-    OpenAiChatProvider --|> OpenAiMixin
-    OpenAiImageTranscriptionProvider --|> ImageTranscriptionProvider
-    OpenAiImageTranscriptionProvider --|> OpenAiMixin
-    OpenAiModerationProvider --|> ImageModerationProvider
+
+    %% Provider Inheritance Lines %%
+    LLMProvider --|> BaseModelProvider : inherits
+    ImageModerationProvider --|> BaseModelProvider : inherits
+    
+    ChatCompletionProvider --|> LLMProvider : inherits
+    ImageTranscriptionProvider --|> LLMProvider : inherits
+
+    OpenAiChatProvider --|> ChatCompletionProvider : implements
+    OpenAiChatProvider --|> OpenAiMixin : uses
+    
+    OpenAiImageTranscriptionProvider --|> ImageTranscriptionProvider : implements
+    OpenAiImageTranscriptionProvider --|> OpenAiMixin : uses
+
+    OpenAiModerationProvider --|> ImageModerationProvider : implements
+    
+    %% Link Configs to Providers %%
+    ChatCompletionProvider ..> ChatCompletionProviderConfig : typed via
+    ImageTranscriptionProvider ..> ImageTranscriptionProviderConfig : typed via
+    ImageModerationProvider ..> BaseModelProviderConfig : typed via
 ```
 
 - Define a new abstract base class `LLMProvider` (or `BaseLLMProvider`) in `model_providers/base.py` that inherits from `BaseModelProvider` and declares the abstract `get_llm() -> BaseChatModel` method. Modify `ChatCompletionProvider` to inherit from `LLMProvider` instead of `BaseModelProvider` and become an empty type-marker class.
@@ -169,13 +238,13 @@ Both `OpenAiChatProvider` and `OpenAiImageTranscriptionProvider` must use constr
 `find_provider_class` in `utils/provider_utils.py` must include an `obj.__module__ == module.__name__` filter in its `inspect.getmembers` loop. This prevents imported concrete parent classes (e.g., `OpenAiChatProvider` imported into `openAiImageTranscription.py`) from being returned instead of the module's own provider class, since `inspect.getmembers` returns members alphabetically and would otherwise match the imported class first.
 
 ### 2) OpenAI Vision Parameter
-The provider reads the `detail` parameter from its `ImageTranscriptionProviderConfig` (default `"auto"`, see OpenAI docs on [Images and vision](https://developers.openai.com/api/docs/guides/images-vision?format=base64-encoded)). The `detail` parameter controls image tokenization fidelity (how many patches/tiles the image is broken into). Valid values: `"low"`, `"high"`, `"original"`, `"auto"`. It defaults to `"auto"` but is overridable per-bot through config. `detail` is transcription-only metadata and must never be forwarded into `ChatOpenAI(...)` constructor kwargs; it is used only when building the multimodal image payload in `transcribe_image(...)`. The decision to omit validation for the `"original"` detail level against the configured model is an **accepted, deliberate design choice**, and we explicitly do not want to add validation guards for it. If configured with an unsupported model (e.g., `gpt-5-mini` instead of `gpt-5.4`), the system accepts that the raw OpenAI API error will simply propagate and cause a failure through the standard implicit error handling path.
+The provider reads the `detail` parameter from its `ImageTranscriptionProviderSettings` (default `"auto"`, see OpenAI docs on [Images and vision](https://developers.openai.com/api/docs/guides/images-vision?format=base64-encoded)). The `detail` parameter controls image tokenization fidelity (how many patches/tiles the image is broken into). Valid values: `"low"`, `"high"`, `"original"`, `"auto"`. It defaults to `"auto"` but is overridable per-bot through config. `detail` is transcription-only metadata and must never be forwarded into `ChatOpenAI(...)` constructor kwargs; it is used only when building the multimodal image payload in `transcribe_image(...)`. The decision to omit validation for the `"original"` detail level against the configured model is an **accepted, deliberate design choice**, and we explicitly do not want to add validation guards for it. If configured with an unsupported model (e.g., `gpt-5-mini` instead of `gpt-5.4`), the system accepts that the raw OpenAI API error will simply propagate and cause a failure through the standard implicit error handling path.
 
 ### 3) Deployment Checklist
 1. Add migration script `scripts/migrations/migrate_image_transcription.py` to iterate existing bot configs in MongoDB and add `config_data.configurations.llm_configs.image_transcription` where missing (following existing migration patterns). This migration must target `infrastructure/db_schema.py::COLLECTION_BOT_CONFIGURATIONS`.
 2. Extend `DefaultConfigurations` in `config_models.py` with `model_provider_name_image_transcription = "openAiImageTranscription"` (must match provider module name) and defaults for the image transcription model/settings using `os.getenv("DEFAULT_MODEL_IMAGE_TRANSCRIPTION", "gpt-5-mini")`.
 3. Update `get_bot_defaults` in `routers/bot_management.py` to include `image_transcription` in `LLMConfigurations` using `ImageTranscriptionProviderConfig` and `DefaultConfigurations`.
-4. Define `LLMConfigurations.image_transcription` with a `default_factory` that builds a complete `ImageTranscriptionProviderConfig` to avoid validation failures on stored configs that predate this tier.
+4. Define `LLMConfigurations.image_transcription` as a strictly required field using `Field(...)` inside `LLMConfigurations` to keep it consistent with the other tiers. Rely solely on the database migration script (`migrate_image_transcription.py`) to backfill this data for old bots.
 5. Update `scripts/migrations/initialize_quota_and_bots.py` to include the `image_transcription` tier dict in `token_menu`, and change its logic from skip-if-exists to completely overwrite/upsert to match migration behavior. Create `scripts/migrations/migrate_token_menu_image_transcription.py` to patch existing staging and production environments. This script should completely delete any existing `token_menu` document and re-insert the full correct menu from scratch (including `image_transcription`), acting as a hard reset. Also add self-healing startup logic: Update `QuotaService.load_token_menu()` (`services/quota_service.py`) to automatically insert a default `token_menu` document (including all 3 tiers) into the global config collection if it is missing, instead of just logging an error.
 6. Migration contract: all migration scripts for this feature must import and use `infrastructure/db_schema.py` constants (no hardcoded collection names).
 7. Verification checklist for rollout:
