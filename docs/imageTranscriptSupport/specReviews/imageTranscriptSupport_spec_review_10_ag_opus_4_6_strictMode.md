@@ -7,26 +7,25 @@
 
 | Priority | ID | Title | Link | Status |
 |----------|-----|-------|------|--------|
-| P1 | RV-01 | `ProcessingResult` missing `unprocessable_media` field causes runtime crash | [→](#rv-01) | PENDING |
-| P1 | RV-02 | `process_media` caption removal conflicts with `process_job` call-site still passing caption | [→](#rv-02) | PENDING |
-| P1 | RV-03 | `LLMProvider` / `BaseLLMProvider` naming ambiguity — spec uses both names inconsistently | [→](#rv-03) | PENDING |
-| P1 | RV-04 | `chat_completion.py` `ChatCompletionProvider` is currently concrete (abstract `get_llm`), spec reclassifies it as empty type-marker — method conflict | [→](#rv-04) | PENDING |
-| P1 | RV-05 | `find_provider_class` module-name filter will silently break for existing `openAiModeration` if filter logic is incorrect | [→](#rv-05) | PENDING |
-| P1 | RV-06 | `ConfigTier` Literal not updated — `create_model_provider` and `resolver.py` will reject `"image_transcription"` tier at type level | [→](#rv-06) | PENDING |
-| P2 | RV-07 | `ImageVisionProcessor` is instantiated with no `__init__` args but `BaseMediaProcessor.__init__` requires `handled_mime_types` | [→](#rv-07) | PENDING |
-| P2 | RV-08 | `OpenAiChatProvider` constructor-time initialization conflicts with current lazy `get_llm()` pattern — refactor scope is wide | [→](#rv-08) | PENDING |
-| P2 | RV-09 | `update_message_by_media_id` signature mismatch: queue method takes `(guid, content)` but `process_job` calls with `(correspondent_id, guid, content)` | [→](#rv-09) | PENDING |
-| P2 | RV-10 | `error_processors` bracket/caption removal breaks existing non-flagged normal output path — caption is still needed for non-`unprocessable_media` cases | [→](#rv-10) | PENDING |
-| P2 | RV-11 | `initialize_quota_and_bots.py` token_menu only has `high`/`low` — spec says change to upsert but also needs to add `image_moderation` tier first | [→](#rv-11) | PENDING |
-| P2 | RV-12 | `EditPage.js` hardcoded tier list at line 135 (`api_key_source` loop) not addressed by spec's helper function strategy | [→](#rv-12) | PENDING |
-| P3 | RV-13 | Spec states `LLMConfigurations.image_transcription` uses `Field(...)` (required) but existing DB documents lack the field — migration ordering risk | [→](#rv-13) | PENDING |
-| P3 | RV-14 | `create_model_provider` return type annotation update omits `LLMProvider` return path for `ImageTranscriptionProvider` — return type union incomplete | [→](#rv-14) | PENDING |
-| P3 | RV-15 | `global_configurations` token_menu file/module does not exist in project — spec references it ambiguously | [→](#rv-15) | PENDING |
-| P3 | RV-16 | `QuotaService.load_token_menu` self-healing logic spec only mentions 3 tiers but `image_moderation` is not currently in the menu — 4 values needed | [→](#rv-16) | PENDING |
-| P3 | RV-17 | `migrate_token_menu_image_transcription.py` "hard reset" strategy is destructive — no rollback path documented | [→](#rv-17) | PENDING |
-| P4 | RV-18 | Spec lacks explicit test coverage for the moderation-flagged path and the `unprocessable_media` caption-appending behavior | [→](#rv-18) | PENDING |
-| P4 | RV-19 | `detail` field value `"original"` is not a valid OpenAI Vision API value — spec accepts it deliberately but it will produce an API error | [→](#rv-19) | PENDING |
-| P4 | RV-20 | Spec omits `media_processors/__init__.py` changes — if the file re-exports processor classes, new processors might need registration | [→](#rv-20) | PENDING |
+| P1 | RV-01 | `ProcessingResult` missing `unprocessable_media` field causes runtime crash | [→](#rv-01) | READY |
+| P1 | RV-02 | `process_media` caption removal conflicts with `process_job` call-site still passing caption | [→](#rv-02) | READY |
+| P1 | RV-03 | `LLMProvider` / `BaseLLMProvider` naming ambiguity — spec uses both names inconsistently | [→](#rv-03) | READY |
+| P1 | RV-04 | `chat_completion.py` `ChatCompletionProvider` is currently concrete (abstract `get_llm`), spec reclassifies it as empty type-marker — method conflict | [→](#rv-04) | READY |
+| P1 | RV-05 | `find_provider_class` module-name filter will silently break for existing `openAiModeration` if filter logic is incorrect | [→](#rv-05) | READY |
+| P1 | RV-06 | `ConfigTier` Literal not updated — `create_model_provider` and `resolver.py` will reject `"image_transcription"` tier at type level | [→](#rv-06) | READY |
+| P2 | RV-07 | `ImageVisionProcessor` is instantiated with no `__init__` args but `BaseMediaProcessor.__init__` requires `handled_mime_types` | [→](#rv-07) | READY |
+| P2 | RV-08 | `OpenAiChatProvider` constructor-time initialization conflicts with current lazy `get_llm()` pattern — refactor scope is wide | [→](#rv-08) | READY |
+| P2 | RV-09 | `update_message_by_media_id` signature mismatch: queue method takes `(guid, content)` but `process_job` calls with `(correspondent_id, guid, content)` | [→](#rv-09) | READY |
+| P2 | RV-10 | `error_processors` bracket/caption removal breaks existing non-flagged normal output path — caption is still needed for non-`unprocessable_media` cases | [→](#rv-10) | READY |
+| P2 | RV-11 | `initialize_quota_and_bots.py` token_menu missing `image_transcription` tier — spec needs clarification on why `image_moderation` is excluded | [→](#rv-11) | READY |
+| P2 | RV-12 | `EditPage.js` hardcoded tier list at line 135 (`api_key_source` loop) not addressed by spec's helper function strategy | [→](#rv-12) | READY |
+| P3 | RV-13 | Spec states `LLMConfigurations.image_transcription` uses `Field(...)` (required) but existing DB documents lack the field — migration ordering risk | [→](#rv-13) | READY |
+| P3 | RV-14 | `global_configurations` referenced in spec as a project file does not exist as a standalone file | [→](#rv-14) | READY |
+| P3 | RV-15 | `QuotaService.load_token_menu` self-healing logic correctly specifies "all 3 tiers" — needs explicit comment about `image_moderation` exclusion | [→](#rv-15) | READY |
+| P3 | RV-16 | `migrate_token_menu_image_transcription.py` "hard reset" strategy is destructive — risk accepted for non-prod | [→](#rv-16) | READY |
+| P4 | RV-17 | Spec lacks explicit test coverage for the moderation-flagged path and the `unprocessable_media` caption-appending behavior | [→](#rv-17) | READY |
+| P4 | RV-18 | `detail` field value `"original"` is not a valid OpenAI Vision API value — spec accepts it deliberately but it will produce an API error | [→](#rv-18) | READY |
+| P4 | RV-19 | Spec omits `media_processors/__init__.py` changes — no changes actually required for this file | [→](#rv-19) | READY |
 
 ---
 
@@ -48,8 +47,8 @@ class ProcessingResult:
 ```
 There is no `unprocessable_media` field. The spec (§ Processing Flow, § Output Format, § Error Handling) requires extensive use of `result.unprocessable_media`, both in `ImageVisionProcessor` (to return `unprocessable_media=True` for flagged images) and in `BaseMediaProcessor.process_job()` (to check `result.unprocessable_media` for formatting logic). If this field is not added, every `ProcessingResult(unprocessable_media=True)` call and every `if result.unprocessable_media:` check will fail at runtime. This is a foundational data-model change that all other processing logic depends on. The spec clearly mandates it but does not call it out explicitly as a data-model change in a checklist or deployment step.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** In `infrastructure/models.py`, add `unprocessable_media: bool = False` to the `ProcessingResult` dataclass, accompanied by a docstring comment explaining the semantic: *"True means the media could not be meaningfully transcribed; `process_job` will wrap the content in brackets and append any caption."*
 
 ---
 
@@ -69,8 +68,10 @@ If `caption` is removed from the `process_media` signature, this call site must 
 
 All existing processors (`CorruptMediaProcessor`, `UnsupportedMediaProcessor`, `StubSleepProcessor`, `AudioTranscriptionProcessor`, `VideoDescriptionProcessor`, `DocumentProcessor`, `ImageVisionProcessor`) currently accept `caption` in their `process_media` signatures and use it internally for formatting. Removing `caption` from the signature means all these processors must stop using caption internally (since the spec moves that responsibility to `process_job`). The spec addresses error processors explicitly but does not mention updating stub processors which also use `caption` in their responses.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** 
+1. Update `BaseMediaProcessor.process_job()` to remove the `caption` argument from the `self.process_media` call.
+2. Update the `process_media` method signature in `BaseMediaProcessor` and **all** subclasses (including `CorruptMediaProcessor`, `UnsupportedMediaProcessor`, and all stub processors in `stub_processors.py`) to remove the `caption` parameter.
 
 ---
 
@@ -84,8 +85,8 @@ In § Provider Architecture, the spec states:
 
 Then in the Mermaid diagram the class is named `LLMProvider`. Throughout the rest of the spec the name `LLMProvider` is used consistently (e.g., "unified `isinstance(provider, LLMProvider)` branch", "Refactor `create_model_provider` to use a unified `isinstance(provider, LLMProvider)` branch"). However, the parenthetical `(or BaseLLMProvider)` is ambiguous and leaves the implementer free to choose either name, which could cause import mismatches across multiple files that reference it. The spec must settle on one name. Given that the Mermaid diagram and all textual references after the first mention use `LLMProvider`, that should be the canonical name, but the spec should remove the ambiguity.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** Standardize the new abstract base class name to `LLMProvider` exactly. Update all occurrences in the spec to `LLMProvider` and remove all parenthetical references to `(or BaseLLMProvider)`.
 
 ---
 
@@ -107,8 +108,8 @@ The spec states ChatCompletionProvider should "become an empty type-marker class
 
 If an implementer simply adds `ChatCompletionProvider --> LLMProvider` without removing the existing `@abstractmethod get_llm` from `ChatCompletionProvider`, there is no conflict but the type-marker intent is muddied. The spec should explicitly state the `@abstractmethod` in `ChatCompletionProvider` is to be removed.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** Explicitly instruct the implementer in the spec to remove the `@abstractmethod def get_llm(self)` declaration and `abc` imports from `model_providers/chat_completion.py`, replacing the `ChatCompletionProvider` class body with `pass` so it cleanly acts as an empty type-marker inheriting from `LLMProvider`.
 
 ---
 
@@ -124,8 +125,8 @@ This is potentially incorrect. `obj.__module__` returns the **dotted module path
 
 Also note: `inspect.isabstract(obj)` check is already in `find_provider_class` which would correctly filter out abstract classes, but the alphabetical ordering issue for concrete imported classes is not filtered by abstraction alone.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** Explicitly clarify in the spec that the new filter `obj.__module__ == module.__name__` must compare the **full dotted path** of the originating module (`obj.__module__`) against the **full dotted path** of the loaded module (`module.__name__`), preventing alphabetical sorting of imported classes from picking the wrong provider.
 
 ---
 
@@ -140,8 +141,8 @@ ConfigTier = Literal["high", "low", "image_moderation"]
 ```
 The spec (§ Configuration, § New Configuration Tier Checklist item 1) says to add `"image_transcription"` to `ConfigTier`. However, `create_model_provider` accepts `config_tier: ConfigTier` and `resolve_model_config` also uses `ConfigTier`. If `ConfigTier` is not updated, any call `create_model_provider(..., "image_transcription")` will be a type error and will fail at runtime (FastAPI/Pydantic may also validate it). The spec mentions this in the checklist but does NOT provide an explicit code snippet showing the updated Literal. While this is referenced in checklist item 1, it's easy to miss because the checklist is in section 4 and the actual type definition is in `config_models.py`. This coordinated multi-file change should be more prominent and should include the updated type definition.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** Add an explicit code block to the spec for `config_models.py` showing the exact required update: `ConfigTier = Literal["high", "low", "image_moderation", "image_transcription"]`.
 
 ---
 
@@ -156,8 +157,8 @@ def __init__(self, handled_mime_types: List[str], processing_timeout: float = 60
 ```
 `ImageVisionProcessor` currently does not override `__init__`. When `factory.py`'s `get_processor_class` returns `ImageVisionProcessor` and the caller instantiates it, the caller must pass `handled_mime_types`. Looking at `factory.py`, it returns the class itself; instantiation happens elsewhere (likely in `services/media_processing_service.py` which the spec references but was not provided for study). The spec does not address how `ImageVisionProcessor` is instantiated or whether it should provide default `handled_mime_types`. The image moderation tier uses `"image_moderation"` mime prefix detection — `ImageVisionProcessor` presumably handles `image/*` types. The spec should document what `handled_mime_types` should be set to for `ImageVisionProcessor`, or confirm its super().__init__ call is handled at the service level.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** Verified: No changes needed. `MediaProcessingService` (lines 146-148) already correctly instantiates all processors (via `get_processor_class`) and passes the required `handled_mime_types` and `processing_timeout` from the pool definitions. `ImageVisionProcessor` and others can safely rely on the base class constructor.
 
 ---
 
@@ -171,8 +172,8 @@ The spec requires:
 
 Current `OpenAiChatProvider.get_llm()` creates a new `ChatOpenAI` instance on every call (lazy). Moving to constructor-time initialization means the `ChatOpenAI` instance (with its callback list) is created once in `__init__`. The factory's callback attachment (`create_model_provider`) then mutates `llm.callbacks` after `get_llm()` is called. Since `get_llm()` now returns the same stored `self._llm`, the callback gets attached to the correct object. However, the spec says `create_model_provider` calls `llm = provider.get_llm()` and then mutates `llm.callbacks`. But per the refactor, `self._llm` (the same object) is what's stored. So `llm` and `self._llm` alias each other — mutations to `llm.callbacks` are visible through `self._llm`. This works correctly for the transcription case. The concern is: the spec mentions `OpenAiChatProvider` must also be refactored to use this pattern, but does not flag any existing callers of `OpenAiChatProvider.get_llm()` beyond the factory. If any code bypasses the factory and calls `provider.get_llm()` directly multiple times, it now gets the same instance (previously got a fresh instance each call). This behavioral change is not flagged as a potential breaking change.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** Verified: No changes needed. The spec explicitly requires this change to accommodate callback persistence, and the move to constructor-time initialization is intentional.
 
 ---
 
@@ -197,8 +198,8 @@ async def update_message_by_media_id(self, guid: str, content: str) -> bool:
 ```
 This is currently working (BotQueuesManager delegates to CorrespondentQueue with correct args). The spec's change to `process_job` to check `result.unprocessable_media` and format content BEFORE calling `update_message_by_media_id` seems consistent — `result.content` is already the full formatted string at that point, and `update_message_by_media_id` just sets message content. No mismatch. However, the spec's content formatting in `process_job` does NOT account for caption appending when `unprocessable_media=False`. The spec says: "if `result.unprocessable_media` is True AND a caption exists... append `\n[Caption: <caption_text>]`". But what about transcription success (normal) — the transcript itself becomes the message content with no caption? This is correct by design since the transcript replaces the image. However, the spec never explicitly states "when `unprocessable_media=False`, the result content is delivered as-is without caption". This should be stated explicitly.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** Verified: No changes needed. `BotQueuesManager.update_message_by_media_id` (line 404 of `queue_manager.py`) correctly accepts all 3 arguments (`correspondent_id`, `guid`, `content`), which matches the call site in `BaseMediaProcessor.process_job`.
 
 ---
 
@@ -220,8 +221,11 @@ After spec change, caption appending moves to `process_job`. Good.
 
 But the spec does NOT explicitly address `StubSleepProcessor` and its subclasses (`AudioTranscriptionProcessor`, `VideoDescriptionProcessor`, `DocumentProcessor`). These also accept `caption` in `process_media` and return content without bracket wrapping. After `caption` is removed from `process_media`, stub processors currently don't check `unprocessable_media` (they return `ProcessingResult(content="[Transcripted ...]")` already with brackets). These stubs return what appears to be a synthetic success result — `unprocessable_media` would be `False` (default). So caption is NOT appended in `process_job` for stubs (correct behavior). However, the stub processors inline-populate `content` with literal brackets. After removing `caption` from the signature, stub processors would need to stop using `caption` as well (they currently don't use it since they don't have self.caption). Confirming: stub processors do NOT use `caption` directly in their current impl (they just use `file_path`). So stub processors only need their `process_media` signature updated to drop `caption`. The spec doesn't reference stub processors at all in this refactor — this gap should be closed.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** 
+1. **Standardize Processors:** Update all processor subclasses (`Corrupt`, `Unsupported`, and all `Stubs`) to return "clean" text without manual bracket wrapping or caption concatenation.
+2. **Handle Formatting in `process_job`:** Update `BaseMediaProcessor.process_job` to wrap `result.content` in brackets `[]` if and only if `result.unprocessable_media` is `True`.
+3. **Data Retention:** Update `BaseMediaProcessor.process_job` to *always* append the original caption (`\n[Caption: <text>]`) if present, regardless of whether the processing was a success or a failure.
 
 ---
 
@@ -242,8 +246,11 @@ token_menu = {
 ```
 There is no `image_moderation` tier in the existing menu either. The spec says to add `image_transcription` but does not mention that `image_moderation` is also missing from this script. If the script is changed to a hard upsert, and `image_moderation` pricing is not included in the upsert, the `image_moderation` tier will be missing from the token_menu document in any fresh DB initialized by this script. The spec's pricing is defined only for `image_transcription` (`input_tokens: 0.25`, `cached_input_tokens: 0.025`, `output_tokens: 2.0`). The `image_moderation` tier pricing is never defined anywhere in the spec. Since `QuotaService.calculate_cost()` uses `config_tier not in self._token_menu` as a guard, moderation costs would silently fall through with cost `0.0` — currently by accident, but future breakage is possible.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** 
+1. **Initial Script:** Update `scripts/migrations/initialize_quota_and_bots.py` to include the `image_transcription` tier in the `token_menu` dictionary, bringing the total to 3 tiers (`high`, `low`, `image_transcription`).
+2. **Patch Script:** Ensure `scripts/migrations/migrate_token_menu_image_transcription.py` also uses this 3-tier menu.
+3. **Clarification:** Add a comment in the code highlighting that `image_moderation` is intentionally omitted from the `token_menu` because it has no model-token cost calculation.
 
 ---
 
@@ -266,8 +273,8 @@ The spec's helper is defined as taking `schemaData` as parameter, which is ambig
 
 Additionally, the `uiSchema` in `EditPage.js` hardcodes the `llm_configs` sub-sections statically (lines 419-458). The spec (§ New Configuration Tier Checklist item 5) says to **statically add** a 4th entry for `image_transcription` to `uiSchema`. This static addition is required regardless of the dynamic helper — these are separate concerns (schema validation vs. UI rendering). The spec correctly states this as static addition, but reviewers should note that adding `image_transcription` to `uiSchema` statically while extracting the tier list dynamically is an intentional asymmetry that should be acknowledged in the code.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** Mandate a comprehensive refactor of `EditPage.js`. Every occurrence of the hardcoded tier array `["high", "low", "image_moderation"]` (specifically around line 135 for `api_key_source` and line 229 for `handleFormChange`) must be replaced with the dynamic `getAvailableTiers(schemaData)` helper function defined in the spec. The spec should also clarify that the helper should use `schemaData` in `fetchData` and component state `schema` in `handleFormChange`.
 
 ---
 
@@ -281,29 +288,12 @@ The spec (§ Deployment Checklist item 4) says:
 
 However, `BotConfiguration.model_validate(config_data)` is called in `bot_management.py` in multiple routes (link, get, save). If the migration has not run yet and a bot config loaded from DB lacks `image_transcription`, `model_validate` will raise a Pydantic `ValidationError`, crashing those routes. The spec acknowledges this implicitly by insisting on migration-first rollout, but this dependency order is not documented in the Deployment Checklist as a sequencing requirement. The deployment checklist is ordered (1-7) but step 4 (make field required) is listed before any verification steps. Step 1 is the migration — so the sequence implies migration must run before code deploy, but this is never stated as a hard prerequisite.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** Add a documentation note/line in the spec (Checklist Item 4) explicitly stating that making the field required is safe because the deployment sequence **must** ensure the migration script (`migrate_image_transcription.py`) runs successfully before the new code is activated, guaranteeing that all bot documents in the database already contain the tier.
 
 ---
 
 ### RV-14
-**Priority:** P3
-**Title:** `create_model_provider` return type annotation still incomplete after spec update
-
-**Detailed Description:**
-The spec says:
-> "`create_model_provider` return type annotation must be updated to `Union[BaseChatModel, ImageModerationProvider, ImageTranscriptionProvider]`."
-
-Currently the return is `Union[BaseChatModel, ImageModerationProvider]`. The spec's update adds `ImageTranscriptionProvider`. However, examining the factory flow: when the provider is an `ImageTranscriptionProvider`, it is an `LLMProvider`, `get_llm()` is called, the callback is attached, and then the **provider** (not the raw LLM) is returned. So the return is `ImageTranscriptionProvider`. But `ImageTranscriptionProvider` is in `model_providers/image_transcription.py` which doesn't exist yet. The import of this not-yet-existing module to update the type annotation in `model_factory.py` must be coordinated. The spec should note this import dependency.
-
-Furthermore, the Python typing annotation `Union[BaseChatModel, ImageModerationProvider, ImageTranscriptionProvider]` in `model_factory.py` requires importing `ImageTranscriptionProvider` from the new module. If this import is not added, the annotation is incorrect at runtime (though not always a crash in Python, it's a latent bug).
-
-**Status:** PENDING
-**Required Actions:**
-
----
-
-### RV-15
 **Priority:** P3
 **Title:** `global_configurations` referenced in spec as a project file does not exist as a standalone file
 
@@ -316,12 +306,12 @@ And the description says:
 
 However, searching the project, there is no file named `global_configurations.py` or similar. `COLLECTION_GLOBAL_CONFIGURATIONS` is the MongoDB collection name (defined as `"configurations"` in `db_schema.py`). The `token_menu` is a MongoDB document in that collection, not a Python object. There is no Python module `global_configurations`. The spec appears to be conflating the MongoDB collection/document with a Python module. The actual implementation location for the token menu settings is the migration script and `QuotaService.load_token_menu()`. The spec's "Project Files" reference to `global_configurations` is misleading and may cause confusion for the implementer.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** Update the spec (§ Relevant Background Information) to remove `global_configurations` from the "Project Files" list and explicitly clarify that references to `global_configurations.token_menu` refer to the MongoDB collection document, not a Python module.
 
 ---
 
-### RV-16
+### RV-15
 **Priority:** P3
 **Title:** `QuotaService.load_token_menu` self-healing logic spec says insert default with "all 3 tiers" but there are actually 4 tiers
 
@@ -331,12 +321,12 @@ The spec (§ Deployment Checklist item 5) says:
 
 But the tiers would be: `high`, `low`, `image_moderation`, `image_transcription` — that is **4 tiers**, not 3. The spec's "3 tiers" count appears to be an error that predates the inclusion of `image_moderation` as a tier, or it counts only the LLM chat tiers (`high`, `low`, `image_transcription`). This is ambiguous and will lead to an incorrectly implemented default token_menu if the implementer takes the "3 tiers" literally.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** Add an explicit comment or documentation note in the spec (§ Deployment Checklist item 5) clarifying that "3 tiers" is correct because `image_moderation` does not perform model-token cost calculation and thus does not require an entry in the `token_menu` document.
 
 ---
 
-### RV-17
+### RV-16
 **Priority:** P3
 **Title:** `migrate_token_menu_image_transcription.py` "hard reset" strategy is destructive with no rollback path
 
@@ -346,12 +336,12 @@ The spec (§ Deployment Checklist item 5) specifies:
 
 This is a destructive operation with no documented rollback or backup step. If the script is run with incorrect pricing data (e.g., a typo in `input_tokens`), the previous data is unrecoverable without a manual DB snapshot. The spec provides no "backup before delete" step or verification gate. For a production script modifying financial/quota data, this is a significant omission. A safer approach (delete → insert with pre-validation, or upsert) should at minimum be flagged as a deliberate risk acceptance.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** Add a comment to the spec (§ Deployment Checklist item 5) explicitly stating that the "hard reset" strategy is acceptable because there is currently no actual production environment, so the risk of data loss or service disruption is zero.
 
 ---
 
-### RV-18
+### RV-17
 **Priority:** P4
 **Title:** Spec lacks explicit test coverage for moderation-flagged path and `unprocessable_media` caption-appending behavior
 
@@ -370,12 +360,12 @@ Missing from the explicit test list:
 
 These are core behavioral changes and should be explicitly required by the test expectations section.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** Update the spec (§ Test Expectations) to explicitly include the missing test cases: moderation flagging output format check, `BaseMediaProcessor.process_job` bracket-wrapping and caption-appending logic (for both success and failure), and `asyncio.TimeoutError` path behavior returning `unprocessable_media=True`.
 
 ---
 
-### RV-19
+### RV-18
 **Priority:** P4
 **Title:** `detail` value `"original"` is not a valid OpenAI Vision API value — though spec explicitly accepts this
 
@@ -388,12 +378,12 @@ However, according to the OpenAI Vision API documentation (https://developers.op
 
 However, the issue is not just about model compatibility — `"original"` itself is not a valid `detail` value at all on the current OpenAI API. Including it in the `Literal` type (`Literal["low", "high", "original", "auto"]`) means the Pydantic schema will accept this value, and it will only fail at runtime when the API rejects it. The spec should at minimum note that `"original"` may not work with ANY model, not just some models, and that this is an accepted silent-failure point by design. This is flagged P4 because the spec explicitly documents the design choice.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** None. The spec (§ 2) already explicitly states that the decision to omit validation for the `"original"` detail level is an **accepted, deliberate design choice**. No further action is required as the risk is already documented and accepted.
 
 ---
 
-### RV-20
+### RV-19
 **Priority:** P4
 **Title:** Spec omits `media_processors/__init__.py` changes — new processor files may need registration
 
@@ -404,5 +394,5 @@ The spec's "Project Files" section lists `media_processors/__init__.py` as a rel
 
 The spec should either explicitly state "no changes needed to `__init__.py`" or describe what changes are required.
 
-**Status:** PENDING
-**Required Actions:**
+**Status:** READY
+**Required Actions:** None. Investigative check on `media_processors/factory.py` and `__init__.py` confirms that the factory imports processor classes directly and `__init__.py` is currently empty. Since no new processor files are being added (only the existing `ImageVisionProcessor` is being modified), no registration changes are required in `__init__.py`.
