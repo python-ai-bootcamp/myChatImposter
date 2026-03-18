@@ -14,6 +14,7 @@ Every image processed by the media processing pipeline which arrives to the `Ima
 - Modify `ImageTranscriptionProviderConfig` to extend `ChatCompletionProviderConfig` and redefine `provider_config: ImageTranscriptionProviderSettings`. The `LLMConfigurations.image_transcription` field type is `ImageTranscriptionProviderConfig`.
 - `ConfigTier` is updated to include `"image_transcription"`.
 - `resolve_model_config` in `services/resolver.py` returns `ImageTranscriptionProviderConfig` for the `"image_transcription"` tier.
+- Create a new resolving function `resolve_bot_language(bot_id: str) -> str` inside `services/resolver.py` that fetches the `language_code` originating from the bot's `UserDetails` configuration.
 - `global_configurations.token_menu` is extended with an `"image_transcription"` pricing entry (as a distinct, independent tier — not reusing the `low` tier) so vision usage is tracked and priced under the correct tier. The pricing values are: `input_tokens: 0.25`, `cached_input_tokens: 0.025`, `output_tokens: 2.0` (matching the default model `gpt-5-mini` rates).
 - `get_configuration_schema` in `routers/bot_management.py` must dynamically extract the list of LLM configuration tiers using `LLMConfigurations.model_fields.keys()`. Refactor the code to iterate over this shared list rather than hardcoded values or raw model fields.
 
@@ -25,8 +26,8 @@ Every image processed by the media processing pipeline which arrives to the `Ima
   - If `moderation_result.flagged == true`: return a `ProcessingResult` where `unprocessable_media = True` with static content: `"cannot process image as it violates safety guidelines"`. Do not return the specific tags that were flagged. Moderation flagging is treated as a normal processing outcome, not an error. The `BaseMediaProcessor` will automatically format the content and append captions correctly.
 
 ### Transcription
-- `ImageVisionProcessor` will use the bot's `image_transcription` tier to resolve an `ImageTranscriptionProvider` and call `await provider.transcribe_image(base64_image, mime_type)` to transcribe the actual image bytes (base64-encoded) into a message describing the image. The `feature_name` passed to `create_model_provider` for this transcription call must be `"image_transcription"` (the second argument) to enable fine-grained token tracking. The moderation call should continue passing `"media_processing"` as its `feature_name`.
-- The transcription prompt is hardcoded in the provider (no system message): *"Describe the contents of this image concisely in 1-3 sentences, if there is text in the image add the text inside image to description as well"*
+- `ImageVisionProcessor` will explicitly retrieve the bot's configured language by calling `resolve_bot_language(bot_id)`. It will then use the bot's `image_transcription` tier to resolve an `ImageTranscriptionProvider` and call `await provider.transcribe_image(base64_image, mime_type, language_code)` to transcribe the actual image bytes (base64-encoded) into a message describing the image. The `feature_name` passed to `create_model_provider` for this transcription call must be `"image_transcription"` (the second argument) to enable fine-grained token tracking. The moderation call should continue passing `"media_processing"` as its `feature_name`.
+- The transcription prompt is hardcoded in the provider (no system message) but injects the requested `language_code`: *"Describe the contents of this image explicitly in the following language: {language_code}, and concisely in 1-3 sentences. If there is text in the image, add the text inside image to description as well."*
 - Transcription response normalization contract (must always produce a plain string):
   - If `response.content` is `str`: return it as-is.
   - If `response.content` is content blocks: extract text-bearing blocks in original order and concatenate into one deterministic string (single-space separator, trim outer whitespace).
@@ -145,7 +146,7 @@ classDiagram
 
     class ImageTranscriptionProvider {
         <<Abstract>>
-        +transcribe_image(base64_image, mime_type) str
+        +transcribe_image(base64_image, mime_type, language_code) str
     }
 
     class ImageModerationProvider {
@@ -165,7 +166,7 @@ classDiagram
 
     class OpenAiImageTranscriptionProvider {
         +get_llm() ChatOpenAI
-        +transcribe_image(base64_image, mime_type) str
+        +transcribe_image(base64_image, mime_type, language_code) str
     }
 
     class OpenAiModerationProvider {
@@ -194,12 +195,12 @@ classDiagram
 ```
 
 - Define a new abstract base class `LLMProvider` in `model_providers/base.py` that inherits from `BaseModelProvider` and declares the abstract `get_llm() -> BaseChatModel` method. Modify `ChatCompletionProvider` to inherit from `LLMProvider` instead of `BaseModelProvider` and become an empty type-marker class. Explicitly remove the `@abstractmethod def get_llm(self)` declaration and `abc` imports from `model_providers/chat_completion.py`, replacing the `ChatCompletionProvider` class body with `pass` so it cleanly acts as an empty type-marker.
-- `ImageTranscriptionProvider` (in `model_providers/image_transcription.py`) extends `LLMProvider` and declares `async def transcribe_image(base64_image: str, mime_type: str) -> str` as an abstract method.
+- `ImageTranscriptionProvider` (in `model_providers/image_transcription.py`) extends `LLMProvider` and declares `async def transcribe_image(base64_image: str, mime_type: str, language_code: str) -> str` as an abstract method.
 - Define a centralized `OpenAiMixin` containing only `_build_llm_params()` - the shared OpenAI kwargs building logic (`model_dump()` -> pop common custom fields `api_key_source`, `record_llm_interactions` -> resolve API key -> filter None-valued optional fields like `reasoning_effort`, `seed`). `_resolve_api_key()` stays in `BaseModelProvider` as it is provider-agnostic. Note: `_resolve_base_url` was an error in previous specs and should be ignored.
 - **Constraint:** Add an explicit comment inside `BaseModelProvider._resolve_api_key()` defining that it must remain strictly synchronous and perform no external I/O or background async polling, relying strictly on the pre-resolved synchronous `self.config` properties (this is required because `ChatOpenAI` instantiation happens inside synchronous `__init__` constructors).
 - `OpenAiImageTranscriptionProvider` (in `model_providers/openAiImageTranscription.py`) extends `ImageTranscriptionProvider` and `OpenAiMixin`. `OpenAiChatProvider` must be refactored to use this same `OpenAiMixin` to reuse logic without duplicating it. Both concrete classes call `self._build_llm_params()` in their `__init__` to create and store the `ChatOpenAI` instance. Each subclass is responsible for popping its own extra fields before passing kwargs to `ChatOpenAI(...)`. Use constructor-time initialization: create the `ChatOpenAI` instance inside `__init__` and store it as `self._llm`. Make `get_llm()` simply return `self._llm`.
 - In `OpenAiImageTranscriptionProvider.__init__`, call `params = self._build_llm_params()`, then pop `detail` (`self._detail = params.pop("detail", "auto")`), then `self._llm = ChatOpenAI(**params)`. `self._detail` is then used only when constructing the multimodal image payload inside `transcribe_image()`.
-- `OpenAiImageTranscriptionProvider` implements `transcribe_image` by constructing a multimodal `HumanMessage` (text prompt + `image_url` data URI + `detail` from config), invoking the LLM via `ainvoke`, and returning the normalized transcript string according to the transcription response normalization contract above. Callers (e.g., `ImageVisionProcessor.process_media`) must `await` the method.
+- `OpenAiImageTranscriptionProvider` implements `transcribe_image` by constructing a multimodal `HumanMessage` (text prompt incorporating the `language_code` parameter + `image_url` data URI + `detail` from config), invoking the LLM via `ainvoke`, and returning the normalized transcript string according to the transcription response normalization contract above. Callers (e.g., `ImageVisionProcessor.process_media`) must `await` the method.
 
 Contract skeleton for implementers:
 
@@ -208,7 +209,7 @@ from abc import ABC, abstractmethod
 
 class ImageTranscriptionProvider(LLMProvider, ABC):
     @abstractmethod
-    async def transcribe_image(self, base64_image: str, mime_type: str) -> str:
+    async def transcribe_image(self, base64_image: str, mime_type: str, language_code: str) -> str:
         ...
 ```
 
@@ -285,3 +286,4 @@ When adding a new tier like `image_transcription`, the following files require u
 - Add test that `BaseMediaProcessor.process_job` correctly formats `unprocessable_media=True` result with bracket wrapping.
 - Add test that caption is correctly appended when `job.placeholder_message.content` is populated, regardless of whether processing succeeded or failed.
 - Add test that the `asyncio.TimeoutError` path returns `ProcessingResult` with `unprocessable_media=True`.
+- Update all existing automated tests covering `StubSleepProcessor`, along with other stubs and success-path implementations, to assert that successfully processed media returns plain, unbracketed strings, verifying the removal of legacy bracket wrapping (`[<content>]`).
