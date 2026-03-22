@@ -12,3 +12,5 @@
  - `llm_configs` → `model_provider_configs` (full blast radius will be required to be addressed including upgrade scripts, UI changes, model changes, reference changes etc.)
  - unify infrastructure\models.py which was added seperately for media workers with previously existed config_models.py
  - convey inactive bots due to user token quota depleted ("user_enabled": false) in the dashboard UI
+ - proper fresh schema deployment and upgrade strategy
+ - fix doc pages internal/external issues

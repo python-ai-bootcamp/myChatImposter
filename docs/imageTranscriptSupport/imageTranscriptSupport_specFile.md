@@ -37,6 +37,7 @@ Every image processed by the media processing pipeline which arrives to the `Ima
   - If `response.content` is content blocks: extract text-bearing blocks in original order and concatenate into one deterministic string (single-space separator, trim outer whitespace).
   - If `response.content` is neither string nor content blocks: return `"Unable to transcribe image content"` (no brackets).
 - **Error handling:** No custom error handling (`try/except`) should be added around `transcribe_image` within `ImageVisionProcessor`. All exceptions propagate up to `BaseMediaProcessor.process_job()`, which handles failures gracefully. The `asyncio.TimeoutError` exception block in `BaseMediaProcessor.process_job()` must return a `ProcessingResult` with `unprocessable_media=True` to preserve image captions during timeouts. Change the hardcoded content from `"[Processing timed out]"` to `"Processing timed out"`. The brackets must be removed from the raw string because `format_processing_result` will automatically wrap all strings in brackets. The final delivered string will still be `[Processing timed out]`.
+  - **Note:** Unlike flagged moderation results (which bypass the `_failed` archive collection to avoid storing user violations), timeouts **must** retain a populated `failed_reason` (e.g., `failed_reason=f"TIMEOUT: processing exceeded {self.processing_timeout}s"`). This ensures timeout jobs are successfully processed by `_archive_to_failed()`, allowing system operators to monitor and investigate operational performance issues.
 
 ### Output Format
 - The produced image transcript will be passed to the caller, arriving at the bot message queue as if it was a text message. Caption formatting is **centralized**. Update `BaseMediaProcessor.process_job()` to remove the `caption` argument from the `self.process_media` call. Also, update the `process_media` method signature in `BaseMediaProcessor` and **all** subclasses (including `CorruptMediaProcessor`, `UnsupportedMediaProcessor`, and all stub processors in `stub_processors.py`) to remove the `caption` parameter.
@@ -44,9 +45,86 @@ Every image processed by the media processing pipeline which arrives to the `Ima
   - `CorruptMediaProcessor`: return `ProcessingResult(content=f"Corrupted {media_type} media could not be downloaded", failed_reason=..., unprocessable_media=True)` — no caption, no brackets. **Important:** The existing derivation `media_type = mime_type.replace("media_corrupt_", "")` must be preserved in the refactored method body. The `mime_type` for corrupt media jobs is stored as `"media_corrupt_image"`, `"media_corrupt_audio"`, etc., so this stripping logic is required for the content string to format correctly.
   - `UnsupportedMediaProcessor`: return `ProcessingResult(content=f"Unsupported media type: {mime_type}", failed_reason=..., unprocessable_media=True)` — no caption, no brackets.
   - `StubSleepProcessor` (and subclasses): return `ProcessingResult(content=f"Transcripted {self.media_label} multimedia message with guid='{...}'")` — no brackets, `unprocessable_media` defaults to `False` (success path).
-- In `BaseMediaProcessor.process_job()`, immediately after `result = await self.process_media(...)`, add logic to inject a media-type prefix for successful jobs. If `not result.unprocessable_media and not result.failed_reason` (a classical success), extract the primary media type from the mime type using robust splitting logic (e.g., `"Image"` from `"image/jpeg"`): `media_type = job.mime_type.replace("media_corrupt_", "").split("/")[0].capitalize()`. Then prepend it: `result.content = f"{media_type} Transcription: {result.content}"`.
-- In all cases, caption appending and bracket wrapping is handled exclusively by `format_processing_result(content: str, caption: str) -> str`. This function **must be implemented as a module-level function inside `media_processors/base.py`**. This helper must be a **pure function** that returns the formatted string without mutating the original arguments. This helper must **unconditionally** wrap the raw content in brackets `[<content>]` (regardless of success or failure). It must *always* append the original caption (`\n[Caption: <caption_text>]`) if it exists.
-- Update `BaseMediaProcessor.process_job` and `BaseMediaProcessor._handle_unhandled_exception` to invoke `format_processing_result` explicitly. All call sites must explicitly reassign: `result.content = format_processing_result(result.content, caption)` before calling `self._persist_result_first(job, result, db)`. Inside `_handle_unhandled_exception`, the caption is sourced from `job.placeholder_message.content`. The `result.content = format_processing_result(result.content, caption)` reassignment **must be executed first**, before calling `_persist_result_first`, `_archive_to_failed`, and the best-effort queue injection via `update_message_by_media_id`. This ensures all three downstream operations automatically inherit the cleanly formatted string via `result.content` — no further changes to those methods are needed. Note: `_archive_to_failed` also reads `result.content` (stores it in the `_failed` collection), so it must also receive the formatted string via this same ordering.
+- `format_processing_result(content: str, caption: str) -> str` **must be implemented as a module-level function inside `media_processors/base.py`**. This helper must be a **pure function** that returns the formatted string without mutating the original arguments. This helper must **unconditionally** wrap the raw content in brackets `[<content>]` (regardless of success or failure). If the `caption` argument is a **non-empty string** (`if caption:`), it must append the original caption (`\n[Caption: <caption_text>]`) to the result. If `caption` is `None` or an empty string (`""`), no suffix is appended — the result is returned as-is after bracket-wrapping.
+- Update `BaseMediaProcessor._handle_unhandled_exception` to invoke `format_processing_result` explicitly. Inside `_handle_unhandled_exception`, the caption is sourced from `job.placeholder_message.content`. The `result.content = format_processing_result(result.content, caption)` reassignment **must be executed first**, before calling `_persist_result_first`, `_archive_to_failed`, and the best-effort queue injection via `update_message_by_media_id`. This ensures all three downstream operations automatically inherit the cleanly formatted string via `result.content` — no further changes to those methods are needed. Note: `_archive_to_failed` also reads `result.content` (stores it in the `_failed` collection), so it must also receive the formatted string via this same ordering.
+- **`BaseMediaProcessor.process_job()` Refactoring:** Replace the partial instructions with the following exhaustive snippet to completely eliminate implementation ambiguity. This includes checking logic to inject a media-type prefix (`media_type = job.mime_type.replace("media_corrupt_", "").split("/")[0].capitalize()`) for successful jobs, and unconditional formatting calls:
+
+  ```python
+  async def process_job(self, job: MediaProcessingJob, get_bot_queues: Callable[[str], Any], db):
+      """Full shared lifecycle — called by the worker pool for each job."""
+      # Caption extracted once here; no longer passed to process_media.
+      # Used by format_processing_result for all outcomes.
+      caption = job.placeholder_message.content
+      file_path = resolve_media_path(job.guid)
+      try:
+          # 1. ACTUAL CONVERSION (Externally Guarded by Centralized Timeout)
+          try:
+              result = await asyncio.wait_for(
+                  self.process_media(file_path, job.mime_type, job.bot_id),  # caption removed
+                  timeout=self.processing_timeout,
+              )
+          except asyncio.TimeoutError:
+              result = ProcessingResult(
+                  content="Processing timed out",  # no brackets — format_processing_result adds them
+                  failed_reason=f"TIMEOUT: processing exceeded {self.processing_timeout}s",
+                  unprocessable_media=True,
+              )
+
+          # 2. PREFIX INJECTION — classical success path only
+          # Skipped when unprocessable_media=True (flagged, timeout, error processors)
+          # or when failed_reason is set.
+          if not result.unprocessable_media and not result.failed_reason:
+              media_type = job.mime_type.replace("media_corrupt_", "").split("/")[0].capitalize()
+              result.content = f"{media_type} Transcription: {result.content}"
+
+          # 3. FORMAT — MUST happen before any persistence or delivery.
+          # Unconditionally wraps content in brackets and appends caption if non-empty.
+          # All three downstream operations (persist, archive, queue delivery) automatically
+          # inherit the formatted string via result.content — no further changes needed.
+          result.content = format_processing_result(result.content, caption)
+
+          # 4. PERSISTENCE (Persistence-First — applies to ALL outcomes, success or failure)
+          # On success: result goes to _jobs or _holding as status=completed for delivery/reaping.
+          # On failure: same — error text is the result, stays in _holding for reaping on reconnect.
+          persisted = await self._persist_result_first(job, result, db)
+          if not persisted:
+              return  # Job was already swept by cleanup — no further action
+
+          # 5. ARCHIVE TO FAILED (operator inspection only — does not affect delivery flow)
+          # A copy is inserted into _failed so operators can investigate. It is never read back
+          # by any recovery mechanism — delivery is handled exclusively via the _holding reaping path.
+          # Note: flagged images have failed_reason=None, so they bypass this collection intentionally.
+          if result.failed_reason:
+              await self._archive_to_failed(job, result, db)
+
+          # 6. BEST-EFFORT DIRECT DELIVERY (bot is active)
+          bot_queues = get_bot_queues(job.bot_id)
+          if bot_queues:
+              delivered = await bot_queues.update_message_by_media_id(
+                  job.correspondent_id, job.guid, result.content
+              )
+              if delivered:
+                  # Delivered — remove the job from active/holding (mission complete)
+                  await self._remove_job(job, db)
+              else:
+                  # Placeholder not found in the queue (queue was reset) — unrecoverable
+                  logging.warning(
+                      f"MEDIA PROCESSOR: Placeholder not found for GUID {job.guid} while bot is active; "
+                      "removing job as unrecoverable."
+                  )
+                  await self._remove_job(job, db)
+
+          # If bot is NOT active: job stays in _holding as status=completed.
+          # When the bot eventually reconnects, the normal reaping path will find it,
+          # inject the placeholder, deliver, and delete it.
+
+      except Exception as e:
+          logging.exception("MEDIA PROCESSOR: unhandled exception")
+          await self._handle_unhandled_exception(job, db, str(e), get_bot_queues)
+      finally:
+          # GUARANTEE: The media file is always removed from the shared staging volume
+          delete_media_file(job.guid)
+  ```
 - Update `BaseMediaProcessor._handle_unhandled_exception` to ensure its `ProcessingResult` correctly sets `unprocessable_media=True` and change its hardcoded content from `"[Media processing failed]"` to `"Media processing failed"` to avoid double-wrapping. For example:
   ```python
   async def _handle_unhandled_exception(self, job, db, error, get_bot_queues=None):
@@ -215,7 +293,7 @@ classDiagram
 - `ImageTranscriptionProvider` (in `model_providers/image_transcription.py`) extends `LLMProvider` and declares `async def transcribe_image(base64_image: str, mime_type: str, language_code: str) -> str` as an abstract method.
 - Define a centralized `OpenAiMixin` containing only `_build_llm_params()` - the shared OpenAI kwargs building logic (`model_dump()` -> pop common custom fields `api_key_source`, `record_llm_interactions` -> resolve API key -> filter None-valued optional fields like `reasoning_effort`, `seed`). `_resolve_api_key()` stays in `BaseModelProvider` as it is provider-agnostic. Note: `_resolve_base_url` was an error in previous specs and should be ignored. `OpenAiMixin` relies on `self.config` and inherited methods like `_resolve_api_key()`. It is designed strictly to be mixed into subclasses of `BaseModelProvider`.
 - **Constraint:** Add an explicit comment inside `BaseModelProvider._resolve_api_key()` defining that it must remain strictly synchronous and perform no external I/O or background async polling, relying strictly on the pre-resolved synchronous `self.config` properties (this is required because `ChatOpenAI` instantiation happens inside synchronous `__init__` constructors).
-- `OpenAiImageTranscriptionProvider` (in `model_providers/openAiImageTranscription.py`) extends `ImageTranscriptionProvider` and `OpenAiMixin`. `OpenAiChatProvider` must be refactored to use this same `OpenAiMixin` to reuse logic without duplicating it. Move the httpx logger configuration from `OpenAiChatProvider.get_llm()` into `OpenAiMixin._build_llm_params()` so it applies consistently to all OpenAI providers. Remove the `print()` debug statements entirely — they are dev-only artifacts not suitable for production. As part of this extraction, `get_llm()` will become a trivial `return self._llm`. Both concrete classes call `self._build_llm_params()` in their `__init__` to create and store the `ChatOpenAI` instance. Each subclass is responsible for popping its own extra fields before passing kwargs to `ChatOpenAI(...)`. Use constructor-time initialization: create the `ChatOpenAI` instance inside `__init__` and store it as `self._llm`. Make `get_llm()` simply return `self._llm`.
+- `OpenAiImageTranscriptionProvider` (in `model_providers/openAiImageTranscription.py`) extends `ImageTranscriptionProvider` and `OpenAiMixin`. `OpenAiChatProvider` must be refactored to use this same `OpenAiMixin` to reuse logic without duplicating it. Extract the `httpx` logger configuration from `OpenAiChatProvider.get_llm()` and move it entirely out of the model providers and into the application's startup file (e.g., `main.py`). This avoids embedding process state side-effects within a parameter builder method. Remove the `print()` debug statements entirely — they are dev-only artifacts not suitable for production. As part of this extraction, `get_llm()` will become a trivial `return self._llm`. Both concrete classes call `self._build_llm_params()` in their `__init__` to create and store the `ChatOpenAI` instance. Each subclass is responsible for popping its own extra fields before passing kwargs to `ChatOpenAI(...)`. Use constructor-time initialization: create the `ChatOpenAI` instance inside `__init__` and store it as `self._llm`. Make `get_llm()` simply return `self._llm`.
 - In `OpenAiImageTranscriptionProvider.__init__`, call `params = self._build_llm_params()`, then pop `detail` (`self._detail = params.pop("detail", "auto")`), then `self._llm = ChatOpenAI(**params)`. `self._detail` is then used only when constructing the multimodal image payload inside `transcribe_image()`.
 - `OpenAiImageTranscriptionProvider` implements `transcribe_image` by constructing a multimodal `HumanMessage` (text prompt incorporating the `language_code` parameter + `image_url` data URI + `detail` from config), invoking the LLM via `ainvoke`, and returning the normalized transcript string according to the transcription response normalization contract above. Callers (e.g., `ImageVisionProcessor.process_media`) must `await` the method.
 
@@ -289,8 +367,8 @@ When adding a new tier like `image_transcription`, the following files require u
 2. `services/resolver.py`: Add the `@overload async def resolve_model_config(bot_id: str, config_tier: Literal["image_transcription"]) -> ImageTranscriptionProviderConfig` type hint, AND the implementation `elif` branch returning `ImageTranscriptionProviderConfig.model_validate(tier_data)`. Import `ImageTranscriptionProviderConfig` explicitly to ensure precise return type tracking.
 3. `routers/bot_management.py`: Ensure the schema surgery loop iterates dynamically over the actual keys present in the schema definition: `for prop_name in llm_configs_defs['properties'].keys():` instead of the hardcoded `['high', 'low', 'image_moderation']` list so it automatically extracts the new tier. Also ensure the `reasoning_effort` title patches are applied to both `'ChatCompletionProviderSettings'` AND `'ImageTranscriptionProviderSettings'` to guarantee correct UI rendering for both tiers.
 4. `frontend/src/pages/EditPage.js`: The UI MUST NOT hardcode the list of tiers. Abandon the `getAvailableTiers` JS helper approach that attempts to parse the OpenAPI schema structure (which uses `$ref` pointers and will not have inline `properties` at that path). Instead:
-   - Create a new lightweight API endpoint `GET /api/external/bots/tiers` in `bot_management.py` that directly returns the available tiers by reading `LLMConfigurations.model_fields.keys()` from the Python model.
-   - Update `EditPage.js` to fetch from this new endpoint during `fetchData` and store the result in component state.
+   - Create a new lightweight API endpoint `GET /api/internal/bots/tiers` in `bot_management.py` that directly returns the available tiers by reading `LLMConfigurations.model_fields.keys()` from the Python model. This correctly aligns with the existing `/api/internal/bots` router prefix.
+   - Update `EditPage.js` to fetch from this new endpoint (`/api/internal/bots/tiers` or mapped equivalent via gateway) during `fetchData` and store the result in component state.
    - Replace every occurrence of the hardcoded tier array `["high", "low", "image_moderation"]` (specifically around line 135 for `api_key_source` and line 229 for `handleFormChange`) with the dynamically fetched tier list from state.
 5. `frontend/src/pages/EditPage.js`: Statically add a fourth entry to the `llm_configs` object in `uiSchema` for `image_transcription`. The `ui:title` should be `"Image Transcription Model"`, and the rest of the template configuration should match the other tiers exactly (e.g., `"ui:ObjectFieldTemplate": NestedCollapsibleObjectFieldTemplate`). **Important:** The `provider_config` sub-object within the `image_transcription` uiSchema entry must be identical to the `high` and `low` tiers' `provider_config` entries, including `api_key_source`, `reasoning_effort`, and `seed` UI title properties, and the `FlatProviderConfigTemplate`. Omitting this sub-entry would cause incorrect UI rendering for those fields. **Include the `detail` field inside `provider_config` with a `ui:title` of `"Image Detail Level"`, while matching the structure of the other fields exactly.**
 
@@ -305,6 +383,7 @@ When adding a new tier like `image_transcription`, the following files require u
 - Add test that `format_processing_result` formats strings with unconditional bracket wrapping, and correctly omits or adds captions based on `job.placeholder_message.content`.
 - Add test that caption is correctly appended when `job.placeholder_message.content` is populated, regardless of whether processing succeeded or failed.
 - Add test that the `asyncio.TimeoutError` path returns `ProcessingResult` with `unprocessable_media=True`.
-- Update all existing automated tests covering `StubSleepProcessor`, along with other stubs and success-path implementations, to assert that successfully processed media returns plain, unbracketed strings, verifying the removal of legacy bracket wrapping (`[<content>]`).
+- **Unit-level (`process_media` return):** Update existing tests to assert that `process_media()` returns raw, unbracketed content strings (e.g., `"Transcripted audio multimedia message..."`) — no legacy `[...]` wrapper. This verifies the removal of legacy bracket wrapping.
+- **Integration-level (`process_job` end-to-end):** Add new tests that assert the final string delivered to the bot queue (via `update_message_by_media_id`) is the fully formatted `"[{MediaType} Transcription: {content}]"` form — e.g., `"[Audio Transcription: Transcripted audio multimedia message...]"`.
 - **Update existing tests for renamed content strings:** Any existing tests that assert the old content strings for `UnsupportedMediaProcessor` (previously `"Unsupported {mime_type} media"`) or `CorruptMediaProcessor` (previously `"Corrupted {media_type} media could not be downloaded"` with old bracket wrapping) must be updated to match the new spec-defined content strings: `f"Unsupported media type: {mime_type}"` and `f"Corrupted {media_type} media could not be downloaded"` (unbracketed, with brackets added by `format_processing_result`).
 - The `test_process_media_bot_id_signature` test in `tests/test_image_vision_processor.py` must precisely be updated: change the hardcoded index from `params[4]` to `params[3]` and verify the updated assertion correctly checks for `"bot_id"` due to the removal of the `caption` parameter.
