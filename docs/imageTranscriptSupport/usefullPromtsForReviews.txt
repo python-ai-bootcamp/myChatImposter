@@ -1,7 +1,7 @@
 ================ better of executed on clean chat (A):
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- REVIEW_ID        ="19_ag_opus_4_6_strictMode"
+- REVIEW_ID        ="20_ag_opus_4_6_strictMode"
 - FEATURE_NAME     ="imageTranscriptSupport"
 - PARENT_DOCS_DIR  ="/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE        ="$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
@@ -48,7 +48,7 @@ in following below requests you will replace all variable (denoted as $${{VARIAB
 ================ review the review and set proposed solutions (in same chat A)
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- REVIEW_ID        ="19_ag_opus_4_6_strictMode"
+- REVIEW_ID        ="20_ag_opus_4_6_strictMode"
 - FEATURE_NAME     ="imageTranscriptSupport"
 - PARENT_DOCS_DIR  ="/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE        ="$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
@@ -64,7 +64,7 @@ lets go over the detected items in the $${{SPEC_REVIEW_FILE}}$$ review one by on
 ================ after you reviewed the review: (better executed on fresh context chat B)
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- REVIEW_ID        ="19_ag_opus_4_6_strictMode"
+- REVIEW_ID        ="20_ag_opus_4_6_strictMode"
 - FEATURE_NAME     ="imageTranscriptSupport"
 - PARENT_DOCS_DIR  ="/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE        ="$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
@@ -93,23 +93,32 @@ if not, list the gaps here
 
 
 ================ making implementation task list
-## Initial Spec Overview
-- please thouroughly completely read the following spec file end to end
+# variables:
+in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
+- IMPLEMENTATION_TASK_ID   = "01_ag_opus_4_6"
+- FEATURE_NAME             = "imageTranscriptSupport"
+- PARENT_DOCS_DIR          = "/docs/$${{FEATURE_NAME}}$$"
+- SPEC_FILE                = "$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
+- IMPLEMENTATION_TASKS_DIR = "$${{PARENT_DOCS_DIR}}$$/implementationTasks"
+- IMPLEMENTATION_TASK_FILE = "$${{IMPLEMENTATION_TASKS_DIR}}$$/$${{FEATURE_NAME}}$$_implementationTask_$${{IMPLEMENTATION_TASK_ID}}$$.md"
 
-  - docs/moderateImage_spec.md
+## Initial Spec Overview
+- please thouroughly completely read the following spec file ($${{SPEC_FILE}}$$) end to end 
 
 ## Ingest Relevant Backround Information
 ### Project Files
-- please deep dive and thouroughly and completely study the relevant project files mentioned in the spec file
-- identify other project files related to the spec but unmentioned inside it and study them as well
+- please perform a serious deep dive into project relevant files:
+ - thouroughly and completely read&study the relevant project files as mentioned in the spec's "Relevant Background Information"\"Project Files" section
+ - in addition, please attempt to independently identify other project files related to the spec but unmentioned inside it and study them thouroughly as well
 
 ### External Resources
-- please study all the reousrces external to the project supplied in the spec file
+- please study all the resources external to the project supplied in the spec file
 
-## Produce Implementation  Task For Spec
-- read the spec file again
-- create a new file (docs/moderateImage_spec_implementationTasks/<MODEL_NAME>.md) which will have a flat list of all needed implementation tasks in order to fulfill all requirements in the spec file properly
-- make sure that the tasks are written by a logical order of implementation, each with a short description detailing which parts of the spec they are implementing and each will also carry a status (<PENDING/IN_PROGRESS/DONE>)
+
+## Produce Implementation Task For Spec
+- after finished learning background information referenced by the spec file, please read the spec file again.
+- create a new file ($${{IMPLEMENTATION_TASK_FILE}}$$) which will have a flat list of all needed implementation tasks in order to fulfill all requirements in the spec file ($${{SPEC_FILE}}$$) properly
+- make sure that the tasks are written in a logical order of implementation, each task with a short description detailing which parts of the spec it is implementing and each will also carry a status (<PENDING/IN_PROGRESS/DONE>)
 - summerize the task in a table at the top of the file
 
 please make sure that:
