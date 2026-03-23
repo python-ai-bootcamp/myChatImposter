@@ -95,7 +95,7 @@ if not, list the gaps here
 ================ making implementation task list
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- IMPLEMENTATION_TASK_ID   = "01_ag_opus_4_6"
+- IMPLEMENTATION_TASK_ID   = "06_ag_gpt_oss_120b"
 - FEATURE_NAME             = "imageTranscriptSupport"
 - PARENT_DOCS_DIR          = "/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE                = "$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
