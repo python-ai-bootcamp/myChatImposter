@@ -8,7 +8,7 @@ in following below requests you will replace all variable (denoted as $${{VARIAB
 - SPEC_REVIEW_FILE ="$${{PARENT_DOCS_DIR}}$$/specReviews/$${{FEATURE_NAME}}$$_spec_review_$${{REVIEW_ID}}$$.md"
 
 ## Initial Spec Overview
-- please thouroughly completely read the following spec file end to end __$${{SPEC_FILE}}$$__
+- thouroughly completely read the following spec file end to end __$${{SPEC_FILE}}$$__
 
 ## Ingest Relevant Backround Information
 ### Project Files
@@ -103,7 +103,7 @@ in following below requests you will replace all variable (denoted as $${{VARIAB
 - IMPLEMENTATION_TASK_FILE = "$${{IMPLEMENTATION_TASKS_DIR}}$$/$${{FEATURE_NAME}}$$_implementationTask_$${{IMPLEMENTATION_TASK_ID}}$$.md"
 
 ## Initial Spec Overview
-- please thouroughly completely read the following spec file ($${{SPEC_FILE}}$$) end to end 
+- thouroughly completely read the following spec file ($${{SPEC_FILE}}$$) end to end 
 
 ## Ingest Relevant Backround Information
 ### Project Files
@@ -139,7 +139,7 @@ in following below requests you will replace all variable (denoted as $${{VARIAB
 - IMPLEMENTATION_TASK_FILE = "$${{IMPLEMENTATION_TASKS_DIR}}$$/$${{FEATURE_NAME}}$$_implementationTask_$${{IMPLEMENTATION_TASK_ID}}$$.md"
 
 ## Initial Spec Overview
-- please thouroughly completely read the following spec file ($${{SPEC_FILE}}$$) end to end 
+- thouroughly completely read the following spec file ($${{SPEC_FILE}}$$) end to end 
 
 ## Ingest Relevant Backround Information
 ### Project Files
@@ -179,7 +179,7 @@ in following below requests you will replace all variable (denoted as $${{VARIAB
 - IMPLEMENTATION_TASK_FILE = "$${{IMPLEMENTATION_TASKS_DIR}}$$/$${{FEATURE_NAME}}$$_implementationTask_$${{IMPLEMENTATION_TASK_ID}}$$.md"
 
 ## Initial Spec Overview
-- please thouroughly completely read the following spec file ($${{SPEC_FILE}}$$) end to end 
+- thouroughly completely read the following spec file ($${{SPEC_FILE}}$$) end to end 
 
 ## Ingest Relevant Backround Information
 ### Project Files
@@ -199,6 +199,6 @@ in following below requests you will replace all variable (denoted as $${{VARIAB
 - do it by order of implementation tasks
 - do not stop until all tasks are completed
 - do not steer away from implementation tasks, if you have any inclearities treat the spec file as source of truth
-- only update the implementation task file with your progress in both table above and implementation tasks list (update the status of the task to IN_PROGRESS when you start a task, and DONE when you finish a task)
+- update the implementation task file only with your progress in both top summary table and implementation tasks list (update the status of the task to IN_PROGRESS when you start a task, and DONE when you finish a task)
 
 
