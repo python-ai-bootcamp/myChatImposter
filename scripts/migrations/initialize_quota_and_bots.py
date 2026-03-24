@@ -57,6 +57,11 @@ async def migrate():
             "input_tokens": 0.25,
             "cached_input_tokens": 0.025,
             "output_tokens": 2
+        },
+        "image_transcription": {
+            "input_tokens": 0.25,
+            "cached_input_tokens": 0.025,
+            "output_tokens": 2
         }
     }
     

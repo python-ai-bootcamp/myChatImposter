@@ -4,9 +4,10 @@ from typing import Literal, Optional, Type, Union
 from langchain_core.language_models import BaseChatModel
 
 from config_models import ConfigTier
-from model_providers.base import BaseModelProvider
+from model_providers.base import BaseModelProvider, LLMProvider
 from model_providers.chat_completion import ChatCompletionProvider
 from model_providers.image_moderation import ImageModerationProvider
+from model_providers.image_transcription import ImageTranscriptionProvider
 from services.token_consumption_service import TokenConsumptionService
 from services.tracked_llm import TokenTrackingCallback
 from services.resolver import resolve_user, resolve_model_config
@@ -20,13 +21,15 @@ async def create_model_provider(
     bot_id: str,
     feature_name: str,
     config_tier: ConfigTier
-) -> Union[BaseChatModel, ImageModerationProvider]:
+) -> Union[BaseChatModel, ImageModerationProvider, ImageTranscriptionProvider]:
     """
     Central factory for instantiating model providers based on the database configuration.
     
-    If the resolved tier is ChatCompletion, it returns a LangChain BaseChatModel 
-    with a TokenTrackingCallback pre-attached. 
-    If the resolved tier is ImageModeration, it returns the native ImageModerationProvider.
+    Return contract:
+    - ChatCompletionProvider: returns raw BaseChatModel with TokenTrackingCallback attached.
+    - ImageModerationProvider: returns the provider wrapper directly (no LLM, no token tracking).
+    - ImageTranscriptionProvider: returns the provider wrapper directly (with token tracking
+      attached to its internal LLM via get_llm()).
     """
     try:
         # 1. Resolve configuration and user
@@ -40,11 +43,11 @@ async def create_model_provider(
         if not ProviderClass:
             raise ImportError(f"Could not find a subclass of BaseModelProvider in model_providers.{config.provider_name}")
 
-        # 3. Create Provider instance (dropping user_id from constructor)
+        # 3. Create Provider instance
         provider = ProviderClass(config=config)
         
         # 4. Polymorphic tracking attachment
-        if isinstance(provider, ChatCompletionProvider):
+        if isinstance(provider, LLMProvider):
             llm = provider.get_llm()
             
             state = get_global_state()
@@ -71,7 +74,12 @@ async def create_model_provider(
             else:
                 logger.warning("create_model_provider: token_consumption_collection is None! Token tracking DISABLED.")
 
-            return llm
+            # Subtype-specific return: ChatCompletionProvider returns raw LLM,
+            # ImageTranscriptionProvider returns the wrapper
+            if isinstance(provider, ChatCompletionProvider):
+                return llm
+            else:
+                return provider
             
         elif isinstance(provider, ImageModerationProvider):
             return provider
@@ -82,3 +90,4 @@ async def create_model_provider(
     except Exception as e:
         logger.error(f"Failed to create model provider: {e}")
         raise
+

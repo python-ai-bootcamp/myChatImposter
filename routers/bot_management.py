@@ -13,6 +13,7 @@ from config_models import (
     ChatProviderConfig, LLMConfigurations, ChatProviderSettings,
     ChatCompletionProviderConfig, ChatCompletionProviderSettings,
     BaseModelProviderConfig, BaseModelProviderSettings,
+    ImageTranscriptionProviderConfig, ImageTranscriptionProviderSettings,
     UserDetails, QueueConfig, ContextConfig, DefaultConfigurations,
     RegularBotConfiguration, RegularBotGeneralSettings
 )
@@ -361,7 +362,7 @@ async def get_configuration_schema(
                 llm_configs_defs = schema[defs_key][ref_name]
 
     if llm_configs_defs and 'properties' in llm_configs_defs:
-        for prop_name in ['high', 'low', 'image_moderation']:
+        for prop_name in ['high', 'low', 'image_moderation', 'image_transcription']:
             if prop_name in llm_configs_defs['properties']:
                 prop = llm_configs_defs['properties'][prop_name]
                 if 'anyOf' in prop:
@@ -412,6 +413,15 @@ async def get_bot_defaults(
                     provider_config=BaseModelProviderSettings(
                         model=DefaultConfigurations.model_image_moderation,
                         api_key_source=DefaultConfigurations.model_api_key_source
+                    )
+                ),
+                image_transcription=ImageTranscriptionProviderConfig(
+                    provider_name=DefaultConfigurations.model_provider_name_image_transcription,
+                    provider_config=ImageTranscriptionProviderSettings(
+                        model=DefaultConfigurations.model_image_transcription,
+                        api_key_source=DefaultConfigurations.model_api_key_source,
+                        temperature=DefaultConfigurations.model_image_transcription_temperature,
+                        reasoning_effort=DefaultConfigurations.model_image_transcription_reasoning_effort,
                     )
                 )
             ),

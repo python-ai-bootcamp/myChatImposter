@@ -2,7 +2,9 @@ from pydantic import BaseModel, Field
 from typing import List, Optional, Dict, Any, Literal
 import os
 
-ConfigTier = Literal["high", "low", "image_moderation"]
+# These two locations (ConfigTier and LLMConfigurations) are the ONLY places in the code
+# where the structure/keys of the tiers are defined.
+ConfigTier = Literal["high", "low", "image_moderation", "image_transcription"]
 
 class ChatProviderSettings(BaseModel):
     allow_group_messages: bool = False
@@ -60,45 +62,19 @@ class ChatCompletionProviderSettings(BaseModelProviderSettings):
 class ChatCompletionProviderConfig(BaseModelProviderConfig):
     provider_config: ChatCompletionProviderSettings
 
-class LLMProviderSettings(BaseModel):
-    api_key_source: Literal["environment", "explicit"] = Field(
-        default="environment",
-        title="API Key Source",
-        description="Choose how the API key is provided."
-    )
-    api_key: Optional[str] = Field(
-        default=None,
-        title="API Key"
-    )
-    model: str
-    temperature: float = 0.7
-    reasoning_effort: Optional[Literal["low", "medium", "high", "minimal"]] = None
-    seed: Optional[int] = Field(
-        default=None,
-        title="Seed",
-        json_schema_extra={
-            "anyOf": [
-                {"type": "integer", "title": "Defined"},
-                {"type": "null", "title": "Undefined"}
-            ]
-        }
-    )
-    record_llm_interactions: bool = Field(
-        default=False,
-        title="Record Traffic"
-    )
+class ImageTranscriptionProviderSettings(ChatCompletionProviderSettings):
+    detail: Literal["low", "high", "original", "auto"] = "auto"
 
-    class Config:
-        extra = 'allow'
+class ImageTranscriptionProviderConfig(ChatCompletionProviderConfig):
+    provider_config: ImageTranscriptionProviderSettings
 
-class LLMProviderConfig(BaseModel):
-    provider_name: str
-    provider_config: LLMProviderSettings
-
+# These two locations (ConfigTier and LLMConfigurations) are the ONLY places in the code
+# where the structure/keys of the tiers are defined.
 class LLMConfigurations(BaseModel):
     high: ChatCompletionProviderConfig = Field(..., title="High Performance Model")
     low: ChatCompletionProviderConfig = Field(..., title="Low Cost Model")
     image_moderation: BaseModelProviderConfig = Field(..., title="Media Moderation Model")
+    image_transcription: ImageTranscriptionProviderConfig = Field(..., title="Image Transcription Model")
 
 class ContextConfig(BaseLimitConfig):
     shared_context: bool = True
@@ -170,10 +146,14 @@ class DefaultConfigurations:
     chat_provider_name: str = os.getenv("DEFAULT_CHAT_PROVIDER", "whatsAppBaileys")
     model_provider_name_chat: str = os.getenv("DEFAULT_MODEL_PROVIDER_CHAT", "openAi")
     model_provider_name_moderation: str = os.getenv("DEFAULT_MODEL_PROVIDER_MODERATION", "openAiModeration")
+    model_provider_name_image_transcription: str = "openAiImageTranscription"
     model_high: str = os.getenv("DEFAULT_MODEL_HIGH", "gpt-5")
     model_low: str = os.getenv("DEFAULT_MODEL_LOW", "gpt-5-mini")
     model_image_moderation: str = os.getenv("DEFAULT_MODEL_IMAGE_MODERATION", "omni-moderation-latest")
+    model_image_transcription: str = os.getenv("DEFAULT_MODEL_IMAGE_TRANSCRIPTION", "gpt-5-mini")
     model_api_key_source: Literal["environment", "explicit"] = os.getenv("DEFAULT_MODEL_API_KEY_SOURCE", "environment")
     model_temperature: float = float(os.getenv("DEFAULT_MODEL_TEMPERATURE", "0.05"))
     model_reasoning_effort: str = os.getenv("DEFAULT_MODEL_REASONING_EFFORT", "minimal")
+    model_image_transcription_temperature: float = float(os.getenv("DEFAULT_IMAGE_TRANSCRIPTION_TEMPERATURE", "0.05"))
+    model_image_transcription_reasoning_effort: str = os.getenv("DEFAULT_IMAGE_TRANSCRIPTION_REASONING_EFFORT", "minimal")
 

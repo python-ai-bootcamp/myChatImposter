@@ -74,6 +74,10 @@ def test_save_and_get_single_configuration(setup_and_teardown_function):
                 "image_moderation": {
                     "provider_name": "fakeLlm",
                     "provider_config": {"model": "fake"}
+                },
+                "image_transcription": {
+                    "provider_name": "openAiImageTranscription",
+                    "provider_config": {"model": "gpt-5-mini", "temperature": 0.05, "reasoning_effort": "minimal", "detail": "auto"}
                 }
             }
         },
@@ -157,6 +161,10 @@ def test_delete_configuration(setup_and_teardown_function):
                 "image_moderation": {
                     "provider_name": "fakeLlm",
                     "provider_config": {"model": "fake"}
+                },
+                "image_transcription": {
+                    "provider_name": "openAiImageTranscription",
+                    "provider_config": {"model": "gpt-5-mini", "temperature": 0.05, "reasoning_effort": "minimal", "detail": "auto"}
                 }
             }
         },

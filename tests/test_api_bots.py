@@ -112,7 +112,8 @@ class TestBotManagementAPI:
                     "llm_configs": {
                         "high": {"provider_name": "mock", "provider_config": {"model": "gpt-4"}},
                         "low": {"provider_name": "mock", "provider_config": {"model": "gpt-3.5"}},
-                        "image_moderation": {"provider_name": "mock", "provider_config": {"model": "gpt-4"}}
+                        "image_moderation": {"provider_name": "mock", "provider_config": {"model": "gpt-4"}},
+                        "image_transcription": {"provider_name": "openAiImageTranscription", "provider_config": {"model": "gpt-5-mini", "temperature": 0.05, "reasoning_effort": "minimal", "detail": "auto"}}
                     },
                     "queue_config": {},
                     "context_config": {}

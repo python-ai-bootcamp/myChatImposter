@@ -21,7 +21,7 @@ def test_process_media_bot_id_signature():
     for cls in [BaseMediaProcessor, StubSleepProcessor, CorruptMediaProcessor,
                 UnsupportedMediaProcessor, ImageVisionProcessor]:
         params = list(inspect.signature(cls.process_media).parameters.values())
-        fourth = params[4]  # self=0, file_path=1, mime_type=2, caption=3, bot_id=4
+        fourth = params[3]  # self=0, file_path=1, mime_type=2, bot_id=3
         assert fourth.name == "bot_id"
         assert fourth.annotation is str
 
@@ -46,7 +46,7 @@ async def test_image_process_loop_safety(mock_create_provider, mock_to_thread):
     
     mock_create_provider.return_value = mock_provider
     
-    await processor.process_media("dummy_path", "image/jpeg", "caption", "bot_123")
+    await processor.process_media("dummy_path", "image/jpeg", "bot_123")
     
     mock_to_thread.assert_called_once()
     args = mock_to_thread.call_args[0]

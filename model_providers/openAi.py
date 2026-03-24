@@ -3,12 +3,17 @@ from langchain_openai import ChatOpenAI
 from .chat_completion import ChatCompletionProvider
 from config_models import ChatCompletionProviderConfig
 import os
-import logging
 
-class OpenAiChatProvider(ChatCompletionProvider):
-    def __init__(self, config: ChatCompletionProviderConfig):
-        super().__init__(config)
 
+class OpenAiMixin:
+    """Shared mixin for OpenAI-based providers.
+    
+    Centralizes the model_dump() → pop custom fields → resolve API key → 
+    filter None-valued optional fields flow.
+    
+    Designed strictly to be mixed into subclasses of BaseModelProvider, 
+    relying on self.config and inherited methods like _resolve_api_key().
+    """
     def _build_llm_params(self) -> Dict[str, Any]:
         llm_params = self.config.provider_config.model_dump()
         
@@ -32,25 +37,16 @@ class OpenAiChatProvider(ChatCompletionProvider):
         seed = llm_params.get("seed")
         if seed is None:
             llm_params.pop("seed", None)
-            
-        print(f"DEBUG: Configured reasoning_effort: {reasoning_effort}, seed: {seed}")
-        print(f"DEBUG: Final llm_params keys: {list(llm_params.keys())}")
 
         return llm_params
 
+
+class OpenAiChatProvider(ChatCompletionProvider, OpenAiMixin):
+    def __init__(self, config: ChatCompletionProviderConfig):
+        super().__init__(config)
+        params = self._build_llm_params()
+        self._llm = ChatOpenAI(**params)
+
     def get_llm(self):
-        llm_params = self._build_llm_params()
+        return self._llm
 
-        safe_params = {k: v for k, v in llm_params.items() if k != 'api_key'}
-        has_api_key = 'api_key' in llm_params or 'OPENAI_API_KEY' in os.environ
-        print(f"DEBUG: Initializing ChatOpenAI with params: {safe_params}, Has API Key: {has_api_key}")
-
-        httpx_logger = logging.getLogger("httpx")
-        httpx_logger.setLevel(logging.INFO)
-        if not httpx_logger.handlers:
-            handler = logging.StreamHandler()
-            handler.setFormatter(logging.Formatter('DEBUG:httpx: %(message)s'))
-            httpx_logger.addHandler(handler)
-
-        llm = ChatOpenAI(**llm_params)
-        return llm

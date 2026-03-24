@@ -16,6 +16,8 @@ from config_models import (
     ChatCompletionProviderSettings,
     BaseModelProviderConfig,
     BaseModelProviderSettings,
+    ImageTranscriptionProviderConfig,
+    ImageTranscriptionProviderSettings,
     QueueConfig,
     ContextConfig,
     DefaultConfigurations
@@ -370,6 +372,15 @@ async def update_bot_ui_configuration(
                         provider_config=BaseModelProviderSettings(
                             model=DefaultConfigurations.model_image_moderation,
                             api_key_source=DefaultConfigurations.model_api_key_source
+                        )
+                    ),
+                    image_transcription=ImageTranscriptionProviderConfig(
+                        provider_name=DefaultConfigurations.model_provider_name_image_transcription,
+                        provider_config=ImageTranscriptionProviderSettings(
+                            model=DefaultConfigurations.model_image_transcription,
+                            api_key_source=DefaultConfigurations.model_api_key_source,
+                            temperature=DefaultConfigurations.model_image_transcription_temperature,
+                            reasoning_effort=DefaultConfigurations.model_image_transcription_reasoning_effort,
                         )
                     )
                 ),

@@ -3,7 +3,7 @@ import logging
 import os
 from abc import ABC, abstractmethod
 from dataclasses import asdict
-from typing import Any, Callable, List
+from typing import Any, Callable, List, Optional
 
 from infrastructure.models import MediaProcessingJob, ProcessingResult
 from infrastructure.db_schema import (
@@ -14,51 +14,108 @@ from infrastructure.db_schema import (
 from media_processors.media_file_utils import resolve_media_path, delete_media_file
 
 
+def format_processing_result(
+    content: str,
+    caption: str,
+    original_filename: Optional[str] = None,
+    unprocessable_media: bool = False,
+) -> ProcessingResult:
+    """Pure, module-level formatting function for ALL media processing outcomes.
+    
+    This is the SINGLE SOURCE OF TRUTH for output formatting. ALL processors
+    (stub, error, vision, transcription) must route their output through this
+    function. Direct bracket wrapping or caption handling in processors is
+    prohibited.
+    
+    Contract:
+    - content is always wrapped in square brackets: [content]
+    - caption is always appended on the next line after brackets (even if empty)
+    - original_filename, when present, is prepended before content as: file: <name>
+    - unprocessable_media flag is forwarded to the ProcessingResult
+    
+    Args:
+        content: The raw processing output text.
+        caption: The original message caption (may be empty string).
+        original_filename: The original filename of the media being processed.
+        unprocessable_media: Whether the media was flagged/failed moderation.
+    
+    Returns:
+        ProcessingResult with formatted content string and flags set.
+    """
+    parts = []
+    if original_filename:
+        parts.append(f"file: {original_filename}")
+    parts.append(content)
+    inner = "\n".join(parts)
+    
+    # Always bracket-wrap, always append caption on next line
+    formatted = f"[{inner}]\n{caption}"
+    
+    return ProcessingResult(
+        content=formatted,
+        unprocessable_media=unprocessable_media,
+    )
+
+
 class BaseMediaProcessor(ABC):
     def __init__(self, handled_mime_types: List[str], processing_timeout: float = 60.0):
         self.handled_mime_types = handled_mime_types
         self.processing_timeout = processing_timeout
 
     async def process_job(self, job: MediaProcessingJob, get_bot_queues: Callable[[str], Any], db):
-        """Full shared lifecycle — called by the worker pool for each job."""
+        """Full shared lifecycle — called by the worker pool for each job.
+        
+        6-step centralized lifecycle:
+        1. Process: call process_media() with timeout guard
+        2. Format: call format_processing_result() — single source of truth for output
+        3. Persist: durable state anchor (status=completed with formatted result)
+        4. Archive failed: copy to _failed collection for operator inspection
+        5. Deliver: best-effort direct delivery if bot is active
+        6. Cleanup: always remove the media file from staging
+        """
         file_path = resolve_media_path(job.guid)
         try:
-            # 1. ACTUAL CONVERSION (Externally Guarded by Centralized Timeout)
+            # 1. PROCESS (with timeout guard)
             try:
                 result = await asyncio.wait_for(
-                    self.process_media(file_path, job.mime_type, job.placeholder_message.content, job.bot_id),
+                    self.process_media(file_path, job.mime_type, job.bot_id),
                     timeout=self.processing_timeout,
                 )
             except asyncio.TimeoutError:
                 result = ProcessingResult(
-                    content="[Processing timed out]",
+                    content="Processing timed out",
                     failed_reason=f"TIMEOUT: processing exceeded {self.processing_timeout}s",
                 )
 
-            # 2. PERSISTENCE (Persistence-First — applies to ALL outcomes, success or failure)
-            # On success: result goes to _jobs or _holding as status=completed for delivery/reaping.
-            # On failure: same — error text is the result, stays in _holding for reaping on reconnect.
-            persisted = await self._persist_result_first(job, result, db)
+            # 2. FORMAT (centralized — single source of truth)
+            formatted = format_processing_result(
+                content=result.content,
+                caption=job.placeholder_message.content,
+                original_filename=job.original_filename,
+                unprocessable_media=result.unprocessable_media,
+            )
+            # Preserve failed_reason from the raw result
+            if result.failed_reason:
+                formatted.failed_reason = result.failed_reason
+
+            # 3. PERSIST (persistence-first — applies to ALL outcomes)
+            persisted = await self._persist_result_first(job, formatted, db)
             if not persisted:
                 return  # Job was already swept by cleanup — no further action
 
-            # 3. ARCHIVE TO FAILED (operator inspection only — does not affect delivery flow)
-            # A copy is inserted into _failed so operators can investigate. It is never read back
-            # by any recovery mechanism — delivery is handled exclusively via the _holding reaping path.
-            if result.failed_reason:
-                await self._archive_to_failed(job, result, db)
+            # 4. ARCHIVE TO FAILED (operator inspection only)
+            if formatted.failed_reason:
+                await self._archive_to_failed(job, formatted, db)
 
-            # 4. BEST-EFFORT DIRECT DELIVERY (bot is active)
+            # 5. BEST-EFFORT DIRECT DELIVERY (bot is active)
             bot_queues = get_bot_queues(job.bot_id)
             if bot_queues:
                 delivered = await bot_queues.update_message_by_media_id(
-                    job.correspondent_id, job.guid, result.content
+                    job.correspondent_id, job.guid, formatted.content
                 )
                 if delivered:
-                    # Delivered — remove the job from active/holding (mission complete)
                     await self._remove_job(job, db)
                 else:
-                    # Placeholder not found in the queue (queue was reset) — unrecoverable without a placeholder
                     logging.warning(
                         f"MEDIA PROCESSOR: Placeholder not found for GUID {job.guid} while bot is active; "
                         "removing job as unrecoverable."
@@ -66,19 +123,23 @@ class BaseMediaProcessor(ABC):
                     await self._remove_job(job, db)
 
             # If bot is NOT active: job stays in _holding as status=completed.
-            # When the bot eventually reconnects, the normal reaping path (on_bot_connected →
-            # _reap_completed_jobs_atomically) will find it, inject the placeholder, deliver, and delete it.
+            # When the bot reconnects, the reaping path will find it, inject the placeholder,
+            # deliver, and delete it.
 
         except Exception as e:
             logging.exception("MEDIA PROCESSOR: unhandled exception")
             await self._handle_unhandled_exception(job, db, str(e), get_bot_queues)
         finally:
-            # GUARANTEE: The media file is always removed from the shared staging volume
+            # 6. GUARANTEE: media file is always removed from staging
             delete_media_file(job.guid)
 
     @abstractmethod
-    async def process_media(self, file_path: str, mime_type: str, caption: str, bot_id: str) -> ProcessingResult:
-        """Subclass implements ONLY this: actual AI/conversion logic."""
+    async def process_media(self, file_path: str, mime_type: str, bot_id: str) -> ProcessingResult:
+        """Subclass implements ONLY this: actual AI/conversion logic.
+        
+        Returns raw content — formatting/bracket-wrapping is handled by process_job().
+        The caption parameter has been removed; processors must NOT handle captions.
+        """
         ...
 
     # --- Inherited Concrete Methods ---
@@ -121,21 +182,27 @@ class BaseMediaProcessor(ABC):
     async def _handle_unhandled_exception(self, job: MediaProcessingJob, db, error: str, get_bot_queues=None):
         """Safety net: persists an error result, archives to _failed, and attempts best-effort
         delivery to the active bot queue so the placeholder is resolved promptly."""
-        result = ProcessingResult(content="[Media processing failed]", failed_reason=error)
-        persisted = await self._persist_result_first(job, result, db)
+        raw = ProcessingResult(content="Media processing failed", failed_reason=error)
+        formatted = format_processing_result(
+            content=raw.content,
+            caption=job.placeholder_message.content,
+            original_filename=job.original_filename,
+            unprocessable_media=False,
+        )
+        formatted.failed_reason = raw.failed_reason
+        
+        persisted = await self._persist_result_first(job, formatted, db)
         if persisted:
-            await self._archive_to_failed(job, result, db)
-        # Best-effort delivery — resolve the placeholder immediately if the bot is active,
-        # rather than leaving it stuck until the 3-hour janitorial sweep.
+            await self._archive_to_failed(job, formatted, db)
+        # Best-effort delivery
         if get_bot_queues:
             try:
                 bot_queues = get_bot_queues(job.bot_id)
                 if bot_queues:
                     delivered = await bot_queues.update_message_by_media_id(
-                        job.correspondent_id, job.guid, result.content
+                        job.correspondent_id, job.guid, formatted.content
                     )
                     if delivered:
                         await self._remove_job(job, db)
             except Exception:
                 logging.exception("MEDIA PROCESSOR: failed to deliver unhandled-exception error to queue")
-

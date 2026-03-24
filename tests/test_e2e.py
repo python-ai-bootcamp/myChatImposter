@@ -87,6 +87,17 @@ def test_group_and_direct_message_queues(client):
                         "api_key": "sk-dummy",
                         "model": "gpt-4o"
                     }
+                },
+                "image_transcription": {
+                    "provider_name": "openAiImageTranscription",
+                    "provider_config": {
+                        "api_key_source": "explicit",
+                        "api_key": "sk-dummy",
+                        "model": "gpt-5-mini",
+                        "temperature": 0.05,
+                        "reasoning_effort": "minimal",
+                        "detail": "auto"
+                    }
                 }
             },
             "queue_config": {"max_messages": 5},

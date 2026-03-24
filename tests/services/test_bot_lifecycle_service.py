@@ -98,6 +98,14 @@ class TestBotLifecycleService:
                     "low": {
                         "provider_name": "fakeLlm",
                         "provider_config": {"model": "test", "temperature": 0.7}
+                    },
+                    "image_moderation": {
+                        "provider_name": "fakeLlm",
+                        "provider_config": {"model": "test"}
+                    },
+                    "image_transcription": {
+                        "provider_name": "openAiImageTranscription",
+                        "provider_config": {"model": "gpt-5-mini", "temperature": 0.05, "reasoning_effort": "minimal", "detail": "auto"}
                     }
                 }
             }
@@ -144,6 +152,14 @@ class TestBotLifecycleService:
                     "low": {
                         "provider_name": "fakeLlm",
                         "provider_config": {"model": "test", "temperature": 0.7}
+                    },
+                    "image_moderation": {
+                        "provider_name": "fakeLlm",
+                        "provider_config": {"model": "test"}
+                    },
+                    "image_transcription": {
+                        "provider_name": "openAiImageTranscription",
+                        "provider_config": {"model": "gpt-5-mini", "temperature": 0.05, "reasoning_effort": "minimal", "detail": "auto"}
                     }
                 }
             }
@@ -156,7 +172,7 @@ class TestBotLifecycleService:
         asyncio.run(self.service.on_bot_connected(bot_id))
         
         # Verify tracker was called with empty list
-        self.mock_group_tracker.update_jobs.assert_called_once_with(bot_id, [], owner_user_id=None)
+        self.mock_group_tracker.update_jobs.assert_called_once_with(bot_id, [])
 
     def test_on_bot_connected_handles_missing_config(self):
         """Test graceful handling when bot config doesn't exist."""

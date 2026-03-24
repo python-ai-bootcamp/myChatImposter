@@ -23,3 +23,5 @@ class MediaProcessingJob:
 class ProcessingResult:
     content: str
     failed_reason: Optional[str] = None
+    unprocessable_media: bool = False
+
