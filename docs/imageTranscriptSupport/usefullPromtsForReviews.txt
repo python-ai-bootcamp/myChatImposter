@@ -128,7 +128,7 @@ please make sure that:
 - just create this implementation tasks md file i requested and nothing more. 
 - do NOT start implementing yet
 
-================== unifying implementation task lists
+================== evaluate implementation task lists before unification
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
 - IMPLEMENTATION_TASK_ID   = "11_ag_gemini_pro_3_1_high"
@@ -167,3 +167,38 @@ in following below requests you will replace all variable (denoted as $${{VARIAB
 - once you finish rating all of the implementation tasks file, create a summary table presenting the results
 
 this is all i need you to do, do not start implementing anything.
+
+================== implement selected implementation tasks list according to spec
+# variables:
+in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
+- IMPLEMENTATION_TASK_ID   = "18_cr_gpt_5_4_xhigh_improved"
+- FEATURE_NAME             = "imageTranscriptSupport"
+- PARENT_DOCS_DIR          = "/docs/$${{FEATURE_NAME}}$$"
+- SPEC_FILE                = "$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
+- IMPLEMENTATION_TASKS_DIR = "$${{PARENT_DOCS_DIR}}$$/implementationTasks"
+- IMPLEMENTATION_TASK_FILE = "$${{IMPLEMENTATION_TASKS_DIR}}$$/$${{FEATURE_NAME}}$$_implementationTask_$${{IMPLEMENTATION_TASK_ID}}$$.md"
+
+## Initial Spec Overview
+- please thouroughly completely read the following spec file ($${{SPEC_FILE}}$$) end to end 
+
+## Ingest Relevant Backround Information
+### Project Files
+- please perform a serious deep dive into project relevant files:
+ - thouroughly and completely read&study the relevant project files as mentioned in the spec's "Relevant Background Information"\"Project Files" section
+ - in addition, please attempt to independently identify other project files related to the spec but unmentioned inside it and study them thouroughly as well
+
+### External Resources
+- please study all the resources external to the project supplied in the spec file
+
+## Laern the Implementation Task File
+- after finished learning background information referenced by the spec file, please read the spec file again.
+- read and study the following implementation task file ($${{IMPLEMENTATION_TASK_FILE}}$$) end to end
+
+## Implement the Implementation Task File
+- now implement the following implementation task file ($${{IMPLEMENTATION_TASK_FILE}}$$) end to end  
+- do it by order of implementation tasks
+- do not stop until all tasks are completed
+- do not steer away from implementation tasks, if you have any inclearities treat the spec file as source of truth
+- only update the implementation task file with your progress in both table above and implementation tasks list (update the status of the task to IN_PROGRESS when you start a task, and DONE when you finish a task)
+
+
