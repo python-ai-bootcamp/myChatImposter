@@ -3,18 +3,17 @@
 ## Overview
 - This feature adds automatic audio transcription to `AudioTranscriptionProcessor`.
 Every audio file processed by the media processing pipeline which arrives to the `AudioTranscriptionProcessor` will be processed in order to produce a textual representation of the audio content.
-- This will be achieved by using a model provider external API.
+- This will be achieved by using a model provider external API (specifically, the Soniox Streaming API).
 
 ## Requirements
 
 ### Configuration
-- `audio_transcription` is added as a new per-bot tier in `LLMConfigurations` (alongside `high`, `low`, `image_moderation`, `image_transcription`), with defaults matching the `low` tier settings (same API-key source), but the configuration should use new dedicated environment variables: `os.getenv("DEFAULT_MODEL_AUDIO_TRANSCRIPTION", "whisper-1")`, and `float(os.getenv("DEFAULT_AUDIO_TRANSCRIPTION_TEMPERATURE", "0.0"))`. The fallback values `"0.0"` and `"whisper-1"` must always be specified to prevent startup crashes when the env vars are not set. The default provider module for this tier is `openAiAudioTranscription`.
+- `audio_transcription` is added as a new per-bot tier in `LLMConfigurations` (alongside `high`, `low`, `image_moderation`, `image_transcription`), with defaults matching the `low` tier settings (same API-key source), but the configuration should use new dedicated environment variables: `os.getenv("DEFAULT_MODEL_AUDIO_TRANSCRIPTION", "soniox")`, and `float(os.getenv("DEFAULT_AUDIO_TRANSCRIPTION_TEMPERATURE", "0.0"))`. The fallback values `"0.0"` and `"soniox"` must always be specified to prevent startup crashes when the env vars are not set. The default provider module for this tier is `sonioxAudioTranscription`.
 - Create a new `AudioTranscriptionProviderSettings` class inheriting from `BaseModelProviderSettings` (because audio transciption lacks chat parameters like explicit reasoning effort flags), adding the `temperature: float = 0.0` field.
 - Modify `AudioTranscriptionProviderConfig` to extend `BaseModelProviderConfig` and redefine `provider_config: AudioTranscriptionProviderSettings`. The `LLMConfigurations.audio_transcription` field type is `AudioTranscriptionProviderConfig`.
 - `ConfigTier` is updated to include `"audio_transcription"`.
 - `resolve_model_config` in `services/resolver.py` returns `AudioTranscriptionProviderConfig` for the `"audio_transcription"` tier.
-- Reuse the existing `resolve_bot_language(bot_id: str) -> str` inside `services/resolver.py` that fetches the `language_code` to inject into the audio prompt payload.
-- `global_configurations.token_menu` is extended with an `"audio_transcription"` pricing entry (as a distinct, independent tier) so audio usage is tracked and priced under the correct tier. The pricing values can be equivalent mapped rates suitable for the typical whisper pricing, e.g. mapping internal token units to duration cost (such as `input_tokens: 0.006`, `cached_input_tokens: 0.025`, `output_tokens: 0.0`), explicitly noting that cost is purely based on duration matching the logic implemented in the provider.
+- `global_configurations.token_menu` is extended with an `"audio_transcription"` pricing entry (as a distinct, independent tier) so audio usage is tracked and priced under the correct tier. The pricing values can be equivalent mapped rates suitable for the typical Soniox pricing, e.g. mapping internal token units to duration cost (such as `input_tokens: 0.006`, `cached_input_tokens: 0.025`, `output_tokens: 0.0`), explicitly noting that cost is purely based on duration matching the logic implemented in the provider.
 - `get_configuration_schema` in `routers/bot_management.py` dynamic tier extraction covers this if implemented using `.keys()`.
 
 ### Processing Flow
@@ -23,10 +22,9 @@ Every audio file processed by the media processing pipeline which arrives to the
 - `AudioTranscriptionProcessor` will process the file natively and directly (no initial moderation step required, unless dictated otherwise for audio).
 
 ### Transcription
-- `AudioTranscriptionProcessor` will explicitly retrieve the bot's configured language by calling `resolve_bot_language(bot_id)`.
-- It will then use the bot's `audio_transcription` tier to resolve an `AudioTranscriptionProvider` and call `await provider.transcribe_audio(file_path, mime_type, language_code)`. The `feature_name` passed to `create_model_provider` for this transcription call must be `"audio_transcription"` (to enable token/duration tracking).
+- The `AudioTranscriptionProcessor` will use the bot's `audio_transcription` tier to resolve an `AudioTranscriptionProvider` and call `await provider.transcribe_audio(file_path, mime_type)`. The `feature_name` passed to `create_model_provider` for this transcription call must be `"audio_transcription"` (to enable token/duration tracking).
 - Transcription response normalization contract:
-  - If successful, return the transcribed string.
+  - If successful, return the transcribed string by utilizing the Soniox Streaming API logic.
   - If processing fails internally returning None or unexpected format: return `"Unable to transcribe audio content"`.
 - **Error handling:** No custom error handling (`try/except`) should be added around `transcribe_audio` within `AudioTranscriptionProcessor`. All exceptions propagate up to `BaseMediaProcessor.process_job()`, which handles failures gracefully and wraps timeouts returning `unprocessable_media=True`.
 
@@ -42,7 +40,7 @@ Every audio file processed by the media processing pipeline which arrives to the
 - `media_processors/__init__.py`
 - `model_providers/base.py`
 - `model_providers/audio_transcription.py` *(new — abstract `AudioTranscriptionProvider`)*
-- `model_providers/openAiAudioTranscription.py` *(new — concrete `OpenAiAudioTranscriptionProvider`)*
+- `model_providers/sonioxAudioTranscription.py` *(new — concrete `SonioxAudioTranscriptionProvider`)*
 - `services/media_processing_service.py`
 - `services/model_factory.py`
 - `services/resolver.py`
@@ -51,6 +49,11 @@ Every audio file processed by the media processing pipeline which arrives to the
 - `scripts/migrations/initialize_quota_and_bots.py` *(update for audio_transcription token menu tier)*
 - `scripts/migrations/migrate_token_menu_audio_transcription.py` *(new)*
 - `config_models.py`
+
+### External Resource
+- https://soniox.com/docs/stt/rt/real-time-transcription
+- https://soniox.com/docs/stt/rt/error-handling
+- https://soniox.com/docs/stt/SDKs/python-SDK/realtime-transcription
 
 ## Technical Details
 
@@ -93,25 +96,25 @@ classDiagram
     
     class AudioTranscriptionProvider {
         <<Abstract>>
-        +transcribe_audio(file_path, mime_type, language_code) str
+        +transcribe_audio(file_path, mime_type) str
     }
 
     AudioTranscriptionProvider --|> BaseModelProvider : inherits
 
-    class OpenAiAudioTranscriptionProvider {
-        +transcribe_audio(file_path, mime_type, language_code) str
+    class SonioxAudioTranscriptionProvider {
+        +transcribe_audio(file_path, mime_type) str
     }
     
-    OpenAiAudioTranscriptionProvider --|> AudioTranscriptionProvider : implements
+    SonioxAudioTranscriptionProvider --|> AudioTranscriptionProvider : implements
 ```
 
-- `AudioTranscriptionProvider` (in `model_providers/audio_transcription.py`) extends `BaseModelProvider` and declares `async def transcribe_audio(file_path: str, mime_type: str, language_code: str) -> str` as an abstract method. Because whisper is not a standard chat completion model, it does not inherit from `LLMProvider`.
-- `OpenAiAudioTranscriptionProvider` implements `transcribe_audio` by bypassing LangChain entirely. Use standard `AsyncOpenAI` client directly, initializing it inside the constructor `__init__` with the resolved API key.
+- `AudioTranscriptionProvider` (in `model_providers/audio_transcription.py`) extends `BaseModelProvider` and declares `async def transcribe_audio(file_path: str, mime_type: str) -> str` as an abstract method. Because Soniox is a pure transcription streaming API and not a standard ChatCompletion model, it does not inherit from `LLMProvider`.
+- `SonioxAudioTranscriptionProvider` implements `transcribe_audio` by bypassing LangChain entirely. Use the Soniox client streaming APIs, initializing it inside the constructor `__init__` or opening a stream in the method with the resolved API key.
 - `create_model_provider` return type annotation must be updated to `Union[BaseChatModel, ImageModerationProvider, ImageTranscriptionProvider, AudioTranscriptionProvider]`. Add check for `isinstance(provider, AudioTranscriptionProvider)` if any custom duration tracking must be hooked.
 
 ### 2) Deployment Checklist
 1. Add migration script `scripts/migrations/migrate_audio_transcription.py` to iterate existing bot configs in MongoDB and add `config_data.configurations.llm_configs.audio_transcription` where missing.
-2. Extend `DefaultConfigurations` in `config_models.py` with `model_provider_name_audio_transcription = "openAiAudioTranscription"`.
+2. Extend `DefaultConfigurations` in `config_models.py` with `model_provider_name_audio_transcription = "sonioxAudioTranscription"`.
 3. Update `get_bot_defaults` in `routers/bot_management.py` to include `audio_transcription` in `LLMConfigurations` using `AudioTranscriptionProviderConfig` and `DefaultConfigurations`.
 4. Define `LLMConfigurations.audio_transcription` as a strictly required field using `Field(...)`.
 5. Update `scripts/migrations/initialize_quota_and_bots.py` to include the `audio_transcription` tier in the `token_menu` dictionary, bringing the total to 4 pricing tiers (`high`, `low`, `image_transcription`, `audio_transcription`).
