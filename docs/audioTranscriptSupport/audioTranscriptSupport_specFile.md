@@ -8,12 +8,13 @@ Every audio file processed by the media processing pipeline which arrives to the
 ## Requirements
 
 ### Configuration
-- `audio_transcription` is added as a new per-bot tier in `LLMConfigurations` (alongside `high`, `low`, `image_moderation`, `image_transcription`), with defaults matching the `low` tier settings (same API-key source), but the configuration should use new dedicated environment variables: `os.getenv("DEFAULT_MODEL_AUDIO_TRANSCRIPTION", "soniox")`, and `float(os.getenv("DEFAULT_AUDIO_TRANSCRIPTION_TEMPERATURE", "0.0"))`. The fallback values `"0.0"` and `"soniox"` must always be specified to prevent startup crashes when the env vars are not set. The default provider module for this tier is `sonioxAudioTranscription`.
+- `audio_transcription` is added as a new per-bot tier in `LLMConfigurations` (alongside `high`, `low`, `image_moderation`, `image_transcription`), with defaults matching the `low` tier settings (same API-key source), but the configuration should use new dedicated environment variables: `os.getenv("DEFAULT_MODEL_AUDIO_TRANSCRIPTION", "stt-async-v4")`, and `float(os.getenv("DEFAULT_AUDIO_TRANSCRIPTION_TEMPERATURE", "0.0"))`. The fallback values `"0.0"` and `"stt-async-v4"` must always be specified to prevent startup crashes when the env vars are not set. The default provider module for this tier is `sonioxAudioTranscription`.
 - Create a new `AudioTranscriptionProviderSettings` class inheriting from `BaseModelProviderSettings` (because audio transciption lacks chat parameters like explicit reasoning effort flags), adding the `temperature: float = 0.0` field.
 - Modify `AudioTranscriptionProviderConfig` to extend `BaseModelProviderConfig` and redefine `provider_config: AudioTranscriptionProviderSettings`. The `LLMConfigurations.audio_transcription` field type is `AudioTranscriptionProviderConfig`.
 - `ConfigTier` is updated to include `"audio_transcription"`.
 - `resolve_model_config` in `services/resolver.py` returns `AudioTranscriptionProviderConfig` for the `"audio_transcription"` tier.
 - `global_configurations.token_menu` is extended with an `"audio_transcription"` pricing entry (as a distinct, independent tier) so audio usage is tracked and priced under the correct tier. The pricing values should be `{input_tokens: 2, cached_input_tokens: 2, output_tokens: 4}` because their prices are now token based, not time based.
+- The provider must support a "Callback Injection" pattern where `create_model_provider` creates an async tracking closure (accepting `input_tokens`, `output_tokens`, and `cached_input_tokens`) and injects it into the provider via `set_token_tracker()`. The provider extracts the exact token usage from the SDK and invokes it internally.
 - `get_configuration_schema` in `routers/bot_management.py` dynamic tier extraction covers this if implemented using `.keys()`.
 
 ### Processing Flow
@@ -25,13 +26,12 @@ Every audio file processed by the media processing pipeline which arrives to the
 - The `AudioTranscriptionProcessor` will use the bot's `audio_transcription` tier to resolve an `AudioTranscriptionProvider` and call `await provider.transcribe_audio(file_path, mime_type)`. The `feature_name` passed to `create_model_provider` for this transcription call must be `"audio_transcription"` (to enable token/duration tracking).
 - Transcription response normalization contract:
   - If successful, return the transcribed string by utilizing the Soniox Async API. The flow must precisely be:
-    1. Upload the file using `client.files.upload` (or async equivalent).
-    2. Start transcription using `client.stt.transcribe(..., file_id=file.id)`.
-    3. Wait for completion natively (`client.stt.wait`) and fetch the transcript (`client.stt.get_transcript`).
-    4. **Crucial Cleanup:** Wrap the API sequence in a `try/finally` block to guarantee `client.files.delete_if_exists(file.id)` and `client.stt.delete_if_exists(transcription.id)` are executed even if parsing fails or timeouts occur, avoiding Soniox quota exhaustion. (Alternatively, `client.stt.destroy(transcription.id)` can be used to explicitly delete both).
+    1. Start transcription using the explicit 3-step async pattern: (1) `transcription = await client.stt.transcribe(model=..., file=file_path)`, (2) `await client.stt.wait(transcription.id)`, (3) `transcript = await client.stt.get_transcript(transcription.id)`. The `wait=True` shortcut **MUST NOT** be used because it may block the event loop with synchronous polling.
+    2. Extract usage metrics via `client.stt.get(transcription.id).usage` and invoke the injected token tracking callback.
+    3. **Crucial Cleanup:** Wrap the API sequence in a `try/finally` block to guarantee `await client.stt.destroy(transcription.id)` is executed to clean up both the transcription job and its associated file on the Soniox servers, avoiding quota exhaustion.
   - If the API returns an empty string or an unexpected format, explicitly track it as a failure. Return `ProcessingResult(content="Unable to transcribe audio content", failed_reason="Unexpected format from Soniox API", unprocessable_media=True)`.
   - **Why this matters:** `unprocessable_media=True` prevents the `"Audio Transcription: "` text injection, while `failed_reason` guarantees the job is inserted into the `_failed` MongoDB collection for operator debugging. The base processor will automatically wrap `"Unable to transcribe audio content"` in brackets, safely append the caption, and successfully deliver the message to the bot queues so the bot can respond.
-- **Error handling:** No custom error handling (`try/except`) should be added around `transcribe_audio` within `AudioTranscriptionProcessor`. All exceptions propagate up to `BaseMediaProcessor.process_job()`, which handles failures gracefully and wraps timeouts returning `unprocessable_media=True`.
+- **Error handling:** To align with the `ImageVisionProcessor` sibling pattern, `AudioTranscriptionProcessor.process_media` should wrap the `transcribe_audio` call in a `try/except` block. If an exception occurs, catch it and return a structured `ProcessingResult(content="Unable to transcribe audio content", failed_reason=f"Transcription error: {e}")`. This provides operator-friendly error reporting.
 
 ### Output Format
 - The produced audio transcript will be wrapped into a standard `ProcessingResult(content=transcript_text)`.
@@ -50,7 +50,7 @@ Every audio file processed by the media processing pipeline which arrives to the
 - `services/model_factory.py`
 - `services/resolver.py`
 - `routers/bot_management.py`
-- `scripts/audioTranslationUpgradeScript.py` *(new single migration script)*
+- `scripts/audioTranscriptionUpgradeScript.py` *(new single migration script)*
 - `config_models.py`
 
 ### External Resource
@@ -115,10 +115,55 @@ classDiagram
 
 - `AudioTranscriptionProvider` (in `model_providers/audio_transcription.py`) extends `BaseModelProvider` and declares `async def transcribe_audio(file_path: str, mime_type: str) -> str` as an abstract method. Because Soniox is a pure transcription API and not a standard ChatCompletion model, it does not inherit from `LLMProvider`.
 - `SonioxAudioTranscriptionProvider` implements `transcribe_audio` by bypassing LangChain entirely. Use the `AsyncSonioxClient` from the Soniox Python SDK. The `transcribe_audio` method must orchestrate the full async lifecycle (upload -> transcribe -> wait -> get_transcript), strictly ensuring `finally` blocks delete the file and transcription job from the Soniox servers to respect strict file quotas.
-- `create_model_provider` return type annotation must be updated to `Union[BaseChatModel, ImageModerationProvider, ImageTranscriptionProvider, AudioTranscriptionProvider]`. Add check for `isinstance(provider, AudioTranscriptionProvider)` if any custom duration tracking must be hooked.
+  **Snippet for `SonioxAudioTranscriptionProvider`:**
+  *Note: All Soniox SDK calls must use `AsyncSonioxClient`, not the synchronous `SonioxClient`. Each call (`transcribe`, `wait`, `get_transcript`, `get`, `destroy`) must be `await`ed.*
+  ```python
+  from soniox import AsyncSonioxClient
+  
+  transcription = None
+  try:
+      transcription = await client.stt.transcribe(
+          model=self.settings.model,
+          file=audio_path
+      )
+      
+      await client.stt.wait(transcription.id)
+      
+      if self._token_tracker:
+          job_info = await client.stt.get(transcription.id)
+          if job_info and job_info.usage:
+              await self._token_tracker(
+                  input_tokens=job_info.usage.input_audio_tokens,
+                  output_tokens=job_info.usage.output_text_tokens,
+                  cached_input_tokens=0
+              )
+              
+      transcript = await client.stt.get_transcript(transcription.id)
+      return transcript.text
+      
+  finally:
+      if transcription:
+          await client.stt.destroy(transcription.id)
+  ```
+- `create_model_provider` return type annotation must be updated to `Union[BaseChatModel, ImageModerationProvider, ImageTranscriptionProvider, AudioTranscriptionProvider]`. Add an explicit `elif isinstance(provider, AudioTranscriptionProvider): return provider` branch to bypass LangChain mechanisms without throwing a TypeError. Additionally, it must inject the tracking closure via `set_token_tracker()`.
+  **Snippet for `model_factory.py`:**
+  ```python
+  async def token_tracker(input_tokens: int, output_tokens: int, cached_input_tokens: int = 0):
+      await token_service.record_event(
+          user_id=user_id,
+          bot_id=bot_id,
+          feature_name="audio_transcription",
+          input_tokens=input_tokens,
+          output_tokens=output_tokens,
+          cached_input_tokens=cached_input_tokens,
+          config_tier=config_tier
+      )
+  
+  provider.set_token_tracker(token_tracker)
+  ```
 
 ### 2) Deployment Checklist
-1. Create a single combined migration script `scripts/audioTranslationUpgradeScript.py` that accomplishes ALL of the following:
+1. Create a single combined migration script `scripts/audioTranscriptionUpgradeScript.py` that accomplishes ALL of the following:
    - Updates existing bot configs in MongoDB and adds `config_data.configurations.llm_configs.audio_transcription` where missing.
    - Replaces the existing `token_menu` (which contains only 3 tiers) with a new one containing ALL 4: `high`, `low`, `image_transcription`, `audio_transcription`.
    *(Note: No need for multiple scripts for this spec. If any new need comes up, we will update only this single script).*
@@ -126,12 +171,14 @@ classDiagram
 3. Update `get_bot_defaults` in `routers/bot_management.py` to include `audio_transcription` in `LLMConfigurations` using `AudioTranscriptionProviderConfig` and `DefaultConfigurations`.
 4. Define `LLMConfigurations.audio_transcription` as a strictly required field using `Field(...)`.
 5. Verification checklist ensures both target collections reflect the schema updates accurately.
+6. Update the import of `AudioTranscriptionProcessor` in `media_processors/factory.py` to point to `media_processors.audio_transcription_processor` instead of `stub_processors`.
 
 ### 3) New Configuration Tier Checklist
 1. `config_models.py`: Add `"audio_transcription"` to the `ConfigTier` Literal type.
 2. `services/resolver.py`: Add the overloaded type `Literal["audio_transcription"]` to `resolve_model_config`.
-3. `routers/bot_management.py`: Dynamically extracting schema keys implicitly updates UI constraints.
-4. `frontend/src/pages/EditPage.js`: Statically add a fifth entry to the `llm_configs` object in `uiSchema` for `audio_transcription`. The `ui:title` should be `"Audio Transcription Model"`.
+3. `routers/bot_management.py`: Dynamically extracting schema keys implicitly updates UI constraints, but you MUST also manually append `"audio_transcription"` to the hardcoded tier fallback list around line 365.
+4. `frontend/src/pages/EditPage.js`: Statically add a fifth entry to the `llm_configs` object in `uiSchema` for `audio_transcription`. The `ui:title` should be `"Audio Transcription Model"`. Ensure this configuration deliberately omits the `reasoning_effort` and `seed` sub-entries, as this provider is not a Chat Completion provider.
+5. `frontend/src/pages/EditPage.js`: Manually append `"audio_transcription"` to the two hardcoded tier arrays inside the `handleFormChange` loops for validation.
 
 ### 4) Test Expectations
 - Test reading an audio file and yielding transcribed strings in `AudioTranscriptionProcessor`.
