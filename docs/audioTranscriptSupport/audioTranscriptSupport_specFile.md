@@ -113,17 +113,18 @@ classDiagram
     SonioxAudioTranscriptionProvider --|> AudioTranscriptionProvider : implements
 ```
 
-- `AudioTranscriptionProvider` (in `model_providers/audio_transcription.py`) extends `BaseModelProvider` and declares `async def transcribe_audio(file_path: str, mime_type: str) -> str` as an abstract method. Because Soniox is a pure transcription API and not a standard ChatCompletion model, it does not inherit from `LLMProvider`.
+- `AudioTranscriptionProvider` (in `model_providers/audio_transcription.py`) extends `BaseModelProvider` and declares `async def transcribe_audio(file_path: str, mime_type: str) -> str` as an abstract method. It must also formally declare an `__init__` constructor that invokes `super().__init__(config)` and subsequently sets `self._token_tracker = None`, as well as an explicit `def set_token_tracker(self, tracker_func):` method. Because Soniox is a pure transcription API and not a standard ChatCompletion model, it does not inherit from `LLMProvider`.
 - `SonioxAudioTranscriptionProvider` implements `transcribe_audio` by bypassing LangChain entirely. Use the `AsyncSonioxClient` from the Soniox Python SDK. The `transcribe_audio` method must orchestrate the full async lifecycle (upload -> transcribe -> wait -> get_transcript), strictly ensuring `finally` blocks delete the file and transcription job from the Soniox servers to respect strict file quotas.
   **Snippet for `SonioxAudioTranscriptionProvider`:**
   *Note: All Soniox SDK calls must use `AsyncSonioxClient`, not the synchronous `SonioxClient`. Each call (`transcribe`, `wait`, `get_transcript`, `get`, `destroy`) must be `await`ed.*
   ```python
   from soniox import AsyncSonioxClient
   
+  client = AsyncSonioxClient(api_key=self._resolve_api_key())
   transcription = None
   try:
       transcription = await client.stt.transcribe(
-          model=self.settings.model,
+          model=self.config.provider_config.model,
           file=audio_path
       )
       
@@ -167,7 +168,7 @@ classDiagram
    - Updates existing bot configs in MongoDB and adds `config_data.configurations.llm_configs.audio_transcription` where missing.
    - Replaces the existing `token_menu` (which contains only 3 tiers) with a new one containing ALL 4: `high`, `low`, `image_transcription`, `audio_transcription`.
    *(Note: No need for multiple scripts for this spec. If any new need comes up, we will update only this single script).*
-2. Extend `DefaultConfigurations` in `config_models.py` with `model_provider_name_audio_transcription = "sonioxAudioTranscription"`.
+2. Extend `DefaultConfigurations` in `config_models.py` with `model_provider_name_audio_transcription = "sonioxAudioTranscription"`, and explicitly add `model_audio_transcription: str = os.getenv("DEFAULT_MODEL_AUDIO_TRANSCRIPTION", "stt-async-v4")` and `model_audio_transcription_temperature: float = float(os.getenv("DEFAULT_AUDIO_TRANSCRIPTION_TEMPERATURE", "0.0"))` inside the class.
 3. Update `get_bot_defaults` in `routers/bot_management.py` to include `audio_transcription` in `LLMConfigurations` using `AudioTranscriptionProviderConfig` and `DefaultConfigurations`.
 4. Define `LLMConfigurations.audio_transcription` as a strictly required field using `Field(...)`.
 5. Verification checklist ensures both target collections reflect the schema updates accurately.
@@ -175,10 +176,10 @@ classDiagram
 
 ### 3) New Configuration Tier Checklist
 1. `config_models.py`: Add `"audio_transcription"` to the `ConfigTier` Literal type.
-2. `services/resolver.py`: Add the overloaded type `Literal["audio_transcription"]` to `resolve_model_config`.
+2. `services/resolver.py`: Add the overloaded type `Literal["audio_transcription"]` to `resolve_model_config`, and refactor the functional python body away from hardcoded if/elif statements, instead using a dynamic dictionary-based registry mapping `ConfigTier` to Pydantic Models with `.get(config_tier, ChatCompletionProviderConfig)`.
 3. `routers/bot_management.py`: Dynamically extracting schema keys implicitly updates UI constraints, but you MUST also manually append `"audio_transcription"` to the hardcoded tier fallback list around line 365.
 4. `frontend/src/pages/EditPage.js`: Statically add a fifth entry to the `llm_configs` object in `uiSchema` for `audio_transcription`. The `ui:title` should be `"Audio Transcription Model"`. Ensure this configuration deliberately omits the `reasoning_effort` and `seed` sub-entries, as this provider is not a Chat Completion provider.
-5. `frontend/src/pages/EditPage.js`: Manually append `"audio_transcription"` to the two hardcoded tier arrays inside the `handleFormChange` loops for validation.
+5. `frontend/src/pages/EditPage.js`: Manually append `"audio_transcription"` to the two hardcoded tier arrays inside the `handleFormChange` loops for validation, as well as the third array located inside the `useEffect` data fetching block around line 135.
 
 ### 4) Test Expectations
 - Test reading an audio file and yielding transcribed strings in `AudioTranscriptionProcessor`.
