@@ -7,7 +7,7 @@
 | High | `ATS-04-01` | Factory Architecture Gap for Token Tracker Injection | [#ats-04-01-factory-architecture-gap-for-token-tracker-injection](#ats-04-01-factory-architecture-gap-for-token-tracker-injection) | READY |
 | High | `ATS-04-05` | Missing Prefix Injection Logic in `format_processing_result` | [#ats-04-05-missing-prefix-injection-logic-in-format_processing_result](#ats-04-05-missing-prefix-injection-logic-in-format_processing_result) | READY |
 | Medium | `ATS-04-03` | Contradictory Error Handling Expectations for `unprocessable_media` | [#ats-04-03-contradictory-error-handling-expectations-for-unprocessable-media](#ats-04-03-contradictory-error-handling-expectations-for-unprocessable-media) | READY |
-| Low | `ATS-04-04` | Misleading Schema Extraction Dynamic Keys Reference | [#ats-04-04-misleading-schema-extraction-dynamic-keys-reference](#ats-04-04-misleading-schema-extraction-dynamic-keys-reference) | PENDING |
+| Low | `ATS-04-04` | Misleading Schema Extraction Dynamic Keys Reference | [#ats-04-04-misleading-schema-extraction-dynamic-keys-reference](#ats-04-04-misleading-schema-extraction-dynamic-keys-reference) | READY |
 
 ---
 
@@ -54,5 +54,5 @@
 - **Detailed Description**: 
   The "Configuration" overview section claims that "`get_configuration_schema` in `routers/bot_management.py` dynamic tier extraction covers this if implemented using `.keys()`." 
   However, the `get_configuration_schema` implementation (around line 365) does not dynamically use `.keys()`; it utilizes a hardcoded array list (`for prop_name in ['high', 'low', 'image_moderation', 'image_transcription']:`). While the specification correctly catches this mechanically in Step 3 of the Checklist ("you MUST also manually append..."), the initial overview statement is misleading and factually inaccurate regarding the current codebase state.
-- **Status**: PENDING
-- **Required Actions**: 
+- **Status**: READY
+- **Required Actions**: Correct the "Configuration" overview in the specification. Remove the claim about "dynamic tier extraction using `.keys()`" and explicitly state that the schema extraction intentionally uses a hardcoded array list due to Pydantic `$ref` schema complexities. The manual checklist instructions in Step 3 are correct and remain mechanically necessary.

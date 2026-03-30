@@ -9,33 +9,35 @@ Every audio file processed by the media processing pipeline which arrives to the
 
 ### Configuration
 - `audio_transcription` is added as a new per-bot tier in `LLMConfigurations` (alongside `high`, `low`, `image_moderation`, `image_transcription`), with defaults matching the `low` tier settings (same API-key source), but the configuration should use new dedicated environment variables: `os.getenv("DEFAULT_MODEL_AUDIO_TRANSCRIPTION", "stt-async-v4")`, and `float(os.getenv("DEFAULT_AUDIO_TRANSCRIPTION_TEMPERATURE", "0.0"))`. The fallback values `"0.0"` and `"stt-async-v4"` must always be specified to prevent startup crashes when the env vars are not set. The default provider module for this tier is `sonioxAudioTranscription`.
-- Create a new `AudioTranscriptionProviderSettings` class inheriting from `BaseModelProviderSettings` (because audio transciption lacks chat parameters like explicit reasoning effort flags), adding the `temperature: float = 0.0` field.
+- Create a new `AudioTranscriptionProviderSettings` class inheriting from `BaseModelProviderSettings` (because audio transciption lacks chat parameters like explicit reasoning effort flags), adding the `temperature: float = 0.0` field. *Note: The `temperature` field is currently a dummy variable specifically ignored by the Soniox provider implementation, kept strictly to ensure future-proofing.*
 - Modify `AudioTranscriptionProviderConfig` to extend `BaseModelProviderConfig` and redefine `provider_config: AudioTranscriptionProviderSettings`. The `LLMConfigurations.audio_transcription` field type is `AudioTranscriptionProviderConfig`.
 - `ConfigTier` is updated to include `"audio_transcription"`.
 - `resolve_model_config` in `services/resolver.py` returns `AudioTranscriptionProviderConfig` for the `"audio_transcription"` tier.
-- `global_configurations.token_menu` is extended with an `"audio_transcription"` pricing entry (as a distinct, independent tier) so audio usage is tracked and priced under the correct tier. The pricing values should be `{input_tokens: 2, cached_input_tokens: 2, output_tokens: 4}` because their prices are now token based, not time based.
+- `global_configurations.token_menu` is extended with an `"audio_transcription"` pricing entry (as a distinct, independent tier) so audio usage is tracked and priced under the correct tier. The exact pricing JSON for this tier must be: `{"input_tokens": 1.5, "output_tokens": 3.5, "cached_input_tokens": 0}`.
 - The provider must support a "Callback Injection" pattern where `create_model_provider` creates an async tracking closure (accepting `input_tokens`, `output_tokens`, and `cached_input_tokens`) and injects it into the provider via `set_token_tracker()`. The provider extracts the exact token usage from the SDK and invokes it internally.
-- `get_configuration_schema` in `routers/bot_management.py` dynamic tier extraction covers this if implemented using `.keys()`.
+- `get_configuration_schema` in `routers/bot_management.py` intentionally utilizes a hardcoded array list for schema tier extraction due to Pydantic `$ref` OpenAPI complexities. (This requires manual list appends in subsequent steps).
 
 ### Processing Flow
 - The `AudioTranscriptionProcessor` currently resides as a stub in `media_processors/stub_processors.py`. It must be completely refactored. Move it to its own file `media_processors/audio_transcription_processor.py` (and delete the old stub from `stub_processors.py`). Ensure it inherits from `BaseMediaProcessor`.
-- Ensure `DEFAULT_POOL_DEFINITIONS` in `services/media_processing_service.py` specifies `"AudioTranscriptionProcessor"` for its relevant mime types (which it already does). 
+- Ensure `DEFAULT_POOL_DEFINITIONS` in `services/media_processing_service.py` is expanded to route additional Soniox-supported audio MIME types (including `audio/ogg`, `audio/mpeg`, `audio/wav`, `audio/webm`, `audio/mp4`, `audio/aac`, `audio/flac`, and `audio/amr`) to the `AudioTranscriptionProcessor` to ensure the bot can seamlessly process a wider variety of user audio uploads.
 - `AudioTranscriptionProcessor` will process the file natively and directly (no initial moderation step required, unless dictated otherwise for audio).
 
 ### Transcription
 - The `AudioTranscriptionProcessor` will use the bot's `audio_transcription` tier to resolve an `AudioTranscriptionProvider` and call `await provider.transcribe_audio(file_path, mime_type)`. The `feature_name` passed to `create_model_provider` for this transcription call must be `"audio_transcription"` (to enable token/duration tracking).
 - Transcription response normalization contract:
   - If successful, return the transcribed string by utilizing the Soniox Async API. The flow must precisely be:
-    1. Start transcription using the explicit 3-step async pattern: (1) `transcription = await client.stt.transcribe(model=..., file=file_path)`, (2) `await client.stt.wait(transcription.id)`, (3) `transcript = await client.stt.get_transcript(transcription.id)`. The `wait=True` shortcut **MUST NOT** be used because it may block the event loop with synchronous polling.
+    1. Start transcription using the explicit 3-step async pattern: (1) `file = await client.files.upload(file_path)`, (2) `transcription = await client.stt.create(config=..., file_id=file.id)`, (3) `await client.stt.wait(transcription.id)`, (4) `transcript = await client.stt.get_transcript(transcription.id)`. The `transcribe()` convenience wrapper **MUST NOT** be used.
     2. Extract usage metrics via `client.stt.get(transcription.id).usage` and invoke the injected token tracking callback.
-    3. **Crucial Cleanup:** Wrap the API sequence in a `try/finally` block to guarantee `await client.stt.destroy(transcription.id)` is executed to clean up both the transcription job and its associated file on the Soniox servers, avoiding quota exhaustion.
+    3. **Crucial Cleanup:** Wrap the API sequence in a `try/finally` block to guarantee both the transcription job and its associated file are deleted on the Soniox servers (`delete(transcription.id)` and `delete(file.id)`), avoiding quota exhaustion.
   - If the API returns an empty string or an unexpected format, explicitly track it as a failure. Return `ProcessingResult(content="Unable to transcribe audio content", failed_reason="Unexpected format from Soniox API", unprocessable_media=True)`.
   - **Why this matters:** `unprocessable_media=True` prevents the `"Audio Transcription: "` text injection, while `failed_reason` guarantees the job is inserted into the `_failed` MongoDB collection for operator debugging. The base processor will automatically wrap `"Unable to transcribe audio content"` in brackets, safely append the caption, and successfully deliver the message to the bot queues so the bot can respond.
 - **Error handling:** To align with the `ImageVisionProcessor` sibling pattern, `AudioTranscriptionProcessor.process_media` should wrap the `transcribe_audio` call in a `try/except` block. If an exception occurs, catch it and return a structured `ProcessingResult(content="Unable to transcribe audio content", failed_reason=f"Transcription error: {e}")`. This provides operator-friendly error reporting.
+  - **Base Processor Global Update**: Update `BaseMediaProcessor.process_job()`'s existing `asyncio.TimeoutError` exception block to explicitly include `unprocessable_media=True` when returning its `ProcessingResult`. This enforces the timeout expectation system-wide.
 
 ### Output Format
 - The produced audio transcript will be wrapped into a standard `ProcessingResult(content=transcript_text)`.
 - Do not add explicit brackets `[` `]` to the output string, as formatting is **centralized** inside `format_processing_result()` from `BaseMediaProcessor` (introduced during image transcription). Returning the raw string is sufficient.
+- **Prefix Injection Refactoring**: Refactor `format_processing_result` in `media_processors/base.py` to accept a `mime_type: str` parameter. Inside the formatter, add logic to dynamically capitalize the media type from the mime type (e.g., `"audio"`) and conditionally prepend `"{MediaType} Transcription: "` to the content. This prefix injection must **only** occur if `unprocessable_media` is `False` and `failed_reason` is empty. Ensure `BaseMediaProcessor.process_job` passes `job.mime_type` to all calls to `format_processing_result`. **Note for reviewers:** The injection of the `{MediaType} Transcription:` prefix into `format_processing_result()` is an intentionally global change. It is designed to apply to all successful media processors (e.g., `ImageVisionProcessor` will now output `Image Transcription: ...`). Processors handling corrupt or unsupported media are safely excluded from this prefix because their `unprocessable_media` flag is set to `True`.
 
 ## Relevant Background Information
 ### Project Files
@@ -113,47 +115,56 @@ classDiagram
     SonioxAudioTranscriptionProvider --|> AudioTranscriptionProvider : implements
 ```
 
-- `AudioTranscriptionProvider` (in `model_providers/audio_transcription.py`) extends `BaseModelProvider` and declares `async def transcribe_audio(file_path: str, mime_type: str) -> str` as an abstract method. It must also formally declare an `__init__` constructor that invokes `super().__init__(config)` and subsequently sets `self._token_tracker = None`, as well as an explicit `def set_token_tracker(self, tracker_func):` method. Because Soniox is a pure transcription API and not a standard ChatCompletion model, it does not inherit from `LLMProvider`.
+- `AudioTranscriptionProvider` (in `model_providers/audio_transcription.py`) extends `BaseModelProvider` and declares `async def transcribe_audio(file_path: str, mime_type: str) -> str` as an abstract method. It must also formally declare an `__init__` constructor that invokes `super().__init__(config)` and subsequently sets `self._token_tracker = None`, as well as an explicit `def set_token_tracker(self, tracker_func):` method. Because Soniox is a pure transcription API and not a standard ChatCompletion model, it does not inherit from `LLMProvider`. Providers must also implement a two-phase initialization pattern via `async def initialize(self):`. 
 - `SonioxAudioTranscriptionProvider` implements `transcribe_audio` by bypassing LangChain entirely. Use the `AsyncSonioxClient` from the Soniox Python SDK. The `transcribe_audio` method must orchestrate the full async lifecycle (upload -> transcribe -> wait -> get_transcript), strictly ensuring `finally` blocks delete the file and transcription job from the Soniox servers to respect strict file quotas.
   **Snippet for `SonioxAudioTranscriptionProvider`:**
   *Note: All Soniox SDK calls must use `AsyncSonioxClient`, not the synchronous `SonioxClient`. Each call (`transcribe`, `wait`, `get_transcript`, `get`, `destroy`) must be `await`ed.*
   ```python
   from soniox import AsyncSonioxClient
+  from soniox.types import CreateTranscriptionConfig
   
-  client = AsyncSonioxClient(api_key=self._resolve_api_key())
-  transcription = None
-  try:
-      transcription = await client.stt.transcribe(
-          model=self.config.provider_config.model,
-          file=audio_path
-      )
-      
-      await client.stt.wait(transcription.id)
-      
-      if self._token_tracker:
-          job_info = await client.stt.get(transcription.id)
-          if job_info and job_info.usage:
-              await self._token_tracker(
-                  input_tokens=job_info.usage.input_audio_tokens,
-                  output_tokens=job_info.usage.output_text_tokens,
-                  cached_input_tokens=0
-              )
-              
-      transcript = await client.stt.get_transcript(transcription.id)
-      return transcript.text
-      
-  finally:
-      if transcription:
-          await client.stt.destroy(transcription.id)
+  async def initialize(self):
+      self.client = AsyncSonioxClient(api_key=self._resolve_api_key())
+
+  async def transcribe_audio(self, audio_path: str, mime_type: str) -> str:
+      transcription = None
+      file = None
+      try:
+          file = await self.client.files.upload(audio_path)
+          config = CreateTranscriptionConfig(model=self.config.provider_config.model)
+          transcription = await self.client.stt.create(config=config, file_id=file.id)
+          
+          await self.client.stt.wait(transcription.id)
+          
+          if self._token_tracker:
+              job_info = await self.client.stt.get(transcription.id)
+              if job_info and job_info.usage:
+                  await self._token_tracker(
+                      input_tokens=job_info.usage.input_audio_tokens,
+                      output_tokens=job_info.usage.output_text_tokens,
+                      cached_input_tokens=0
+                  )
+                  
+          transcript = await self.client.stt.get_transcript(transcription.id)
+          return transcript.text
+          
+      finally:
+          if transcription:
+              await self.client.stt.delete(transcription.id)
+          if file:
+              await self.client.files.delete(file.id)
   ```
-- `create_model_provider` return type annotation must be updated to `Union[BaseChatModel, ImageModerationProvider, ImageTranscriptionProvider, AudioTranscriptionProvider]`. Add an explicit `elif isinstance(provider, AudioTranscriptionProvider): return provider` branch to bypass LangChain mechanisms without throwing a TypeError. Additionally, it must inject the tracking closure via `set_token_tracker()`.
+- `create_model_provider` return type annotation must be updated to `Union[BaseChatModel, ImageModerationProvider, ImageTranscriptionProvider, AudioTranscriptionProvider]`.
+  - **Refactor Initialization**: Extract the instantiation of `TokenConsumptionService` and its required `get_global_state()` dictionary fetch out of the `if isinstance(provider, LLMProvider):` tracking block. It must be initialized universally *before* the type checks so that it is accessible to all provider branches.
+  - Add an explicit `elif isinstance(provider, AudioTranscriptionProvider): return provider` branch to bypass LangChain mechanisms without throwing a TypeError. Inside this new branch, inject the tracking closure using the globally available `token_service`.
+  - Also ensure that all providers call an `await provider.initialize()` step immediately after instantiation inside `create_model_provider` to ensure their external HTTP clients are started (this also applies to fixing the `ImageModerationProvider` which currently creates clients dynamically on every request). *Note: The provider instances intentionally omit a teardown/close call as a known leaky capability limit, since later a provider caching layer inside the factory will effectively cap the maximum active connections to the active bot volume.*
   **Snippet for `model_factory.py`:**
   ```python
   async def token_tracker(input_tokens: int, output_tokens: int, cached_input_tokens: int = 0):
       await token_service.record_event(
           user_id=user_id,
           bot_id=bot_id,
-          feature_name="audio_transcription",
+          feature_name=feature_name,
           input_tokens=input_tokens,
           output_tokens=output_tokens,
           cached_input_tokens=cached_input_tokens,
@@ -166,7 +177,7 @@ classDiagram
 ### 2) Deployment Checklist
 1. Create a single combined migration script `scripts/audioTranscriptionUpgradeScript.py` that accomplishes ALL of the following:
    - Updates existing bot configs in MongoDB and adds `config_data.configurations.llm_configs.audio_transcription` where missing.
-   - Replaces the existing `token_menu` (which contains only 3 tiers) with a new one containing ALL 4: `high`, `low`, `image_transcription`, `audio_transcription`.
+   - Replaces the existing `token_menu` (which contains only 3 tiers) with a new one containing ALL 4: `high`, `low`, `image_transcription`, `audio_transcription`. The new `audio_transcription` tier must explicitly use the exact JSON pricing dictionary: `{"input_tokens": 1.5, "output_tokens": 3.5, "cached_input_tokens": 0}`.
    *(Note: No need for multiple scripts for this spec. If any new need comes up, we will update only this single script).*
 2. Extend `DefaultConfigurations` in `config_models.py` with `model_provider_name_audio_transcription = "sonioxAudioTranscription"`, and explicitly add `model_audio_transcription: str = os.getenv("DEFAULT_MODEL_AUDIO_TRANSCRIPTION", "stt-async-v4")` and `model_audio_transcription_temperature: float = float(os.getenv("DEFAULT_AUDIO_TRANSCRIPTION_TEMPERATURE", "0.0"))` inside the class.
 3. Update `get_bot_defaults` in `routers/bot_management.py` to include `audio_transcription` in `LLMConfigurations` using `AudioTranscriptionProviderConfig` and `DefaultConfigurations`.
