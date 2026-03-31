@@ -28,7 +28,7 @@ Every audio file processed by the media processing pipeline which arrives to the
   - If successful, return the transcribed string by utilizing the Soniox Async API. The flow must precisely be:
     1. Start transcription using the explicit 3-step async pattern: (1) `file = await client.files.upload(file_path)`, (2) `transcription = await client.stt.create(config=..., file_id=file.id)`, (3) `await client.stt.wait(transcription.id)`, (4) `transcript = await client.stt.get_transcript(transcription.id)`. The `transcribe()` convenience wrapper **MUST NOT** be used.
     2. Extract usage metrics via `client.stt.get(transcription.id).usage` and invoke the injected token tracking callback.
-    3. **Crucial Cleanup:** Wrap the API sequence in a `try/finally` block to guarantee both the transcription job and its associated file are deleted on the Soniox servers (`delete(transcription.id)` and `delete(file.id)`), avoiding quota exhaustion.
+    3. **Crucial Cleanup:** Wrap the API sequence in a `try/finally` block to guarantee both the transcription job and its associated file are deleted on the Soniox servers (`delete(transcription.id)` and `delete(file.id)`), avoiding quota exhaustion. To prevent resource leaks caused by `asyncio.CancelledError` (which is raised by the base processor's timeout wrapper), wrap the network cleanup commands inside an asynchronous closure, and execute it using `asyncio.create_task(...)` within the `finally` block of the `transcribe_audio` method. This approach creates a fire-and-forget background task attached natively to the event loop, safely bypassing the parent task's `CancelledError` and guaranteeing the remote resources are successfully wiped.
   - If the API returns an empty string or an unexpected format, explicitly track it as a failure. Return `ProcessingResult(content="Unable to transcribe audio content", failed_reason="Unexpected format from Soniox API", unprocessable_media=True)`.
   - **Why this matters:** `unprocessable_media=True` prevents the `"Audio Transcription: "` text injection, while `failed_reason` guarantees the job is inserted into the `_failed` MongoDB collection for operator debugging. The base processor will automatically wrap `"Unable to transcribe audio content"` in brackets, safely append the caption, and successfully deliver the message to the bot queues so the bot can respond.
 - **Error handling:** To align with the `ImageVisionProcessor` sibling pattern, `AudioTranscriptionProcessor.process_media` should wrap the `transcribe_audio` call in a `try/except` block. If an exception occurs, catch it and return a structured `ProcessingResult(content="Unable to transcribe audio content", failed_reason=f"Transcription error: {e}")`. This provides operator-friendly error reporting.
@@ -37,7 +37,7 @@ Every audio file processed by the media processing pipeline which arrives to the
 ### Output Format
 - The produced audio transcript will be wrapped into a standard `ProcessingResult(content=transcript_text)`.
 - Do not add explicit brackets `[` `]` to the output string, as formatting is **centralized** inside `format_processing_result()` from `BaseMediaProcessor` (introduced during image transcription). Returning the raw string is sufficient.
-- **Prefix Injection Refactoring**: Refactor `format_processing_result` in `media_processors/base.py` to accept a `mime_type: str` parameter. Inside the formatter, add logic to dynamically capitalize the media type from the mime type (e.g., `"audio"`) and conditionally prepend `"{MediaType} Transcription: "` to the content. This prefix injection must **only** occur if `unprocessable_media` is `False` and `failed_reason` is empty. Ensure `BaseMediaProcessor.process_job` passes `job.mime_type` to all calls to `format_processing_result`. **Note for reviewers:** The injection of the `{MediaType} Transcription:` prefix into `format_processing_result()` is an intentionally global change. It is designed to apply to all successful media processors (e.g., `ImageVisionProcessor` will now output `Image Transcription: ...`). Processors handling corrupt or unsupported media are safely excluded from this prefix because their `unprocessable_media` flag is set to `True`.
+- **Prefix Injection Refactoring**: Refactor `format_processing_result` in `media_processors/base.py` to accept a `mime_type: str` parameter. Inside the formatter, add logic to dynamically capitalize the media type from the mime type (e.g., `"audio"`) and conditionally prepend `"{MediaType} Transcription: "` to the content. This prefix injection must **only** occur if `unprocessable_media` is `False`. Ensure `BaseMediaProcessor.process_job` passes `job.mime_type` to all calls to `format_processing_result`. Furthermore, modify the fallback error handling in `BaseMediaProcessor._handle_unhandled_exception` to explicitly set `unprocessable_media=True` (it currently defaults to False) so that unhandled system errors are correctly flagged as unprocessable media and safely bypass the prefix injection logic. **Note for reviewers:** The injection of the `{MediaType} Transcription:` prefix into `format_processing_result()` is an intentionally global change. It is designed to apply to all successful media processors (e.g., `ImageVisionProcessor` will now output `Image Transcription: ...`). Processors handling corrupt or unsupported media are safely excluded from this prefix because their `unprocessable_media` flag is set to `True`.
 
 ## Relevant Background Information
 ### Project Files
@@ -149,15 +149,19 @@ classDiagram
           return transcript.text
           
       finally:
-          if transcription:
-              await self.client.stt.delete(transcription.id)
-          if file:
-              await self.client.files.delete(file.id)
+          async def _cleanup():
+              if transcription:
+                  try: await self.client.stt.delete(transcription.id)
+                  except Exception: pass
+              if file:
+                  try: await self.client.files.delete(file.id)
+                  except Exception: pass
+          asyncio.create_task(_cleanup())
   ```
 - `create_model_provider` return type annotation must be updated to `Union[BaseChatModel, ImageModerationProvider, ImageTranscriptionProvider, AudioTranscriptionProvider]`.
   - **Refactor Initialization**: Extract the instantiation of `TokenConsumptionService` and its required `get_global_state()` dictionary fetch out of the `if isinstance(provider, LLMProvider):` tracking block. It must be initialized universally *before* the type checks so that it is accessible to all provider branches.
   - Add an explicit `elif isinstance(provider, AudioTranscriptionProvider): return provider` branch to bypass LangChain mechanisms without throwing a TypeError. Inside this new branch, inject the tracking closure using the globally available `token_service`.
-  - Also ensure that all providers call an `await provider.initialize()` step immediately after instantiation inside `create_model_provider` to ensure their external HTTP clients are started (this also applies to fixing the `ImageModerationProvider` which currently creates clients dynamically on every request). *Note: The provider instances intentionally omit a teardown/close call as a known leaky capability limit, since later a provider caching layer inside the factory will effectively cap the maximum active connections to the active bot volume.*
+  - Also ensure that all providers call an `await provider.initialize()` step immediately after instantiation inside `create_model_provider` to ensure their external HTTP clients are started (this also applies to fixing the `ImageModerationProvider` which currently creates clients dynamically on every request). *Note: The provider instances intentionally omit a teardown/close call as a known leaky capability limit, since later a provider caching layer inside the factory will effectively cap the maximum active connections to the active bot volume.* Instruct the developer to add a no-op `async def initialize(self): pass` method explicitly to the abstract `BaseModelProvider` base class in `model_providers/base.py`. Emphasize that it should *not* be marked as `@abstractmethod`, ensuring existing providers safely inherit the empty method to prevent factory instantiation crashes, while allowing the new `SonioxAudioTranscriptionProvider` to cleanly override it.
   **Snippet for `model_factory.py`:**
   ```python
   async def token_tracker(input_tokens: int, output_tokens: int, cached_input_tokens: int = 0):

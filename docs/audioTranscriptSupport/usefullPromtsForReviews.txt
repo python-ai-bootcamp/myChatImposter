@@ -1,7 +1,7 @@
 ================ better of executed on clean chat (A):
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- REVIEW_ID        ="05_ag_opus_4_6_thinking_strictMode"
+- REVIEW_ID        ="07_ag_opus_4_6_thinking_strictMode"
 - FEATURE_NAME     ="audioTranscriptSupport"
 - PARENT_DOCS_DIR  ="/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE        ="$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
@@ -48,7 +48,7 @@ in following below requests you will replace all variable (denoted as $${{VARIAB
 ================ review the review and set proposed solutions (in same chat A)
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- REVIEW_ID        ="05_ag_opus_4_6_thinking_strictMode"
+- REVIEW_ID        ="07_ag_opus_4_6_thinking_strictMode"
 - FEATURE_NAME     ="audioTranscriptSupport"
 - PARENT_DOCS_DIR  ="/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE        ="$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
@@ -64,7 +64,7 @@ lets go over the detected items in the $${{SPEC_REVIEW_FILE}}$$ review one by on
 ================ after you reviewed the review: (better executed on fresh context chat B)
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- REVIEW_ID        ="05_ag_opus_4_6_thinking_strictMode"
+- REVIEW_ID        ="07_ag_opus_4_6_thinking_strictMode"
 - FEATURE_NAME     ="audioTranscriptSupport"
 - PARENT_DOCS_DIR  ="/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE        ="$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
@@ -83,10 +83,10 @@ in following below requests you will replace all variable (denoted as $${{VARIAB
 
 - give just conclusion, don't apply anything yet to the spec file
 
-================ if he agrees with everything (on chat B):
+================ if he agrees with everything (on chat A):
 Please correct the spec file with all the "Required Actions" from all the review items
 
-================ after implementing, enter this in original chat (chat A) that created the review:
+================ after implementing, enter this in original chat (chat B) that created the review:
 I have finished implementing all of the "Required Actions" you recommended in the spec review file (after modifying the review a bit) into the spec
 please read the final review file (after i modified it) and then check if spec file was fixed accordingly to the review's "Required Actions" for all items
 if not, list the gaps here
@@ -95,7 +95,7 @@ if not, list the gaps here
 ================ making implementation task list
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- IMPLEMENTATION_TASK_ID   = "11_ag_gemini_pro_3_1_high"
+- IMPLEMENTATION_TASK_ID   = "bla"
 - FEATURE_NAME             = "audioTranscriptSupport"
 - PARENT_DOCS_DIR          = "/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE                = "$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
@@ -131,7 +131,7 @@ please make sure that:
 ================== evaluate implementation task lists before unification
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- IMPLEMENTATION_TASK_ID   = "11_ag_gemini_pro_3_1_high"
+- IMPLEMENTATION_TASK_ID   = "bla"
 - FEATURE_NAME             = "audioTranscriptSupport"
 - PARENT_DOCS_DIR          = "/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE                = "$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
@@ -171,7 +171,7 @@ this is all i need you to do, do not start implementing anything.
 ================== implement selected implementation tasks list according to spec
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- IMPLEMENTATION_TASK_ID   = "18_cr_gpt_5_4_xhigh_improved"
+- IMPLEMENTATION_TASK_ID   = "bla"
 - FEATURE_NAME             = "audioTranscriptSupport"
 - PARENT_DOCS_DIR          = "/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE                = "$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
