@@ -11,15 +11,13 @@
 
 | Priority | ID | Title | Link | Status |
 |----------|----|-------|------|--------|
-| HIGH | R07-01 | Spec enumerates a 4-step async pattern but step numbering lists 4 steps while spec line says "3-step" | [Details](#r07-01) | PENDING |
-| HIGH | R07-02 | `_handle_unhandled_exception` passes `unprocessable_media=False` contradicting explicit spec requirement | [Details](#r07-02) | PENDING |
-| HIGH | R07-03 | `TimeoutError` handler in `process_job` does not set `unprocessable_media=True` as spec requires | [Details](#r07-03) | PENDING |
-| MEDIUM | R07-04 | Soniox SDK `destroy()` method could replace manual two-step cleanup of transcription + file | [Details](#r07-04) | PENDING |
-| MEDIUM | R07-05 | `DEFAULT_POOL_DEFINITIONS` expansion is incomplete — spec omits `audio/aiff`, `audio/m4a`, and `audio/asf` despite Soniox support | [Details](#r07-05) | PENDING |
-| MEDIUM | R07-06 | `resolver.py` refactor to dictionary-based registry will silently return `ChatCompletionProviderConfig` for unknown tiers | [Details](#r07-06) | PENDING |
-| LOW | R07-07 | `AudioTranscriptionProviderSettings` inherits from `BaseModelProviderSettings` but spec doesn't address `record_llm_interactions` field leakage | [Details](#r07-07) | PENDING |
-| LOW | R07-08 | `format_processing_result` prefix injection uses MIME type's top-level media type but `media_corrupt_*` synthetic MIME types will produce nonsensical prefixes | [Details](#r07-08) | PENDING |
-| LOW | R07-09 | Frontend `EditPage.js` spec refers to "the two hardcoded tier arrays inside `handleFormChange` loops" but there is only one such array | [Details](#r07-09) | PENDING |
+| HIGH | R07-01 | Spec enumerates a 4-step async pattern but step numbering lists 4 steps while spec line says "3-step" | [Details](#r07-01) | READY |
+| HIGH | R07-02 | `_handle_unhandled_exception` passes `unprocessable_media=False` contradicting explicit spec requirement | [Details](#r07-02) | READY |
+| HIGH | R07-03 | `TimeoutError` handler in `process_job` does not set `unprocessable_media=True` as spec requires | [Details](#r07-03) | READY |
+| MEDIUM | R07-04 | Soniox SDK `destroy()` method could replace manual two-step cleanup of transcription + file | [Details](#r07-04) | READY |
+| MEDIUM | R07-05 | `DEFAULT_POOL_DEFINITIONS` expansion is incomplete — spec omits `audio/aiff`, `audio/m4a`, and `audio/asf` despite Soniox support | [Details](#r07-05) | READY |
+| MEDIUM | R07-06 | `resolver.py` refactor to dictionary-based registry will silently return `ChatCompletionProviderConfig` for unknown tiers | [Details](#r07-06) | READY |
+| LOW | R07-07 | `AudioTranscriptionProviderSettings` inherits from `BaseModelProviderSettings` but spec doesn't address `record_llm_interactions` field leakage | [Details](#r07-07) | READY |
 
 ---
 
@@ -41,9 +39,10 @@ This sentence labels the pattern as "3-step" but then proceeds to enumerate **4 
 
 Furthermore, the Soniox SDK documentation reveals that `client.stt.create` is the correct method name for creating an async transcription job (as opposed to `client.stt.transcribe` which is the convenience wrapper the spec explicitly prohibits). The spec's code snippet on lines 133–135 correctly uses `client.stt.create`, but the textual description's "3-step" label creates ambiguity as to whether `wait` + `get_transcript` should be considered a single conceptual step or whether `upload` is being excluded from the count.
 
-**Status:** PENDING
+**Status:** READY
 
 **Required Actions:**
+- **Action:** Update the specification language on line 29 from "Start transcription using the explicit 3-step async pattern" to "Start transcription using the explicit **4-step** async pattern". This explicitly resolves the contradiction.
 
 ---
 
@@ -72,9 +71,10 @@ This is a real bug that the spec correctly identifies must be fixed. However, th
 
 The spec correctly identifies this must be `True`, but this is a critical fix that must not be overlooked during implementation, as the consequences are user-visible (corrupt message formatting).
 
-**Status:** PENDING
+**Status:** READY
 
 **Required Actions:**
+- **Action:** Add a new explicit requirement to the "Testing / Deployment Checklist" section to include a unit test that verifies `BaseMediaProcessor._handle_unhandled_exception` correctly sets `unprocessable_media=True` and produces the expected output formatting (i.e., no prefix is incorrectly prepended to the system error message).
 
 ---
 
@@ -104,9 +104,10 @@ The same logic applies system-wide: image timeouts would produce `[Image Transcr
 
 This change is critical because it is a **global behavioral change** affecting all media processors (audio, image, video, document), not just the new audio transcription processor. The spec correctly identifies this but it must be coordinated carefully to avoid regression.
 
-**Status:** PENDING
+**Status:** READY
 
 **Required Actions:**
+- **Action:** Add a new explicit requirement to the "Testing / Deployment Checklist" section to include a unit test that verifies `BaseMediaProcessor.process_job` correctly handles `asyncio.TimeoutError` by setting `unprocessable_media=True`, thereby suppressing prefix injection across all processor types.
 
 ---
 
@@ -142,9 +143,10 @@ The spec's two-step approach works correctly, but the `destroy()` method is more
 
 This is a design simplification opportunity, not a correctness bug.
 
-**Status:** PENDING
+**Status:** READY
 
 **Required Actions:**
+- **Action:** Add an explicit architectural note to the spec explaining that while the Soniox SDK offers a convenience `destroy()` method that deletes both the transcription and its file, this is intentionally **rejected** in favor of the manual 2-step `finally` block. The spec must clarify that because the explicit 4-step upload pattern is used, a failure during job creation (Step 2) leaves an uploaded `file` but no `transcription.id`, rendering `destroy()` useless and leaking the file. The explicit 2-step cleanup is required for correctness.
 
 ---
 
@@ -185,9 +187,10 @@ Three formats supported by Soniox are not addressed:
 
 The practical impact is low for WhatsApp-based audio (which primarily uses `audio/ogg` Opus codec), but for completeness and future-proofing, `audio/aiff` at minimum should be considered. The `asf` format is niche enough to potentially defer.
 
-**Status:** PENDING
+**Status:** READY
 
 **Required Actions:**
+- **Action:** Update the specification (line 22) to explicitly include `audio/aiff`, `audio/x-m4a`, and `audio/x-ms-asf` in the list of MIME types that must be routed to the `AudioTranscriptionProcessor` within `DEFAULT_POOL_DEFINITIONS`.
 
 ---
 
@@ -225,9 +228,10 @@ return config_class.model_validate(tier_data)
 
 This is a design suggestion, not a bug — the spec's approach will work correctly for the four known tiers. But the silent fallback is a maintenance trap.
 
-**Status:** PENDING
+**Status:** READY
 
 **Required Actions:**
+- **Action:** Update the literal spec snippet for `resolver.py` to remove the `.get(config_tier, ChatCompletionProviderConfig)` fallback. Instead, mandate an explicit `if config_class is None:` check that raises a `ValueError(f"Unknown config tier: {config_tier}")` to enforce safe failure on unregistered tiers.
 
 ---
 
@@ -249,70 +253,10 @@ This is architecturally fine but creates a minor inconsistency: the frontend UI 
 
 This is a minor UI clarity concern, not a functional bug.
 
-**Status:** PENDING
+**Status:** READY
 
 **Required Actions:**
+- **Action:** Add an explicit note to the frontend spec section (line 196) clarifying that the `temperature: float = 0.0` defined in the backend model will intentionally materialize as a visible dummy field in the EditPage UI. State explicitly that this is a known, desired behavior for future-proofing and requires no UI hiding logic.
 
 ---
 
-### <a id="r07-08"></a>R07-08: Prefix injection using MIME type's top-level media type will produce nonsensical results for synthetic `media_corrupt_*` MIME types
-
-**Priority:** LOW
-
-**Detailed Description:**
-
-The spec (line 40) states:
-
-> "Refactor `format_processing_result` in `media_processors/base.py` to accept a `mime_type: str` parameter. Inside the formatter, add logic to dynamically capitalize the media type from the mime type (e.g., `"audio"`) and conditionally prepend `"{MediaType} Transcription: "` to the content."
-
-The current `DEFAULT_POOL_DEFINITIONS` (line 20 of `media_processing_service.py`) includes synthetic MIME types for corrupt media:
-
-```python
-{"mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video",
-               "media_corrupt_document", "media_corrupt_sticker"], ...}
-```
-
-These synthetic MIME types do not follow the standard `type/subtype` format. If `format_processing_result` naively splits on `/` to extract the media type, these would produce:
-- `media_corrupt_image` → split on `/` yields the entire string as the type → `"Media_corrupt_image Transcription: ..."`
-- Or if the code does `mime_type.split('/')[0]`, it would yield the full string since there's no `/`.
-
-However, this is mitigated by the fact that `CorruptMediaProcessor` always returns `unprocessable_media=True` (it's an error processor), so the prefix injection is skipped via the `unprocessable_media` guard. Similarly, `UnsupportedMediaProcessor` handles the empty MIME types catch-all.
-
-**The mitigation is sufficient** — the prefix will never actually fire for corrupt/unsupported media. But the spec should explicitly note this dependency on the `unprocessable_media` flag as a safeguard, rather than leaving it as an implicit assumption. If a future error processor accidentally omits the flag, garbled prefixes would result.
-
-**Status:** PENDING
-
-**Required Actions:**
-
----
-
-### <a id="r07-09"></a>R07-09: Frontend spec refers to "two hardcoded tier arrays inside `handleFormChange` loops" but only one exists
-
-**Priority:** LOW
-
-**Detailed Description:**
-
-The spec (line 197) states:
-
-> "`frontend/src/pages/EditPage.js`: Manually append `"audio_transcription"` to the **two hardcoded tier arrays** inside the `handleFormChange` loops for validation, as well as the third array located inside the `useEffect` data fetching block around line 135."
-
-Examining the actual `EditPage.js` code:
-
-1. **`handleFormChange` (line 229):** There is **one** array:
-   ```javascript
-   ['high', 'low', 'image_moderation', 'image_transcription'].forEach(type => {
-   ```
-   This is the only tier iteration loop inside `handleFormChange`.
-
-2. **`useEffect` data fetching block (line 135):** There is **one** array:
-   ```javascript
-   ['high', 'low', 'image_moderation', 'image_transcription'].forEach(type => {
-   ```
-
-The spec claims there are "two" hardcoded tier arrays in `handleFormChange`, but only one exists at line 229. The spec may be referencing an older version of the code, or anticipating a future addition. As written, the implementer should append `"audio_transcription"` to the single array at line 229 and the single array at line 135 (total: 2 arrays, not 3).
-
-Additionally, the `uiSchema` object (lines 392–506) contains the static `llm_configs` UI definitions with entries for `high`, `low`, `image_moderation`, and `image_transcription`. The spec (line 196) correctly identifies that a fifth entry for `audio_transcription` must be added here.
-
-**Status:** PENDING
-
-**Required Actions:**
