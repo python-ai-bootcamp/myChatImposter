@@ -1,7 +1,7 @@
 ================ better of executed on clean chat (A):
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- REVIEW_ID        ="08_ag_opus_4_6_thinking_strictMode"
+- REVIEW_ID        ="09_ag_opus_4_6_thinking_strictMode"
 - FEATURE_NAME     ="audioTranscriptSupport"
 - PARENT_DOCS_DIR  ="/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE        ="$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
@@ -48,7 +48,7 @@ in following below requests you will replace all variable (denoted as $${{VARIAB
 ================ review the review and set proposed solutions (in same chat A)
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- REVIEW_ID        ="08_ag_opus_4_6_thinking_strictMode"
+- REVIEW_ID        ="09_ag_opus_4_6_thinking_strictMode"
 - FEATURE_NAME     ="audioTranscriptSupport"
 - PARENT_DOCS_DIR  ="/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE        ="$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
@@ -64,7 +64,7 @@ lets go over the detected items in the $${{SPEC_REVIEW_FILE}}$$ review one by on
 ================ after you reviewed the review: (better executed on fresh context chat B)
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- REVIEW_ID        ="08_ag_opus_4_6_thinking_strictMode"
+- REVIEW_ID        ="09_ag_opus_4_6_thinking_strictMode"
 - FEATURE_NAME     ="audioTranscriptSupport"
 - PARENT_DOCS_DIR  ="/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE        ="$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
