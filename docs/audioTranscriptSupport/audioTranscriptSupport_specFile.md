@@ -215,6 +215,8 @@ classDiagram
 5. `frontend/src/pages/EditPage.js`: Manually append `"audio_transcription"` to the two hardcoded tier arrays inside the `handleFormChange` loops for validation, as well as the third array located inside the `useEffect` data fetching block around line 135. Instruct the developer to add a code comment inside the `handleFormChange` loop (e.g., `// Note: audio_transcription safely bypasses the reasoning_effort logic because it is undefined`) to ensure future developers understand why the tier is included in the array despite lacking that property.
 
 ### 4) Test Expectations
+- **Explicit Requirement (format_processing_result signature change):** Update the four existing `format_processing_result` unit test fixtures in `tests/test_image_transcription_support.py` by providing a dummy string for the newly required `mime_type` parameter (e.g., `mime_type="image/jpeg"`) to prevent identical signature-related `TypeError` crashes.
+- **Explicit Requirement (AudioProcessor Unit Tests):** Explicitly remove the `AudioTranscriptionProcessor` import and its associated signature verification checks from `tests/test_image_transcription_support.py`, as this processor is no longer a stub. Instead, implement those signature verification assertions and all other checks inside a newly created, dedicated `tests/test_audio_transcription_support.py` unit test file.
 - Test reading an audio file and yielding transcribed strings in `AudioTranscriptionProcessor`.
 - Verify the final string is returned effectively and formatted through `format_processing_result` properly.
 - Update `DEFAULT_POOL_DEFINITIONS` handling logic assertions if `test_media_processing_service.py` contains length-checks for predefined factories.
