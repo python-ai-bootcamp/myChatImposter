@@ -32,15 +32,17 @@ Every audio file processed by the media processing pipeline which arrives to the
   - If the API returns an empty string or an unexpected format, explicitly track it as a failure. Return `ProcessingResult(content="Unable to transcribe audio content", failed_reason="Unexpected format from Soniox API", unprocessable_media=True)`.
   - **Why this matters:** `unprocessable_media=True` prevents the `"Audio Transcription: "` text injection, while `failed_reason` guarantees the job is inserted into the `_failed` MongoDB collection for operator debugging. The base processor will automatically wrap `"Unable to transcribe audio content"` in brackets, safely append the caption, and successfully deliver the message to the bot queues so the bot can respond.
 - **Error handling:** To align with the `ImageVisionProcessor` sibling pattern, `AudioTranscriptionProcessor.process_media` should wrap the `transcribe_audio` call in a `try/except` block. If an exception occurs, catch it and return a structured `ProcessingResult(content="Unable to transcribe audio content", failed_reason=f"Transcription error: {e}", unprocessable_media=True)`. This provides operator-friendly error reporting. **Critical:** You MUST write the exception handler as `except Exception as e:` (not `BaseException`), because `asyncio.CancelledError` inherits from `BaseException` in Python 3.9+, and catching it would illegally break the worker's graceful shutdown flow.
-  - **Companion Fix (ImageVisionProcessor)**: Because this spec introduces a global prefix injection pattern, it inadvertently affects the existing `ImageVisionProcessor`. You must also add `unprocessable_media=True` to BOTH error-path `ProcessingResult` returns in `image_vision_processor.py` (moderation API crash and transcription API crash) to prevent the system from injecting misleading success prefixes onto those errors (e.g., `[Image Transcription: Image could not be moderated]`).
-  - **Companion Fix (Error Processors)**: Explicitly update the `process_media` methods in both `CorruptMediaProcessor` and `UnsupportedMediaProcessor` (in `media_processors/error_processors.py`) to explicitly pass `unprocessable_media=True` when returning their `ProcessingResult`. This prevents nonsensical prefixes from being injected when processing corrupted or unsupported files.
-  - **Base Processor Global Update**: Update `BaseMediaProcessor.process_job()`'s existing `asyncio.TimeoutError` exception block to explicitly include `unprocessable_media=True` when returning its `ProcessingResult`. This enforces the timeout expectation system-wide.
-  - **Unhandled Exception Handling**: Modify the fallback error handling in `BaseMediaProcessor._handle_unhandled_exception` to explicitly pass `unprocessable_media=True` to `format_processing_result` (it currently defaults to `False`) so that unhandled system errors are safely bypassed by the prefix injection logic.
+
+### Companion Fixes (Cross-Processor Impact)
+- **ImageVisionProcessor**: Because this spec introduces a global prefix injection pattern, it inadvertently affects the existing `ImageVisionProcessor`. You must also add `unprocessable_media=True` to BOTH error-path `ProcessingResult` returns in `image_vision_processor.py` (moderation API crash and transcription API crash) to prevent the system from injecting misleading success prefixes onto those errors (e.g., `[Image Transcription: Image could not be moderated]`).
+- **Error Processors**: Explicitly update the `process_media` methods in both `CorruptMediaProcessor` and `UnsupportedMediaProcessor` (in `media_processors/error_processors.py`) to explicitly pass `unprocessable_media=True` when returning their `ProcessingResult`. This prevents nonsensical prefixes from being injected when processing corrupted or unsupported files.
+- **Base Processor Global Update**: Update `BaseMediaProcessor.process_job()`'s existing `asyncio.TimeoutError` exception block to explicitly include `unprocessable_media=True` when returning its `ProcessingResult`. This enforces the timeout expectation system-wide.
+- **Unhandled Exception Handling**: Modify the fallback error handling in `BaseMediaProcessor._handle_unhandled_exception` to explicitly pass `unprocessable_media=True` and `mime_type=job.mime_type` to `format_processing_result` (it currently defaults to `False`) so that unhandled system errors are safely bypassed by the prefix injection logic and avoid TypeError crashes.
 
 ### Output Format
 - The produced audio transcript will be wrapped into a standard `ProcessingResult(content=transcript_text)`.
 - Do not add explicit brackets `[` `]` to the output string, as formatting is **centralized** inside `format_processing_result()` from `BaseMediaProcessor` (introduced during image transcription). Returning the raw string is sufficient.
-- **Prefix Injection Refactoring**: Refactor `format_processing_result` in `media_processors/base.py` to accept a `mime_type: str` parameter. Inside the formatter, add logic to dynamically capitalize the media type from the mime type (e.g., `"audio"`) and conditionally prepend `"{MediaType} Transcription: "` to the content. This prefix injection must **only** occur if `unprocessable_media` is `False`. Ensure `BaseMediaProcessor.process_job` passes `job.mime_type` to all calls to `format_processing_result`. Add an optional `display_media_type: str = None` attribute to the `ProcessingResult` dataclass; if a processor provides this, the formatter must use it directly instead of attempting to parse the `mime_type`. **Note for reviewers:** The injection of the `{MediaType} Transcription:` prefix into `format_processing_result()` is an intentionally global change. It is designed to apply to all successful media processors (e.g., `ImageVisionProcessor` will now output `Image Transcription: ...`). Corrupt media types do not need explicit parsing fallback because their processors correctly set `unprocessable_media=True` (preventing the prefix entirely). Sub-optimal prefixing for stub processors (like `DocumentProcessor` producing `"Application Transcription"`) is acceptable temporary technical debt until those processors are replaced.
+- **Prefix Injection Refactoring**: Refactor `format_processing_result` in `media_processors/base.py` to accept a `mime_type: str` parameter. Inside the formatter, add logic to dynamically capitalize the media type from the mime type (e.g., `"audio"`) and conditionally prepend `"{MediaType} Transcription: "` to the content. This prefix injection must **only** occur if `unprocessable_media` is `False`. Ensure `BaseMediaProcessor.process_job` passes `job.mime_type` to all calls to `format_processing_result`. Add an optional `display_media_type: str = None` attribute to the `ProcessingResult` dataclass; if a processor provides this, the formatter must use it directly instead of attempting to parse the `mime_type`. *(Note: `display_media_type` is a transient, processing-time-only variable strictly intended for consumption by `format_processing_result` and is intentionally not persisted to the database).* **Note for reviewers:** The injection of the `{MediaType} Transcription:` prefix into `format_processing_result()` is an intentionally global change. It is designed to apply to all successful media processors (e.g., `ImageVisionProcessor` will now output `Image Transcription: ...`). Corrupt media types do not need explicit parsing fallback because their processors correctly set `unprocessable_media=True` (preventing the prefix entirely). Sub-optimal prefixing for stub processors (like `DocumentProcessor` producing `"Application Transcription"`) is acceptable temporary technical debt until those processors are replaced.
 
 ## Relevant Background Information
 ### Project Files
@@ -54,6 +56,8 @@ Every audio file processed by the media processing pipeline which arrives to the
 - `services/media_processing_service.py`
 - `services/model_factory.py`
 - `services/resolver.py`
+- `services/token_consumption_service.py`
+- `services/quota_service.py`
 - `routers/bot_management.py`
 - `scripts/audioTranscriptionUpgradeScript.py` *(new single migration script)*
 - `config_models.py`
@@ -118,7 +122,7 @@ classDiagram
     SonioxAudioTranscriptionProvider --|> AudioTranscriptionProvider : implements
 ```
 
-- `AudioTranscriptionProvider` (in `model_providers/audio_transcription.py`) extends `BaseModelProvider` and declares `async def transcribe_audio(file_path: str, mime_type: str) -> str` as an abstract method. It must also formally declare an `__init__` constructor that invokes `super().__init__(config)` and subsequently sets `self._token_tracker = None`, as well as an explicit `def set_token_tracker(self, tracker_func):` method. Because Soniox is a pure transcription API and not a standard ChatCompletion model, it does not inherit from `LLMProvider`. Providers must also implement a two-phase initialization pattern via `async def initialize(self):`. 
+- `AudioTranscriptionProvider` (in `model_providers/audio_transcription.py`) extends `BaseModelProvider` and declares `async def transcribe_audio(file_path: str, mime_type: str) -> str` as an abstract method. It must also formally declare an `__init__` constructor that invokes `super().__init__(config)` and subsequently sets `self._token_tracker = None`, as well as an explicit `def set_token_tracker(self, tracker_func: Callable[..., Awaitable[None]]):` method to enforce the async contract. Because Soniox is a pure transcription API and not a standard ChatCompletion model, it does not inherit from `LLMProvider`. Providers must also implement a two-phase initialization pattern via `async def initialize(self):`. 
 - `SonioxAudioTranscriptionProvider` implements `transcribe_audio` by bypassing LangChain entirely. Use the `AsyncSonioxClient` from the Soniox Python SDK. The `transcribe_audio` method must orchestrate the full async lifecycle (upload -> transcribe -> wait -> get_transcript), strictly ensuring `finally` blocks delete the file and transcription job from the Soniox servers to respect strict file quotas.
   **Snippet for `SonioxAudioTranscriptionProvider`:**
   *Note: All Soniox SDK calls must use `AsyncSonioxClient`, not the synchronous `SonioxClient`. Each call (`transcribe`, `wait`, `get_transcript`, `get`, `destroy`) must be `await`ed.*
@@ -139,18 +143,18 @@ classDiagram
           
           await self.client.stt.wait(transcription.id)
           
+          transcript = await self.client.stt.get_transcript(transcription.id)
+          
           if self._token_tracker:
               job_info = await self.client.stt.get(transcription.id)
-              if job_info and job_info.usage:
+              if job_info:
                   await self._token_tracker(
-                      # Note: Soniox token-based pricing officially uses 'Input Audio Tokens' and 'Output Text Tokens'. 
-                      # These attributes map directly to their live API structure despite being omitted from basic SDK guides.
-                      input_tokens=job_info.usage.input_audio_tokens,
-                      output_tokens=job_info.usage.output_text_tokens,
+                      # Note: Soniox does not provide token usage natively. We use an arithmetic estimation based on audio duration and output text length.
+                      input_tokens=int((job_info.audio_duration_ms or 0) / 120),
+                      output_tokens=int(len(transcript.text) * 0.3),
                       cached_input_tokens=0
                   )
                   
-          transcript = await self.client.stt.get_transcript(transcription.id)
           return transcript.text
           
       finally:
@@ -195,6 +199,7 @@ classDiagram
 4. Define `LLMConfigurations.audio_transcription` as a strictly required field using `Field(...)`.
 5. Verification checklist ensures both target collections reflect the schema updates accurately.
 6. Update the import of `AudioTranscriptionProcessor` in `media_processors/factory.py` to point to `media_processors.audio_transcription_processor` instead of `stub_processors`.
+7. **Environment Configuration**: Ensure the `SONIOX_API_KEY` environment variable is provisioned in the deployment environment. The Soniox SDK does not fail gracefully if it is missing and `api_key_source` is set to `"environment"`.
 
 ### 3) New Configuration Tier Checklist
 1. `config_models.py`: Add `"audio_transcription"` to the `ConfigTier` Literal type.
