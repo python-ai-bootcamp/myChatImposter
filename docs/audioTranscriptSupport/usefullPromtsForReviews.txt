@@ -95,7 +95,7 @@ if not, list the gaps here
 ================ making implementation task list
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- IMPLEMENTATION_TASK_ID   = "01_ag_opus_4_6_thinking"
+- IMPLEMENTATION_TASK_ID   = "10_ag_sonnet_4_6_thinking"
 - FEATURE_NAME             = "audioTranscriptSupport"
 - PARENT_DOCS_DIR          = "/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE                = "$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
@@ -131,7 +131,7 @@ please make sure that:
 ================== evaluate implementation task lists before unification
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- IMPLEMENTATION_TASK_ID   = "bla"
+- IMPLEMENTATION_TASK_ID   = "ag_unified"
 - FEATURE_NAME             = "audioTranscriptSupport"
 - PARENT_DOCS_DIR          = "/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE                = "$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
@@ -153,18 +153,19 @@ in following below requests you will replace all variable (denoted as $${{VARIAB
 
 ## Rate All Existing Implementation Tasks For Spec
 - after finished learning background information referenced by the spec file, please read the spec file again.
-- read and study each file in following directory ($${{IMPLEMENTATION_TASKS_DIR}}$$/*.md)
+- read and study each file in following directory ($${{IMPLEMENTATION_TASKS_DIR}}$$/*.md) e2e in a thourough and complete manner
 - each file is an implementation task file for the above spec created by a different models using different agents
 
 
-- for each implementation task file, rate by following criteria:
+- for each implementation task file, rate by following criteria on a 1-10 scale (10 being the best):
 1. coverage (every part of the spec file is covered by a task)
 2. correctness (every task stems from direct information inside the spec file)
 3. coheseveness (the order of the task implementation makes sense and is cohesive and not ditached)
 4. general quality (all tasks are crystal clear, and have a good detailed explenation)
 5. averaged score (1->10, 10 being the best)
+6. also add a granularity counter that just counts how many tasks are there in total
 
-- once you finish rating all of the implementation tasks file, create a summary table presenting the results
+- once you finish rating all of the implementation tasks file, create a summary table presenting the results for all files sorted by avg score (best to worst)
 
 this is all i need you to do, do not start implementing anything.
 
