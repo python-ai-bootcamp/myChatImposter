@@ -34,11 +34,11 @@ Every audio file processed by the media processing pipeline which arrives to the
 - **Error handling:** To align with the `ImageVisionProcessor` sibling pattern, `AudioTranscriptionProcessor.process_media` should wrap the `transcribe_audio` call in a `try/except` block. If an exception occurs, catch it and return a structured `ProcessingResult(content="Unable to transcribe audio content", failed_reason=f"Transcription error: {e}", unprocessable_media=True)`. This provides operator-friendly error reporting. **Critical:** You MUST write the exception handler as `except Exception as e:` (not `BaseException`), because `asyncio.CancelledError` inherits from `BaseException` in Python 3.9+, and catching it would illegally break the worker's graceful shutdown flow.
 
 ### Companion Fixes (Cross-Processor Impact)
-- **ImageVisionProcessor**: Because this spec introduces a global prefix injection pattern, it inadvertently affects the existing `ImageVisionProcessor`. You must also add `unprocessable_media=True` to BOTH error-path `ProcessingResult` returns in `image_vision_processor.py` (moderation API crash and transcription API crash) to prevent the system from injecting misleading success prefixes onto those errors (e.g., `[Image Transcription: Image could not be moderated]`).
+- **ImageVisionProcessor**: Because this spec introduces a global prefix injection pattern, it inadvertently affects the existing `ImageVisionProcessor`. You must also add `unprocessable_media=True` to BOTH error-path `ProcessingResult` returns in `image_vision_processor.py` (moderation API crash and transcription API crash) to prevent the system from injecting misleading success prefixes onto those errors (e.g., `[Image Transcription: Image could not be moderated]`). *(Note: the existing `flagged=True` moderation return at line 46 already correctly sets `unprocessable_media=True` and requires no change; only the two `except` blocks need updating.)*
 - **Token Metrics Alignment**: Add an explicit instruction to modify the existing `ImageVisionProcessor` implementation to pass `"image_moderation"` and `"image_transcription"` as the `feature_name` values instead of `"media_processing"` when it invokes `create_model_provider()`. This custom mitigation logically enforces granular, per-feature token tracking tags across all media processors while permitting the newly introduced workflow to correctly and identically use `"audio_transcription"`.
 - **Error Processors**: Explicitly update the `process_media` methods in both `CorruptMediaProcessor` and `UnsupportedMediaProcessor` (in `media_processors/error_processors.py`) to explicitly pass `unprocessable_media=True` when returning their `ProcessingResult`. This prevents nonsensical prefixes from being injected when processing corrupted or unsupported files.
 - **Base Processor Global Update**: Update `BaseMediaProcessor.process_job()`'s existing `asyncio.TimeoutError` exception block to explicitly include `unprocessable_media=True` when returning its `ProcessingResult`. This enforces the timeout expectation system-wide.
-- **Unhandled Exception Handling**: Modify the fallback error handling in `BaseMediaProcessor._handle_unhandled_exception` to explicitly pass `unprocessable_media=True` and `mime_type=job.mime_type` to `format_processing_result` (it currently defaults to `False`) so that unhandled system errors are safely bypassed by the prefix injection logic and avoid TypeError crashes.
+- **Unhandled Exception Handling**: Modify the fallback error handling in `BaseMediaProcessor._handle_unhandled_exception` to explicitly pass `unprocessable_media=True` and `mime_type=job.mime_type` to `format_processing_result` (it currently defaults to `False`) so that unhandled system errors are safely bypassed by the prefix injection logic and avoid TypeError crashes. *(`display_media_type` does not need to be forwarded in this path since `unprocessable_media=True` suppresses prefix injection entirely.)*
 
 ### Output Format
 - The produced audio transcript will be wrapped into a standard `ProcessingResult(content=transcript_text)`.
@@ -62,6 +62,7 @@ Every audio file processed by the media processing pipeline which arrives to the
 - `routers/bot_management.py`
 - `scripts/audioTranscriptionUpgradeScript.py` *(new single migration script)*
 - `config_models.py`
+- `infrastructure/models.py` *(modify — add `display_media_type` to `ProcessingResult`)*
 
 ### External Resource
 - https://soniox.com/docs/stt/async/async-transcription
@@ -127,6 +128,7 @@ classDiagram
 - `SonioxAudioTranscriptionProvider` implements `transcribe_audio` by bypassing LangChain entirely. Use the `AsyncSonioxClient` from the Soniox Python SDK. The `transcribe_audio` method must orchestrate the full async lifecycle (upload -> transcribe -> wait -> get_transcript), strictly ensuring `finally` blocks delete the file and transcription job from the Soniox servers to respect strict file quotas.
   **Snippet for `SonioxAudioTranscriptionProvider`:**
   *Note: All Soniox SDK calls must use `AsyncSonioxClient`, not the synchronous `SonioxClient`. Each call (`transcribe`, `wait`, `get_transcript`, `get`, `destroy`) must be `await`ed.*
+  *The implementer MUST verify the `stt.create` call signature directly in the Soniox SDK source code to ensure `file_id` is accepted as a parameter in `create()` (as written in the snippet) rather than within the `CreateTranscriptionConfig` object. Adjust the exact snippet syntax during implementation if necessary.*
   ```python
   from soniox import AsyncSonioxClient
   from soniox.types import CreateTranscriptionConfig
