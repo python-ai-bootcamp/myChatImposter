@@ -1,9 +1,9 @@
 from media_processors.error_processors import CorruptMediaProcessor, UnsupportedMediaProcessor
 from media_processors.stub_processors import (
-    AudioTranscriptionProcessor,
     DocumentProcessor,
     VideoDescriptionProcessor,
 )
+from media_processors.audio_transcription_processor import AudioTranscriptionProcessor
 from media_processors.image_vision_processor import ImageVisionProcessor
 
 

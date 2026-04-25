@@ -14,6 +14,7 @@ from config_models import (
     ChatCompletionProviderConfig, ChatCompletionProviderSettings,
     BaseModelProviderConfig, BaseModelProviderSettings,
     ImageTranscriptionProviderConfig, ImageTranscriptionProviderSettings,
+    AudioTranscriptionProviderConfig, AudioTranscriptionProviderSettings,
     UserDetails, QueueConfig, ContextConfig, DefaultConfigurations,
     RegularBotConfiguration, RegularBotGeneralSettings
 )
@@ -362,7 +363,7 @@ async def get_configuration_schema(
                 llm_configs_defs = schema[defs_key][ref_name]
 
     if llm_configs_defs and 'properties' in llm_configs_defs:
-        for prop_name in ['high', 'low', 'image_moderation', 'image_transcription']:
+        for prop_name in ['high', 'low', 'image_moderation', 'image_transcription', 'audio_transcription']:
             if prop_name in llm_configs_defs['properties']:
                 prop = llm_configs_defs['properties'][prop_name]
                 if 'anyOf' in prop:
@@ -422,6 +423,14 @@ async def get_bot_defaults(
                         api_key_source=DefaultConfigurations.model_api_key_source,
                         temperature=DefaultConfigurations.model_image_transcription_temperature,
                         reasoning_effort=DefaultConfigurations.model_image_transcription_reasoning_effort,
+                    )
+                ),
+                audio_transcription=AudioTranscriptionProviderConfig(
+                    provider_name=DefaultConfigurations.model_provider_name_audio_transcription,
+                    provider_config=AudioTranscriptionProviderSettings(
+                        model=DefaultConfigurations.model_audio_transcription,
+                        api_key_source=DefaultConfigurations.model_api_key_source,
+                        temperature=DefaultConfigurations.model_audio_transcription_temperature
                     )
                 )
             ),

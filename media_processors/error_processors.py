@@ -7,7 +7,8 @@ class CorruptMediaProcessor(BaseMediaProcessor):
         media_type = mime_type.replace("media_corrupt_", "")
         return ProcessingResult(
             content=f"Corrupted {media_type} media could not be downloaded",
-            failed_reason=f"download failed - {media_type} corrupted"
+            failed_reason=f"download failed - {media_type} corrupted",
+            unprocessable_media=True
         )
 
 
@@ -15,5 +16,7 @@ class UnsupportedMediaProcessor(BaseMediaProcessor):
     async def process_media(self, file_path: str, mime_type: str, bot_id: str) -> ProcessingResult:
         return ProcessingResult(
             content=f"Unsupported {mime_type} media",
-            failed_reason=f"unsupported mime type: {mime_type}"
+            failed_reason=f"unsupported mime type: {mime_type}",
+            unprocessable_media=True
         )
+

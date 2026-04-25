@@ -25,11 +25,13 @@ from config_models import (
     BaseModelProviderSettings,
     ImageTranscriptionProviderConfig,
     ImageTranscriptionProviderSettings,
+    AudioTranscriptionProviderConfig,
+    AudioTranscriptionProviderSettings,
     DefaultConfigurations,
 )
 from infrastructure.models import ProcessingResult
 from media_processors.base import format_processing_result, BaseMediaProcessor
-from media_processors.stub_processors import StubSleepProcessor, AudioTranscriptionProcessor, VideoDescriptionProcessor, DocumentProcessor
+from media_processors.stub_processors import StubSleepProcessor, VideoDescriptionProcessor, DocumentProcessor
 from media_processors.error_processors import CorruptMediaProcessor, UnsupportedMediaProcessor
 from media_processors.image_vision_processor import ImageVisionProcessor
 from media_processors.factory import PROCESSOR_CLASS_MAP
@@ -74,7 +76,7 @@ def test_llm_configurations_requires_image_transcription():
 
 
 def test_llm_configurations_valid_with_image_transcription():
-    """LLMConfigurations should validate with all four tiers."""
+    """LLMConfigurations should validate with all five tiers."""
     config = LLMConfigurations(
         high=ChatCompletionProviderConfig(
             provider_name="openAi",
@@ -91,6 +93,10 @@ def test_llm_configurations_valid_with_image_transcription():
         image_transcription=ImageTranscriptionProviderConfig(
             provider_name="openAiImageTranscription",
             provider_config=ImageTranscriptionProviderSettings(model="test")
+        ),
+        audio_transcription=AudioTranscriptionProviderConfig(
+            provider_name="sonioxAudioTranscription",
+            provider_config=AudioTranscriptionProviderSettings(model="stt-async-v4")
         ),
     )
     assert config.image_transcription is not None
@@ -115,8 +121,8 @@ def test_image_transcription_settings_custom_detail():
 # =============================================================================
 
 def test_format_processing_result_basic():
-    result = format_processing_result(content="hello", caption="world")
-    assert result.content == "[hello]\nworld"
+    result = format_processing_result(content="hello", caption="world", mime_type="image/jpeg")
+    assert result.content == "[Image Transcription: hello]\nworld"
     assert result.unprocessable_media is False
 
 
@@ -124,20 +130,22 @@ def test_format_processing_result_with_filename():
     result = format_processing_result(
         content="transcribed text",
         caption="user caption",
+        mime_type="image/jpeg",
         original_filename="photo.jpg",
     )
-    assert result.content == "[file: photo.jpg\ntranscribed text]\nuser caption"
+    assert result.content == "[file: photo.jpg\nImage Transcription: transcribed text]\nuser caption"
 
 
 def test_format_processing_result_empty_caption():
-    result = format_processing_result(content="content", caption="")
-    assert result.content == "[content]\n"
+    result = format_processing_result(content="content", caption="", mime_type="image/jpeg")
+    assert result.content == "[Image Transcription: content]\n"
 
 
 def test_format_processing_result_unprocessable():
     result = format_processing_result(
         content="flagged",
         caption="cap",
+        mime_type="image/jpeg",
         unprocessable_media=True,
     )
     assert result.unprocessable_media is True

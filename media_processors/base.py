@@ -17,8 +17,10 @@ from media_processors.media_file_utils import resolve_media_path, delete_media_f
 def format_processing_result(
     content: str,
     caption: str,
+    mime_type: str,
     original_filename: Optional[str] = None,
     unprocessable_media: bool = False,
+    display_media_type: Optional[str] = None,
 ) -> ProcessingResult:
     """Pure, module-level formatting function for ALL media processing outcomes.
     
@@ -28,6 +30,9 @@ def format_processing_result(
     prohibited.
     
     Contract:
+    - If unprocessable_media is False, a prefix "{MediaType} Transcription: " is
+      prepended to content. MediaType is derived from display_media_type if
+      provided, otherwise from the major type of mime_type (e.g. "Audio", "Image").
     - content is always wrapped in square brackets: [content]
     - caption is always appended on the next line after brackets (even if empty)
     - original_filename, when present, is prepended before content as: file: <name>
@@ -36,12 +41,22 @@ def format_processing_result(
     Args:
         content: The raw processing output text.
         caption: The original message caption (may be empty string).
+        mime_type: The MIME type of the processed media (e.g. "audio/ogg").
         original_filename: The original filename of the media being processed.
         unprocessable_media: Whether the media was flagged/failed moderation.
+        display_media_type: Optional override for the media type label in the prefix.
     
     Returns:
         ProcessingResult with formatted content string and flags set.
     """
+    # Prefix injection: only for successful (processable) outcomes
+    if not unprocessable_media:
+        if display_media_type:
+            media_label = display_media_type
+        else:
+            media_label = mime_type.split("/")[0].capitalize()
+        content = f"{media_label} Transcription: {content}"
+    
     parts = []
     if original_filename:
         parts.append(f"file: {original_filename}")
@@ -85,14 +100,17 @@ class BaseMediaProcessor(ABC):
                 result = ProcessingResult(
                     content="Processing timed out",
                     failed_reason=f"TIMEOUT: processing exceeded {self.processing_timeout}s",
+                    unprocessable_media=True,
                 )
 
             # 2. FORMAT (centralized — single source of truth)
             formatted = format_processing_result(
                 content=result.content,
                 caption=job.placeholder_message.content,
+                mime_type=job.mime_type,
                 original_filename=job.original_filename,
                 unprocessable_media=result.unprocessable_media,
+                display_media_type=result.display_media_type,
             )
             # Preserve failed_reason from the raw result
             if result.failed_reason:
@@ -182,12 +200,13 @@ class BaseMediaProcessor(ABC):
     async def _handle_unhandled_exception(self, job: MediaProcessingJob, db, error: str, get_bot_queues=None):
         """Safety net: persists an error result, archives to _failed, and attempts best-effort
         delivery to the active bot queue so the placeholder is resolved promptly."""
-        raw = ProcessingResult(content="Media processing failed", failed_reason=error)
+        raw = ProcessingResult(content="Media processing failed", failed_reason=error, unprocessable_media=True)
         formatted = format_processing_result(
             content=raw.content,
             caption=job.placeholder_message.content,
+            mime_type=job.mime_type,
             original_filename=job.original_filename,
-            unprocessable_media=False,
+            unprocessable_media=True,
         )
         formatted.failed_reason = raw.failed_reason
         

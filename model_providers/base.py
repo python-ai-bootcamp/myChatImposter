@@ -8,6 +8,12 @@ class BaseModelProvider(ABC):
     def __init__(self, config: BaseModelProviderConfig):
         self.config = config
 
+    async def initialize(self):
+        """No-op initialization hook. Concrete providers may override to set up
+        external HTTP clients or other async resources. Intentionally NOT
+        @abstractmethod so existing providers inherit safely."""
+        pass
+
     def _resolve_api_key(self) -> Optional[str]:
         """Shared utility: resolves the API key based on api_key_source.
         

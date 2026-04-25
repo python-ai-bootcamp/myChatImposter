@@ -4,7 +4,7 @@ import os
 
 # These two locations (ConfigTier and LLMConfigurations) are the ONLY places in the code
 # where the structure/keys of the tiers are defined.
-ConfigTier = Literal["high", "low", "image_moderation", "image_transcription"]
+ConfigTier = Literal["high", "low", "image_moderation", "image_transcription", "audio_transcription"]
 
 class ChatProviderSettings(BaseModel):
     allow_group_messages: bool = False
@@ -68,6 +68,15 @@ class ImageTranscriptionProviderSettings(ChatCompletionProviderSettings):
 class ImageTranscriptionProviderConfig(ChatCompletionProviderConfig):
     provider_config: ImageTranscriptionProviderSettings
 
+class AudioTranscriptionProviderSettings(BaseModelProviderSettings):
+    """Settings for audio transcription providers.
+    Note: temperature is a dummy variable intentionally ignored by the Soniox provider,
+    kept strictly for future-proofing."""
+    temperature: float = 0.0
+
+class AudioTranscriptionProviderConfig(BaseModelProviderConfig):
+    provider_config: AudioTranscriptionProviderSettings
+
 # These two locations (ConfigTier and LLMConfigurations) are the ONLY places in the code
 # where the structure/keys of the tiers are defined.
 class LLMConfigurations(BaseModel):
@@ -75,6 +84,7 @@ class LLMConfigurations(BaseModel):
     low: ChatCompletionProviderConfig = Field(..., title="Low Cost Model")
     image_moderation: BaseModelProviderConfig = Field(..., title="Media Moderation Model")
     image_transcription: ImageTranscriptionProviderConfig = Field(..., title="Image Transcription Model")
+    audio_transcription: 'AudioTranscriptionProviderConfig' = Field(..., title="Audio Transcription Model")
 
 class ContextConfig(BaseLimitConfig):
     shared_context: bool = True
@@ -156,4 +166,7 @@ class DefaultConfigurations:
     model_reasoning_effort: str = os.getenv("DEFAULT_MODEL_REASONING_EFFORT", "minimal")
     model_image_transcription_temperature: float = float(os.getenv("DEFAULT_IMAGE_TRANSCRIPTION_TEMPERATURE", "0.05"))
     model_image_transcription_reasoning_effort: str = os.getenv("DEFAULT_IMAGE_TRANSCRIPTION_REASONING_EFFORT", "minimal")
+    model_provider_name_audio_transcription: str = "sonioxAudioTranscription"
+    model_audio_transcription: str = os.getenv("DEFAULT_MODEL_AUDIO_TRANSCRIPTION", "stt-async-v4")
+    model_audio_transcription_temperature: float = float(os.getenv("DEFAULT_AUDIO_TRANSCRIPTION_TEMPERATURE", "0.0"))
 

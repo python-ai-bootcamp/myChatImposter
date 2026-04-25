@@ -13,7 +13,7 @@ from queue_manager import Group, Message, Sender
 
 
 DEFAULT_POOL_DEFINITIONS = [
-    {"mimeTypes": ["audio/ogg", "audio/mpeg"], "processorClass": "AudioTranscriptionProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 300},
+    {"mimeTypes": ["audio/ogg", "audio/mpeg", "audio/wav", "audio/webm", "audio/mp4", "audio/aac", "audio/flac", "audio/amr", "audio/aiff", "audio/x-m4a", "audio/x-ms-asf", "video/x-ms-asf", "application/vnd.ms-asf"], "processorClass": "AudioTranscriptionProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 300},
     {"mimeTypes": ["video/mp4", "video/webm"], "processorClass": "VideoDescriptionProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 600},
     {"mimeTypes": ["image/jpeg", "image/png", "image/webp", "image/gif"], "processorClass": "ImageVisionProcessor", "concurrentProcessingPoolSize": 3, "processingTimeoutSeconds": 120},
     {"mimeTypes": ["application/pdf", "text/plain"], "processorClass": "DocumentProcessor", "concurrentProcessingPoolSize": 2, "processingTimeoutSeconds": 120},

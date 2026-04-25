@@ -172,7 +172,7 @@ this is all i need you to do, do not start implementing anything.
 ================== implement selected implementation tasks list according to spec
 # variables:
 in following below requests you will replace all variable (denoted as $${{VARIABLE_NAME}}$$ with the values defined here after =):
-- IMPLEMENTATION_TASK_ID   = "bla"
+- IMPLEMENTATION_TASK_ID   = "15_ag_sonnet_4_6_thinking"
 - FEATURE_NAME             = "audioTranscriptSupport"
 - PARENT_DOCS_DIR          = "/docs/$${{FEATURE_NAME}}$$"
 - SPEC_FILE                = "$${{PARENT_DOCS_DIR}}$$/$${{FEATURE_NAME}}$$_specFile.md"
@@ -200,6 +200,6 @@ in following below requests you will replace all variable (denoted as $${{VARIAB
 - do it by order of implementation tasks
 - do not stop until all tasks are completed
 - do not steer away from implementation tasks, if you have any inclearities treat the spec file as source of truth
-- update the implementation task file only with your progress in both top summary table and implementation tasks list (update the status of the task to IN_PROGRESS when you start a task, and DONE when you finish a task)
+- update the implementation task file only with your progress in both top summary table and the detailed implementation tasks list (update the status of the task to IN_PROGRESS when you start a task, and DONE when you finish a task)
 
 

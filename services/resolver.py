@@ -1,6 +1,6 @@
 from typing import Literal, overload
 from dependencies import get_global_state
-from config_models import ConfigTier, ChatCompletionProviderConfig, BaseModelProviderConfig, ImageTranscriptionProviderConfig
+from config_models import ConfigTier, ChatCompletionProviderConfig, BaseModelProviderConfig, ImageTranscriptionProviderConfig, AudioTranscriptionProviderConfig
 
 async def resolve_user(bot_id: str) -> str:
     """Returns the user_id of the owner of the given bot."""
@@ -19,15 +19,24 @@ async def resolve_model_config(bot_id: str, config_tier: Literal["high", "low"])
 async def resolve_model_config(bot_id: str, config_tier: Literal["image_moderation"]) -> BaseModelProviderConfig: ...
 @overload
 async def resolve_model_config(bot_id: str, config_tier: Literal["image_transcription"]) -> ImageTranscriptionProviderConfig: ...
+@overload
+async def resolve_model_config(bot_id: str, config_tier: Literal["audio_transcription"]) -> AudioTranscriptionProviderConfig: ...
 async def resolve_model_config(
     bot_id: str,
     config_tier: ConfigTier
 ) -> BaseModelProviderConfig:
     """Returns the specific model provider config for the given bot and tier.
-    Returns ChatCompletionProviderConfig for high/low tiers;
-    BaseModelProviderConfig for image_moderation;
-    ImageTranscriptionProviderConfig for image_transcription.
+    Uses a dictionary-based registry to map tiers to their Pydantic config models.
     """
+    # Dictionary-based registry: maps ConfigTier values to their Pydantic config model classes
+    _TIER_REGISTRY = {
+        "high": ChatCompletionProviderConfig,
+        "low": ChatCompletionProviderConfig,
+        "image_moderation": BaseModelProviderConfig,
+        "image_transcription": ImageTranscriptionProviderConfig,
+        "audio_transcription": AudioTranscriptionProviderConfig,
+    }
+
     state = get_global_state()
     db_config = await state.configurations_collection.find_one(
         {"config_data.bot_id": bot_id},
@@ -44,13 +53,11 @@ async def resolve_model_config(
     if not tier_data:
         raise ValueError(f"Tier '{config_tier}' not found in configuration for bot_id: {bot_id}")
     
-    # Parse with the appropriate config model based on tier
-    if config_tier == "image_moderation":
-        return BaseModelProviderConfig.model_validate(tier_data)
-    elif config_tier == "image_transcription":
-        return ImageTranscriptionProviderConfig.model_validate(tier_data)
-    else:
-        return ChatCompletionProviderConfig.model_validate(tier_data)
+    # Resolve config class from registry with explicit failure
+    config_class = _TIER_REGISTRY.get(config_tier)
+    if config_class is None:
+        raise ValueError(f"Unknown config tier: {config_tier}")
+    return config_class.model_validate(tier_data)
 
 async def resolve_bot_language(bot_id: str) -> str:
     """Returns the language_code for the given bot from its UserDetails configuration.

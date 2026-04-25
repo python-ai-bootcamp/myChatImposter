@@ -33,7 +33,7 @@ class ImageVisionProcessor(BaseMediaProcessor):
 
         # Step 2: Moderation check
         try:
-            moderation_provider = await create_model_provider(bot_id, "media_processing", "image_moderation")
+            moderation_provider = await create_model_provider(bot_id, "image_moderation", "image_moderation")
             if not isinstance(moderation_provider, ImageModerationProvider):
                 raise TypeError(f"Expected ImageModerationProvider, got {type(moderation_provider)}")
 
@@ -52,11 +52,12 @@ class ImageVisionProcessor(BaseMediaProcessor):
             return ProcessingResult(
                 content="Image could not be moderated",
                 failed_reason=f"Moderation error: {e}",
+                unprocessable_media=True,
             )
 
         # Step 4: Transcription (only if moderation passed)
         try:
-            transcription_provider = await create_model_provider(bot_id, "media_processing", "image_transcription")
+            transcription_provider = await create_model_provider(bot_id, "image_transcription", "image_transcription")
             if not isinstance(transcription_provider, ImageTranscriptionProvider):
                 raise TypeError(f"Expected ImageTranscriptionProvider, got {type(transcription_provider)}")
 
@@ -71,4 +72,5 @@ class ImageVisionProcessor(BaseMediaProcessor):
             return ProcessingResult(
                 content="Image could not be transcribed",
                 failed_reason=f"Transcription error: {e}",
+                unprocessable_media=True,
             )

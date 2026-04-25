@@ -8,6 +8,7 @@ from model_providers.base import BaseModelProvider, LLMProvider
 from model_providers.chat_completion import ChatCompletionProvider
 from model_providers.image_moderation import ImageModerationProvider
 from model_providers.image_transcription import ImageTranscriptionProvider
+from model_providers.audio_transcription import AudioTranscriptionProvider
 from services.token_consumption_service import TokenConsumptionService
 from services.tracked_llm import TokenTrackingCallback
 from services.resolver import resolve_user, resolve_model_config
@@ -21,7 +22,7 @@ async def create_model_provider(
     bot_id: str,
     feature_name: str,
     config_tier: ConfigTier
-) -> Union[BaseChatModel, ImageModerationProvider, ImageTranscriptionProvider]:
+) -> Union[BaseChatModel, ImageModerationProvider, ImageTranscriptionProvider, AudioTranscriptionProvider]:
     """
     Central factory for instantiating model providers based on the database configuration.
     
@@ -30,6 +31,8 @@ async def create_model_provider(
     - ImageModerationProvider: returns the provider wrapper directly (no LLM, no token tracking).
     - ImageTranscriptionProvider: returns the provider wrapper directly (with token tracking
       attached to its internal LLM via get_llm()).
+    - AudioTranscriptionProvider: returns the provider wrapper directly with token tracking
+      injected via set_token_tracker().
     """
     try:
         # 1. Resolve configuration and user
@@ -45,13 +48,17 @@ async def create_model_provider(
 
         # 3. Create Provider instance
         provider = ProviderClass(config=config)
-        
-        # 4. Polymorphic tracking attachment
+
+        # 4. Initialize provider (sets up external HTTP clients etc.)
+        await provider.initialize()
+
+        # 5. Universal token infrastructure extraction (before type checks)
+        state = get_global_state()
+        token_consumption_collection = state.token_consumption_collection
+
+        # 6. Polymorphic tracking attachment
         if isinstance(provider, LLMProvider):
             llm = provider.get_llm()
-            
-            state = get_global_state()
-            token_consumption_collection = state.token_consumption_collection
             
             if token_consumption_collection is not None:
                 token_service = TokenConsumptionService(token_consumption_collection)
@@ -83,6 +90,26 @@ async def create_model_provider(
             
         elif isinstance(provider, ImageModerationProvider):
             return provider
+
+        elif isinstance(provider, AudioTranscriptionProvider):
+            if token_consumption_collection is not None:
+                token_service = TokenConsumptionService(token_consumption_collection)
+
+                async def token_tracker(input_tokens: int, output_tokens: int, cached_input_tokens: int = 0):
+                    await token_service.record_event(
+                        user_id=user_id,
+                        bot_id=bot_id,
+                        feature_name=feature_name,
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        cached_input_tokens=cached_input_tokens,
+                        config_tier=config_tier
+                    )
+
+                provider.set_token_tracker(token_tracker)
+            else:
+                logger.warning("create_model_provider: token_consumption_collection is None! Token tracking DISABLED for AudioTranscriptionProvider.")
+            return provider
             
         else:
             raise TypeError(f"Unknown provider type: {type(provider)}")
@@ -90,4 +117,3 @@ async def create_model_provider(
     except Exception as e:
         logger.error(f"Failed to create model provider: {e}")
         raise
-

@@ -18,11 +18,6 @@ class StubSleepProcessor(BaseMediaProcessor):
 
 
 
-class AudioTranscriptionProcessor(StubSleepProcessor):
-    sleep_seconds = 10
-    media_label = "audio"
-
-
 class VideoDescriptionProcessor(StubSleepProcessor):
     sleep_seconds = 60
     media_label = "video"
