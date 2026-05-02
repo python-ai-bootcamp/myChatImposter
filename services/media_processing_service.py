@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import re
 import time
 from typing import Any, Callable, Dict, List, Optional
 
@@ -20,6 +21,28 @@ DEFAULT_POOL_DEFINITIONS = [
     {"mimeTypes": ["media_corrupt_image", "media_corrupt_audio", "media_corrupt_video", "media_corrupt_document", "media_corrupt_sticker"], "processorClass": "CorruptMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10},
     {"mimeTypes": [], "processorClass": "UnsupportedMediaProcessor", "concurrentProcessingPoolSize": 1, "processingTimeoutSeconds": 10},
 ]
+
+
+def _build_mime_type_regex(base_mime_type: str) -> re.Pattern:
+    """Build a regex that matches a base MIME type with optional parameters.
+
+    MIME types from providers (e.g. WhatsApp) may include parameters such as
+    ``audio/ogg; codecs=opus``.  Pool definitions only list base types like
+    ``audio/ogg``.  The returned regex matches both forms:
+    ``^audio/ogg(;.*)?$``.
+    """
+    escaped = re.escape(base_mime_type)
+    return re.compile(f"^{escaped}(;.*)?$")
+
+
+def _build_mime_match_query(mime_types: List[str]) -> dict:
+    """Return a MongoDB query fragment matching any of *mime_types* with optional parameters."""
+    return {"$in": [_build_mime_type_regex(mt) for mt in mime_types]}
+
+
+def _build_mime_exclude_query(mime_types: List[str]) -> dict:
+    """Return a MongoDB query fragment excluding all *mime_types* (with optional parameters)."""
+    return {"$nin": [_build_mime_type_regex(mt) for mt in mime_types]}
 
 
 class MediaProcessingService:
@@ -163,9 +186,9 @@ class MediaProcessingService:
                 # Log pool depth only when actual work is found
                 pending_query = {"status": "pending"}
                 if pool_definition["mimeTypes"]:
-                    pending_query["mime_type"] = {"$in": pool_definition["mimeTypes"]}
+                    pending_query["mime_type"] = _build_mime_match_query(pool_definition["mimeTypes"])
                 elif all_specific_mime_types:
-                    pending_query["mime_type"] = {"$nin": all_specific_mime_types}
+                    pending_query["mime_type"] = _build_mime_exclude_query(all_specific_mime_types)
                 depth = await self.active_collection.count_documents(pending_query)
                 logging.info(
                     f"MEDIA SERVICE: pool={pool_definition['processorClass']} pending_depth={depth}"
@@ -182,10 +205,10 @@ class MediaProcessingService:
     async def _claim_job(self, worker_id: str, mime_types: List[str], last_bot_id: Optional[str], all_specific_mime_types: Optional[List[str]] = None):
         base_query = {"status": "pending"}
         if mime_types:
-            base_query["mime_type"] = {"$in": mime_types}
+            base_query["mime_type"] = _build_mime_match_query(mime_types)
         elif all_specific_mime_types:
             # Catch-all pool: exclude mime types handled by dedicated pools
-            base_query["mime_type"] = {"$nin": all_specific_mime_types}
+            base_query["mime_type"] = _build_mime_exclude_query(all_specific_mime_types)
 
         fairness_query = dict(base_query)
         if last_bot_id:
