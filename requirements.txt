@@ -8,8 +8,8 @@ python-dotenv
 pydantic[email]
 email-validator
 pycountry
-pymongo==4.6.1
-bcrypt==4.1.2
+pymongo
+bcrypt
 websockets
 APScheduler
 croniter
